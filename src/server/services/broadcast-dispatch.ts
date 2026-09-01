@@ -11,6 +11,7 @@ import { resolveOverlayTier, type ResolvedTier } from './overlay-tiers';
 import { decrypt, encrypt } from '@/lib/crypto';
 import { broadcastDonorName } from '@/lib/donor-name';
 import { normalizeTtsProvider } from './tts/naver';
+import { joinFromDonation, refreshDonationGauge } from '@/server/services/games';
 
 /**
  * 결제 성공 건의 방송 전송.
@@ -80,6 +81,11 @@ export async function dispatchBroadcast(donationId: string): Promise<DispatchRes
       .update({ where: { id: donationId }, data: { youtubeStatus: 'FAILED' } })
       .catch(() => undefined);
   }
+
+  // 방송 게임의 후원 자동 참여 · 목표 게이지 갱신.
+  // 게임은 부가 기능이므로 어떤 실패도 후원 처리에 영향을 주지 않는다(서비스 내부에서 삼킨다).
+  await joinFromDonation(donationId);
+  await refreshDonationGauge(donation.creatorId);
 
   const allOk = overlayOk && yt.ok;
   await prisma.donation.update({

@@ -13,6 +13,7 @@
  *   5 - MO 수신번호 050(0505) 체계 전환
  *   6 - 샘플 후원이 실제 MO 번호를 쓰도록 수정(옛 번호 실패분 정리)
  *   7 - 테스트 크리에이터의 잘못된 전체 캐릭터 시트 URL 제거
+ *   8 - 방송 게임 예시 4개(룰렛 · 투표 · 선착순 키워드 · 후원 목표) 추가
  */
-export const SEED_VERSION = 7;
+export const SEED_VERSION = 8;
 export const SEED_VERSION_KEY = 'seed.version';

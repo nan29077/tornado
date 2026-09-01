@@ -39,8 +39,9 @@ yarn-error.log*
 .claude/
 _to_delete/
 
-# 미리보기 내장 DB
+# 미리보기 내장 DB (백업본 .pglite.backup-YYYYMMDD 도 함께 제외한다)
 .pglite/
+.pglite.backup-*/
 
 # 진단 로그
 logs/
@@ -56,3 +57,4 @@ local-wip.diff
 tornado-audit-fixes.patch
 output/
 tornado-nickname-preview.patch
+tornado-ui-and-nickname.patch

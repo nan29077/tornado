@@ -423,6 +423,7 @@ model DonorProfile {
   counters      DonationCounter[]
   risks         RiskDetection[]
   blockedBy     BlockedDonor[]
+  gameEntries   GameParticipant[]
 
   @@index([lockedUntil])
   @@index([onboardingStatus])
@@ -540,6 +541,7 @@ model CreatorProfile {
   limitPolicies      DonationLimitPolicy[]
   bannedWords        BannedWord[]
   moMessages         MoInboundMessage[]
+  games              Game[]
 
   @@index([status])
   @@map("creator_profile")
@@ -1598,4 +1600,128 @@ model MtMessageTemplate {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("mt_message_template")
+}
+
+// ===========================================================================
+// 방송 게임 (게임 오버레이)
+//
+//  - 크리에이터가 방송 중에 진행하는 시청자 참여형 미니게임.
+//  - 보상은 크리에이터가 방송에서 직접 주는 무형 보상의 "이름"만 기록한다.
+//    금전·크레딧·포인트·쿠폰을 발행하지 않는다. 결제·정산 원장과 완전히 분리된 영역이다.
+//  - 정답/키워드는 config 에 들어 있으므로 공개 응답에 그대로 실으면 안 된다.
+//    (server/services/games.ts 의 publicConfig 가 잘라낸다)
+// ===========================================================================
+
+/// 게임 정의. 한 번 만들어 두고 회차를 반복해서 돌린다.
+model Game {
+  id        String @id
+  creatorId String @map("creator_id")
+  /// ROULETTE | LADDER | RANKING | VOTE | QUIZ | KEYWORD | NUMBER_GUESS | GOAL_GAUGE
+  type      String
+  title     String
+  /// 항목형 게임의 항목 목록 (JSON 문자열 배열)
+  items     Json   @default("[]")
+  /// 타입별 설정. 정답·키워드가 들어 있으므로 공개 응답에서는 반드시 걸러낸다.
+  config    Json   @default("{}")
+  /// 참여 방식: LINK(링크·QR) | DONATION(후원 자동 참여) | BOTH
+  entryMode String @default("LINK") @map("entry_mode")
+  /// 후원 자동 참여로 인정할 최소 후원 금액(원). 0 이면 금액 제한 없음
+  donationMinAmount BigInt @default(0) @map("donation_min_amount")
+  /// 참여 자동 마감(초). 0 이면 크리에이터가 직접 마감한다
+  autoCloseSec      Int    @default(0) @map("auto_close_sec")
+
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  rounds  GameRound[]
+
+  @@index([creatorId, createdAt])
+  @@map("game")
+}
+
+/// 게임 1회차. 방송 화면에 실제로 뜨는 단위다.
+/// 한 크리에이터에게 OPEN/CLOSED/RESULT 상태의 회차는 동시에 하나만 존재한다(서비스에서 보장).
+model GameRound {
+  id        String @id
+  gameId    String @map("game_id")
+  creatorId String @map("creator_id")
+  seq       Int
+  /// OPEN(참여·진행 중) | CLOSED(마감, 발표 대기) | RESULT(결과 공개) | ENDED(화면에서 내림)
+  status    String @default("OPEN")
+  /// 참여 페이지 주소(/play/{code})에 쓰는 짧은 코드
+  joinCode  String @unique @map("join_code")
+  /// 자동 마감 예정 시각. null 이면 수동 마감
+  closesAt  DateTime? @map("closes_at") @db.Timestamptz(3)
+  /// 확정된 결과 (타입별 구조). 발표 전에는 null
+  result    Json?
+  /// GOAL_GAUGE 기준 시각 이후의 후원만 집계한다
+  openedAt   DateTime  @default(now()) @map("opened_at") @db.Timestamptz(3)
+  closedAt   DateTime? @map("closed_at") @db.Timestamptz(3)
+  revealedAt DateTime? @map("revealed_at") @db.Timestamptz(3)
+  endedAt    DateTime? @map("ended_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  game         Game              @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  participants GameParticipant[]
+  winners      GameWinner[]
+
+  @@unique([gameId, seq])
+  @@index([creatorId, status])
+  @@index([creatorId, openedAt])
+  @@map("game_round")
+}
+
+/// 회차 참여자. 회차를 리셋해도 지우지 않고 남긴다(분쟁 대응).
+model GameParticipant {
+  id         String  @id
+  roundId    String  @map("round_id")
+  gameId     String  @map("game_id")
+  creatorId  String  @map("creator_id")
+  donorId    String? @map("donor_id")
+  /// 후원 자동 참여로 들어온 경우의 후원 건 (관계는 걸지 않는다)
+  donationId String? @map("donation_id")
+  /// 방송에 노출되는 표시명. 금칙어·개인정보 필터를 통과한 값만 저장한다
+  displayName String @map("display_name")
+  /// 참여 입력값 (선택지 index / 숫자 / 키워드)
+  entry      String?
+  /// LINK(직접 참여) | DONATION(후원 자동 참여)
+  source     String  @default("LINK")
+  /// 같은 회차 중복 참여 차단용 식별키 (후원자 해시 · 익명 지문)
+  entryKey   String  @map("entry_key")
+  /// 후원 자동 참여일 때의 후원 금액(원)
+  amount     BigInt  @default(0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  round GameRound     @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  donor DonorProfile? @relation(fields: [donorId], references: [id])
+
+  @@unique([roundId, entryKey])
+  @@index([roundId, createdAt])
+  @@index([creatorId, createdAt])
+  @@map("game_participant")
+}
+
+/// 당첨자. 보상은 무형 보상의 이름만 남기고, 지급은 크리에이터가 방송에서 직접 한다.
+model GameWinner {
+  id          String  @id
+  roundId     String  @map("round_id")
+  gameId      String  @map("game_id")
+  creatorId   String  @map("creator_id")
+  rank        Int     @default(1)
+  displayName String  @map("display_name")
+  donorId     String? @map("donor_id")
+  /// 보상 이름 (샤라웃 · 신청곡 · 굿즈 등). 금전 지급 수단이 아니다
+  prize       String  @default("")
+  /// 크리에이터가 보상 전달을 마쳤다고 체크한 시각
+  fulfilledAt DateTime? @map("fulfilled_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  round GameRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@index([roundId])
+  @@index([creatorId, createdAt])
+  @@map("game_winner")
 }

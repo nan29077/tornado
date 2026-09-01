@@ -65,6 +65,8 @@ const { rows } = await client.query(
 );
 let creators = 0;
 let seedVersion = 0;
+/** 데이터베이스에 실제로 적용된 마이그레이션 이름 */
+let appliedMigrations = [];
 if (rows[0].n > 0) {
   try {
     const r = await client.query('SELECT count(*)::int AS n FROM creator_profile');
@@ -78,8 +80,61 @@ if (rows[0].n > 0) {
   } catch {
     seedVersion = 0;
   }
+  try {
+    // 롤백되지 않고 실제로 적용된 마이그레이션만 센다.
+    const r = await client.query(
+      'SELECT migration_name FROM _prisma_migrations WHERE rolled_back_at IS NULL',
+    );
+    appliedMigrations = r.rows.map((row) => row.migration_name);
+  } catch {
+    // 표가 없으면(초기 상태) 검사할 것이 없다.
+    appliedMigrations = [];
+  }
 }
 await client.end();
+
+/**
+ * 다른 프로젝트의 데이터베이스를 물고 있는지 검사한다.
+ *
+ * 이 폴더를 복사해 다른 서비스를 만들면 코드는 갈라지지만 .pglite 는 .gitignore 대상이라
+ * 그대로 남는다. 그러면 도메인 모델이 통째로 다른 데이터베이스에 붙은 채로 서버가 뜨고,
+ * 화면은 멀쩡한데 로그인·시드만 조용히 실패한다(표가 아예 다르므로 조회 결과가 빈다).
+ *
+ * 데이터베이스에는 적용됐는데 이 프로젝트에는 없는 마이그레이션이 하나라도 있으면
+ * 남의 데이터베이스로 본다. 이 상태는 migrate deploy 로 절대 맞춰지지 않는다.
+ * (이미 적용 완료로 기록되어 있어 건너뛰기 때문)
+ */
+const migrationsDir = path.resolve(process.cwd(), 'prisma', 'migrations');
+if (appliedMigrations.length > 0 && fs.existsSync(migrationsDir)) {
+  const localMigrations = new Set(
+    fs
+      .readdirSync(migrationsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name),
+  );
+  const foreign = appliedMigrations.filter((name) => !localMigrations.has(name)).sort();
+
+  if (foreign.length > 0) {
+    console.error('');
+    console.error('[중단] 미리보기 데이터베이스가 이 프로젝트의 것이 아닙니다.');
+    console.error('');
+    console.error(`       데이터베이스에는 적용됐지만 이 프로젝트에 없는 마이그레이션이 ${foreign.length}개 있습니다.`);
+    for (const name of foreign.slice(0, 10)) console.error(`         - ${name}`);
+    if (foreign.length > 10) console.error(`         ... 외 ${foreign.length - 10}개`);
+    console.error('');
+    console.error('       이 폴더를 복사해 만든 다른 서비스가 같은 데이터베이스를 쓴 흔적입니다.');
+    console.error('       이 상태로는 마이그레이션을 맞출 수 없어(이미 적용 완료로 기록되어 건너뜁니다)');
+    console.error('       로그인과 시드 데이터가 조용히 실패합니다.');
+    console.error('');
+    console.error('       해결 방법');
+    console.error('         1. 서버를 종료합니다. (3_서버종료.bat)');
+    console.error('         2. .pglite 폴더 이름을 .pglite.backup-20260101 처럼 바꿉니다.');
+    console.error('            (삭제가 아니라 이름 변경이므로 기존 데이터는 그대로 남습니다)');
+    console.error('         3. 다시 실행하면 이 프로젝트 기준으로 새로 만들어집니다.');
+    console.error('');
+    process.exit(1);
+  }
+}
 
 // 기존 미리보기 DB도 새 마이그레이션을 빠짐없이 적용한다.
 // migrate deploy는 이미 적용된 항목을 건너뛰므로 기존 데이터는 유지된다.

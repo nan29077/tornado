@@ -9,8 +9,8 @@
  * 🟢 You can import this file directly.
  */
 import type * as runtime from "@prisma/client/runtime/client"
-import type * as $Enums from "../enums"
-import type * as Prisma from "../internal/prismaNamespace"
+import type * as $Enums from "../enums.ts"
+import type * as Prisma from "../internal/prismaNamespace.ts"
 
 /**
  * Model CreatorProfile
@@ -434,6 +434,7 @@ export type CreatorProfileWhereInput = {
   limitPolicies?: Prisma.DonationLimitPolicyListRelationFilter
   bannedWords?: Prisma.BannedWordListRelationFilter
   moMessages?: Prisma.MoInboundMessageListRelationFilter
+  games?: Prisma.GameListRelationFilter
 }
 
 export type CreatorProfileOrderByWithRelationInput = {
@@ -484,6 +485,7 @@ export type CreatorProfileOrderByWithRelationInput = {
   limitPolicies?: Prisma.DonationLimitPolicyOrderByRelationAggregateInput
   bannedWords?: Prisma.BannedWordOrderByRelationAggregateInput
   moMessages?: Prisma.MoInboundMessageOrderByRelationAggregateInput
+  games?: Prisma.GameOrderByRelationAggregateInput
 }
 
 export type CreatorProfileWhereUniqueInput = Prisma.AtLeast<{
@@ -537,6 +539,7 @@ export type CreatorProfileWhereUniqueInput = Prisma.AtLeast<{
   limitPolicies?: Prisma.DonationLimitPolicyListRelationFilter
   bannedWords?: Prisma.BannedWordListRelationFilter
   moMessages?: Prisma.MoInboundMessageListRelationFilter
+  games?: Prisma.GameListRelationFilter
 }, "id" | "userId" | "code">
 
 export type CreatorProfileOrderByWithAggregationInput = {
@@ -658,6 +661,7 @@ export type CreatorProfileCreateInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateInput = {
@@ -707,6 +711,7 @@ export type CreatorProfileUncheckedCreateInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUpdateInput = {
@@ -756,6 +761,7 @@ export type CreatorProfileUpdateInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateInput = {
@@ -805,6 +811,7 @@ export type CreatorProfileUncheckedUpdateInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateManyInput = {
@@ -1308,6 +1315,20 @@ export type CreatorProfileUpdateOneRequiredWithoutSettlementRequestsNestedInput 
   update?: Prisma.XOR<Prisma.XOR<Prisma.CreatorProfileUpdateToOneWithWhereWithoutSettlementRequestsInput, Prisma.CreatorProfileUpdateWithoutSettlementRequestsInput>, Prisma.CreatorProfileUncheckedUpdateWithoutSettlementRequestsInput>
 }
 
+export type CreatorProfileCreateNestedOneWithoutGamesInput = {
+  create?: Prisma.XOR<Prisma.CreatorProfileCreateWithoutGamesInput, Prisma.CreatorProfileUncheckedCreateWithoutGamesInput>
+  connectOrCreate?: Prisma.CreatorProfileCreateOrConnectWithoutGamesInput
+  connect?: Prisma.CreatorProfileWhereUniqueInput
+}
+
+export type CreatorProfileUpdateOneRequiredWithoutGamesNestedInput = {
+  create?: Prisma.XOR<Prisma.CreatorProfileCreateWithoutGamesInput, Prisma.CreatorProfileUncheckedCreateWithoutGamesInput>
+  connectOrCreate?: Prisma.CreatorProfileCreateOrConnectWithoutGamesInput
+  upsert?: Prisma.CreatorProfileUpsertWithoutGamesInput
+  connect?: Prisma.CreatorProfileWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.CreatorProfileUpdateToOneWithWhereWithoutGamesInput, Prisma.CreatorProfileUpdateWithoutGamesInput>, Prisma.CreatorProfileUncheckedUpdateWithoutGamesInput>
+}
+
 export type CreatorProfileCreateWithoutUserInput = {
   id: string
   code: string
@@ -1354,6 +1375,7 @@ export type CreatorProfileCreateWithoutUserInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutUserInput = {
@@ -1402,6 +1424,7 @@ export type CreatorProfileUncheckedCreateWithoutUserInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutUserInput = {
@@ -1466,6 +1489,7 @@ export type CreatorProfileUpdateWithoutUserInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutUserInput = {
@@ -1514,6 +1538,7 @@ export type CreatorProfileUncheckedUpdateWithoutUserInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutDonorLinksInput = {
@@ -1562,6 +1587,7 @@ export type CreatorProfileCreateWithoutDonorLinksInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutDonorLinksInput = {
@@ -1610,6 +1636,7 @@ export type CreatorProfileUncheckedCreateWithoutDonorLinksInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutDonorLinksInput = {
@@ -1674,6 +1701,7 @@ export type CreatorProfileUpdateWithoutDonorLinksInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutDonorLinksInput = {
@@ -1722,6 +1750,7 @@ export type CreatorProfileUncheckedUpdateWithoutDonorLinksInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutBlockedDonorsInput = {
@@ -1770,6 +1799,7 @@ export type CreatorProfileCreateWithoutBlockedDonorsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutBlockedDonorsInput = {
@@ -1818,6 +1848,7 @@ export type CreatorProfileUncheckedCreateWithoutBlockedDonorsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutBlockedDonorsInput = {
@@ -1882,6 +1913,7 @@ export type CreatorProfileUpdateWithoutBlockedDonorsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutBlockedDonorsInput = {
@@ -1930,6 +1962,7 @@ export type CreatorProfileUncheckedUpdateWithoutBlockedDonorsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutCodesInput = {
@@ -1978,6 +2011,7 @@ export type CreatorProfileCreateWithoutCodesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutCodesInput = {
@@ -2026,6 +2060,7 @@ export type CreatorProfileUncheckedCreateWithoutCodesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutCodesInput = {
@@ -2090,6 +2125,7 @@ export type CreatorProfileUpdateWithoutCodesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutCodesInput = {
@@ -2138,6 +2174,7 @@ export type CreatorProfileUncheckedUpdateWithoutCodesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutMoRoutesInput = {
@@ -2186,6 +2223,7 @@ export type CreatorProfileCreateWithoutMoRoutesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutMoRoutesInput = {
@@ -2234,6 +2272,7 @@ export type CreatorProfileUncheckedCreateWithoutMoRoutesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutMoRoutesInput = {
@@ -2298,6 +2337,7 @@ export type CreatorProfileUpdateWithoutMoRoutesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutMoRoutesInput = {
@@ -2346,6 +2386,7 @@ export type CreatorProfileUncheckedUpdateWithoutMoRoutesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutMoMessagesInput = {
@@ -2394,6 +2435,7 @@ export type CreatorProfileCreateWithoutMoMessagesInput = {
   feePolicies?: Prisma.FeePolicyCreateNestedManyWithoutCreatorInput
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutMoMessagesInput = {
@@ -2442,6 +2484,7 @@ export type CreatorProfileUncheckedCreateWithoutMoMessagesInput = {
   feePolicies?: Prisma.FeePolicyUncheckedCreateNestedManyWithoutCreatorInput
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutMoMessagesInput = {
@@ -2506,6 +2549,7 @@ export type CreatorProfileUpdateWithoutMoMessagesInput = {
   feePolicies?: Prisma.FeePolicyUpdateManyWithoutCreatorNestedInput
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutMoMessagesInput = {
@@ -2554,6 +2598,7 @@ export type CreatorProfileUncheckedUpdateWithoutMoMessagesInput = {
   feePolicies?: Prisma.FeePolicyUncheckedUpdateManyWithoutCreatorNestedInput
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutDonationsInput = {
@@ -2602,6 +2647,7 @@ export type CreatorProfileCreateWithoutDonationsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutDonationsInput = {
@@ -2650,6 +2696,7 @@ export type CreatorProfileUncheckedCreateWithoutDonationsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutDonationsInput = {
@@ -2714,6 +2761,7 @@ export type CreatorProfileUpdateWithoutDonationsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutDonationsInput = {
@@ -2762,6 +2810,7 @@ export type CreatorProfileUncheckedUpdateWithoutDonationsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutLimitPoliciesInput = {
@@ -2810,6 +2859,7 @@ export type CreatorProfileCreateWithoutLimitPoliciesInput = {
   feePolicies?: Prisma.FeePolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutLimitPoliciesInput = {
@@ -2858,6 +2908,7 @@ export type CreatorProfileUncheckedCreateWithoutLimitPoliciesInput = {
   feePolicies?: Prisma.FeePolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutLimitPoliciesInput = {
@@ -2922,6 +2973,7 @@ export type CreatorProfileUpdateWithoutLimitPoliciesInput = {
   feePolicies?: Prisma.FeePolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutLimitPoliciesInput = {
@@ -2970,6 +3022,7 @@ export type CreatorProfileUncheckedUpdateWithoutLimitPoliciesInput = {
   feePolicies?: Prisma.FeePolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutBannedWordsInput = {
@@ -3018,6 +3071,7 @@ export type CreatorProfileCreateWithoutBannedWordsInput = {
   feePolicies?: Prisma.FeePolicyCreateNestedManyWithoutCreatorInput
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutBannedWordsInput = {
@@ -3066,6 +3120,7 @@ export type CreatorProfileUncheckedCreateWithoutBannedWordsInput = {
   feePolicies?: Prisma.FeePolicyUncheckedCreateNestedManyWithoutCreatorInput
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutBannedWordsInput = {
@@ -3130,6 +3185,7 @@ export type CreatorProfileUpdateWithoutBannedWordsInput = {
   feePolicies?: Prisma.FeePolicyUpdateManyWithoutCreatorNestedInput
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutBannedWordsInput = {
@@ -3178,6 +3234,7 @@ export type CreatorProfileUncheckedUpdateWithoutBannedWordsInput = {
   feePolicies?: Prisma.FeePolicyUncheckedUpdateManyWithoutCreatorNestedInput
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutYoutubeConnectionInput = {
@@ -3226,6 +3283,7 @@ export type CreatorProfileCreateWithoutYoutubeConnectionInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutYoutubeConnectionInput = {
@@ -3274,6 +3332,7 @@ export type CreatorProfileUncheckedCreateWithoutYoutubeConnectionInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutYoutubeConnectionInput = {
@@ -3338,6 +3397,7 @@ export type CreatorProfileUpdateWithoutYoutubeConnectionInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutYoutubeConnectionInput = {
@@ -3386,6 +3446,7 @@ export type CreatorProfileUncheckedUpdateWithoutYoutubeConnectionInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutYoutubeBroadcastsInput = {
@@ -3434,6 +3495,7 @@ export type CreatorProfileCreateWithoutYoutubeBroadcastsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutYoutubeBroadcastsInput = {
@@ -3482,6 +3544,7 @@ export type CreatorProfileUncheckedCreateWithoutYoutubeBroadcastsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutYoutubeBroadcastsInput = {
@@ -3546,6 +3609,7 @@ export type CreatorProfileUpdateWithoutYoutubeBroadcastsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutYoutubeBroadcastsInput = {
@@ -3594,6 +3658,7 @@ export type CreatorProfileUncheckedUpdateWithoutYoutubeBroadcastsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutOverlaySettingInput = {
@@ -3642,6 +3707,7 @@ export type CreatorProfileCreateWithoutOverlaySettingInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutOverlaySettingInput = {
@@ -3690,6 +3756,7 @@ export type CreatorProfileUncheckedCreateWithoutOverlaySettingInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutOverlaySettingInput = {
@@ -3754,6 +3821,7 @@ export type CreatorProfileUpdateWithoutOverlaySettingInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutOverlaySettingInput = {
@@ -3802,6 +3870,7 @@ export type CreatorProfileUncheckedUpdateWithoutOverlaySettingInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutOverlayTiersInput = {
@@ -3850,6 +3919,7 @@ export type CreatorProfileCreateWithoutOverlayTiersInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutOverlayTiersInput = {
@@ -3898,6 +3968,7 @@ export type CreatorProfileUncheckedCreateWithoutOverlayTiersInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutOverlayTiersInput = {
@@ -3962,6 +4033,7 @@ export type CreatorProfileUpdateWithoutOverlayTiersInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutOverlayTiersInput = {
@@ -4010,6 +4082,7 @@ export type CreatorProfileUncheckedUpdateWithoutOverlayTiersInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutTtsSettingInput = {
@@ -4058,6 +4131,7 @@ export type CreatorProfileCreateWithoutTtsSettingInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutTtsSettingInput = {
@@ -4106,6 +4180,7 @@ export type CreatorProfileUncheckedCreateWithoutTtsSettingInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutTtsSettingInput = {
@@ -4170,6 +4245,7 @@ export type CreatorProfileUpdateWithoutTtsSettingInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutTtsSettingInput = {
@@ -4218,6 +4294,7 @@ export type CreatorProfileUncheckedUpdateWithoutTtsSettingInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutFeePoliciesInput = {
@@ -4266,6 +4343,7 @@ export type CreatorProfileCreateWithoutFeePoliciesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutFeePoliciesInput = {
@@ -4314,6 +4392,7 @@ export type CreatorProfileUncheckedCreateWithoutFeePoliciesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutFeePoliciesInput = {
@@ -4378,6 +4457,7 @@ export type CreatorProfileUpdateWithoutFeePoliciesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutFeePoliciesInput = {
@@ -4426,6 +4506,7 @@ export type CreatorProfileUncheckedUpdateWithoutFeePoliciesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutSettlementAccountInput = {
@@ -4474,6 +4555,7 @@ export type CreatorProfileCreateWithoutSettlementAccountInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutSettlementAccountInput = {
@@ -4522,6 +4604,7 @@ export type CreatorProfileUncheckedCreateWithoutSettlementAccountInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutSettlementAccountInput = {
@@ -4586,6 +4669,7 @@ export type CreatorProfileUpdateWithoutSettlementAccountInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutSettlementAccountInput = {
@@ -4634,6 +4718,7 @@ export type CreatorProfileUncheckedUpdateWithoutSettlementAccountInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutLedgerEntriesInput = {
@@ -4682,6 +4767,7 @@ export type CreatorProfileCreateWithoutLedgerEntriesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutLedgerEntriesInput = {
@@ -4730,6 +4816,7 @@ export type CreatorProfileUncheckedCreateWithoutLedgerEntriesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutLedgerEntriesInput = {
@@ -4794,6 +4881,7 @@ export type CreatorProfileUpdateWithoutLedgerEntriesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutLedgerEntriesInput = {
@@ -4842,6 +4930,7 @@ export type CreatorProfileUncheckedUpdateWithoutLedgerEntriesInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileCreateWithoutSettlementRequestsInput = {
@@ -4890,6 +4979,7 @@ export type CreatorProfileCreateWithoutSettlementRequestsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileUncheckedCreateWithoutSettlementRequestsInput = {
@@ -4938,6 +5028,7 @@ export type CreatorProfileUncheckedCreateWithoutSettlementRequestsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
   bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
   moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+  games?: Prisma.GameUncheckedCreateNestedManyWithoutCreatorInput
 }
 
 export type CreatorProfileCreateOrConnectWithoutSettlementRequestsInput = {
@@ -5002,6 +5093,7 @@ export type CreatorProfileUpdateWithoutSettlementRequestsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUpdateManyWithoutCreatorNestedInput
 }
 
 export type CreatorProfileUncheckedUpdateWithoutSettlementRequestsInput = {
@@ -5050,6 +5142,219 @@ export type CreatorProfileUncheckedUpdateWithoutSettlementRequestsInput = {
   limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
   bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
   moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
+  games?: Prisma.GameUncheckedUpdateManyWithoutCreatorNestedInput
+}
+
+export type CreatorProfileCreateWithoutGamesInput = {
+  id: string
+  code: string
+  displayName: string
+  channelName?: string | null
+  channelPlatform?: string | null
+  avatarUrl?: string | null
+  bannerUrl?: string | null
+  description?: string | null
+  liveOn?: boolean
+  liveUrl?: string | null
+  livePlatform?: string | null
+  youtubeLiveUrl?: string | null
+  instagramLiveUrl?: string | null
+  tiktokLiveUrl?: string | null
+  channelUrl?: string | null
+  status?: $Enums.CreatorStatus
+  donationAmount?: bigint | number
+  minAmount?: bigint | number
+  maxAmount?: bigint | number
+  paymentMode?: $Enums.PaymentMode | null
+  thanksMtMessage?: string | null
+  businessNo?: string | null
+  onboardingObsLinked?: boolean
+  onboardingTestDone?: boolean
+  approvedAt?: Date | string | null
+  suspendedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutCreatorProfileInput
+  codes?: Prisma.CreatorCodeCreateNestedManyWithoutCreatorInput
+  moRoutes?: Prisma.CreatorMoNumberCreateNestedManyWithoutCreatorInput
+  donations?: Prisma.DonationCreateNestedManyWithoutCreatorInput
+  donorLinks?: Prisma.DonorCreatorLinkCreateNestedManyWithoutCreatorInput
+  blockedDonors?: Prisma.BlockedDonorCreateNestedManyWithoutCreatorInput
+  overlaySetting?: Prisma.OverlaySettingCreateNestedOneWithoutCreatorInput
+  overlayTiers?: Prisma.OverlayTierCreateNestedManyWithoutCreatorInput
+  ttsSetting?: Prisma.TtsSettingCreateNestedOneWithoutCreatorInput
+  youtubeConnection?: Prisma.YouTubeConnectionCreateNestedOneWithoutCreatorInput
+  youtubeBroadcasts?: Prisma.YouTubeBroadcastCreateNestedManyWithoutCreatorInput
+  settlementAccount?: Prisma.SettlementAccountCreateNestedOneWithoutCreatorInput
+  ledgerEntries?: Prisma.SettlementLedgerCreateNestedManyWithoutCreatorInput
+  settlementRequests?: Prisma.SettlementRequestCreateNestedManyWithoutCreatorInput
+  feePolicies?: Prisma.FeePolicyCreateNestedManyWithoutCreatorInput
+  limitPolicies?: Prisma.DonationLimitPolicyCreateNestedManyWithoutCreatorInput
+  bannedWords?: Prisma.BannedWordCreateNestedManyWithoutCreatorInput
+  moMessages?: Prisma.MoInboundMessageCreateNestedManyWithoutCreatorInput
+}
+
+export type CreatorProfileUncheckedCreateWithoutGamesInput = {
+  id: string
+  userId: string
+  code: string
+  displayName: string
+  channelName?: string | null
+  channelPlatform?: string | null
+  avatarUrl?: string | null
+  bannerUrl?: string | null
+  description?: string | null
+  liveOn?: boolean
+  liveUrl?: string | null
+  livePlatform?: string | null
+  youtubeLiveUrl?: string | null
+  instagramLiveUrl?: string | null
+  tiktokLiveUrl?: string | null
+  channelUrl?: string | null
+  status?: $Enums.CreatorStatus
+  donationAmount?: bigint | number
+  minAmount?: bigint | number
+  maxAmount?: bigint | number
+  paymentMode?: $Enums.PaymentMode | null
+  thanksMtMessage?: string | null
+  businessNo?: string | null
+  onboardingObsLinked?: boolean
+  onboardingTestDone?: boolean
+  approvedAt?: Date | string | null
+  suspendedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  codes?: Prisma.CreatorCodeUncheckedCreateNestedManyWithoutCreatorInput
+  moRoutes?: Prisma.CreatorMoNumberUncheckedCreateNestedManyWithoutCreatorInput
+  donations?: Prisma.DonationUncheckedCreateNestedManyWithoutCreatorInput
+  donorLinks?: Prisma.DonorCreatorLinkUncheckedCreateNestedManyWithoutCreatorInput
+  blockedDonors?: Prisma.BlockedDonorUncheckedCreateNestedManyWithoutCreatorInput
+  overlaySetting?: Prisma.OverlaySettingUncheckedCreateNestedOneWithoutCreatorInput
+  overlayTiers?: Prisma.OverlayTierUncheckedCreateNestedManyWithoutCreatorInput
+  ttsSetting?: Prisma.TtsSettingUncheckedCreateNestedOneWithoutCreatorInput
+  youtubeConnection?: Prisma.YouTubeConnectionUncheckedCreateNestedOneWithoutCreatorInput
+  youtubeBroadcasts?: Prisma.YouTubeBroadcastUncheckedCreateNestedManyWithoutCreatorInput
+  settlementAccount?: Prisma.SettlementAccountUncheckedCreateNestedOneWithoutCreatorInput
+  ledgerEntries?: Prisma.SettlementLedgerUncheckedCreateNestedManyWithoutCreatorInput
+  settlementRequests?: Prisma.SettlementRequestUncheckedCreateNestedManyWithoutCreatorInput
+  feePolicies?: Prisma.FeePolicyUncheckedCreateNestedManyWithoutCreatorInput
+  limitPolicies?: Prisma.DonationLimitPolicyUncheckedCreateNestedManyWithoutCreatorInput
+  bannedWords?: Prisma.BannedWordUncheckedCreateNestedManyWithoutCreatorInput
+  moMessages?: Prisma.MoInboundMessageUncheckedCreateNestedManyWithoutCreatorInput
+}
+
+export type CreatorProfileCreateOrConnectWithoutGamesInput = {
+  where: Prisma.CreatorProfileWhereUniqueInput
+  create: Prisma.XOR<Prisma.CreatorProfileCreateWithoutGamesInput, Prisma.CreatorProfileUncheckedCreateWithoutGamesInput>
+}
+
+export type CreatorProfileUpsertWithoutGamesInput = {
+  update: Prisma.XOR<Prisma.CreatorProfileUpdateWithoutGamesInput, Prisma.CreatorProfileUncheckedUpdateWithoutGamesInput>
+  create: Prisma.XOR<Prisma.CreatorProfileCreateWithoutGamesInput, Prisma.CreatorProfileUncheckedCreateWithoutGamesInput>
+  where?: Prisma.CreatorProfileWhereInput
+}
+
+export type CreatorProfileUpdateToOneWithWhereWithoutGamesInput = {
+  where?: Prisma.CreatorProfileWhereInput
+  data: Prisma.XOR<Prisma.CreatorProfileUpdateWithoutGamesInput, Prisma.CreatorProfileUncheckedUpdateWithoutGamesInput>
+}
+
+export type CreatorProfileUpdateWithoutGamesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  displayName?: Prisma.StringFieldUpdateOperationsInput | string
+  channelName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  channelPlatform?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bannerUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  liveOn?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  liveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  livePlatform?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
+  thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  suspendedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutCreatorProfileNestedInput
+  codes?: Prisma.CreatorCodeUpdateManyWithoutCreatorNestedInput
+  moRoutes?: Prisma.CreatorMoNumberUpdateManyWithoutCreatorNestedInput
+  donations?: Prisma.DonationUpdateManyWithoutCreatorNestedInput
+  donorLinks?: Prisma.DonorCreatorLinkUpdateManyWithoutCreatorNestedInput
+  blockedDonors?: Prisma.BlockedDonorUpdateManyWithoutCreatorNestedInput
+  overlaySetting?: Prisma.OverlaySettingUpdateOneWithoutCreatorNestedInput
+  overlayTiers?: Prisma.OverlayTierUpdateManyWithoutCreatorNestedInput
+  ttsSetting?: Prisma.TtsSettingUpdateOneWithoutCreatorNestedInput
+  youtubeConnection?: Prisma.YouTubeConnectionUpdateOneWithoutCreatorNestedInput
+  youtubeBroadcasts?: Prisma.YouTubeBroadcastUpdateManyWithoutCreatorNestedInput
+  settlementAccount?: Prisma.SettlementAccountUpdateOneWithoutCreatorNestedInput
+  ledgerEntries?: Prisma.SettlementLedgerUpdateManyWithoutCreatorNestedInput
+  settlementRequests?: Prisma.SettlementRequestUpdateManyWithoutCreatorNestedInput
+  feePolicies?: Prisma.FeePolicyUpdateManyWithoutCreatorNestedInput
+  limitPolicies?: Prisma.DonationLimitPolicyUpdateManyWithoutCreatorNestedInput
+  bannedWords?: Prisma.BannedWordUpdateManyWithoutCreatorNestedInput
+  moMessages?: Prisma.MoInboundMessageUpdateManyWithoutCreatorNestedInput
+}
+
+export type CreatorProfileUncheckedUpdateWithoutGamesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  displayName?: Prisma.StringFieldUpdateOperationsInput | string
+  channelName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  channelPlatform?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  bannerUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  description?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  liveOn?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  liveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  livePlatform?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
+  thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  suspendedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  codes?: Prisma.CreatorCodeUncheckedUpdateManyWithoutCreatorNestedInput
+  moRoutes?: Prisma.CreatorMoNumberUncheckedUpdateManyWithoutCreatorNestedInput
+  donations?: Prisma.DonationUncheckedUpdateManyWithoutCreatorNestedInput
+  donorLinks?: Prisma.DonorCreatorLinkUncheckedUpdateManyWithoutCreatorNestedInput
+  blockedDonors?: Prisma.BlockedDonorUncheckedUpdateManyWithoutCreatorNestedInput
+  overlaySetting?: Prisma.OverlaySettingUncheckedUpdateOneWithoutCreatorNestedInput
+  overlayTiers?: Prisma.OverlayTierUncheckedUpdateManyWithoutCreatorNestedInput
+  ttsSetting?: Prisma.TtsSettingUncheckedUpdateOneWithoutCreatorNestedInput
+  youtubeConnection?: Prisma.YouTubeConnectionUncheckedUpdateOneWithoutCreatorNestedInput
+  youtubeBroadcasts?: Prisma.YouTubeBroadcastUncheckedUpdateManyWithoutCreatorNestedInput
+  settlementAccount?: Prisma.SettlementAccountUncheckedUpdateOneWithoutCreatorNestedInput
+  ledgerEntries?: Prisma.SettlementLedgerUncheckedUpdateManyWithoutCreatorNestedInput
+  settlementRequests?: Prisma.SettlementRequestUncheckedUpdateManyWithoutCreatorNestedInput
+  feePolicies?: Prisma.FeePolicyUncheckedUpdateManyWithoutCreatorNestedInput
+  limitPolicies?: Prisma.DonationLimitPolicyUncheckedUpdateManyWithoutCreatorNestedInput
+  bannedWords?: Prisma.BannedWordUncheckedUpdateManyWithoutCreatorNestedInput
+  moMessages?: Prisma.MoInboundMessageUncheckedUpdateManyWithoutCreatorNestedInput
 }
 
 
@@ -5071,6 +5376,7 @@ export type CreatorProfileCountOutputType = {
   limitPolicies: number
   bannedWords: number
   moMessages: number
+  games: number
 }
 
 export type CreatorProfileCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -5087,6 +5393,7 @@ export type CreatorProfileCountOutputTypeSelect<ExtArgs extends runtime.Types.Ex
   limitPolicies?: boolean | CreatorProfileCountOutputTypeCountLimitPoliciesArgs
   bannedWords?: boolean | CreatorProfileCountOutputTypeCountBannedWordsArgs
   moMessages?: boolean | CreatorProfileCountOutputTypeCountMoMessagesArgs
+  games?: boolean | CreatorProfileCountOutputTypeCountGamesArgs
 }
 
 /**
@@ -5190,6 +5497,13 @@ export type CreatorProfileCountOutputTypeCountMoMessagesArgs<ExtArgs extends run
   where?: Prisma.MoInboundMessageWhereInput
 }
 
+/**
+ * CreatorProfileCountOutputType without action
+ */
+export type CreatorProfileCountOutputTypeCountGamesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.GameWhereInput
+}
+
 
 export type CreatorProfileSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -5239,6 +5553,7 @@ export type CreatorProfileSelect<ExtArgs extends runtime.Types.Extensions.Intern
   limitPolicies?: boolean | Prisma.CreatorProfile$limitPoliciesArgs<ExtArgs>
   bannedWords?: boolean | Prisma.CreatorProfile$bannedWordsArgs<ExtArgs>
   moMessages?: boolean | Prisma.CreatorProfile$moMessagesArgs<ExtArgs>
+  games?: boolean | Prisma.CreatorProfile$gamesArgs<ExtArgs>
   _count?: boolean | Prisma.CreatorProfileCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["creatorProfile"]>
 
@@ -5340,7 +5655,7 @@ export type CreatorProfileSelectScalar = {
   updatedAt?: boolean
 }
 
-export type CreatorProfileOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "code" | "displayName" | "channelName" | "avatarUrl" | "bannerUrl" | "description" | "liveOn" | "liveUrl" | "livePlatform" | "youtubeLiveUrl" | "instagramLiveUrl" | "tiktokLiveUrl" | "channelUrl" | "status" | "donationAmount" | "minAmount" | "maxAmount" | "paymentMode" | "thanksMtMessage" | "businessNo" | "onboardingObsLinked" | "onboardingTestDone" | "approvedAt" | "suspendedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["creatorProfile"]>
+export type CreatorProfileOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "code" | "displayName" | "channelName" | "channelPlatform" | "avatarUrl" | "bannerUrl" | "description" | "liveOn" | "liveUrl" | "livePlatform" | "youtubeLiveUrl" | "instagramLiveUrl" | "tiktokLiveUrl" | "channelUrl" | "status" | "donationAmount" | "minAmount" | "maxAmount" | "paymentMode" | "thanksMtMessage" | "businessNo" | "onboardingObsLinked" | "onboardingTestDone" | "approvedAt" | "suspendedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["creatorProfile"]>
 export type CreatorProfileInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   codes?: boolean | Prisma.CreatorProfile$codesArgs<ExtArgs>
@@ -5360,6 +5675,7 @@ export type CreatorProfileInclude<ExtArgs extends runtime.Types.Extensions.Inter
   limitPolicies?: boolean | Prisma.CreatorProfile$limitPoliciesArgs<ExtArgs>
   bannedWords?: boolean | Prisma.CreatorProfile$bannedWordsArgs<ExtArgs>
   moMessages?: boolean | Prisma.CreatorProfile$moMessagesArgs<ExtArgs>
+  games?: boolean | Prisma.CreatorProfile$gamesArgs<ExtArgs>
   _count?: boolean | Prisma.CreatorProfileCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type CreatorProfileIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -5390,6 +5706,7 @@ export type $CreatorProfilePayload<ExtArgs extends runtime.Types.Extensions.Inte
     limitPolicies: Prisma.$DonationLimitPolicyPayload<ExtArgs>[]
     bannedWords: Prisma.$BannedWordPayload<ExtArgs>[]
     moMessages: Prisma.$MoInboundMessagePayload<ExtArgs>[]
+    games: Prisma.$GamePayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -5400,7 +5717,10 @@ export type $CreatorProfilePayload<ExtArgs extends runtime.Types.Extensions.Inte
     code: string
     displayName: string
     channelName: string | null
-  channelPlatform: string | null
+    /**
+     * 채널 플랫폼 (YOUTUBE|INSTAGRAM|FACEBOOK|TIKTOK|CHZZK|SOOP|TWITCH|OTHER)
+     */
+    channelPlatform: string | null
     avatarUrl: string | null
     /**
      * 후원 페이지 상단 배너 이미지 URL (크리에이터 꾸미기)
@@ -5869,6 +6189,7 @@ export interface Prisma__CreatorProfileClient<T, Null = never, ExtArgs extends r
   limitPolicies<T extends Prisma.CreatorProfile$limitPoliciesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.CreatorProfile$limitPoliciesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$DonationLimitPolicyPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   bannedWords<T extends Prisma.CreatorProfile$bannedWordsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.CreatorProfile$bannedWordsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$BannedWordPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   moMessages<T extends Prisma.CreatorProfile$moMessagesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.CreatorProfile$moMessagesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$MoInboundMessagePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  games<T extends Prisma.CreatorProfile$gamesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.CreatorProfile$gamesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$GamePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -6713,6 +7034,30 @@ export type CreatorProfile$moMessagesArgs<ExtArgs extends runtime.Types.Extensio
   take?: number
   skip?: number
   distinct?: Prisma.MoInboundMessageScalarFieldEnum | Prisma.MoInboundMessageScalarFieldEnum[]
+}
+
+/**
+ * CreatorProfile.games
+ */
+export type CreatorProfile$gamesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the Game
+   */
+  select?: Prisma.GameSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the Game
+   */
+  omit?: Prisma.GameOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.GameInclude<ExtArgs> | null
+  where?: Prisma.GameWhereInput
+  orderBy?: Prisma.GameOrderByWithRelationInput | Prisma.GameOrderByWithRelationInput[]
+  cursor?: Prisma.GameWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.GameScalarFieldEnum | Prisma.GameScalarFieldEnum[]
 }
 
 /**

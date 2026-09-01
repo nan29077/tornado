@@ -148,6 +148,62 @@ async function main() {
       update: {},
     });
     console.log(`  오버레이 URL(${c.name}): /overlay/${creator.id}?token=${overlayToken}`);
+    console.log(`  게임 오버레이 URL(${c.name}): /overlay/${creator.id}/game?token=${overlayToken}`);
+
+    // 방송 게임 예시. 크리에이터가 바로 눌러 볼 수 있게 종류별로 하나씩 넣어 둔다.
+    // 보상은 무형 보상(샤라웃 · 신청곡)의 이름일 뿐이며 금전 지급 수단이 아니다.
+    const gameCount = await prisma.game.count({ where: { creatorId: creator.id } });
+    if (gameCount === 0) {
+      const sampleGames = [
+        {
+          type: 'ROULETTE',
+          title: '오늘의 벌칙 룰렛',
+          items: ['노래 한 곡', '물 한 컵', '성대모사', '춤 10초', '시청자 칭찬'],
+          config: { prize: '' },
+          entryMode: 'LINK',
+          autoCloseSec: 0,
+        },
+        {
+          type: 'VOTE',
+          title: '다음 컨텐츠 정하기',
+          items: [],
+          config: { topic: '다음에 뭐 할까요?', choices: ['게임', '노래', '수다', '먹방'] },
+          entryMode: 'LINK',
+          autoCloseSec: 60,
+        },
+        {
+          type: 'KEYWORD',
+          title: '선착순 키워드 이벤트',
+          items: [],
+          config: { keyword: '도네이도', winnerCount: 3, prize: '샤라웃' },
+          entryMode: 'BOTH',
+          autoCloseSec: 30,
+        },
+        {
+          type: 'GOAL_GAUGE',
+          title: '오늘의 후원 목표',
+          items: [],
+          config: { target: 100000, reward: '목표 달성하면 노래 한 곡' },
+          entryMode: 'LINK',
+          autoCloseSec: 0,
+        },
+      ];
+
+      for (const g of sampleGames) {
+        await prisma.game.create({
+          data: {
+            id: newId(),
+            creatorId: creator.id,
+            type: g.type,
+            title: g.title,
+            items: g.items,
+            config: g.config,
+            entryMode: g.entryMode,
+            autoCloseSec: g.autoCloseSec,
+          },
+        });
+      }
+    }
 
     await prisma.ttsSetting.upsert({
       where: { creatorId: creator.id },

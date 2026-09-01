@@ -648,3 +648,63 @@ a {
   100% { opacity: 1; transform: translateX(0) scale(1); }
 }
 .animate-banner-in { animation: donaido-banner-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* -------------------------------------------------------------------------
+   게임 오버레이 전용 모션
+   1920x1080 고정 캔버스에서 재생된다. 미리보기는 캔버스째로 축소되므로
+   vh 등 뷰포트 단위를 쓰지 않는다.
+   ------------------------------------------------------------------------- */
+
+@keyframes donaido-game-in {
+  from { opacity: 0; transform: translateY(28px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-game-in { animation: donaido-game-in 460ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@keyframes donaido-game-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(18px) scale(0.98); }
+}
+.animate-game-out { animation: donaido-game-out 320ms ease-in both; }
+
+@keyframes donaido-game-pop {
+  0%   { opacity: 0; transform: scale(0.6); }
+  60%  { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.animate-game-pop { animation: donaido-game-pop 620ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* 순위 카드가 한 장씩 올라온다. 지연은 인라인 style 로 준다. */
+@keyframes donaido-rank-in {
+  from { opacity: 0; transform: translateX(-36px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.animate-rank-in { animation: donaido-rank-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* 대기 중인 룰렛이 천천히 돈다 (결과가 나오면 멈춘다) */
+@keyframes donaido-wheel-idle {
+  to { transform: rotate(360deg); }
+}
+.animate-wheel-idle { animation: donaido-wheel-idle 24s linear infinite; }
+
+/* 게이지 위를 훑고 지나가는 빛 */
+@keyframes donaido-gauge-shine {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(320%); }
+}
+.animate-gauge-shine { animation: donaido-gauge-shine 2.4s ease-in-out infinite; }
+
+/* 참여자 수처럼 자주 바뀌는 숫자에 붙이는 짧은 강조 */
+@keyframes donaido-count-pulse {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+.animate-count-pulse { animation: donaido-count-pulse 420ms ease-out both; }
+
+/* 마감 임박 표시 */
+@keyframes donaido-urgent {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+.animate-urgent { animation: donaido-urgent 900ms ease-in-out infinite; }

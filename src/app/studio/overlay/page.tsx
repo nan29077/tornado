@@ -7,6 +7,8 @@ import { OverlayTiersEditor } from '@/components/studio/overlay-tiers-editor';
 import { OverlayQuickSettings } from '@/components/studio/overlay-quick-settings';
 import { OverlayLivePreview } from '@/components/studio/overlay-live-preview';
 import { OverlayTestHistory, type OverlayTestHistoryRow } from '@/components/studio/overlay-test-history';
+import { OverlayTabs } from '@/components/studio/overlay-tabs';
+import { GameStudio } from '@/components/studio/game-studio';
 import {
   regenerateOverlayTokenAction,
   testOverlayAction,
@@ -20,6 +22,7 @@ import { deliveryStatusLabel } from '@/lib/labels';
 import { findCharacterSticker } from '@/lib/overlay-effect-catalog';
 import { listOverlayTiers } from '@/server/services/overlay-tiers';
 import { countOverlayConnections, MAX_OVERLAY_CONNECTIONS } from '@/server/services/overlay-connections';
+import { findActiveRound } from '@/server/services/game-state';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,8 +61,13 @@ function readTestPayload(payload: unknown): { donorName: string; amount: string;
   };
 }
 
-export default async function StudioOverlayPage() {
+type Search = Record<string, string | string[] | undefined>;
+
+export default async function StudioOverlayPage({ searchParams }: { searchParams: Promise<Search> }) {
   const { creatorId } = await requireCreator();
+  const sp = await searchParams;
+  const rawTab = Array.isArray(sp.tab) ? sp.tab[0] : sp.tab;
+  const tab: 'donation' | 'game' = rawTab === 'game' ? 'game' : 'donation';
   const [setting, ttsSetting, tiers, testEvents] = await Promise.all([
     prisma.overlaySetting.findUnique({ where: { creatorId } }),
     prisma.ttsSetting.findUnique({ where: { creatorId } }),
@@ -105,18 +113,22 @@ export default async function StudioOverlayPage() {
   // (이 서버 인스턴스 기준. 다중 인스턴스 배포에서는 인스턴스별 수치다)
   const liveConnections = countOverlayConnections(creatorId);
 
+  // 게임이 방송 화면에 떠 있으면 탭 라벨에 상태 점을 찍는다(다른 탭에 있어도 알 수 있게).
+  const activeRound = await findActiveRound(creatorId);
+
   const urlBase = `${env.baseUrl}/overlay/${creatorId}?token=`;
+  const gameUrlBase = `${env.baseUrl}/overlay/${creatorId}/game?token=`;
 
   return (
     <>
-      <PageHeader title="방송·오버레이" description="OBS·PRISM 브라우저 소스 오버레이를 관리합니다. 결제가 완료된 후원은 유튜브 댓글 전송과 동시에 감사 애니메이션이 오버레이에 표시됩니다." />
+      <PageHeader title="후원·게임 오버레이" description="OBS·PRISM 브라우저 소스를 관리합니다. 후원 알림과 시청자 참여 게임을 각각 방송 화면에 올릴 수 있습니다." />
 
       <div className="space-y-6">
         {/* ── 1. OBS 연결 ─────────────────────────────────────── */}
         <section>
           <SectionTitle
             title="OBS 연결"
-            description="OBS 또는 PRISM 에서 [소스 추가] → [브라우저]를 선택하고 아래 URL을 붙여넣으면 끝입니다. (권장 크기 1920x1080)"
+            description="OBS 또는 PRISM 에서 [소스 추가] → [브라우저]를 선택하고 아래 URL을 붙여넣습니다. 후원 알림과 게임은 소스를 나눠 등록하면 크기와 위치를 따로 잡을 수 있습니다. (권장 크기 1920x1080)"
           />
           <div className="grid gap-2.5 lg:grid-cols-2">
             <Card>
@@ -144,10 +156,20 @@ export default async function StudioOverlayPage() {
               </div>
               <div className="mt-3 space-y-3">
                 <CopyField
-                  label="URL 형식"
+                  label="후원 알림 소스 URL"
                   value={`${urlBase}<발급된 토큰>`}
-                  hint="토큰은 해시로만 저장되어 원문을 다시 확인할 수 없습니다. 전체 URL은 발급 직후 한 번만 표시되니 그때 복사해 두세요."
+                  hint="후원이 들어올 때 감사 애니메이션이 뜨는 소스입니다."
                 />
+                <CopyField
+                  label="게임 소스 URL"
+                  value={`${gameUrlBase}<발급된 토큰>`}
+                  hint="시청자 참여 게임이 뜨는 소스입니다. 토큰은 위와 같은 값을 씁니다. 게임을 쓰지 않는다면 등록하지 않아도 됩니다."
+                />
+                <p className="text-[12px] leading-relaxed text-ink-400">
+                  토큰은 해시로만 저장되어 원문을 다시 확인할 수 없습니다. 전체 URL은 발급 직후 한 번만 표시되니
+                  그때 복사해 두세요. 소스를 두 개로 나누면 게임은 화면 가운데 크게, 후원 알림은 아래쪽에 작게
+                  배치할 수 있고 게임만 잠시 숨기는 것도 됩니다.
+                </p>
                 <p className="text-[12px] leading-relaxed text-ink-400">
                   OBS · PRISM 에서 브라우저 소스를 열어 두면 위 [현재 연결] 수치가 올라갑니다. 아래 미리보기 창은
                   이 수치에 포함되지 않습니다. 방송용 브라우저 소스는 최대 {MAX_OVERLAY_CONNECTIONS}개까지 동시에
@@ -225,6 +247,13 @@ export default async function StudioOverlayPage() {
           </details>
         </section>
 
+        {/* ── 탭 ─────────────────────────────────────────────── */}
+        <OverlayTabs active={tab} gameLive={Boolean(activeRound)} />
+
+        {tab === 'game' ? (
+          <GameStudio creatorId={creatorId} />
+        ) : (
+          <>
         {/* ── 2. 알림 꾸미기 (효과 · 테마 · TTS) ───────────────── */}
         <section>
           {setting ? (
@@ -348,6 +377,8 @@ export default async function StudioOverlayPage() {
             <OverlayTestHistory rows={testHistory} />
           </Card>
         </section>
+          </>
+        )}
       </div>
     </>
   );
