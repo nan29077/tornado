@@ -303,7 +303,15 @@ export function bootWarnings(): string[] {
  */
 export function assertBootSafety(): void {
   const problems = assertProductionSafety();
-  if (problems.length === 0) return;
-  const msg = `[env] 운영 환경 설정 점검 실패\n- ${problems.join('\n- ')}`;
-  throw new Error(msg);
+  if (problems.length > 0) {
+    const msg = `[env] 운영 환경 설정 점검 실패\n- ${problems.join('\n- ')}`;
+    throw new Error(msg);
+  }
+  // staging/prod 에서 local 암호화 공급자를 쓰면서 마스터키가 없으면 기동을 막는다.
+  // 빈 키로 조용히 뜬 뒤 encrypt() 첫 호출에서 예외가 터지는 fail-open 을 방지한다.
+  if (!IS_LOCAL && env.crypto.provider === 'local' && !env.crypto.masterKey) {
+    throw new Error(
+      `[env] CRYPTO_MASTER_KEY 가 설정되지 않았습니다. APP_ENV=${APP_ENV}, CRYPTO_PROVIDER=local 환경에서는 필수입니다.`,
+    );
+  }
 }

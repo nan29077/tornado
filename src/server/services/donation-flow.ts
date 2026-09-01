@@ -708,6 +708,8 @@ export async function startPinAuthorization(donationId: string): Promise<PinStar
   });
   if (!donation) return { ok: false, status: 'PAYMENT_FAILED', message: '후원 거래를 찾을 수 없습니다.' };
   if (!donation.donor) return { ok: false, status: 'UNREGISTERED', message: '후원자 정보가 없습니다.' };
+  if (!donation.donorId) return { ok: false, status: 'UNREGISTERED', message: '후원자 정보가 없습니다.' };
+  const { donorId } = donation;
 
   // 이미 발급된 세션이 있으면 새로 만들지 않는다(문자 재수신 시 링크가 늘어나는 것을 막는다).
   const existing = await prisma.paymentPinSession.findUnique({ where: { donationId } });
@@ -726,7 +728,7 @@ export async function startPinAuthorization(donationId: string): Promise<PinStar
   }
 
   const token = await prisma.paymentMethodToken.findFirst({
-    where: { donorId: donation.donorId!, status: 'ACTIVE' },
+    where: { donorId: donorId, status: 'ACTIVE' },
     orderBy: { registeredAt: 'desc' },
   });
   if (!token) {
@@ -751,7 +753,7 @@ export async function startPinAuthorization(donationId: string): Promise<PinStar
     const reason = issued.message ?? 'PIN 인증창을 생성하지 못했습니다.';
     await setStatus(donationId, 'PAYMENT_FAILED', `PIN 링크 발급 실패: ${reason}`);
     await sendMtForDonor(
-      donation.donorId!,
+      donorId,
       tpl.tplDonationFailed(donation.creator.displayName, reason),
       donationId,
       donation.creatorId,
@@ -851,14 +853,16 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
   });
   if (!donation) return { ok: false, status: 'PAYMENT_FAILED', message: '후원 거래를 찾을 수 없습니다.' };
   if (!donation.donor) return { ok: false, status: 'UNREGISTERED', message: '후원자 정보가 없습니다.' };
+  if (!donation.donorId) return { ok: false, status: 'UNREGISTERED', message: '후원자 정보가 없습니다.' };
   const donor = donation.donor;
+  const { donorId } = donation;
 
   if (['PAYMENT_SUCCESS', 'BROADCAST_PENDING', 'BROADCASTED', 'PARTIAL_DELIVERY_FAILED', 'SETTLEMENT_PENDING', 'SETTLED'].includes(donation.status)) {
     return { ok: true, status: donation.status, message: '이미 결제가 완료된 거래입니다.' };
   }
 
   const token = await prisma.paymentMethodToken.findFirst({
-    where: { donorId: donation.donorId!, status: 'ACTIVE' },
+    where: { donorId: donorId, status: 'ACTIVE' },
     orderBy: { registeredAt: 'desc' },
   });
   if (!token) {
@@ -920,6 +924,10 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
     maxWait: 5_000,
     timeout: 10_000,
   });
+  // TODO(#counter-recovery): commitCounters 트랜잭션과 adapter.approve() 사이는 원자적이지 않다.
+  // 두 작업 사이에 프로세스가 크래시하면 카운터가 소진 상태로 고착된다.
+  // 복구를 위해서는 status=PENDING_PAYMENT 이고 paidAt=null 인 donation 을 주기적으로 스캔해
+  // DonationCounter 를 실결제 결과 기준으로 재집계하는 배치(/api/cron/cleanup)가 필요하다.
 
   const limitNow = decision.limit;
   if (!limitNow.ok) {
@@ -927,7 +935,7 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
     await prisma.riskDetection.create({
       data: {
         id: newId(),
-        donorId: donation.donorId!,
+        donorId: donorId,
         creatorId: donation.creatorId,
         donationId: donation.id,
         type: limitNow.code === 'VELOCITY' || limitNow.code === 'COOLDOWN' ? 'VELOCITY' : 'DAILY_LIMIT',
@@ -936,7 +944,7 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
       },
     });
     await sendMtForDonor(
-      donation.donorId!,
+      donorId,
       tpl.tplLimitBlocked(donation.creator.displayName, limitNow.message ?? '이용 한도'),
       donationId,
       donation.creatorId,
@@ -945,7 +953,7 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
   }
 
   if (decision.alreadyApproved) {
-    return { ok: true, status: 'PAYMENT_SUCCESS', message: '이미 승인된 결제입니다.' };
+    return { ok: true, status: 'SETTLEMENT_PENDING', message: '이미 승인된 결제입니다.' };
   }
   const txn = decision.txn!;
 
@@ -1056,8 +1064,8 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
     // 결제 판정 트랜잭션에서 잡아둔 집계 예약을 되돌린다(실패한 건은 한도를 쓰지 않는다).
     await rollbackCounters(donor.id, donation.creatorId, donation.amount, reservedAt);
     const policy = await resolvePolicy(donation.creatorId, donation.donorId);
-    const locked = await registerFailure(donation.donorId!, policy.failureLockThreshold);
-    await sendMtForDonor(donation.donorId!, tpl.tplDonationFailed(donation.creator.displayName, failure?.message), donationId, donation.creatorId);
+    const locked = await registerFailure(donorId, policy.failureLockThreshold);
+    await sendMtForDonor(donorId, tpl.tplDonationFailed(donation.creator.displayName, failure?.message), donationId, donation.creatorId);
     logger.warn('결제 실패', { donationId, phone, locked, code: failure?.code });
     return { ok: false, status: 'PAYMENT_FAILED', message: failure?.message ?? '결제에 실패했습니다.' };
   }
@@ -1092,9 +1100,9 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
       ],
     });
     await tx.donorCreatorLink.upsert({
-      where: { donorId_creatorId: { donorId: donation.donorId!, creatorId: donation.creatorId } },
+      where: { donorId_creatorId: { donorId: donorId, creatorId: donation.creatorId } },
       create: {
-        id: newId(), donorId: donation.donorId!, creatorId: donation.creatorId,
+        id: newId(), donorId: donorId, creatorId: donation.creatorId,
         consentedAt: new Date(), totalAmount: donation.amount, totalCount: 1, lastDonatedAt: approved!.approvedAt,
       },
       update: {
@@ -1116,15 +1124,15 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
   });
 
   // 집계는 결제 판정 트랜잭션에서 이미 반영(예약)했다. 여기서 다시 더하면 두 번 세어진다.
-  await clearFailures(donation.donorId!);
+  await clearFailures(donorId);
 
   // 누적 후원금 안내
   const link = await prisma.donorCreatorLink.findUnique({
-    where: { donorId_creatorId: { donorId: donation.donorId!, creatorId: donation.creatorId } },
+    where: { donorId_creatorId: { donorId: donorId, creatorId: donation.creatorId } },
     select: { totalAmount: true },
   });
   await sendMtForDonor(
-    donation.donorId!,
+    donorId,
     tpl.tplDonationSuccess({
       donorName: donation.displayName,
       creatorName: donation.creator.displayName,
@@ -1147,7 +1155,7 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
     logger.error('방송 송출 실패 (결제는 정상 완료)', { donationId, message: (e as Error).message });
   }
 
-  return { ok: true, status: 'PAYMENT_SUCCESS', message: '후원이 완료되었습니다.' };
+  return { ok: true, status: 'SETTLEMENT_PENDING', message: '후원이 완료되었습니다.' };
 }
 
 // ---------------------------------------------------------------------------
