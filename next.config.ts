@@ -21,6 +21,25 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ['*.trycloudflare.com'],
 
   /**
+   * 위 allowedDevOrigins 는 화면 데이터(RSC) 요청만 풀어 준다.
+   * **서버 액션은 별도의 출처(CSRF) 검사를 거치고**, 그 예외는 여기서만 지정할 수 있다.
+   * 이게 없으면 터널 주소로 접속했을 때 [테스트 후원 보내기] 같은 서버 액션 요청이
+   * Next.js 단계에서 거부되어, 화면에는 아무 반응도 없이 동작하지 않는 것처럼 보인다.
+   *
+   * 개발 모드에서만 켠다. 운영에서는 실제 도메인만 정상 출처이므로 예외를 두지 않는다.
+   * (터널 주소를 운영에서까지 신뢰하면 남의 터널에서 서버 액션을 부를 수 있다)
+   */
+  ...(process.env.NODE_ENV === 'production'
+    ? {}
+    : {
+        experimental: {
+          serverActions: {
+            allowedOrigins: ['*.trycloudflare.com'],
+          },
+        },
+      }),
+
+  /**
    * 컨테이너 배포(ECS/Fargate)에서는 standalone 출력을 쓴다.
    * node_modules 전체를 이미지에 싣지 않아 이미지가 작아지고 콜드스타트가 빨라진다.
    *

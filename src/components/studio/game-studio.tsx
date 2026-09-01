@@ -5,6 +5,8 @@ import {
   BarChart3,
   Check,
   Disc3,
+  Eye,
+  EyeOff,
   ExternalLink,
   Hash,
   HelpCircle,
@@ -131,6 +133,28 @@ interface HistoryRow {
 
 type Action = 'start' | 'spin' | 'close' | 'reopen' | 'reveal' | 'undo' | 'end' | 'trace';
 
+/**
+ * 오류가 난 자리.
+ *
+ * 예전에는 오류 문구를 화면 맨 위에 한 곳에만 띄웠다. 그런데 [화면에 띄우기] 는 목록 아래쪽에
+ * 있어서, 실패해도 문구가 화면 밖(위쪽)에 떠 크리에이터에게는 "눌러도 아무 반응이 없는" 것으로
+ * 보였다. 그래서 **누른 버튼 근처**에 띄우고, 동시에 토스트로도 알린다.
+ */
+type ErrorScope = 'control' | 'list' | 'form';
+
+const NETWORK_ERROR =
+  '서버에 연결하지 못했습니다. 인터넷 연결과 서버 상태를 확인한 뒤 다시 눌러 주세요.';
+
+/** 서버가 문구를 주지 않았을 때, 상태 코드만으로도 무엇을 해야 할지 알려 준다. */
+function messageForStatus(status: number): string {
+  if (status === 401) return '로그인이 풀렸습니다. 화면을 새로고침한 뒤 다시 로그인해 주세요.';
+  if (status === 403) return '이 작업을 할 권한이 없습니다.';
+  if (status === 404) return '대상을 찾을 수 없습니다. 목록을 새로고침해 주세요.';
+  if (status === 429) return '요청이 너무 잦습니다. 잠시 뒤 다시 눌러 주세요.';
+  if (status >= 500) return '서버에서 오류가 났습니다. 잠시 뒤 다시 눌러 주세요.';
+  return `처리에 실패했습니다. (${status})`;
+}
+
 export function GameStudio({ creatorId, compact = false }: { creatorId: string; compact?: boolean }) {
   const [games, setGames] = React.useState<GameRow[]>([]);
   const [history, setHistory] = React.useState<HistoryRow[]>([]);
@@ -138,11 +162,12 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [toast, setToast] = React.useState<{ text: string; undo?: () => void } | null>(null);
-  const [error, setError] = React.useState('');
+  const [problem, setProblem] = React.useState<{ scope: ErrorScope; text: string } | null>(null);
 
   const [form, setForm] = React.useState<GameFormValue | null>(null);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [qrOpen, setQrOpen] = React.useState(false);
+  const [previewGameId, setPreviewGameId] = React.useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = React.useState<GameRow | null>(null);
   const [removePhase, setRemovePhase] = React.useState<ConfirmPhase>('closed');
 
@@ -153,6 +178,19 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
     setToast({ text, undo });
     toastTimer.current = setTimeout(() => setToast(null), undo ? 5000 : 2600);
   }, []);
+
+  /**
+   * 실패를 알린다.
+   * 문구는 누른 자리에 남겨 두고(스크롤해도 다시 찾을 수 있게), 토스트로 한 번 더 띄운다.
+   * 토스트는 화면 아래 고정이라 목록 어디까지 내려가 있어도 반드시 보인다.
+   */
+  const fail = React.useCallback(
+    (scope: ErrorScope, text: string) => {
+      setProblem({ scope, text });
+      showToast(text);
+    },
+    [showToast],
+  );
 
   const load = React.useCallback(async () => {
     try {
@@ -211,7 +249,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
   const control = React.useCallback(
     async (action: Action, extra?: Record<string, unknown>) => {
       setBusy(true);
-      setError('');
+      setProblem(null);
       try {
         const res = await fetch('/api/studio/games/control', {
           method: 'POST',
@@ -220,26 +258,26 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          setError(data.error || '처리에 실패했습니다.');
+          fail('control', data.error || messageForStatus(res.status));
           return false;
         }
         setState(data.state ?? null);
         void load();
         return true;
       } catch {
-        setError('네트워크 오류입니다. 잠시 후 다시 시도해 주세요.');
+        fail('control', NETWORK_ERROR);
         return false;
       } finally {
         setBusy(false);
       }
     },
-    [state?.gameId, state?.roundId, load],
+    [state?.gameId, state?.roundId, load, fail],
   );
 
   const startGame = React.useCallback(
     async (gameId: string) => {
       setBusy(true);
-      setError('');
+      setProblem(null);
       try {
         const res = await fetch('/api/studio/games/control', {
           method: 'POST',
@@ -248,17 +286,22 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          setError(data.error || '처리에 실패했습니다.');
+          fail('list', data.error || messageForStatus(res.status));
           return;
         }
         setState(data.state ?? null);
+        setPreviewGameId(null);
         showToast('방송 화면에 띄웠습니다');
         void load();
+      } catch {
+        // 예전에는 catch 가 없어 네트워크 실패를 통째로 삼켰다.
+        // 버튼만 잠깐 눌렸다 돌아오고 아무 문구도 뜨지 않아 "안 된다"로만 보였다.
+        fail('list', NETWORK_ERROR);
       } finally {
         setBusy(false);
       }
     },
-    [load, showToast],
+    [load, showToast, fail],
   );
 
   // ------------------------------------------------------- 주 동작 결정
@@ -291,13 +334,27 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
     }
   }, [state, primary, busy, control, showToast]);
 
-  // 단축키. 입력 중에는 동작하지 않는다.
+  /**
+   * 단축키.
+   *
+   * 방송 중에 쓰는 단축키라 잘못 걸리면 그대로 방송 사고가 된다. 그래서 세 겹으로 막는다.
+   *  1. 입력 칸(input·textarea·select·직접 편집)에 커서가 있을 때
+   *  2. **게임 폼이 열려 있을 때** — 예전에는 여기가 뚫려 있었다. 폼의 [게임 종류] 카드는
+   *     버튼이라 1번 조건에 걸리지 않아, 카드에 포커스를 두고 Space·Enter 를 누르면
+   *     카드 선택과 동시에 진행 중인 회차가 마감·발표됐다.
+   *  3. **버튼·링크에 포커스가 있을 때** — 브라우저가 그 버튼을 누르는 것과 전역 단축키가
+   *     겹쳐 두 가지가 한 번에 실행되는 것을 막는다.
+   * 확인창이 떠 있을 때도 쉰다. 그때 Space·Enter 는 확인창의 것이다.
+   */
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement | null;
-      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      // target 이 항상 요소인 것은 아니다(window 로 들어오는 합성 이벤트 등). 먼저 좁혀 둔다.
+      const el = e.target instanceof HTMLElement ? e.target : null;
+      if (el && /^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(el.tagName)) return;
       if (el?.isContentEditable) return;
+      if (el?.getAttribute('role') === 'button') return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (form || removePhase !== 'closed') return;
 
       if (e.key === 'Escape') {
         setQrOpen(false);
@@ -317,13 +374,13 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [state, runPrimary, control]);
+  }, [state, runPrimary, control, form, removePhase]);
 
   // --------------------------------------------------------------- 저장
   const saveForm = async () => {
     if (!form) return;
     setBusy(true);
-    setError('');
+    setProblem(null);
     try {
       const payload = {
         type: form.type,
@@ -347,13 +404,15 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
           });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || '저장에 실패했습니다.');
+        fail('form', data.error || messageForStatus(res.status));
         return;
       }
       setForm(null);
       setEditingId(null);
       showToast(editingId ? '수정했습니다' : '게임을 만들었습니다');
       void load();
+    } catch {
+      fail('form', NETWORK_ERROR);
     } finally {
       setBusy(false);
     }
@@ -362,9 +421,24 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
   const removeGame = async () => {
     if (!removeTarget) return;
     setRemovePhase('busy');
-    const res = await fetch(`/api/studio/games/${removeTarget.id}`, { method: 'DELETE' });
-    setRemovePhase('done');
-    if (res.ok) void load();
+    try {
+      const res = await fetch(`/api/studio/games/${removeTarget.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        // 실패했는데 "삭제했습니다" 화면을 띄우면 안 된다. 알림창을 닫고 이유를 보여 준다.
+        const data = await res.json().catch(() => ({}));
+        setRemovePhase('closed');
+        setRemoveTarget(null);
+        fail('list', data.error || messageForStatus(res.status));
+        return;
+      }
+      setRemovePhase('done');
+      if (previewGameId === removeTarget.id) setPreviewGameId(null);
+      void load();
+    } catch {
+      setRemovePhase('closed');
+      setRemoveTarget(null);
+      fail('list', NETWORK_ERROR);
+    }
   };
 
   const toggleFulfilled = async (winnerId: string, done: boolean) => {
@@ -388,7 +462,13 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
 
   return (
     <div className={compact ? 'space-y-4' : 'space-y-6'}>
-      {error ? <Notice tone="danger">{error}</Notice> : null}
+      {/*
+        진행 컨트롤에서 난 오류만 여기에 띄운다. 목록·폼에서 난 오류는 그 자리에 띄운다.
+        단 팝아웃 창(compact)은 목록·폼 자체가 없으므로 모든 오류를 여기서 받는다.
+      */}
+      {problem && (compact || problem.scope === 'control') ? (
+        <Notice tone="danger">{problem.text}</Notice>
+      ) : null}
 
       {/* 1. 진행 컨트롤 */}
       {state ? (
@@ -456,6 +536,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
                     size="sm"
                     onClick={() => {
                       setEditingId(null);
+                      setProblem(null);
                       setForm(emptyGameForm());
                     }}
                   >
@@ -465,6 +546,17 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
               }
             />
 
+            {problem?.scope === 'list' ? (
+              <div className="mb-2.5">
+                <Notice tone="danger">{problem.text}</Notice>
+              </div>
+            ) : null}
+            {form && problem?.scope === 'form' ? (
+              <div className="mb-2.5">
+                <Notice tone="danger">{problem.text}</Notice>
+              </div>
+            ) : null}
+
             {form ? (
               <GameForm
                 value={form}
@@ -473,6 +565,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
                 onCancel={() => {
                   setForm(null);
                   setEditingId(null);
+                  setProblem(null);
                 }}
                 busy={busy}
                 mode={editingId ? 'edit' : 'create'}
@@ -490,6 +583,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
                     <Button
                       onClick={() => {
                         setEditingId(null);
+                        setProblem(null);
                         setForm(emptyGameForm());
                       }}
                     >
@@ -527,12 +621,32 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
                           <Play size={15} strokeWidth={1.8} />
                           {live ? '띄우는 중' : '화면에 띄우기'}
                         </Button>
+                        {/*
+                          띄우기 전에 방송 화면을 확인한다.
+                          회차를 만들지 않으므로 진행 이력에 아무것도 남지 않는다.
+                        */}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setPreviewGameId((cur) => (cur === g.id ? null : g.id))}
+                        >
+                          {previewGameId === g.id ? (
+                            <>
+                              <EyeOff size={15} strokeWidth={1.8} /> 미리보기 닫기
+                            </>
+                          ) : (
+                            <>
+                              <Eye size={15} strokeWidth={1.8} /> 미리보기
+                            </>
+                          )}
+                        </Button>
                         <Button
                           size="sm"
                           variant="secondary"
                           disabled={live}
                           onClick={() => {
                             setEditingId(g.id);
+                            setProblem(null);
                             setForm({
                               type: g.type as GameType,
                               title: g.title,
@@ -562,6 +676,27 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
                         <p className="mt-2 text-[12px] text-ink-400">
                           방송 중인 게임은 수정·삭제할 수 없습니다. 화면에서 내린 뒤 바꿔 주세요.
                         </p>
+                      ) : null}
+
+                      {previewGameId === g.id ? (
+                        <div className="mt-3">
+                          <p className="mb-1.5 text-[12px] font-semibold text-ink-500">
+                            띄우면 이렇게 보입니다 — 참여자 0명 기준의 고정 화면입니다.
+                          </p>
+                          <div className="overflow-hidden rounded-xl border border-ink-100" style={CHECKER_STYLE}>
+                            <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
+                              <iframe
+                                title={`${g.title} 미리보기`}
+                                src={`/overlay/${encodeURIComponent(creatorId)}/game?preview=1&sample=${encodeURIComponent(g.id)}`}
+                                className="absolute inset-0 h-full w-full"
+                              />
+                            </div>
+                          </div>
+                          <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-400">
+                            회차를 만들지 않는 확인용 화면이라 방송에는 나가지 않고 진행 이력에도 남지
+                            않습니다. QR 은 자리만 보여 주는 것이라 찍어도 참여되지 않습니다.
+                          </p>
+                        </div>
                       ) : null}
                     </Card>
                   );
@@ -868,7 +1003,8 @@ function ControlPanel({
       {!compact ? (
         <p className="mt-3 text-[11.5px] leading-relaxed text-ink-400">
           단축키 — <b className="text-ink-700">Space</b> 또는 <b className="text-ink-700">Enter</b> 는 위의 큰 버튼,{' '}
-          <b className="text-ink-700">Backspace</b> 는 마감·발표 취소입니다. 입력 칸에 커서가 있을 때는 동작하지 않습니다.
+          <b className="text-ink-700">Backspace</b> 는 마감·발표 취소입니다. 입력 칸이나 버튼에 커서가 있을 때,
+          게임을 만들거나 고치는 중일 때는 동작하지 않습니다.
           진행 버튼에는 확인창을 두지 않았습니다. 잘못 눌러도 위의 [마감 취소] · [발표 취소]로 되돌릴 수 있습니다.
         </p>
       ) : null}

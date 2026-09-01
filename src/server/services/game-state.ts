@@ -265,6 +265,59 @@ export async function buildStudioStateForRound(roundId: string): Promise<GameStu
   };
 }
 
+/** 미리보기 전용 참여 코드. 실제로 참여할 수 있는 코드가 아니다. */
+const SAMPLE_JOIN_CODE = 'PREVIEW';
+
+/**
+ * 회차를 시작하지 않고 "이 게임을 띄우면 방송 화면이 어떻게 보이는지"만 만들어 준다.
+ *
+ * 왜 필요한가 — 지금까지는 게임을 실제로 띄워야만 미리보기가 나타났다. 그래서 방송 전에
+ * 배치·글자 크기를 확인하려면 회차를 열었다가 다시 내려야 했고, 그 흔적이 진행 이력에 남았다.
+ *
+ * 규칙
+ *  - **DB 를 건드리지 않는다.** 회차도 참여자도 만들지 않는다. 읽기 전용이다.
+ *  - 정답·키워드는 실제 회차와 똑같이 `publicConfig(..., false)` 로 걸러 낸다.
+ *    미리보기는 크리에이터 본인만 보지만, 공개 상태에 비밀이 섞이는 경로 자체를 만들지 않는다.
+ *  - 참여자 수 0, 결과 null 로 둔다. 방금 띄운 직후와 같은 화면이 된다.
+ *  - 남은 시간은 넣지 않는다. 미리보기 창을 오래 열어 두면 00:00 에 멈춰 잘못된 인상을 준다.
+ */
+export async function buildSampleState(creatorId: string, gameId: string): Promise<GamePublicState | null> {
+  const game = await prisma.game.findFirst({ where: { id: gameId, creatorId } });
+  if (!game) return null;
+
+  const type = game.type;
+  const config = asRecord(game.config);
+  const shown = publicConfig(type, config, false);
+  const choices = usesChoices(type) ? asStringArray(config.choices) : [];
+
+  return {
+    creatorId,
+    gameId: game.id,
+    roundId: `sample-${game.id}`,
+    type,
+    title: game.title,
+    status: 'OPEN',
+    items: asStringArray(game.items),
+    destinations: type === 'LADDER' ? asStringArray(config.destinations) : [],
+    choices,
+    topic: String(shown.topic ?? ''),
+    question: String(shown.question ?? ''),
+    counts: usesChoices(type) && choices.length > 0 ? choices.map(() => 0) : null,
+    participantCount: 0,
+    participantNames: [],
+    correctCount: type === 'KEYWORD' ? 0 : null,
+    goal: usesDonationTotal(type) ? { target: Number(config.target ?? 0), current: 0 } : null,
+    range: type === 'NUMBER_GUESS' ? { min: Number(config.min ?? 0), max: Number(config.max ?? 0) } : null,
+    prize: String(config.prize ?? config.reward ?? ''),
+    joinUrl: joinUrlFor(game.entryMode, type, SAMPLE_JOIN_CODE, 'OPEN'),
+    joinCode: usesEntries(type) ? SAMPLE_JOIN_CODE : null,
+    closesAt: null,
+    result: null,
+    winners: [],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 /** 참여 링크. 후원 자동 참여 전용 게임은 링크를 만들지 않는다. */
 function joinUrlFor(entryMode: string, type: string, joinCode: string, status: RoundStatus): string | null {
   if (!usesEntries(type)) return null;

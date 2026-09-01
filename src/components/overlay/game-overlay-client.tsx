@@ -70,16 +70,29 @@ export function GameOverlayClient({
   token,
   preview = false,
   debug = false,
+  sample = null,
+  sampleMode = false,
 }: {
   creatorId: string;
   token: string;
   preview?: boolean;
   debug?: boolean;
+  /** 띄우기 전 미리보기로 보여 줄 고정 상태. 서버가 만들어 내려 준다. */
+  sample?: GamePublicState | null;
+  /** 미리보기 모드인지. true 면 실시간 연결을 열지 않는다. */
+  sampleMode?: boolean;
 }) {
   const [state, setState] = React.useState<GamePublicState | null>(null);
   const [phase, setPhase] = React.useState<'connecting' | 'connected' | 'retrying'>('connecting');
 
   React.useEffect(() => {
+    /**
+     * 미리보기 모드는 고정 화면이다. 실시간 연결을 열지 않는다.
+     * 열어 두면 (1) 진행 중인 회차가 미리보기 자리에 끼어들고
+     * (2) 크리에이터당 동시 연결 상한을 미리보기가 헛되이 차지한다.
+     */
+    if (sampleMode) return;
+
     let disposed = false;
     let source: EventSource | null = null;
     let retry = 0;
@@ -126,13 +139,15 @@ export function GameOverlayClient({
       if (timer) clearTimeout(timer);
       source?.close();
     };
-  }, [creatorId, token, preview]);
+  }, [creatorId, token, preview, sampleMode]);
+
+  const shown = sampleMode ? sample : state;
 
   return (
     <div className="pointer-events-none fixed inset-0 bg-transparent">
-      {state ? <GameBoard state={state} /> : null}
+      {shown ? <GameBoard state={shown} /> : null}
 
-      {debug ? (
+      {debug && !sampleMode ? (
         <span
           // 미리보기는 캔버스째 축소되므로 배지만 원래 크기로 되돌린다.
           style={{ transform: 'scale(calc(1 / var(--ovs, 1)))', transformOrigin: 'top left' }}

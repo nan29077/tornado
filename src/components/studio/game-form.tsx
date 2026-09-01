@@ -12,9 +12,11 @@ import {
   Plus,
   Target,
   Trash2,
+  X,
   Zap,
 } from 'lucide-react';
 import { Button, Card, Field, Input, Notice, Select, Textarea, cx } from '@/components/ui';
+import { ConfirmDialog } from '@/components/studio/confirm-dialog';
 import {
   ENTRY_MODES,
   ENTRY_MODE_HINT,
@@ -102,9 +104,60 @@ export function GameForm({
     onChange({ ...emptyGameForm(type), title: value.title });
   };
 
+  /**
+   * 나가는 길.
+   *
+   * 예전에는 폼 맨 아래 [취소] 하나뿐이었다. 폼이 화면 한 장을 넘겨서, 닫으려면 끝까지
+   * 스크롤을 내려야 했다. 위쪽 헤더의 X 와 Esc 를 함께 둔다.
+   * 다만 작성 중인 내용을 말없이 버리지는 않는다 — 고친 게 있으면 한 번 물어본다.
+   */
+  const [initialSnapshot] = React.useState(() => JSON.stringify(value));
+  const [askClose, setAskClose] = React.useState(false);
+  const dirty = JSON.stringify(value) !== initialSnapshot;
+
+  const requestClose = React.useCallback(() => {
+    if (busy) return;
+    if (dirty) setAskClose(true);
+    else onCancel();
+  }, [busy, dirty, onCancel]);
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // 확인창이 떠 있으면 그쪽 Esc 가 먼저다. 여기서 다시 열지 않는다.
+      if (askClose) return;
+      requestClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [askClose, requestClose]);
+
   return (
     <Card>
       <div className="space-y-5">
+        {/* 헤더 — 지금 무슨 화면인지 알려 주고, 여기서 바로 닫을 수 있게 한다. */}
+        <div className="flex items-start justify-between gap-3 border-b border-ink-100 pb-4">
+          <div className="min-w-0">
+            <p className="text-[15px] font-black tracking-[-0.02em] text-ink-900">
+              {mode === 'create' ? '새 게임 만들기' : '게임 수정'}
+            </p>
+            <p className="mt-0.5 text-[12px] text-ink-400">
+              {mode === 'create'
+                ? '종류를 고르면 필요한 칸만 나타납니다. 닫으려면 오른쪽 X 또는 Esc.'
+                : '바꾼 내용은 [저장]을 눌러야 반영됩니다. 닫으려면 오른쪽 X 또는 Esc.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={requestClose}
+            disabled={busy}
+            aria-label="새 게임 만들기 닫기"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-ink-200 text-ink-400 transition-colors hover:bg-ink-50 hover:text-ink-700 disabled:opacity-40"
+          >
+            <X size={18} strokeWidth={1.7} />
+          </button>
+        </div>
+
         {mode === 'create' ? (
           <div>
             <p className="mb-2 text-[13px] font-semibold text-ink-700">게임 종류</p>
@@ -422,11 +475,25 @@ export function GameForm({
             {busy ? <Loader2 size={16} strokeWidth={1.8} className="animate-spin" /> : null}
             {mode === 'create' ? '게임 만들기' : '저장'}
           </Button>
-          <Button variant="secondary" onClick={onCancel} disabled={busy}>
+          <Button variant="secondary" onClick={requestClose} disabled={busy}>
             취소
           </Button>
         </div>
       </div>
+
+      <ConfirmDialog
+        phase={askClose ? 'ask' : 'closed'}
+        title="작성 중인 내용을 버릴까요?"
+        description="지금까지 입력한 내용은 저장되지 않습니다."
+        confirmLabel="버리고 닫기"
+        cancelLabel="계속 작성"
+        variant="danger"
+        onConfirm={() => {
+          setAskClose(false);
+          onCancel();
+        }}
+        onClose={() => setAskClose(false)}
+      />
     </Card>
   );
 }

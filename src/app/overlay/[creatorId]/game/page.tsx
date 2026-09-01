@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { GameOverlayClient } from '@/components/overlay/game-overlay-client';
 import { OverlayCanvas } from '@/components/overlay/overlay-canvas';
 import { authorizeOverlay } from '@/server/services/overlay-access';
+import { buildSampleState } from '@/server/services/game-state';
 
 /**
  * 게임 오버레이 브라우저 소스.
@@ -52,7 +53,26 @@ export default async function GameOverlayPage({
     );
   }
 
-  const overlay = <GameOverlayClient creatorId={creatorId} token={token} preview={preview} debug={debug} />;
+  /**
+   * 띄우기 전 미리보기.
+   * 스튜디오에서 게임 하나를 골라 "띄우면 이렇게 보인다"를 확인하는 용도다.
+   *
+   * **세션으로 인증한 미리보기에서만 받는다.** 토큰으로 여는 방송용 소스에서는 무시한다.
+   * 방송 소스가 실시간 상태 대신 고정 화면을 그리는 경로를 아예 만들지 않기 위해서다.
+   */
+  const sampleGameId = preview ? one(sp.sample) : '';
+  const sample = sampleGameId ? await buildSampleState(creatorId, sampleGameId) : null;
+
+  const overlay = (
+    <GameOverlayClient
+      creatorId={creatorId}
+      token={token}
+      preview={preview}
+      debug={debug}
+      sample={sample}
+      sampleMode={Boolean(sampleGameId)}
+    />
+  );
 
   // 미리보기는 1920x1080 으로 그린 뒤 틀 크기에 맞춰 통째로 축소한다.
   // 그래야 스튜디오에서 보는 화면과 OBS 에 나가는 화면이 픽셀 단위로 같아진다.
