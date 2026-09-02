@@ -52,6 +52,11 @@ export interface OverlayEventPayload {
   position: string;
   /// 메시지 최대 표시 글자 수
   maxMessageLen: number;
+  /// 배치 미세 조정(캔버스 대비 백분율 이동 + 크기 배율 %). 이벤트마다 실어 보내므로
+  /// 스튜디오에서 저장하면 브라우저 소스를 다시 로드하지 않아도 다음 알림부터 적용된다.
+  offsetX: number;
+  offsetY: number;
+  scalePct: number;
   /// 오버레이 표시 스위치. false 면 방송 화면(브라우저 소스)에서는 재생하지 않는다.
   enabled: boolean;
   occurredAt: string;

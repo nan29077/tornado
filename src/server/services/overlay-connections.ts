@@ -35,19 +35,23 @@ export const MAX_OVERLAY_CONNECTIONS = 6;
 /**
  * 미리보기 상한은 따로, 더 넉넉하게 잡는다.
  *
- * 스튜디오 화면 하나가 이미 iframe 2개(PC · 모바일)를 연다. 여기에 [확대 보기]나
- * [새 탭에서 미리보기], 페이지 새로고침 직후 아직 정리되지 않은 이전 연결이 겹치면
- * 방송용과 같은 상한 3개를 금세 넘긴다. 그러면 가장 오래된 미리보기가 강제로 끊기고,
+ * 통합 미리보기 한 화면이 iframe 을 **4개** 연다.
+ * (PC 틀 × [후원 알림 + 게임] , 모바일 틀 × [후원 알림 + 게임])
+ * 여기에 [확대 보기] 2개, [새 탭에서 미리보기], 페이지 새로고침 직후 아직 정리되지 않은
+ * 이전 연결까지 겹치면 8개로는 금세 넘친다. 넘치면 가장 오래된 미리보기가 강제로 끊기고,
  * 끊긴 쪽이 다시 붙으면서 또 다른 쪽을 밀어내는 재연결 핑퐁이 생긴다.
  * (화면에는 [재연결 중] 이 반복해서 뜬다)
  *
- * 미리보기는 크리에이터 본인 세션으로만 열리고 오래 떠 있지 않으므로 8개까지 허용한다.
- * 방송용 상한 3개는 그대로 둔다. 그쪽은 실제로 보호가 필요하다.
+ * 미리보기는 크리에이터 본인 세션으로만 열리고 오래 떠 있지 않으므로 넉넉히 14개까지 허용한다.
+ * 방송용 상한은 그대로 둔다. 그쪽은 실제로 보호가 필요하다.
  */
-export const MAX_OVERLAY_PREVIEW_CONNECTIONS = 8;
+export const MAX_OVERLAY_PREVIEW_CONNECTIONS = 14;
 
 /** 연결 종류. 상한과 방출 대상은 같은 종류 안에서만 적용된다. */
 export type OverlayConnectionKind = 'broadcast' | 'preview';
+
+/** 어떤 브라우저 소스가 연결됐는지 구분한다. 연결 상한은 기존처럼 종류(kind) 전체에 적용한다. */
+export type OverlayConnectionSource = 'donation' | 'game';
 
 /** 종류별 동시 연결 상한 */
 export function overlayConnectionLimit(kind: OverlayConnectionKind): number {
@@ -59,6 +63,7 @@ interface Connection {
   close: () => void;
   openedAt: number;
   kind: OverlayConnectionKind;
+  source: OverlayConnectionSource;
 }
 
 const globalForConn = globalThis as unknown as {
@@ -82,11 +87,12 @@ export function registerOverlayConnection(
   creatorId: string,
   close: () => void,
   kind: OverlayConnectionKind = 'broadcast',
+  source: OverlayConnectionSource = 'donation',
 ): () => void {
   const set = registry.get(creatorId) ?? new Set<Connection>();
   registry.set(creatorId, set);
 
-  const conn: Connection = { close, openedAt: Date.now(), kind };
+  const conn: Connection = { close, openedAt: Date.now(), kind, source };
   set.add(conn);
 
   const limit = overlayConnectionLimit(kind);
@@ -124,7 +130,10 @@ export function registerOverlayConnection(
 export function countOverlayConnections(
   creatorId: string,
   kind: OverlayConnectionKind = 'broadcast',
+  source?: OverlayConnectionSource,
 ): number {
   const set = registry.get(creatorId);
-  return set ? sameKind(set, kind).length : 0;
+  if (!set) return 0;
+  const matches = sameKind(set, kind);
+  return source ? matches.filter((connection) => connection.source === source).length : matches.length;
 }

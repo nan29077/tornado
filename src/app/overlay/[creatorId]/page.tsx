@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { OverlayClient } from '@/components/overlay/overlay-client';
 import { OverlayCanvas } from '@/components/overlay/overlay-canvas';
 import { authorizeOverlay } from '@/server/services/overlay-access';
+import { clampOverlayLayout } from '@/lib/overlay-layout';
 
 /**
  * OBS / PRISM 브라우저 소스 오버레이.
@@ -37,6 +38,8 @@ export default async function OverlayPage({
   const token = one(sp.token);
   const preview = one(sp.preview) === '1';
   const debug = one(sp.debug) === '1';
+  // 세로형(휴대폰) 미리보기 틀에서는 방송 화면을 위쪽에 붙인다.
+  const align = one(sp.align) === 'top' ? 'top' : 'center';
 
   const { ok, setting } = await authorizeOverlay(creatorId, token, preview);
 
@@ -65,11 +68,12 @@ export default async function OverlayPage({
       defaultDurationMs={setting?.durationMs ?? 7000}
       maxMessageLen={setting?.maxMessageLen ?? 80}
       theme={setting?.theme ?? 'TORNADO'}
+      layout={clampOverlayLayout(setting)}
       debug={debug}
     />
   );
 
   // 미리보기는 방송 화면(1920x1080)을 그대로 그린 뒤 틀 크기에 맞춰 축소한다.
   // 방송용(토큰) 경로는 OBS 가 정한 크기를 그대로 채우므로 감싸지 않는다.
-  return preview ? <OverlayCanvas>{overlay}</OverlayCanvas> : overlay;
+  return preview ? <OverlayCanvas align={align}>{overlay}</OverlayCanvas> : overlay;
 }

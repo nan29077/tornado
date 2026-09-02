@@ -11,6 +11,7 @@ import { resolveOverlayTier, type ResolvedTier } from './overlay-tiers';
 import { decrypt, encrypt } from '@/lib/crypto';
 import { broadcastDonorName } from '@/lib/donor-name';
 import { normalizeTtsProvider } from './tts/naver';
+import { clampOverlayLayout } from '@/lib/overlay-layout';
 import { joinFromDonation, refreshDonationGauge } from '@/server/services/games';
 
 /**
@@ -28,8 +29,12 @@ export interface DispatchResult {
   youtubeSkippedReason?: string;
 }
 
-/** 유튜브 일일 할당량 가드. 실측 전까지 보수적으로 막는다. */
-async function reserveYouTubeQuota(cost: number): Promise<boolean> {
+/**
+ * 유튜브 일일 할당량 가드. 실측 전까지 보수적으로 막는다.
+ * 게임 참여 링크 전송(game-share)도 같은 카운터를 쓴다. 후원 알림과 할당량을 나눠 쓰는 것이
+ * 맞다 — 둘 다 같은 API(liveChatMessages.insert)를 소비한다.
+ */
+export async function reserveYouTubeQuota(cost: number): Promise<boolean> {
   const key = `yt:quota:${kstDateKey()}`;
   const used = Number((await kv.get(key)) ?? 0);
   if (used + cost > env.youtube.dailyQuota) return false;
@@ -131,13 +136,25 @@ function soundOf(overlay: { soundEnabled: boolean; soundVolume: number } | null)
  * 이벤트마다 현재 값을 실어 보내 브라우저 소스를 다시 로드하지 않아도 적용되게 한다.
  */
 function displayOf(
-  overlay: { theme: string; position: string; maxMessageLen: number; enabled: boolean } | null,
+  overlay:
+    | {
+        theme: string;
+        position: string;
+        maxMessageLen: number;
+        enabled: boolean;
+        offsetX: number;
+        offsetY: number;
+        scalePct: number;
+      }
+    | null,
 ) {
+  const layout = clampOverlayLayout(overlay);
   return {
     theme: overlay?.theme || 'TORNADO',
     position: overlay?.position || 'BOTTOM_CENTER',
     maxMessageLen: overlay?.maxMessageLen ?? 80,
     enabled: overlay?.enabled ?? true,
+    ...layout,
   };
 }
 

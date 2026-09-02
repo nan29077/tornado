@@ -18,8 +18,16 @@ export function OverlayTabs({ active, gameLive }: { active: 'donation' | 'game';
   ];
 
   return (
-    <div className="sticky top-0 z-20 -mx-1 mb-1 bg-ink-50/95 px-1 py-2 backdrop-blur">
-      <div className="flex gap-1.5 rounded-2xl border border-ink-100 bg-white p-1.5">
+    /*
+      화면 맨 위 헤더 바로 아래에 붙는다.
+      - 배경을 반투명으로 두면 뒤 내용이 비쳐 지저분하다. 불투명하게 깐다.
+      - 아래 여백(pb-4)까지 이 바의 배경으로 덮는다. 그래야 바와 다음 카드 사이의 틈으로
+        스크롤되는 내용이 비쳐 보이지 않는다.
+      - z-index 는 진행 컨트롤(20)보다 높아야 컨트롤 카드가 이 바 밑으로 미끄러져 들어간다.
+      높이(4.75rem)는 globals.css 의 --overlay-tabbar-h 와 맞춘다.
+    */
+    <div className="overlay-tabbar sticky top-[var(--console-header-h)] z-30 -mx-1 px-1 pb-4 pt-2">
+      <div className="flex gap-1.5 rounded-2xl border border-ink-100 bg-white p-1.5 shadow-[0_1px_2px_rgba(92,61,28,0.05)]">
         {tabs.map(({ key, label, Icon }) => {
           const on = active === key;
           return (

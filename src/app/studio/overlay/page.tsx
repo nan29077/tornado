@@ -5,7 +5,7 @@ import { ActionForm } from '@/components/studio/action-form';
 import { CopyField } from '@/components/studio/copy';
 import { OverlayTiersEditor } from '@/components/studio/overlay-tiers-editor';
 import { OverlayQuickSettings } from '@/components/studio/overlay-quick-settings';
-import { OverlayLivePreview } from '@/components/studio/overlay-live-preview';
+import { BroadcastPreview } from '@/components/studio/broadcast-preview';
 import { OverlayTestHistory, type OverlayTestHistoryRow } from '@/components/studio/overlay-test-history';
 import { OverlayTabs } from '@/components/studio/overlay-tabs';
 import { GameStudio } from '@/components/studio/game-studio';
@@ -23,6 +23,7 @@ import { findCharacterSticker } from '@/lib/overlay-effect-catalog';
 import { listOverlayTiers } from '@/server/services/overlay-tiers';
 import { countOverlayConnections, MAX_OVERLAY_CONNECTIONS } from '@/server/services/overlay-connections';
 import { findActiveRound } from '@/server/services/game-state';
+import { clampOverlayLayout } from '@/lib/overlay-layout';
 
 export const dynamic = 'force-dynamic';
 
@@ -111,7 +112,9 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
 
   // OBS 브라우저 소스가 실제로 붙어 있는지 크리에이터가 확인할 수 있게 현재 연결 수를 보여 준다.
   // (이 서버 인스턴스 기준. 다중 인스턴스 배포에서는 인스턴스별 수치다)
-  const liveConnections = countOverlayConnections(creatorId);
+  const donationConnections = countOverlayConnections(creatorId, 'broadcast', 'donation');
+  const gameConnections = countOverlayConnections(creatorId, 'broadcast', 'game');
+  const liveConnections = donationConnections + gameConnections;
 
   // 게임이 방송 화면에 떠 있으면 탭 라벨에 상태 점을 찍는다(다른 탭에 있어도 알 수 있게).
   const activeRound = await findActiveRound(creatorId);
@@ -124,15 +127,44 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
       <PageHeader title="후원·게임 오버레이" description="OBS·PRISM 브라우저 소스를 관리합니다. 후원 알림과 시청자 참여 게임을 각각 방송 화면에 올릴 수 있습니다." />
 
       <div className="space-y-6">
-        {/* ── 1. OBS 연결 ─────────────────────────────────────── */}
+        {/*
+          ── 1. 방송 준비 ────────────────────────────────────
+          연결 주소 발급·등록은 보통 처음 한 번이다. 매 방송 쓰는 것은 아래 [방송 화면]과
+          [테스트]·[게임 진행]이므로, 준비가 끝나면 접어 두고 한 줄 요약만 남긴다.
+        */}
         <section>
-          <SectionTitle
-            title="OBS 연결"
-            description="OBS 또는 PRISM 에서 [소스 추가] → [브라우저]를 선택하고 아래 URL을 붙여넣습니다. 후원 알림과 게임은 소스를 나눠 등록하면 크기와 위치를 따로 잡을 수 있습니다. (권장 크기 1920x1080)"
-          />
+          <details className="group rounded-2xl border border-ink-100 bg-white" open={!setting}>
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 [&::-webkit-details-marker]:hidden">
+              <span className="min-w-0">
+                <span className="block text-[14px] font-bold text-ink-900">
+                  방송 준비 — 방송 프로그램(OBS·PRISM) 연결
+                </span>
+                <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] text-ink-400">
+                  {setting ? (
+                    <Badge tone="success">연결 주소 발급됨</Badge>
+                  ) : (
+                    <Badge tone="warning">연결 주소 미발급</Badge>
+                  )}
+                  <span>
+                    지금 방송에 붙어 있는 소스 {liveConnections}개 (후원 {donationConnections} · 게임 {gameConnections})
+                  </span>
+                </span>
+              </span>
+              <ChevronDown
+                size={18}
+                strokeWidth={1.7}
+                className="shrink-0 text-ink-400 transition-transform group-open:rotate-180"
+              />
+            </summary>
+
+            <div className="border-t border-ink-100 px-4 py-4">
+              <p className="mb-3 text-[12.5px] leading-relaxed text-ink-500">
+                OBS 또는 PRISM 에서 [소스 추가] → [브라우저]를 선택하고 아래 주소를 붙여넣습니다. 후원 알림과 게임은
+                소스를 나눠 등록하면 크기와 위치를 따로 잡을 수 있습니다. (권장 크기 1920x1080)
+              </p>
           <div className="grid gap-2.5 lg:grid-cols-2">
             <Card>
-              <CardTitle>브라우저 소스 URL</CardTitle>
+              <CardTitle>방송 프로그램 연결 주소</CardTitle>
               <div className="mt-2">
                 <DataRow
                   label="발급 상태"
@@ -144,7 +176,7 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
                 />
                 <DataRow label="마지막 변경" value={formatKst(setting?.updatedAt)} />
                 <DataRow
-                  label="현재 연결"
+                  label="전체 방송 연결"
                   value={
                     liveConnections > 0 ? (
                       <Badge tone="success">{liveConnections}개 연결됨</Badge>
@@ -153,15 +185,35 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
                     )
                   }
                 />
+                <DataRow
+                  label="후원 오버레이"
+                  value={
+                    donationConnections > 0 ? (
+                      <Badge tone="success">{donationConnections}개 연결됨</Badge>
+                    ) : (
+                      <Badge tone="neutral">연결 없음</Badge>
+                    )
+                  }
+                />
+                <DataRow
+                  label="게임 오버레이"
+                  value={
+                    gameConnections > 0 ? (
+                      <Badge tone="success">{gameConnections}개 연결됨</Badge>
+                    ) : (
+                      <Badge tone="neutral">연결 없음</Badge>
+                    )
+                  }
+                />
               </div>
               <div className="mt-3 space-y-3">
                 <CopyField
-                  label="후원 알림 소스 URL"
+                  label="후원 알림 연결 주소"
                   value={`${urlBase}<발급된 토큰>`}
                   hint="후원이 들어올 때 감사 애니메이션이 뜨는 소스입니다."
                 />
                 <CopyField
-                  label="게임 소스 URL"
+                  label="게임 연결 주소"
                   value={`${gameUrlBase}<발급된 토큰>`}
                   hint="시청자 참여 게임이 뜨는 소스입니다. 토큰은 위와 같은 값을 씁니다. 게임을 쓰지 않는다면 등록하지 않아도 됩니다."
                 />
@@ -189,7 +241,7 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
             </Card>
 
             <Card>
-              <CardTitle>{setting ? 'URL 재발급' : 'URL 발급'}</CardTitle>
+              <CardTitle>{setting ? '연결 주소 재발급' : '연결 주소 발급'}</CardTitle>
               <div className="mb-3 mt-2">
                 {setting ? (
                   <Notice tone="danger" title="재발급하면 기존 URL이 즉시 무효화됩니다">
@@ -198,17 +250,17 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
                   </Notice>
                 ) : (
                   <Notice tone="brand" title="먼저 URL을 발급해 주세요">
-                    발급 버튼을 누르면 OBS에 붙여넣을 전체 URL이 표시됩니다. 이 값은 한 번만 표시되니 바로 복사해
+                    발급 버튼을 누르면 OBS에 붙여넣을 전체 주소가 표시됩니다. 이 값은 한 번만 표시되니 바로 복사해
                     두세요.
                   </Notice>
                 )}
               </div>
               <ActionForm
                 action={regenerateOverlayTokenAction}
-                submitLabel={setting ? 'URL 재발급' : 'URL 발급'}
+                submitLabel={setting ? '연결 주소 재발급' : '연결 주소 발급'}
                 variant={setting ? 'danger' : 'primary'}
                 size="md"
-                confirmTitle={setting ? '브라우저 소스 URL을 다시 발급할까요?' : 'URL을 발급할까요?'}
+                confirmTitle={setting ? '연결 주소를 다시 발급할까요?' : '연결 주소를 발급할까요?'}
                 confirmMessage={
                   setting
                     ? '기존 URL이 즉시 무효화되어 OBS·PRISM에 등록된 브라우저 소스가 동작하지 않습니다. 새 URL을 다시 등록해야 합니다.'
@@ -231,7 +283,7 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
             <div className="border-t border-ink-100 px-4 py-4">
               <ol className="space-y-2 text-[13px] leading-relaxed text-ink-700">
                 <li>1. 방송 프로그램의 소스 목록에서 [+] 를 눌러 브라우저(Browser) 소스를 추가합니다.</li>
-                <li>2. URL 칸에 위에서 발급한 브라우저 소스 URL을 그대로 붙여넣습니다.</li>
+                <li>2. URL 칸에 위에서 발급한 연결 주소를 그대로 붙여넣습니다.</li>
                 <li>3. 너비 1920, 높이 1080 으로 설정합니다. (권장 해상도 1920x1080)</li>
                 <li>4. 사용자 정의 CSS는 비워 두세요. 오버레이가 자체적으로 투명 배경을 사용합니다.</li>
                 <li>5. &quot;장면이 활성화될 때 브라우저 새로 고침&quot; 옵션을 켜면 방송 시작 시 연결이 안정적입니다.</li>
@@ -245,16 +297,59 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
               </div>
             </div>
           </details>
+            </div>
+          </details>
         </section>
 
-        {/* ── 탭 ─────────────────────────────────────────────── */}
+        {/*
+          ── 2·3. 방송 화면 + 조작 ────────────────────────────
+          넓은 화면(1280px↑)에서는 **왼쪽 = 방송 화면(화면에 고정), 오른쪽 = 탭·조작**으로 나눈다.
+          세로로 한 줄이면 조작하려고 내리는 순간 방송 화면이 위로 사라지고, 화면을 보려고
+          올리면 조작이 아래로 사라진다. [참여 마감] → 화면 확인 → [발표] 는 눈과 손이 동시에
+          필요한 동작이라 그 사이에 스크롤이 끼면 안 된다.
+          좁은 화면에서는 위아래로 쌓되, 방송 화면이 시야에서 벗어나면 작은 창으로 따라다닌다
+          (BroadcastPreview 안에서 처리).
+        */}
+        <div className="gap-5 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(0,600px)] xl:items-start">
+          {setting ? (
+            <section
+              id="broadcast-preview"
+              className="mb-6 scroll-mt-20 xl:sticky xl:top-[calc(var(--console-header-h)+0.75rem)] xl:mb-0 xl:max-h-[calc(100dvh-var(--console-header-h)-1.5rem)] xl:overflow-y-auto xl:pb-2"
+            >
+              <SectionTitle
+                title="방송 화면"
+                description="후원 알림과 게임이 실제로 겹쳐 보이는 모습입니다. [테스트 후원 보내기]나 게임 [방송에 시작]을 누르면 이 화면에서 바로 재생됩니다. [배치 조정]으로 위치와 크기도 여기서 바로 잡을 수 있습니다."
+              />
+              <Card>
+                <BroadcastPreview
+                  creatorId={creatorId}
+                  donationLayout={clampOverlayLayout(setting)}
+                  gameLayout={clampOverlayLayout({
+                    offsetX: setting.gameOffsetX,
+                    offsetY: setting.gameOffsetY,
+                    scalePct: setting.gameScalePct,
+                  })}
+                />
+              </Card>
+            </section>
+          ) : (
+            <div className="hidden xl:block" />
+          )}
+
+          <div className="min-w-0">
+        {/*
+          ── 탭 ─────────────────────────────────────────────
+          탭 바는 화면에 붙으므로 space-y 바깥에 둔다. 사이 간격을 space-y 로 주면 그 틈으로
+          스크롤되는 내용이 비쳐 보인다. 간격은 탭 바 자신의 아래 여백(pb-4)으로 만든다.
+        */}
         <OverlayTabs active={tab} gameLive={Boolean(activeRound)} />
 
+        <div className="space-y-6">
         {tab === 'game' ? (
           <GameStudio creatorId={creatorId} />
         ) : (
           <>
-        {/* ── 2. 알림 꾸미기 (효과 · 테마 · TTS) ───────────────── */}
+        {/* ── 4. 알림 꾸미기 (효과 · 테마 · TTS) ───────────────── */}
         <section>
           {setting ? (
             <OverlayQuickSettings
@@ -289,13 +384,13 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
             <>
               <SectionTitle title="알림 꾸미기" description="효과 · 테마 · TTS 를 설정합니다." />
               <Notice tone="warning">
-                오버레이 설정이 아직 없습니다. 위에서 브라우저 소스 URL을 먼저 발급해 주세요.
+                오버레이 설정이 아직 없습니다. 위 [방송 준비]에서 연결 주소를 먼저 발급해 주세요.
               </Notice>
             </>
           )}
         </section>
 
-        {/* ── 3. 고급 설정 (금액 구간별 효과) ─────────────────── */}
+        {/* ── 5. 고급 설정 (금액 구간별 효과) ─────────────────── */}
         <section>
           <details className="group rounded-2xl border border-ink-100 bg-white">
             <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3.5 [&::-webkit-details-marker]:hidden">
@@ -317,40 +412,41 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
           </details>
         </section>
 
-        {/* ── 4. 테스트 ───────────────────────────────────────── */}
+        {/* ── 6. 테스트 ───────────────────────────────────────── */}
         <section>
           <SectionTitle title="테스트 후원 실행" description="설정한 화면을 실제 방송 전에 확인해 보세요." />
           <Card>
             <div className="mb-3 space-y-2.5">
               <Notice tone="brand">테스트 후원은 실제 결제와 정산에 반영되지 않습니다.</Notice>
               {setting && !setting.enabled ? (
-                <Notice tone="warning" title="오버레이 표시가 꺼져 있습니다">
-                  아래 미리보기에는 재생되지만, OBS·PRISM 브라우저 소스에는 아무것도 표시되지 않습니다. [알림 꾸미기]에서
-                  오버레이 표시를 켜 주세요.
+                <Notice tone="warning" title="후원 알림이 방송 화면에 보이지 않는 상태입니다">
+                  위 [방송 화면] 미리보기에는 재생되지만, OBS·PRISM 에는 아무것도 표시되지 않습니다. [알림 꾸미기]에서
+                  [방송 화면에 보이기]를 켜 주세요.
                 </Notice>
               ) : null}
             </div>
 
-            <div className="mb-4">
-              {setting ? (
-                <OverlayLivePreview creatorId={creatorId} />
-              ) : (
-                <Notice tone="warning" title="오버레이 URL을 먼저 발급해주세요">
-                  위 [URL 발급]으로 브라우저 소스 URL을 발급하면, 이 자리에서 실제 방송에 표시되는 화면을 그대로 확인할
-                  수 있습니다.
+            {setting ? null : (
+              <div className="mb-4">
+                <Notice tone="warning" title="연결 주소를 먼저 발급해 주세요">
+                  위 [방송 준비]에서 연결 주소를 발급하면, 화면 위쪽 [방송 화면]에서 실제 방송에 표시되는 모습을 그대로
+                  확인할 수 있습니다.
                 </Notice>
-              )}
-            </div>
+              </div>
+            )}
 
+            {/*
+              확인창을 두지 않는다. 테스트 후원은 되돌릴 필요가 없는 동작인데,
+              완료 알림창이 화면 전체를 덮는 동안 7초짜리 효과가 그대로 지나가 버려
+              "눌러도 아무것도 안 나온다" 가 된다. 결과는 위 미리보기에서 바로 보이고,
+              실패하면 폼 아래에 문구가 뜬다.
+            */}
             <ActionForm
               action={testOverlayAction}
               submitLabel="테스트 후원 보내기"
               pendingLabel="보내는 중"
               variant="secondary"
-              confirmTitle="테스트 후원을 보낼까요?"
-              confirmMessage="입력한 표시명 · 금액 · 메시지로 오버레이 알림이 재생됩니다. 실제 결제와 정산에는 반영되지 않습니다."
-              confirmActionLabel="보내기"
-              doneTitle="테스트 후원을 보냈습니다"
+              scrollToId="broadcast-preview"
             >
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="표시명" hint="20자 이내">
@@ -367,7 +463,7 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
           </Card>
         </section>
 
-        {/* ── 5. 테스트 전송 내역 ─────────────────────────────── */}
+        {/* ── 7. 테스트 전송 내역 ─────────────────────────────── */}
         <section>
           <SectionTitle
             title="테스트 전송 내역"
@@ -379,6 +475,9 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
         </section>
           </>
         )}
+        </div>
+          </div>
+        </div>
       </div>
     </>
   );

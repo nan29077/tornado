@@ -4,6 +4,14 @@ import * as React from 'react';
 import { formatNumber } from '@/lib/money';
 import { EffectLayer, CharacterStickerInline, isCharacterStickerEffect } from '@/components/overlay/overlay-effects';
 import { playEffectSound } from '@/components/overlay/overlay-sound';
+import { Portal } from '@/components/ui/portal';
+import { useStandalone } from '@/components/overlay/use-standalone';
+import {
+  DEFAULT_OVERLAY_LAYOUT,
+  clampOverlayLayout,
+  overlayLayoutTransform,
+  type OverlayLayout,
+} from '@/lib/overlay-layout';
 
 /**
  * OBS / PRISM 브라우저 소스용 오버레이 클라이언트.
@@ -13,6 +21,10 @@ import { playEffectSound } from '@/components/overlay/overlay-sound';
  *  - 여러 건이 동시에 도착해도 대기열에 넣고 한 건씩 순차 재생한다.
  *  - TTS 재생이 끝나기 전에는 다음 항목으로 넘어가지 않는다(표시시간과 음성 길이 중 긴 쪽 기준).
  *  - 연결 상태는 방송 화면에 표시하지 않는다. 디버그 모드에서만 배지를 노출한다.
+ *    스튜디오 미리보기(iframe) 안에서는 배지를 그리지 않고 부모에게 값만 넘긴다.
+ *    미리보기는 1920x1080 캔버스를 통째로 축소하는데, transform 이 걸린 조상이
+ *    position:fixed 의 기준이 되므로 배지가 "틀의 왼쪽 위"가 아니라 "축소된 방송 화면의
+ *    왼쪽 위"에 붙는다. 세로형(휴대폰) 틀에서는 그 자리가 화면 한가운데로 보인다.
  *  - 금액 구간(effect/banner/durationMs)이 없는 예전 이벤트도 그대로 재생돼야 한다.
  *  - TTS 는 ttsMode 로 갈린다. server 면 서버 합성 mp3 를 재생하고, 실패하면 브라우저 음성으로 되돌아간다.
  *  - 효과음은 Web Audio 로 직접 합성한다(overlay-sound.ts). soundEnabled/soundVolume 을 따른다.
@@ -58,11 +70,37 @@ export interface OverlayPayload {
   position?: string;
   /** 이 이벤트의 메시지 최대 글자 수. 없으면 페이지 로드 시 값을 쓴다. */
   maxMessageLen?: number;
+  /** 배치 미세 조정. 없으면(예전 이벤트) 페이지 로드 시 값을 쓴다. */
+  offsetX?: number;
+  offsetY?: number;
+  scalePct?: number;
   /** 오버레이 표시 스위치. false 면 방송 화면에서는 재생하지 않는다(미리보기는 재생). */
   enabled?: boolean;
   occurredAt: string;
   isTest: boolean;
 }
+
+/**
+ * 배치 조정 중에 보여 주는 예시 알림.
+ *
+ * 후원 알림은 평소에는 아무것도 그리지 않으므로, 위치를 잡으려 해도 잡을 대상이 없다.
+ * 스튜디오가 [배치 조정]을 켜면 이 예시를 계속 띄워 두고 그것으로 자리를 잡는다.
+ * 방송용(토큰) 경로에는 이 신호가 오지 않으므로 실제 방송에는 나가지 않는다.
+ */
+const LAYOUT_SAMPLE: OverlayPayload = {
+  eventId: 'layout-sample',
+  creatorId: '',
+  donationId: null,
+  donorName: '배치 조정 예시',
+  amount: '10000',
+  message: '이 자리에 후원 알림이 표시됩니다',
+  sticker: 'DEFAULT',
+  banner: true,
+  tts: null,
+  durationMs: 0,
+  occurredAt: '',
+  isTest: false,
+};
 
 const OUT_MS = 360; // globals.css 의 .animate-tornado-out 길이와 맞춘다
 const MAX_BACKOFF_MS = 30000;
@@ -173,6 +211,7 @@ export function OverlayClient({
   defaultDurationMs = 7000,
   maxMessageLen = 80,
   theme = 'TORNADO',
+  layout = DEFAULT_OVERLAY_LAYOUT,
   debug = false,
 }: {
   creatorId: string;
@@ -184,6 +223,8 @@ export function OverlayClient({
   maxMessageLen?: number;
   /** OverlaySetting.theme 값. TORNADO / MINIMAL / NEON 외의 값은 기본 테마로 동작한다. */
   theme?: string;
+  /** 저장된 배치(위치 미세 조정 · 크기 배율). 이벤트에 실려 온 값이 있으면 그쪽이 우선한다. */
+  layout?: OverlayLayout;
   debug?: boolean;
 }) {
   const [current, setCurrent] = React.useState<OverlayPayload | null>(null);
@@ -500,6 +541,95 @@ export function OverlayClient({
   const align = positionClass[current?.position || position] ?? positionClass.BOTTOM_CENTER;
   const themeName = themeOf(current?.theme || theme);
 
+  /**
+   * 스튜디오에서 배치를 드래그하는 동안 실시간으로 받아 보는 임시 값.
+   * 저장 전에도 방송 화면과 똑같은 모습으로 확인할 수 있어야 한다.
+   * 미리보기에서만 받는다. 방송용(토큰) 경로는 이 메시지를 무시한다.
+   */
+  const [draftLayout, setDraftLayout] = React.useState<OverlayLayout | null>(null);
+  /** 스튜디오가 [배치 조정]을 켠 상태. 켜지면 예시 알림을 계속 띄우고 위치를 보고한다. */
+  const [editFrame, setEditFrame] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!preview || typeof window === 'undefined') return;
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      const data = e.data as
+        | { type?: string; target?: string; layout?: Partial<OverlayLayout>; on?: boolean; frame?: string }
+        | null;
+      if (!data || data.target !== 'donation') return;
+      if (data.type === 'donaido-overlay-layout') {
+        setDraftLayout(data.layout ? clampOverlayLayout(data.layout) : null);
+      }
+      if (data.type === 'donaido-overlay-edit') {
+        setEditFrame(data.on ? String(data.frame ?? '') : null);
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [preview]);
+
+  /**
+   * 조정 중에는 알림이 실제로 차지하는 자리를 부모에게 계속 알려 준다.
+   * 부모는 그 값으로 미리보기 위에 윤곽선과 크기 조절 손잡이를 그린다.
+   * 값은 이 화면(iframe) 크기에 대한 비율이라, 부모가 자기 틀 크기에 곱하기만 하면 된다.
+   */
+  const bannerBoxRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    if (!preview || editFrame === null || typeof window === 'undefined') return;
+    let raf = 0;
+    const post = () => {
+      const el = bannerBoxRef.current;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const vw = window.innerWidth || 1;
+        const vh = window.innerHeight || 1;
+        try {
+          window.parent.postMessage(
+            {
+              type: 'donaido-overlay-rect',
+              target: 'donation',
+              frame: editFrame,
+              creatorId,
+              rect: { x: r.left / vw, y: r.top / vh, w: r.width / vw, h: r.height / vh },
+            },
+            window.location.origin,
+          );
+        } catch {
+          /* ignore */
+        }
+      }
+      raf = window.requestAnimationFrame(post);
+    };
+    raf = window.requestAnimationFrame(post);
+    return () => window.cancelAnimationFrame(raf);
+  }, [preview, editFrame, creatorId]);
+
+  // 재생 중인 알림이 없어도 조정 중에는 예시 알림을 띄워 자리를 잡을 수 있게 한다.
+  const shown: OverlayPayload | null = current ?? (editFrame !== null ? LAYOUT_SAMPLE : null);
+
+  // 우선순위: 드래그 중인 임시 값 → 이벤트에 실려 온 값 → 페이지를 열 때 받은 값
+  const activeLayout =
+    draftLayout ??
+    (current && (current.offsetX !== undefined || current.scalePct !== undefined)
+      ? clampOverlayLayout({ offsetX: current.offsetX, offsetY: current.offsetY, scalePct: current.scalePct })
+      : clampOverlayLayout(layout));
+
+  const standalone = useStandalone();
+
+  // 대기 수·테마는 부모(스튜디오 미리보기)의 상태 배지에서 함께 보여 준다.
+  React.useEffect(() => {
+    if (!preview || typeof window === 'undefined' || window.parent === window) return;
+    try {
+      window.parent.postMessage(
+        { type: 'donaido-overlay-meta', creatorId, queue: queueLen, theme: themeName },
+        window.location.origin,
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [preview, creatorId, queueLen, themeName]);
+
   return (
     // h-screen/w-screen 을 쓰지 않는다. 미리보기 고정 캔버스(OverlayCanvas) 안에서는
     // 뷰포트 크기가 아니라 캔버스(1920x1080)를 채워야 하기 때문이다.
@@ -509,35 +639,45 @@ export function OverlayClient({
       {current && !leaving ? <EffectLayer effect={effectOf(current)} theme={themeName} /> : null}
 
       <div className={`relative z-20 flex h-full w-full p-6 ${align}`}>
-        {current && bannerOf(current) ? (
-          <div className="flex flex-col items-center gap-0">
+        {shown && bannerOf(shown) ? (
+          // 배치 미세 조정은 배너(와 그 위 캐릭터)에만 적용한다.
+          // 파티클은 화면 전체 연출이라 함께 움직이면 어색하다.
+          <div
+            ref={bannerBoxRef}
+            className="flex flex-col items-center gap-0"
+            style={{ transform: overlayLayoutTransform(activeLayout), transformOrigin: 'center' }}
+          >
             {/* 캐릭터 스티커: 배너 바로 위에 자연스럽게 붙임 */}
-            {isCharacterStickerEffect(effectOf(current)) && !leaving ? (
+            {current && isCharacterStickerEffect(effectOf(current)) && !leaving ? (
               <CharacterStickerInline effect={effectOf(current)} theme={themeName} />
             ) : null}
             <DonationCard
-              payload={current}
-              leaving={leaving}
-              maxMessageLen={current.maxMessageLen ?? maxMessageLen}
+              payload={shown}
+              leaving={Boolean(current) && leaving}
+              maxMessageLen={shown.maxMessageLen ?? maxMessageLen}
               theme={themeName}
             />
           </div>
         ) : null}
       </div>
 
-      {debug ? (
-        <span
-          // 미리보기에서는 캔버스가 통째로 축소되므로 배지까지 같이 줄어들면 읽을 수 없다.
-          // --ovs(적용된 배율)로 역보정해 항상 원래 크기로 보이게 한다.
-          // 방송용 경로에는 --ovs 가 없어 scale(1) 이 되므로 아무 영향이 없다.
-          style={{ transform: 'scale(calc(1 / var(--ovs, 1)))', transformOrigin: 'top left' }}
-          className={`fixed left-3 top-3 rounded-md px-2 py-1 text-[11px] font-semibold text-white ${
-            link.phase === 'connected' ? 'bg-ink-900/80' : 'bg-danger-500/85'
-          }`}
-        >
-          {linkLabel(link)} · 대기 {queueLen} · 테마 {themeName}
-          {current?.tierLabel ? ` · ${current.tierLabel}` : ''}
-        </span>
+      {/*
+        디버그 배지는 단독 창에서만 그린다.
+        스튜디오 미리보기(iframe) 안에서는 부모가 같은 값을 툴바에 보여 주므로 중복이고,
+        축소 캔버스 안에 그리면 위치가 어긋난다(위 주석 참고).
+        body 로 옮겨 그려 축소 캔버스의 transform 밖에 두므로 항상 창의 왼쪽 위에 붙는다.
+      */}
+      {debug && standalone ? (
+        <Portal>
+          <span
+            className={`fixed left-3 top-3 z-[100] rounded-md px-2 py-1 text-[11px] font-semibold text-white ${
+              link.phase === 'connected' ? 'bg-ink-900/80' : 'bg-danger-500/85'
+            }`}
+          >
+            {linkLabel(link)} · 대기 {queueLen} · 테마 {themeName}
+            {current?.tierLabel ? ` · ${current.tierLabel}` : ''}
+          </span>
+        </Portal>
       ) : null}
     </div>
   );

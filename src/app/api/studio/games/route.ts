@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireCreator } from '@/server/auth';
 import { createGame, listGames, listRoundHistory, GameError } from '@/server/services/games';
 import { buildStudioState } from '@/server/services/game-state';
+import { prisma } from '@/server/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,12 +28,19 @@ export async function GET() {
     return NextResponse.json({ error: (e as Error).message }, { status: 403 });
   }
 
-  const [games, state, history] = await Promise.all([
+  const [games, state, history, overlaySetting] = await Promise.all([
     listGames(creatorId),
     buildStudioState(creatorId),
     listRoundHistory(creatorId),
+    prisma.overlaySetting.findUnique({ where: { creatorId }, select: { gameEnabled: true } }),
   ]);
-  return NextResponse.json({ games, state, history });
+  return NextResponse.json({
+    games,
+    state,
+    history,
+    overlayConfigured: Boolean(overlaySetting),
+    gameEnabled: overlaySetting?.gameEnabled ?? false,
+  });
 }
 
 export async function POST(req: Request) {

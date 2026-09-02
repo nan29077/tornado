@@ -1123,11 +1123,22 @@ model OverlaySetting {
   tokenHash     String   @unique @map("token_hash")
   tokenMasked   String   @map("token_masked")
   enabled       Boolean  @default(true)
+  /// 게임 오버레이 독립 표시 스위치. 후원 오버레이 enabled 와 서로 영향을 주지 않는다.
+  gameEnabled   Boolean  @default(true) @map("game_enabled")
   showAmount    Boolean  @default(true) @map("show_amount")
   showMessage   Boolean  @default(true) @map("show_message")
   maxMessageLen Int      @default(80) @map("max_message_len")
   anonymize     Boolean  @default(false)
   position      String   @default("BOTTOM_CENTER")
+  /// 후원 알림 미세 배치. 방송 화면(1920x1080) 대비 백분율 이동값(-40~40)과 크기 배율(%, 50~150).
+  /// 9칸 앵커(position)만으로는 "여기서 조금만 더 위로" 같은 조정을 할 수 없어 함께 둔다.
+  offsetX       Int      @default(0) @map("offset_x")
+  offsetY       Int      @default(0) @map("offset_y")
+  scalePct      Int      @default(100) @map("scale_pct")
+  /// 게임 화면 배치. 후원 알림과 서로 영향을 주지 않는다.
+  gameOffsetX   Int      @default(0) @map("game_offset_x")
+  gameOffsetY   Int      @default(0) @map("game_offset_y")
+  gameScalePct  Int      @default(100) @map("game_scale_pct")
   durationMs    Int      @default(7000) @map("duration_ms")
   theme         String   @default("TORNADO")
   stickerSet    String   @default("DEFAULT") @map("sticker_set")

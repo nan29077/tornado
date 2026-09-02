@@ -3,6 +3,7 @@ import { GameOverlayClient } from '@/components/overlay/game-overlay-client';
 import { OverlayCanvas } from '@/components/overlay/overlay-canvas';
 import { authorizeOverlay } from '@/server/services/overlay-access';
 import { buildSampleState } from '@/server/services/game-state';
+import { clampOverlayLayout } from '@/lib/overlay-layout';
 
 /**
  * 게임 오버레이 브라우저 소스.
@@ -39,8 +40,10 @@ export default async function GameOverlayPage({
   const token = one(sp.token);
   const preview = one(sp.preview) === '1';
   const debug = one(sp.debug) === '1';
+  // 세로형(휴대폰) 미리보기 틀에서는 방송 화면을 위쪽에 붙인다.
+  const align = one(sp.align) === 'top' ? 'top' : 'center';
 
-  const { ok } = await authorizeOverlay(creatorId, token, preview);
+  const { ok, setting } = await authorizeOverlay(creatorId, token, preview);
 
   if (!ok) {
     return (
@@ -71,10 +74,15 @@ export default async function GameOverlayPage({
       debug={debug}
       sample={sample}
       sampleMode={Boolean(sampleGameId)}
+      layout={clampOverlayLayout({
+        offsetX: setting?.gameOffsetX,
+        offsetY: setting?.gameOffsetY,
+        scalePct: setting?.gameScalePct,
+      })}
     />
   );
 
   // 미리보기는 1920x1080 으로 그린 뒤 틀 크기에 맞춰 통째로 축소한다.
   // 그래야 스튜디오에서 보는 화면과 OBS 에 나가는 화면이 픽셀 단위로 같아진다.
-  return preview ? <OverlayCanvas>{overlay}</OverlayCanvas> : overlay;
+  return preview ? <OverlayCanvas align={align}>{overlay}</OverlayCanvas> : overlay;
 }

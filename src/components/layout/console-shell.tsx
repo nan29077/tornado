@@ -215,7 +215,13 @@ export function ConsoleShell({
           </div>
         </aside>
 
-        <main className="console-content min-w-0 max-w-full flex-1 overflow-x-hidden px-3 py-4 sm:px-4 sm:py-5 lg:px-7 lg:py-7">
+        {/*
+          overflow-x 는 hidden 이 아니라 clip 을 쓴다.
+          hidden 은 이 요소를 스크롤 상자로 만들어 버려서, 안쪽의 position: sticky 가
+          페이지가 아니라 이 상자를 기준으로 붙는다(= 스크롤해도 따라오지 않는다).
+          clip 은 스크롤 상자를 만들지 않으므로 가로 넘침만 자르고 sticky 는 그대로 동작한다.
+        */}
+        <main className="console-content min-w-0 max-w-full flex-1 overflow-x-clip px-3 py-4 sm:px-4 sm:py-5 lg:px-7 lg:py-7">
           <div className="mx-auto w-full max-w-[1480px]">{children}</div>
         </main>
       </div>

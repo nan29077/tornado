@@ -128,7 +128,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ creatorId: stri
 
       // 동시 연결 상한. 같은 종류(방송용 / 미리보기)끼리만 상한을 세고 방출한다.
       // 스튜디오 미리보기를 여러 개 열어도 방송 중인 OBS 연결이 끊기지 않아야 한다.
-      unregister = registerOverlayConnection(creatorId, teardown, preview ? 'preview' : 'broadcast');
+      unregister = registerOverlayConnection(
+        creatorId,
+        teardown,
+        preview ? 'preview' : 'broadcast',
+        'donation',
+      );
 
       send('ready', { creatorId, at: new Date().toISOString(), resumed: Boolean(lastEventId) });
 

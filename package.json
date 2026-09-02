@@ -13,8 +13,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "node tools/db-reset.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "node tools/test.mjs",
+    "test:watch": "node tools/test.mjs --watch",
     "test:e2e": "node e2e/run-all.mjs",
     "check:db": "node tools/check-db.mjs",
     "preview": "node tools/preview.mjs"

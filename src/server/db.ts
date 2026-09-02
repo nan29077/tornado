@@ -21,6 +21,11 @@ function createClient() {
   return new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+    transactionOptions: {
+      // 기본값은 Prisma 기본과 같은 5초다. WASM 기반 격리 테스트 DB만 환경변수로 여유를 준다.
+      maxWait: Number(process.env.DB_TRANSACTION_MAX_WAIT_MS ?? 2000),
+      timeout: Number(process.env.DB_TRANSACTION_TIMEOUT_MS ?? 5000),
+    },
   });
 }
 

@@ -26,7 +26,23 @@ import * as React from 'react';
 export const OVERLAY_CANVAS_WIDTH = 1920;
 export const OVERLAY_CANVAS_HEIGHT = 1080;
 
-export function OverlayCanvas({ children }: { children: React.ReactNode }) {
+/**
+ * 세로 배치 방식.
+ *  - center : 틀 한가운데 (기본. PC 16:9 틀에서는 여백이 거의 없다)
+ *  - top    : 틀 위쪽에 붙임. 세로형(휴대폰) 틀에서 쓴다.
+ *             유튜브 모바일은 영상이 화면 위쪽에 붙고 아래에 제목·채팅이 온다.
+ *             가운데에 놓으면 위아래가 똑같이 비어 실제와 다르게 보이고,
+ *             화면 왼쪽 위에 그린 요소가 휴대폰 화면 한가운데에 있는 것처럼 보인다.
+ */
+export type OverlayCanvasAlign = 'center' | 'top';
+
+export function OverlayCanvas({
+  children,
+  align = 'center',
+}: {
+  children: React.ReactNode;
+  align?: OverlayCanvasAlign;
+}) {
   const boxRef = React.useRef<HTMLDivElement>(null);
   const [box, setBox] = React.useState<{ w: number; h: number } | null>(null);
 
@@ -59,7 +75,7 @@ export function OverlayCanvas({ children }: { children: React.ReactNode }) {
   const scale = box ? Math.min(box.w / OVERLAY_CANVAS_WIDTH, box.h / OVERLAY_CANVAS_HEIGHT) : 0;
   // 축소한 캔버스를 틀 한가운데에 놓는다. 좌표 계산을 직접 하므로 브라우저별 차이가 없다.
   const offsetX = box ? (box.w - OVERLAY_CANVAS_WIDTH * scale) / 2 : 0;
-  const offsetY = box ? (box.h - OVERLAY_CANVAS_HEIGHT * scale) / 2 : 0;
+  const offsetY = box ? (align === 'top' ? 0 : (box.h - OVERLAY_CANVAS_HEIGHT * scale) / 2) : 0;
 
   return (
     <div ref={boxRef} className="fixed inset-0 overflow-hidden bg-transparent">

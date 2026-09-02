@@ -3,6 +3,14 @@
 import * as React from 'react';
 import { GAME_TYPE_META, type GameType } from '@/lib/game-catalog';
 import { formatNumber } from '@/lib/money';
+import { Portal } from '@/components/ui/portal';
+import { useStandalone } from '@/components/overlay/use-standalone';
+import {
+  DEFAULT_OVERLAY_LAYOUT,
+  clampOverlayLayout,
+  overlayLayoutTransform,
+  type OverlayLayout,
+} from '@/lib/overlay-layout';
 
 /**
  * 게임 오버레이 (OBS / PRISM 브라우저 소스).
@@ -52,6 +60,39 @@ export interface GamePublicState {
 
 const MAX_BACKOFF_MS = 30000;
 
+/**
+ * 배치 조정 중에 보여 주는 예시 게임 화면.
+ *
+ * 게임을 띄우지 않은 상태에서도 방송 화면에서의 자리와 크기를 미리 잡을 수 있어야 한다.
+ * 스튜디오가 [배치 조정]을 켰을 때만 그리며, 방송용(토큰) 경로에는 이 신호가 오지 않는다.
+ */
+const LAYOUT_SAMPLE: GamePublicState = {
+  creatorId: '',
+  gameId: 'layout-sample',
+  roundId: 'layout-sample',
+  type: 'ROULETTE',
+  title: '배치 조정 예시',
+  status: 'OPEN',
+  items: ['항목 1', '항목 2', '항목 3', '항목 4'],
+  destinations: [],
+  choices: [],
+  topic: '',
+  question: '',
+  counts: null,
+  participantCount: 0,
+  participantNames: [],
+  correctCount: null,
+  goal: null,
+  range: null,
+  prize: '',
+  joinUrl: null,
+  joinCode: null,
+  closesAt: null,
+  result: null,
+  winners: [],
+  updatedAt: '',
+};
+
 /** 도네이도 브랜드 색. 룰렛·막대·게이지가 같은 팔레트를 쓴다. */
 const WHEEL_COLORS = ['#fbb914', '#ff9f1c', '#ffcd4d', '#eda600', '#ffdf8c', '#c98600'];
 
@@ -72,11 +113,14 @@ export function GameOverlayClient({
   debug = false,
   sample = null,
   sampleMode = false,
+  layout = DEFAULT_OVERLAY_LAYOUT,
 }: {
   creatorId: string;
   token: string;
   preview?: boolean;
   debug?: boolean;
+  /** 저장된 배치(위치 미세 조정 · 크기 배율). 스트림으로 새 값이 오면 그쪽이 우선한다. */
+  layout?: OverlayLayout;
   /** 띄우기 전 미리보기로 보여 줄 고정 상태. 서버가 만들어 내려 준다. */
   sample?: GamePublicState | null;
   /** 미리보기 모드인지. true 면 실시간 연결을 열지 않는다. */
@@ -84,6 +128,12 @@ export function GameOverlayClient({
 }) {
   const [state, setState] = React.useState<GamePublicState | null>(null);
   const [phase, setPhase] = React.useState<'connecting' | 'connected' | 'retrying'>('connecting');
+  /** 스트림으로 받은 최신 배치. 방송 중에 스튜디오에서 저장하면 새로 고침 없이 반영된다. */
+  const [streamLayout, setStreamLayout] = React.useState<OverlayLayout | null>(null);
+  /** 스튜디오에서 드래그하는 동안 실시간으로 받는 임시 값(미리보기 전용). */
+  const [draftLayout, setDraftLayout] = React.useState<OverlayLayout | null>(null);
+  /** 스튜디오가 [배치 조정]을 켠 상태. 켜지면 예시 화면을 띄우고 자리를 보고한다. */
+  const [editFrame, setEditFrame] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     /**
@@ -110,6 +160,14 @@ export function GameOverlayClient({
       es.addEventListener('ready', () => {
         retry = 0;
         setPhase('connected');
+      });
+
+      es.addEventListener('layout', (ev) => {
+        try {
+          setStreamLayout(clampOverlayLayout(JSON.parse((ev as MessageEvent).data)));
+        } catch {
+          /* 무시 */
+        }
       });
 
       es.addEventListener('state', (ev) => {
@@ -141,23 +199,100 @@ export function GameOverlayClient({
     };
   }, [creatorId, token, preview, sampleMode]);
 
-  const shown = sampleMode ? sample : state;
+  const shown = sampleMode ? sample : (state ?? (editFrame !== null ? LAYOUT_SAMPLE : null));
+
+  React.useEffect(() => {
+    if (!preview || typeof window === 'undefined') return;
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      const data = e.data as
+        | { type?: string; target?: string; layout?: Partial<OverlayLayout>; on?: boolean; frame?: string }
+        | null;
+      if (!data || data.target !== 'game') return;
+      if (data.type === 'donaido-overlay-layout') {
+        setDraftLayout(data.layout ? clampOverlayLayout(data.layout) : null);
+      }
+      if (data.type === 'donaido-overlay-edit') {
+        setEditFrame(data.on ? String(data.frame ?? '') : null);
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [preview]);
+
+  /** 조정 중에는 게임 카드가 차지하는 자리를 부모에게 계속 알려 준다(윤곽선·손잡이용). */
+  const boardBoxRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    if (!preview || editFrame === null || typeof window === 'undefined') return;
+    let raf = 0;
+    const post = () => {
+      const el = boardBoxRef.current;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const vw = window.innerWidth || 1;
+        const vh = window.innerHeight || 1;
+        try {
+          window.parent.postMessage(
+            {
+              type: 'donaido-overlay-rect',
+              target: 'game',
+              frame: editFrame,
+              creatorId,
+              rect: { x: r.left / vw, y: r.top / vh, w: r.width / vw, h: r.height / vh },
+            },
+            window.location.origin,
+          );
+        } catch {
+          /* ignore */
+        }
+      }
+      raf = window.requestAnimationFrame(post);
+    };
+    raf = window.requestAnimationFrame(post);
+    return () => window.cancelAnimationFrame(raf);
+  }, [preview, editFrame, creatorId]);
+
+  // 우선순위: 드래그 중인 임시 값 → 스트림으로 받은 값 → 페이지를 열 때 받은 값
+  const activeLayout = draftLayout ?? streamLayout ?? clampOverlayLayout(layout);
+
+  const standalone = useStandalone();
+
+  // 부모(스튜디오 통합 미리보기)에 게임 레이어 상태를 알린다.
+  React.useEffect(() => {
+    if (!preview || sampleMode || typeof window === 'undefined' || window.parent === window) return;
+    try {
+      window.parent.postMessage(
+        {
+          type: 'donaido-game-status',
+          creatorId,
+          phase,
+          live: Boolean(state),
+          status: state?.status ?? '',
+          participantCount: state?.participantCount ?? 0,
+        },
+        window.location.origin,
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [preview, sampleMode, creatorId, phase, state]);
 
   return (
     <div className="pointer-events-none fixed inset-0 bg-transparent">
-      {shown ? <GameBoard state={shown} /> : null}
+      {shown ? <GameBoard state={shown} layout={activeLayout} boardRef={boardBoxRef} /> : null}
 
-      {debug && !sampleMode ? (
-        <span
-          // 미리보기는 캔버스째 축소되므로 배지만 원래 크기로 되돌린다.
-          style={{ transform: 'scale(calc(1 / var(--ovs, 1)))', transformOrigin: 'top left' }}
-          className={`fixed left-3 top-3 rounded-md px-2 py-1 text-[11px] font-semibold text-white ${
-            phase === 'connected' ? 'bg-ink-900/80' : 'bg-danger-500/85'
-          }`}
-        >
-          게임 {phase === 'connected' ? '연결됨' : phase === 'retrying' ? '재연결 중' : '연결 중'}
-          {state ? ` · ${state.type} · ${state.status} · 참여 ${state.participantCount}` : ' · 대기'}
-        </span>
+      {/* 디버그 배지는 단독 창에서만. body 로 옮겨 그려 축소 캔버스의 transform 밖에 둔다. */}
+      {debug && !sampleMode && standalone ? (
+        <Portal>
+          <span
+            className={`fixed left-3 top-3 z-[100] rounded-md px-2 py-1 text-[11px] font-semibold text-white ${
+              phase === 'connected' ? 'bg-ink-900/80' : 'bg-danger-500/85'
+            }`}
+          >
+            게임 {phase === 'connected' ? '연결됨' : phase === 'retrying' ? '재연결 중' : '연결 중'}
+            {state ? ` · ${state.type} · ${state.status} · 참여 ${state.participantCount}` : ' · 대기'}
+          </span>
+        </Portal>
       ) : null}
     </div>
   );
@@ -165,13 +300,27 @@ export function GameOverlayClient({
 
 // ------------------------------------------------------------------ 프레임
 
-function GameBoard({ state }: { state: GamePublicState }) {
+function GameBoard({
+  state,
+  layout,
+  boardRef,
+}: {
+  state: GamePublicState;
+  layout: OverlayLayout;
+  /** 배치 조정용 위치 측정에 쓴다. 평소에는 아무 영향이 없다. */
+  boardRef?: React.RefObject<HTMLDivElement | null>;
+}) {
   const meta = GAME_TYPE_META[state.type as GameType];
   const leaving = state.status === 'ENDED';
 
   return (
     <div className="flex h-full w-full items-center justify-center px-[80px] pb-[170px] pt-[70px]">
-      <div className={`w-full max-w-[1240px] ${leaving ? 'animate-game-out' : 'animate-game-in'}`}>
+      {/* 배치 미세 조정. 게임 카드 전체를 함께 옮기고 키운다. */}
+      <div
+        ref={boardRef}
+        className={`w-full max-w-[1240px] ${leaving ? 'animate-game-out' : 'animate-game-in'}`}
+        style={{ transform: overlayLayoutTransform(layout), transformOrigin: 'center' }}
+      >
         <div className="rounded-[40px] border-[3px] border-white/70 bg-white/95 px-[52px] py-[40px] shadow-[0_30px_90px_rgba(23,22,26,0.34)]">
           {/* 머리말 — 회오리 마크 + 게임 이름 + 상태 */}
           <div className="mb-[28px] flex items-center gap-[20px]">
@@ -222,18 +371,23 @@ function StatusPill({ state }: { state: GamePublicState }) {
 
 /** 남은 시간. 자동 마감을 쓰지 않으면 [진행 중] 만 보여 준다. */
 function Countdown({ closesAt }: { closesAt: string | null }) {
+  /**
+   * 첫 값은 계산하지 않는다.
+   *
+   * `Date.now()` 로 초기값을 잡으면 서버가 그린 숫자와 브라우저가 그린 숫자가 달라
+   * 하이드레이션 불일치가 난다. 실제 숫자는 바로 아래 effect 가 즉시(0ms) 채워 준다.
+   */
   const [left, setLeft] = React.useState<number | null>(null);
 
   React.useEffect(() => {
-    if (!closesAt) {
-      setLeft(null);
-      return;
-    }
-    const end = new Date(closesAt).getTime();
-    const tick = () => setLeft(Math.max(0, Math.ceil((end - Date.now()) / 1000)));
-    tick();
+    const end = closesAt ? new Date(closesAt).getTime() : null;
+    const tick = () => setLeft(end == null ? null : Math.max(0, Math.ceil((end - Date.now()) / 1000)));
+    const first = setTimeout(tick, 0);
     const t = setInterval(tick, 250);
-    return () => clearInterval(t);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
   }, [closesAt]);
 
   if (left == null) {
@@ -327,8 +481,8 @@ function JoinPanel({ state }: { state: GamePublicState }) {
 
   React.useEffect(() => {
     if (!state.joinUrl) {
-      setQr('');
-      return;
+      const clear = setTimeout(() => setQr(''), 0);
+      return () => clearTimeout(clear);
     }
     let alive = true;
     import('qrcode')
@@ -364,15 +518,10 @@ function JoinPanel({ state }: { state: GamePublicState }) {
 
 /** 참여자 수 + 최근 참여자 이름. 참여형 게임의 공통 머리 영역. */
 function EntryHeader({ state, hint }: { state: GamePublicState; hint?: string }) {
-  const [pulse, setPulse] = React.useState(0);
-  React.useEffect(() => {
-    setPulse((n) => n + 1);
-  }, [state.participantCount]);
-
   return (
     <div className="mb-[24px] flex items-center gap-[18px]">
       <span className="rounded-[20px] bg-brand-50 px-[24px] py-[12px] text-[30px] font-black text-brand-700">
-        <span key={pulse} className="inline-block animate-count-pulse tabular-nums">
+        <span key={state.participantCount} className="inline-block animate-count-pulse tabular-nums">
           {formatNumber(BigInt(state.participantCount))}
         </span>
         <span className="ml-[6px] text-[24px]">명 참여</span>
@@ -443,11 +592,14 @@ function RouletteBoard({ state }: { state: GamePublicState }) {
   const spun = React.useRef<string>('');
 
   React.useEffect(() => {
+    let frame = 0;
     if (winnerIndex == null || items.length === 0) {
-      setAngle(0);
-      setSettled(false);
       spun.current = '';
-      return;
+      frame = requestAnimationFrame(() => {
+        setAngle(0);
+        setSettled(false);
+      });
+      return () => cancelAnimationFrame(frame);
     }
     const key = `${state.roundId}:${winnerIndex}`;
     if (spun.current === key) return;
@@ -455,11 +607,16 @@ function RouletteBoard({ state }: { state: GamePublicState }) {
 
     const seg = 360 / items.length;
     const target = 360 * 6 - (winnerIndex * seg + seg / 2);
-    setSettled(false);
     // 다음 프레임에 각도를 바꿔야 transition 이 걸린다.
-    requestAnimationFrame(() => setAngle(target));
+    frame = requestAnimationFrame(() => {
+      setSettled(false);
+      setAngle(target);
+    });
     const t = setTimeout(() => setSettled(true), 4600);
-    return () => clearTimeout(t);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(t);
+    };
   }, [winnerIndex, items.length, state.roundId]);
 
   return (

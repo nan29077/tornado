@@ -221,6 +221,12 @@ async function nextJoinCode(): Promise<string> {
  * 이미 다른 게임이 떠 있으면 그 회차를 먼저 내린다(화면에는 하나만 뜬다).
  */
 export async function startRound(creatorId: string, gameId: string) {
+  const overlay = await prisma.overlaySetting.findUnique({
+    where: { creatorId },
+    select: { gameEnabled: true },
+  });
+  if (!overlay?.gameEnabled) fail('게임 오버레이 사용을 먼저 켜 주세요.');
+
   const game = await requireGame(creatorId, gameId);
 
   const active = await findActiveRound(creatorId);

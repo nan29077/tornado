@@ -575,7 +575,7 @@ export function OverlayQuickSettings({
             <Checkbox
               name="enabled"
               defaultChecked={setting.enabled}
-              label="오버레이 표시"
+              label="방송 화면에 보이기"
               description="끄면 후원 알림이 방송 화면에 표시되지 않습니다."
             />
             <Checkbox name="showAmount" defaultChecked={setting.showAmount} label="후원금 표시" />

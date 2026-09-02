@@ -325,8 +325,9 @@ export async function postDonationSettlement(
 export async function resolveRefundFeeReturn(
   donationId: string,
   refundAmount: bigint,
+  client: LedgerClient = prisma,
 ): Promise<{ platformFeeReturn: bigint; grossPosted: bigint; platformFeePosted: bigint }> {
-  const rows = await prisma.settlementLedger.findMany({
+  const rows = await client.settlementLedger.findMany({
     where: { donationId },
     select: { entryType: true, amount: true },
   });
@@ -383,7 +384,9 @@ export async function postRefundSettlement(
   ];
   if (input.returnPlatformFee !== false) {
     // 원 거래 분개에서 환입액을 산출한다. (환불 시점 요율로 재계산하면 원장이 틀어진다)
-    const { platformFeeReturn } = await resolveRefundFeeReturn(input.donationId, input.amount);
+    // 트랜잭션 안에서 호출됐다면 같은 tx로 읽어야 한다. 전역 prisma를 쓰면 커넥션 풀이
+    // 작은 환경에서 서로의 연결을 기다리며 타임아웃되고, 읽기 스냅샷도 어긋날 수 있다.
+    const { platformFeeReturn } = await resolveRefundFeeReturn(input.donationId, input.amount, client);
     if (platformFeeReturn > 0n) {
       entries.push({
         creatorId: input.creatorId, entryType: 'REFUND_FEE_RETURN', amount: platformFeeReturn,

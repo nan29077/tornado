@@ -4,6 +4,7 @@ import * as React from 'react';
 import {
   BarChart3,
   Check,
+  ChevronDown,
   Disc3,
   Eye,
   EyeOff,
@@ -13,6 +14,8 @@ import {
   ListOrdered,
   Loader2,
   Maximize2,
+  MessageSquare,
+  MonitorPlay,
   Network,
   Pencil,
   Play,
@@ -28,6 +31,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { Badge, Button, Card, CardTitle, EmptyState, Notice, SectionTitle, cx } from '@/components/ui';
+import { formatKst } from '@/lib/datetime';
 import { Portal } from '@/components/ui/portal';
 import { ConfirmDialog, type ConfirmPhase } from '@/components/studio/confirm-dialog';
 import { CopyButton } from '@/components/studio/copy';
@@ -136,7 +140,7 @@ type Action = 'start' | 'spin' | 'close' | 'reopen' | 'reveal' | 'undo' | 'end' 
 /**
  * 오류가 난 자리.
  *
- * 예전에는 오류 문구를 화면 맨 위에 한 곳에만 띄웠다. 그런데 [화면에 띄우기] 는 목록 아래쪽에
+ * 예전에는 오류 문구를 화면 맨 위에 한 곳에만 띄웠다. 그런데 [방송에 시작] 은 목록 아래쪽에
  * 있어서, 실패해도 문구가 화면 밖(위쪽)에 떠 크리에이터에게는 "눌러도 아무 반응이 없는" 것으로
  * 보였다. 그래서 **누른 버튼 근처**에 띄우고, 동시에 토스트로도 알린다.
  */
@@ -161,12 +165,23 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
   const [state, setState] = React.useState<StudioState | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
+  const [settingBusy, setSettingBusy] = React.useState(false);
+  const [overlayConfigured, setOverlayConfigured] = React.useState(false);
+  const [gameEnabled, setGameEnabled] = React.useState(false);
   const [toast, setToast] = React.useState<{ text: string; undo?: () => void } | null>(null);
   const [problem, setProblem] = React.useState<{ scope: ErrorScope; text: string } | null>(null);
 
   const [form, setForm] = React.useState<GameFormValue | null>(null);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [qrOpen, setQrOpen] = React.useState(false);
+  /**
+   * 지금 시작 요청을 보낸 게임.
+   *
+   * 예전에는 공용 busy 하나로 모든 카드의 [방송에 시작]을 한꺼번에 비활성화했다.
+   * 그러면 한 게임을 눌러도 목록의 모든 버튼이 같이 눌린 것처럼 보였다.
+   * 누른 카드에만 진행 표시를 주고, 나머지는 조용히 잠그기만 한다.
+   */
+  const [pendingGameId, setPendingGameId] = React.useState<string | null>(null);
   const [previewGameId, setPreviewGameId] = React.useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = React.useState<GameRow | null>(null);
   const [removePhase, setRemovePhase] = React.useState<ConfirmPhase>('closed');
@@ -200,6 +215,8 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
       setGames(data.games ?? []);
       setHistory(data.history ?? []);
       setState(data.state ?? null);
+      setOverlayConfigured(Boolean(data.overlayConfigured));
+      setGameEnabled(Boolean(data.gameEnabled));
     } finally {
       setLoading(false);
     }
@@ -271,12 +288,47 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
         setBusy(false);
       }
     },
-    [state?.gameId, state?.roundId, load, fail],
+    [state, load, fail],
   );
+
+  /** 이 페이지 위쪽 [방송 화면] 으로 옮겨 준다. 미리보기는 한 곳에만 둔다. */
+  const showBroadcast = React.useCallback(() => {
+    if (typeof document === 'undefined') return;
+    const el = document.getElementById('broadcast-preview');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else window.open(`/overlay/${encodeURIComponent(creatorId)}/game?preview=1&debug=1`, '_blank', 'noopener');
+  }, [creatorId]);
+
+  /**
+   * 참여 링크를 유튜브 라이브 채팅에 올린다.
+   * 실패해도 게임 진행에는 영향이 없다. 사유만 문구로 알린다.
+   */
+  const shareToChat = React.useCallback(async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const res = await fetch('/api/studio/games/share', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        fail('control', data.error || messageForStatus(res.status));
+        return;
+      }
+      showToast(data.message || '유튜브 라이브 채팅에 참여 링크를 올렸습니다.');
+    } catch {
+      fail('control', NETWORK_ERROR);
+    } finally {
+      setBusy(false);
+    }
+  }, [fail, showToast]);
 
   const startGame = React.useCallback(
     async (gameId: string) => {
+      if (!gameEnabled) {
+        fail('list', overlayConfigured ? '게임 오버레이 사용을 먼저 켜 주세요.' : '먼저 [방송 준비]에서 연결 주소를 발급해 주세요.');
+        return;
+      }
       setBusy(true);
+      setPendingGameId(gameId);
       setProblem(null);
       try {
         const res = await fetch('/api/studio/games/control', {
@@ -299,10 +351,42 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
         fail('list', NETWORK_ERROR);
       } finally {
         setBusy(false);
+        setPendingGameId(null);
       }
     },
-    [load, showToast, fail],
+    [load, showToast, fail, gameEnabled, overlayConfigured],
   );
+
+  const toggleGameOverlay = React.useCallback(async () => {
+    if (!overlayConfigured || settingBusy) return;
+    const next = !gameEnabled;
+    if (!next && state && !window.confirm('게임 오버레이를 끄면 진행 중인 게임도 화면에서 내려갑니다. 계속할까요?')) {
+      return;
+    }
+
+    setSettingBusy(true);
+    setProblem(null);
+    try {
+      const res = await fetch('/api/studio/games/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        fail('control', data.error || messageForStatus(res.status));
+        return;
+      }
+      setGameEnabled(Boolean(data.enabled));
+      if (data.endedActiveRound) setState(null);
+      showToast(data.enabled ? '게임 오버레이를 켰습니다' : '게임 오버레이를 끄고 방송 화면에서 내렸습니다');
+      void load();
+    } catch {
+      fail('control', NETWORK_ERROR);
+    } finally {
+      setSettingBusy(false);
+    }
+  }, [overlayConfigured, settingBusy, gameEnabled, state, fail, showToast, load]);
 
   // ------------------------------------------------------- 주 동작 결정
   const primary = React.useMemo(() => {
@@ -316,7 +400,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
       return { key: 'close' as Action, label: '참여 마감', Icon: Square };
     }
     if (state.status === 'CLOSED') return { key: 'reveal' as Action, label: '결과 발표', Icon: Trophy };
-    return { key: 'end' as Action, label: '화면에서 내리기', Icon: X };
+    return { key: 'end' as Action, label: '방송에서 종료', Icon: X };
   }, [state]);
 
   const runPrimary = React.useCallback(async () => {
@@ -462,6 +546,62 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
 
   return (
     <div className={compact ? 'space-y-4' : 'space-y-6'}>
+      {compact ? null : (
+        <Card>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className={cx(
+                'grid h-10 w-10 shrink-0 place-items-center rounded-xl',
+                gameEnabled ? 'bg-brand-50 text-brand-700' : 'bg-ink-100 text-ink-400',
+              )}>
+                {gameEnabled ? <Eye size={19} strokeWidth={1.8} /> : <EyeOff size={19} strokeWidth={1.8} />}
+              </span>
+              <span>
+                <span className="block text-[14px] font-bold text-ink-900">
+                  게임 오버레이 {gameEnabled ? '사용 중' : '사용 안 함'}
+                </span>
+                <span className="block text-[12px] leading-relaxed text-ink-400">
+                  {overlayConfigured
+                    ? gameEnabled
+                      ? '게임을 시작하면 OBS·PRISM 게임 소스에 표시됩니다.'
+                      : '미리보기와 게임 편집은 가능하지만 방송 화면에는 게임을 띄울 수 없습니다.'
+                    : '브라우저 소스 URL을 먼저 발급하면 사용할 수 있습니다.'}
+                </span>
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={gameEnabled}
+              aria-label="게임 오버레이 사용"
+              disabled={!overlayConfigured || settingBusy}
+              onClick={() => void toggleGameOverlay()}
+              className={cx(
+                'relative h-8 w-14 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-45',
+                gameEnabled ? 'bg-brand-400' : 'bg-ink-200',
+              )}
+            >
+              <span
+                className={cx(
+                  'absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-all',
+                  gameEnabled ? 'left-7' : 'left-1',
+                )}
+              />
+            </button>
+          </div>
+          {!gameEnabled && overlayConfigured ? (
+            <div className="mt-3">
+              <Notice tone="neutral">게임 미리보기는 계속 확인할 수 있습니다. 방송에 띄우려면 위 스위치를 켜 주세요.</Notice>
+            </div>
+          ) : null}
+        </Card>
+      )}
+
+      {compact && !gameEnabled ? (
+        <Notice tone="warning">
+          게임 오버레이가 사용 안 함 상태입니다. 크리에이터 관리자에서 게임 오버레이를 먼저 켜 주세요.
+        </Notice>
+      ) : null}
       {/*
         진행 컨트롤에서 난 오류만 여기에 띄운다. 목록·폼에서 난 오류는 그 자리에 띄운다.
         단 팝아웃 창(compact)은 목록·폼 자체가 없으므로 모든 오류를 여기서 받는다.
@@ -482,6 +622,8 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
           onAction={control}
           onQr={() => setQrOpen(true)}
           onPopout={openPopout}
+          onShowBroadcast={showBroadcast}
+          onChatShare={compact ? undefined : shareToChat}
         />
       ) : compact ? (
         // 팝아웃 창에서도 게임을 바로 띄울 수 있어야 한다. 방송 중에 큰 창으로 돌아가지 않도록.
@@ -489,7 +631,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
           <CardTitle>띄울 게임을 고르세요</CardTitle>
           {games.length === 0 ? (
             <p className="mt-3 text-[13px] text-ink-400">
-              아직 만든 게임이 없습니다. 스튜디오의 [후원·게임 오버레이] 화면에서 먼저 만들어 주세요.
+              아직 만든 게임이 없습니다. 크리에이터 관리자의 [후원·게임 오버레이] 화면에서 먼저 만들어 주세요.
             </p>
           ) : (
             <div className="mt-3 space-y-2">
@@ -501,12 +643,16 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
                     key={g.id}
                     type="button"
                     onClick={() => void startGame(g.id)}
-                    disabled={busy}
+                    disabled={busy || !gameEnabled}
                     className="flex w-full items-center gap-2.5 rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-left hover:bg-ink-50 disabled:opacity-50"
                   >
                     <Icon size={18} strokeWidth={1.7} className="shrink-0 text-brand-700" />
                     <span className="min-w-0 flex-1 truncate text-[13.5px] font-bold text-ink-900">{g.title}</span>
-                    <Play size={15} strokeWidth={1.9} className="shrink-0 text-ink-400" />
+                    {pendingGameId === g.id ? (
+                      <Loader2 size={15} strokeWidth={1.9} className="shrink-0 animate-spin text-brand-700" />
+                    ) : (
+                      <Play size={15} strokeWidth={1.9} className="shrink-0 text-ink-400" />
+                    )}
                   </button>
                 );
               })}
@@ -517,13 +663,32 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
         <Card>
           <EmptyState
             title="지금 방송 화면에 띄운 게임이 없습니다"
-            description="아래 목록에서 게임을 골라 [화면에 띄우기]를 누르면 여기에 진행 컨트롤이 나타납니다."
+            description="아래 목록에서 게임을 골라 [방송에 시작]을 누르면 여기에 진행 컨트롤이 나타납니다."
           />
         </Card>
       )}
 
       {compact ? null : (
-        <>
+        /*
+          진행 중에는 접어 둔다.
+          방송 중에 [내 게임]·[지난 게임 결과]를 볼 일은 없는데, 펼쳐져 있으면 진행 컨트롤이
+          화면 위로 밀려 올라간다. 게임이 떠 있지 않을 때는 그대로 펼쳐 둔다.
+        */
+        <details className="group space-y-6" open={!state}>
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl border border-ink-100 bg-white px-4 py-3 [&::-webkit-details-marker]:hidden">
+            <span className="min-w-0">
+              <span className="block text-[14px] font-bold text-ink-900">게임 관리</span>
+              <span className="mt-0.5 block text-[12px] text-ink-400">
+                게임 만들기 · 수정 · 지난 게임 결과{state ? ' (진행 중에는 접어 둡니다)' : ''}
+              </span>
+            </span>
+            <ChevronDown
+              size={18}
+              strokeWidth={1.7}
+              className="shrink-0 text-ink-400 transition-transform group-open:rotate-180"
+            />
+          </summary>
+
           {/* 2. 게임 목록 */}
           <section>
             <SectionTitle
@@ -617,13 +782,22 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
                       </div>
 
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <Button size="sm" onClick={() => void startGame(g.id)} disabled={busy || live}>
-                          <Play size={15} strokeWidth={1.8} />
-                          {live ? '띄우는 중' : '화면에 띄우기'}
+                        {/* 진행 표시는 **누른 카드에만** 준다. 나머지는 조용히 잠그기만 한다. */}
+                        <Button
+                          size="sm"
+                          onClick={() => void startGame(g.id)}
+                          disabled={busy || live || !gameEnabled}
+                        >
+                          {pendingGameId === g.id ? (
+                            <Loader2 size={15} strokeWidth={1.9} className="animate-spin" />
+                          ) : (
+                            <Play size={15} strokeWidth={1.8} />
+                          )}
+                          {live ? '방송 중' : pendingGameId === g.id ? '시작하는 중' : '방송에 시작'}
                         </Button>
                         {/*
                           띄우기 전에 방송 화면을 확인한다.
-                          회차를 만들지 않으므로 진행 이력에 아무것도 남지 않는다.
+                          회차를 만들지 않으므로 [지난 게임 결과]에 아무것도 남지 않는다.
                         */}
                         <Button
                           size="sm"
@@ -693,7 +867,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
                             </div>
                           </div>
                           <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-400">
-                            회차를 만들지 않는 확인용 화면이라 방송에는 나가지 않고 진행 이력에도 남지
+                            회차를 만들지 않는 확인용 화면이라 방송에는 나가지 않고 [지난 게임 결과]에도 남지
                             않습니다. QR 은 자리만 보여 주는 것이라 찍어도 참여되지 않습니다.
                           </p>
                         </div>
@@ -705,23 +879,29 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
             )}
           </section>
 
-          {/* 3. 진행 이력 */}
+          {/* 3. 지난 게임 결과 */}
           <section>
             <SectionTitle
-              title="진행 이력"
-              description="지난 회차의 참여자 수와 당첨자입니다. 보상을 전달했으면 체크해 두세요."
+              title="지난 게임 결과"
+              description="언제 어떤 게임을 했고 누가 당첨됐는지입니다. 보상을 실제로 전달했으면 체크해 두세요."
             />
             <Card>
               {history.length === 0 ? (
                 <p className="py-4 text-center text-[13px] text-ink-400">아직 진행한 게임이 없습니다.</p>
               ) : (
+                <>
                 <div className="space-y-3">
                   {history.map((h) => (
                     <div key={h.id} className="rounded-xl border border-ink-100 px-4 py-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-[13.5px] font-bold text-ink-900">{h.title}</span>
-                        <Badge tone="neutral">{h.seq}회차</Badge>
+                        <Badge tone="neutral">{h.seq}번째 진행</Badge>
                         <span className="text-[12px] text-ink-400">참여 {h.participantCount}명</span>
+                        {/* 날짜가 없으면 어제 건지 지난주 건지 알 수 없어 목록이 의미를 잃는다. */}
+                        <span className="text-[12px] text-ink-400 tabular-nums">
+                          {formatKst(new Date(h.openedAt), false)}
+                          {h.revealedAt ? ' 진행' : ' 시작 (발표 없음)'}
+                        </span>
                       </div>
                       {h.winners.length > 0 ? (
                         <div className="mt-2 space-y-1.5">
@@ -742,15 +922,20 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
                           ))}
                         </div>
                       ) : (
-                        <p className="mt-1.5 text-[12px] text-ink-400">당첨자 기록이 없는 회차입니다.</p>
+                        <p className="mt-1.5 text-[12px] text-ink-400">당첨자 기록이 없는 진행입니다.</p>
                       )}
                     </div>
                   ))}
                 </div>
+                <p className="mt-3 text-[11.5px] leading-relaxed text-ink-400">
+                  게임을 삭제해도 이 기록은 남습니다. 당첨자와 보상을 나중에 확인할 수 있어야 하기 때문입니다.
+                  최근 20건까지 보여 줍니다.
+                </p>
+                </>
               )}
             </Card>
           </section>
-        </>
+        </details>
       )}
 
       {/* QR 크게 보기 */}
@@ -798,7 +983,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
       <ConfirmDialog
         phase={removePhase}
         title={`"${removeTarget?.title ?? ''}" 게임을 삭제할까요?`}
-        description="목록에서 사라집니다. 지난 회차의 참여자·당첨자 기록은 이력에 그대로 남습니다."
+        description="목록에서 사라집니다. 참여자·당첨자 기록은 [지난 게임 결과]에 그대로 남습니다."
         confirmLabel="삭제"
         variant="danger"
         doneOk
@@ -825,6 +1010,8 @@ function ControlPanel({
   onAction,
   onQr,
   onPopout,
+  onShowBroadcast,
+  onChatShare,
 }: {
   state: StudioState;
   creatorId: string;
@@ -835,16 +1022,31 @@ function ControlPanel({
   onAction: (a: Action, extra?: Record<string, unknown>) => Promise<boolean>;
   onQr: () => void;
   onPopout: () => void;
+  /** 이 페이지 위쪽 [방송 화면] 으로 이동한다. */
+  onShowBroadcast: () => void;
+  /** 유튜브 라이브 채팅에 참여 링크를 올린다. 연결이 없으면 넘기지 않는다. */
+  onChatShare?: () => void;
 }) {
   const meta = GAME_TYPE_META[state.type as GameType];
   const Icon = ICONS[meta?.icon ?? 'Disc3'] ?? Disc3;
-  const item = usesItems(state.type);
   const entry = usesEntries(state.type);
   /** 참여 주소가 이 컴퓨터 안에서만 통하는 주소인지 (휴대폰에서 QR 이 열리지 않는다) */
   const localOnlyJoinUrl = Boolean(state.joinUrl && /\/\/(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(state.joinUrl));
 
   return (
-    <Card className="sticky top-2 z-30">
+    /*
+      진행 컨트롤은 헤더 → 탭 바 다음 세 번째로 붙는다.
+      기준 높이는 globals.css 의 변수를 쓰고, z-index 는 탭 바(30)보다 낮게 둔다.
+      그래야 스크롤을 올릴 때 이 카드가 탭 바 밑으로 미끄러져 들어간다.
+      card-solid 는 뒤 내용이 비치지 않는 불투명 배경이다.
+    */
+    <Card
+      className={
+        compact
+          ? ''
+          : 'card-solid sticky top-[calc(var(--console-header-h)+var(--overlay-tabbar-h))] z-20'
+      }
+    >
       {/* 상태 줄 — 높이를 고정한다. 상태가 바뀌어도 아래 내용이 위아래로 흔들리지 않는다. */}
       <div className="flex h-11 items-center gap-2.5">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700">
@@ -898,7 +1100,7 @@ function ControlPanel({
         ) : null}
         {state.status !== 'RESULT' ? (
           <Button variant="ghost" onClick={() => void onAction('end')} disabled={busy}>
-            <X size={16} strokeWidth={1.8} /> 내리기
+            <X size={16} strokeWidth={1.8} /> 방송 종료
           </Button>
         ) : (
           <Button variant="secondary" onClick={() => void onAction('start', { gameId: state.gameId })} disabled={busy}>
@@ -941,31 +1143,31 @@ function ControlPanel({
         </div>
       ) : null}
 
-      {/* 실시간 현황 + 미리보기 */}
-      <div className={cx('mt-4 grid gap-3', compact ? '' : 'lg:grid-cols-2')}>
-        <div className="min-w-0">
-          <LiveTally state={state} />
-        </div>
-
-        <div className="min-w-0">
-          <p className="mb-1.5 text-[12px] font-semibold text-ink-500">방송 화면 미리보기</p>
-          <div className="overflow-hidden rounded-xl border border-ink-100" style={CHECKER_STYLE}>
-            <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
-              <iframe
-                title="게임 오버레이 미리보기"
-                src={`/overlay/${creatorId}/game?preview=1`}
-                className="absolute inset-0 h-full w-full"
-              />
-            </div>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {state.joinUrl ? (
-              <>
-                <Button size="sm" variant="secondary" onClick={onQr}>
-                  <QrCode size={15} strokeWidth={1.8} /> QR 크게 보기
-                </Button>
-                <CopyButton value={state.joinUrl} label="참여 링크 복사" />
-              </>
+      {/*
+        시청자 참여 안내 — 주 버튼 바로 아래로 올린다.
+        방송 중에 가장 급하게 찾는 것이 참여 코드·QR·링크인데, 예전에는 미리보기 오른쪽 아래
+        작은 버튼으로 묻혀 있었다.
+      */}
+      {state.joinUrl && state.joinCode ? (
+        <div className="mt-3 rounded-xl border border-ink-100 bg-ink-50/70 px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-2">
+              <span className="text-[11.5px] font-semibold text-ink-400">참여 코드</span>
+              <span className="text-[18px] font-black tracking-[0.22em] text-ink-900">{state.joinCode}</span>
+            </span>
+            <Button size="sm" variant="secondary" onClick={onQr}>
+              <QrCode size={15} strokeWidth={1.8} /> QR 크게 보기
+            </Button>
+            <CopyButton value={state.joinUrl} label="참여 링크 복사" />
+            {/* 링크만 복사하면 시청자에게 그대로 붙여넣기 어렵다. 안내 문장까지 함께 준다. */}
+            <CopyButton
+              value={`지금 [${state.title}] 진행 중입니다. 참여 → ${state.joinUrl} (참여 코드 ${state.joinCode})`}
+              label="안내 문구 복사"
+            />
+            {onChatShare ? (
+              <Button size="sm" variant="secondary" onClick={onChatShare} disabled={busy}>
+                <MessageSquare size={15} strokeWidth={1.8} /> 유튜브 채팅에 올리기
+              </Button>
             ) : null}
           </div>
 
@@ -980,25 +1182,51 @@ function ControlPanel({
               </Notice>
             </div>
           ) : null}
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {!compact ? (
-              <>
-                <Button size="sm" variant="ghost" onClick={onPopout}>
-                  <Maximize2 size={15} strokeWidth={1.8} /> 팝아웃 컨트롤
-                </Button>
-                <a
-                  href={`/overlay/${creatorId}/game?preview=1&debug=1`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-ink-400 hover:text-ink-700"
-                >
-                  <ExternalLink size={14} strokeWidth={1.8} /> 새 탭에서 보기
-                </a>
-              </>
-            ) : null}
+        </div>
+      ) : null}
+
+      {/* 실시간 현황 */}
+      <div className="mt-4">
+        <LiveTally state={state} />
+      </div>
+
+      {/*
+        팝아웃 조작창에는 큰 화면으로 돌아갈 방법이 없으므로 작은 방송 화면을 함께 둔다.
+        스튜디오 화면에서는 위쪽 [방송 화면] 한 곳에서만 본다(미리보기 일원화).
+      */}
+      {compact ? (
+        <div className="mt-4">
+          <p className="mb-1.5 text-[12px] font-semibold text-ink-500">방송 화면</p>
+          <div className="overflow-hidden rounded-xl border border-ink-100" style={CHECKER_STYLE}>
+            <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
+              <iframe
+                title="방송 화면 (게임)"
+                src={`/overlay/${creatorId}/game?preview=1`}
+                className="pointer-events-none absolute inset-0 h-full w-full border-0"
+              />
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
+
+      {!compact ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={onShowBroadcast}>
+            <MonitorPlay size={15} strokeWidth={1.8} /> 방송 화면 보기
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onPopout}>
+            <Maximize2 size={15} strokeWidth={1.8} /> 게임 조작창 열기
+          </Button>
+          <a
+            href={`/overlay/${creatorId}/game?preview=1&debug=1`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-ink-400 hover:text-ink-700"
+          >
+            <ExternalLink size={14} strokeWidth={1.8} /> 새 탭에서 보기
+          </a>
+        </div>
+      ) : null}
 
       {!compact ? (
         <p className="mt-3 text-[11.5px] leading-relaxed text-ink-400">
@@ -1032,18 +1260,21 @@ function StatusBadge({ status }: { status: RoundStatus }) {
 
 /** 남은 시간. 폭을 고정하고 고정폭 숫자를 써서 1초마다 흔들리지 않게 한다. */
 function RemainBadge({ closesAt, status }: { closesAt: string | null; status: RoundStatus }) {
-  const [left, setLeft] = React.useState<number | null>(null);
+  const [left, setLeft] = React.useState<number | null>(() =>
+    closesAt && status === 'OPEN'
+      ? Math.max(0, Math.ceil((new Date(closesAt).getTime() - Date.now()) / 1000))
+      : null,
+  );
 
   React.useEffect(() => {
-    if (!closesAt || status !== 'OPEN') {
-      setLeft(null);
-      return;
-    }
-    const end = new Date(closesAt).getTime();
-    const tick = () => setLeft(Math.max(0, Math.ceil((end - Date.now()) / 1000)));
-    tick();
+    const end = closesAt && status === 'OPEN' ? new Date(closesAt).getTime() : null;
+    const tick = () => setLeft(end == null ? null : Math.max(0, Math.ceil((end - Date.now()) / 1000)));
+    const first = setTimeout(tick, 0);
     const t = setInterval(tick, 250);
-    return () => clearInterval(t);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
   }, [closesAt, status]);
 
   if (left == null) return null;

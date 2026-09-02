@@ -30,6 +30,7 @@ export function ActionForm({
   confirmActionLabel,
   confirmVariant,
   doneTitle,
+  scrollToId,
   className,
 }: {
   action: StudioAction;
@@ -48,11 +49,28 @@ export function ActionForm({
   confirmVariant?: 'primary' | 'danger' | 'accent';
   /** 성공했을 때 알림창 제목. 없으면 [완료되었습니다] */
   doneTitle?: string;
+  /**
+   * 성공했을 때 이 id 를 가진 요소로 부드럽게 스크롤한다.
+   *
+   * [테스트 후원 보내기] 처럼 "결과가 화면 다른 곳에서 재생되는" 동작에 쓴다.
+   * 폼을 채우려고 스크롤을 내린 상태면 재생되는 미리보기가 화면 밖이라
+   * 아무 일도 일어나지 않은 것처럼 보인다.
+   */
+  scrollToId?: string;
   className?: string;
 }) {
   const [state, formAction, pending] = React.useActionState(action, initial);
   const formRef = React.useRef<HTMLFormElement>(null);
   const confirm = useConfirmSubmit(formRef, state, pending);
+
+  // 응답이 새로 도착했고 성공이면 결과가 보이는 자리로 옮겨 준다.
+  const seenState = React.useRef(state);
+  React.useEffect(() => {
+    if (seenState.current === state) return;
+    seenState.current = state;
+    if (!scrollToId || !state.ok || typeof document === 'undefined') return;
+    document.getElementById(scrollToId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [state, scrollToId]);
 
   return (
     <form

@@ -1,4 +1,5 @@
 import { logger } from '@/lib/logger';
+import { prisma } from '@/server/db';
 import { subscribeGame } from '@/server/services/game-bus';
 import {
   registerOverlayConnection,
@@ -6,6 +7,7 @@ import {
 } from '@/server/services/overlay-connections';
 import { autoCloseIfDue } from '@/server/services/games';
 import { buildStudioState, toPublicState, type GameStudioState } from '@/server/services/game-state';
+import { clampOverlayLayout } from '@/lib/overlay-layout';
 
 /**
  * 게임 상태 SSE 스트림 (방송 오버레이 · 참여 페이지 · 크리에이터 컨트롤 공용).
@@ -75,25 +77,49 @@ export function gameStateStream(
       // 그래야 토큰이 유출됐을 때 게임 쪽만 무제한으로 붙는 구멍이 생기지 않고,
       // 스튜디오의 [현재 연결] 수치에 게임 브라우저 소스도 함께 잡힌다.
       // 방송용 상한(6)은 후원 소스 + 게임 소스가 동시에 붙는 것을 전제로 잡아 둔 값이다.
-      unregister = registerOverlayConnection(creatorId, teardown, kind);
+      unregister = registerOverlayConnection(creatorId, teardown, kind, 'game');
 
       write('ready', { creatorId, at: new Date().toISOString() });
 
+      let broadcastEnabled = kind !== 'broadcast';
+      /** 마지막으로 내보낸 배치 값. 달라졌을 때만 보낸다. */
+      let lastLayout = '';
+
       unsubscribe = subscribeGame(creatorId, (state) => {
         // 종료된 회차는 화면을 비우라는 신호다.
-        send(state.roundId ? state : null);
+        send(broadcastEnabled && state.roundId ? state : null);
       });
 
       const refresh = async () => {
         if (closed) return;
         try {
-          const state = await buildStudioState(creatorId);
+          const [state, setting] = await Promise.all([
+            buildStudioState(creatorId),
+            prisma.overlaySetting.findUnique({
+              where: { creatorId },
+              select: { gameEnabled: true, gameOffsetX: true, gameOffsetY: true, gameScalePct: true },
+            }),
+          ]);
+          broadcastEnabled = kind !== 'broadcast' || Boolean(setting?.gameEnabled);
+
+          // 배치를 바꿔 저장하면 브라우저 소스를 다시 로드하지 않아도 방송 화면에 반영된다.
+          // (후원 알림은 이벤트 페이로드에 실어 보내지만, 게임은 이벤트가 없을 수도 있다)
+          const layout = clampOverlayLayout({
+            offsetX: setting?.gameOffsetX,
+            offsetY: setting?.gameOffsetY,
+            scalePct: setting?.gameScalePct,
+          });
+          const layoutJson = JSON.stringify(layout);
+          if (layoutJson !== lastLayout) {
+            lastLayout = layoutJson;
+            write('layout', layout);
+          }
           // 자동 마감 시각이 지났으면 여기서 마감한다. 별도 스케줄러를 두지 않는다.
           if (state?.status === 'OPEN' && state.closesAt && new Date(state.closesAt).getTime() <= Date.now()) {
             const closedNow = await autoCloseIfDue(creatorId);
             if (closedNow) return; // 마감 처리에서 새 상태가 발행된다
           }
-          send(state);
+          send(broadcastEnabled ? state : null);
         } catch (e) {
           logger.warn('게임 상태 조회 실패', { creatorId, message: (e as Error).message });
         }
