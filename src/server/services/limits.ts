@@ -1,6 +1,7 @@
 import { prisma } from '@/server/db';
 import { kv } from '@/server/redis';
 import { newId } from '@/lib/id';
+import { logger } from '@/lib/logger';
 import { kstDateKey, kstMonthKey } from '@/lib/datetime';
 import type { DonorProfileModel as DonorProfile } from '@/generated/prisma/models';
 
@@ -261,6 +262,14 @@ export async function checkLimits(input: LimitCheckInput): Promise<LimitCheckRes
   // 결제 직전 재검사가 반드시 확인해야 하는 것은 DB 집계 기반 한도이고, 그건 위에서 끝냈다.
   // ------------------------------------------------------------------
   if (!input.tx) {
+    // Redis 장애로 인메모리 폴백 중이면 인스턴스마다 카운터가 따로 놀아
+    // 연속후원 대기·속도 제한이 실제로는 우회될 수 있다. 조용히 통과시키는 대신
+    // 정상화될 때까지 보수적으로 차단한다(L-1).
+    if (kv.isDegraded()) {
+      logger.warn('Redis 폴백 상태에서 속도 제한 판정 — 보수적으로 차단합니다.', { donorId: input.donor.id });
+      return deny('VELOCITY', '일시적으로 후원이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.');
+    }
+
     const cooldownKey = `cooldown:${input.donor.id}`;
     if (await kv.get(cooldownKey)) {
       return deny('COOLDOWN', '연속 후원으로 대기 중입니다. 잠시 후 다시 시도해 주세요.');
@@ -328,7 +337,13 @@ export async function commitCounters(
   }
 }
 
-/** 환불 시 집계 되돌림 */
+/**
+ * 환불 시 집계 되돌림.
+ *
+ * updateMany 의 decrement 는 0 밑으로 내려갈 수 있다(늦게 들어온 환불이 이미 날짜가 바뀐
+ * 집계를 건드리거나, 같은 건이 이중으로 롤백되는 경우 등). 마이너스로 쌓인 집계는 다음
+ * 한도 판정에서 실제보다 더 많이 허용해 버리므로, 0 을 바닥으로 둔다(L-2).
+ */
 export async function rollbackCounters(
   donorId: string,
   creatorId: string,
@@ -345,10 +360,18 @@ export async function rollbackCounters(
     { creatorId, periodType: 'MONTH', periodKey: monthKey },
   ];
   for (const t of targets) {
-    await client.donationCounter.updateMany({
-      where: { donorId, creatorId: t.creatorId, periodType: t.periodType, periodKey: t.periodKey },
-      data: { count: { decrement: 1 }, amount: { decrement: amount } },
-    });
+    await client.$executeRawUnsafe(
+      `UPDATE donation_counter
+         SET count = GREATEST(count - 1, 0),
+             amount = GREATEST(amount - $1::bigint, 0),
+             updated_at = now()
+       WHERE donor_id = $2 AND creator_id = $3 AND period_type = $4 AND period_key = $5`,
+      amount.toString(),
+      donorId,
+      t.creatorId,
+      t.periodType,
+      t.periodKey,
+    );
   }
 }
 

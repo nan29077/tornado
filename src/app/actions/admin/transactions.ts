@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/server/db';
 import { writeAudit } from '@/server/auth';
 import { newId } from '@/lib/id';
-import { requestRefund, approveRefund, rejectRefund } from '@/server/services/refund';
+import { requestRefund, approveRefund, rejectRefund, retryRefundRecovery } from '@/server/services/refund';
 import { reconcileUnknownPayment } from '@/server/services/payment-reconcile';
 import type { AdminActionState } from '@/components/admin/state';
 import { run, text, optText, money, enumValue, requiredId } from './shared';
@@ -228,6 +228,33 @@ export async function rejectRefundAction(_prev: AdminActionState, fd: FormData):
     });
     revalidatePath('/admin/refunds');
     return '환불 요청을 거절했습니다.';
+  });
+}
+
+/** PG 취소 API 오류로 재시도 대기(PENDING_RECOVERY) 에 머문 환불을 다시 시도한다. */
+export async function retryRefundRecoveryAction(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
+  return run(async (admin) => {
+    if (admin.adminPermission === 'SUPPORT') throw new Error('환불 재시도는 재무/운영 권한에서만 가능합니다.');
+    const refundId = requiredId(fd, 'refundId', '환불 요청');
+
+    const before = await prisma.refund.findUnique({
+      where: { id: refundId },
+      select: { id: true, status: true, amount: true, donationId: true },
+    });
+    if (!before) throw new Error('환불 요청을 찾을 수 없습니다.');
+
+    await retryRefundRecovery(refundId, admin.id);
+    await writeAudit({
+      adminUserId: admin.id,
+      action: 'REFUND_RETRY_RECOVERY',
+      targetType: 'Refund',
+      targetId: refundId,
+      before: { status: before.status },
+      after: { status: 'DONE', amount: before.amount, donationId: before.donationId },
+    });
+    revalidatePath('/admin/refunds');
+    revalidatePath('/admin/settlements');
+    return '환불 취소를 다시 시도해 완료했습니다.';
   });
 }
 

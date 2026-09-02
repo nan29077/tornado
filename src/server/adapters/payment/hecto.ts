@@ -389,6 +389,13 @@ export const hectoPaymentAdapter: PaymentAdapter = {
       }),
     });
 
+    if (!res.ok) {
+      // HTTP 오류(5xx, 게이트웨이 타임아웃 등)는 승인 실패가 아니라 "불확실"이다.
+      // 이 응답 바디만으로 승인 여부를 단정하면, 실제로는 승인됐는데 실패로 확정해
+      // 크리에이터가 그 금액을 영영 못 받는 사고로 이어질 수 있다.
+      // 예외를 던져 상위(executePayment)가 거래결과조회(inquire)로 실제 상태를 확정하게 한다.
+      throw new Error(`헥토 승인 API HTTP 오류 (status=${res.status})`);
+    }
     if (!isSuccess(res.json)) return failure(res.json, '결제 승인에 실패했습니다.');
 
     return {

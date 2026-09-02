@@ -1,6 +1,7 @@
 import { prisma } from '@/server/db';
 import { resolveSecureLink, consumeSecureLink } from './secure-link';
 import { tokenHash } from '@/lib/crypto';
+import { logger } from '@/lib/logger';
 import { executePayment, setStatus } from './donation-flow';
 
 /**
@@ -117,6 +118,36 @@ export async function expireStaleConfirmations(now = new Date()) {
     // setStatus 를 거쳐야 DonationStatusLog 감사 이력이 남는다
     await setStatus(s.donationId, 'PAYMENT_FAILED', '확인 시간 초과로 자동 취소');
     count += 1;
+  }
+  return count;
+}
+
+/**
+ * 확인 링크 소비(consumeSecureLink)까지는 끝났는데 executePayment 로 이어지지 못하고
+ * 크래시한 건을 복구한다 (M-6). 링크는 소비됐는데 후원이 여전히 PENDING_CONFIRM 인 건이 대상이다.
+ *
+ * 링크 소비와 결제 실행 사이는 외부 PG 호출을 포함해 하나의 DB 트랜잭션으로 묶을 수 없으므로,
+ * 대신 주기적으로 이 상태를 찾아 결제를 다시 시도한다. executePayment 는 결제 트랜잭션을
+ * 주문번호로 재사용하므로 다시 호출해도 이중 승인되지 않는다.
+ */
+export async function recoverStaleConfirmedDonations(now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - 30_000);
+  const stale = await prisma.secureLink.findMany({
+    where: { purpose: 'CONFIRM_PAYMENT', usedAt: { not: null, lt: cutoff }, donationId: { not: null } },
+    select: { donationId: true },
+  });
+
+  let count = 0;
+  for (const s of stale) {
+    if (!s.donationId) continue;
+    const d = await prisma.donation.findUnique({ where: { id: s.donationId }, select: { status: true } });
+    if (d?.status !== 'PENDING_CONFIRM') continue;
+    try {
+      await executePayment(s.donationId);
+      count += 1;
+    } catch (e) {
+      logger.error('확인 링크 소비 후 결제 재시도 실패', { donationId: s.donationId, message: (e as Error).message });
+    }
   }
   return count;
 }

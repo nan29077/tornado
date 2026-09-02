@@ -4,7 +4,12 @@ import { Badge, Card, CardTitle, EmptyState, Notice, SectionTitle, StatTile, Tab
 import { AdminField, AdminInput, AdminSelect, AdminTextarea, FilterBar, Pager } from '@/components/admin/controls';
 import { ActionButton, ActionForm } from '@/components/admin/action-form';
 import { PAGE_SIZE, parsePage } from '@/components/admin/constants';
-import { approveRefundAction, rejectRefundAction, createAdminRefund } from '@/app/actions/admin/transactions';
+import {
+  approveRefundAction,
+  rejectRefundAction,
+  createAdminRefund,
+  retryRefundRecoveryAction,
+} from '@/app/actions/admin/transactions';
 import { prisma } from '@/server/db';
 import { formatWon, formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
@@ -14,7 +19,7 @@ import type { RefundStatus } from '@/generated/prisma/enums';
 
 export const dynamic = 'force-dynamic';
 
-const STATUSES: RefundStatus[] = ['REQUESTED', 'APPROVED', 'REJECTED', 'DONE', 'FAILED'];
+const STATUSES: RefundStatus[] = ['REQUESTED', 'APPROVED', 'PENDING_RECOVERY', 'REJECTED', 'DONE', 'FAILED'];
 
 export default async function AdminRefundsPage({
   searchParams,
@@ -65,8 +70,13 @@ export default async function AdminRefundsPage({
         description="환불이 승인되면 결제 취소와 함께 정산 원장에 반대 분개가 추가됩니다."
       />
 
-      <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-5">
         <StatTile label="처리 대기" value={formatNumber(waiting)} tone={waiting > 0 ? 'warning' : 'neutral'} />
+        <StatTile
+          label="재시도 대기"
+          value={formatNumber(countOf('PENDING_RECOVERY'))}
+          tone={countOf('PENDING_RECOVERY') > 0 ? 'danger' : 'neutral'}
+        />
         <StatTile label="환불 완료" value={formatNumber(countOf('DONE'))} sub={formatWon(doneSum)} tone="success" />
         <StatTile label="거절" value={formatNumber(countOf('REJECTED'))} />
         <StatTile label="실패" value={formatNumber(countOf('FAILED'))} tone={countOf('FAILED') > 0 ? 'danger' : 'neutral'} />
@@ -204,6 +214,14 @@ export default async function AdminRefundsPage({
                             </div>
                           </details>
                         </div>
+                      ) : r.status === 'PENDING_RECOVERY' ? (
+                        <ActionButton
+                          action={retryRefundRecoveryAction}
+                          values={{ refundId: r.id }}
+                          label="재시도"
+                          variant="primary"
+                          confirm="PG 취소 결과를 다시 확인하고 재시도합니다."
+                        />
                       ) : (
                         <span className="text-[12px] text-ink-300">처리 완료</span>
                       )}

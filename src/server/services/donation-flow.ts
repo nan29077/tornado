@@ -10,6 +10,7 @@ import { getPaymentAdapter, MockPaymentTimeout } from '@/server/adapters/payment
 import { filterContent, splitKeyword, type BannedWordRule } from './content-filter';
 import { checkLimits, commitCounters, rollbackCounters, registerFailure, clearFailures, resolvePolicy } from './limits';
 import { acquireIdempotency } from './idempotency';
+import { hasDirectTriggerWrittenApproval } from './financial-approval';
 import { issueSecureLink, LINK_TTL_SEC } from './secure-link';
 import * as tpl from './mt-templates';
 import { calculateFees, postDonationSettlement } from './settlement';
@@ -276,6 +277,22 @@ export function resolvePaymentMode(
     return 'CONFIRM_LINK';
   }
   return desired;
+}
+
+/**
+ * resolvePaymentMode + DB 서면승인 확인 (M-3).
+ *
+ * ALLOW_DIRECT_TRIGGER 환경변수는 배포 단위로 켜고 끄는 스위치일 뿐이라, 실수로 켜 두면
+ * 서면승인 없이도 즉시 결제가 열린다. 실제 결제(MO 수신 흐름)로 들어가는 지점에서는
+ * 환경변수에 더해 DB 에 금융사 서면승인 레코드가 있는 경우에만 DIRECT_TRIGGER 를 허용한다.
+ */
+export async function resolvePaymentModeChecked(
+  creatorMode: PaymentMode | null,
+  allowDirectTrigger: boolean = env.safety.allowDirectTrigger,
+): Promise<PaymentMode> {
+  const desired = resolvePaymentMode(creatorMode, allowDirectTrigger);
+  if (desired !== 'DIRECT_TRIGGER') return desired;
+  return (await hasDirectTriggerWrittenApproval()) ? 'DIRECT_TRIGGER' : 'CONFIRM_LINK';
 }
 
 /**
@@ -549,7 +566,7 @@ async function processMoRow(
         message: filtered.clean,
         messageRawEnc: encrypt(routed.body),
         status: 'RECEIVED',
-        paymentMode: resolvePaymentMode(creator.paymentMode),
+        paymentMode: await resolvePaymentModeChecked(creator.paymentMode),
       },
     });
   } catch (error) {
@@ -900,6 +917,10 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
     });
     if (existing?.status === 'APPROVED') return { limit, txn: existing, alreadyApproved: true };
 
+    // 이 거래(주문번호)로 집계를 이미 예약해 뒀는지는 새 결제 트랜잭션 행을 만드는지 여부로 판단한다.
+    // 기존 행을 재사용하는 경우는 이전 시도(승인 대기 중 크래시 등)가 이미 예약을 마친 뒤이므로,
+    // 여기서 또 커밋하면 같은 후원이 두 번 집계된다(M-2: executePayment 재시도 시 집계 중복 방지).
+    const isNewTxn = !existing;
     const row =
       existing ??
       (await tx.paymentTransaction.create({
@@ -912,10 +933,12 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
         },
       }));
 
-    // 승인 결과를 기다리지 않고 집계를 먼저 잡아둔다(예약).
-    // 잠금 밖에서 승인 후에 반영하면, 그사이 들어온 같은 후원자의 요청이
-    // 이 건이 빠진 집계를 읽고 함께 통과해 한도를 넘긴다. 실패하면 아래에서 되돌린다.
-    await commitCounters(donor.id, donation.creatorId, donation.amount, reservedAt, tx);
+    if (isNewTxn) {
+      // 승인 결과를 기다리지 않고 집계를 먼저 잡아둔다(예약).
+      // 잠금 밖에서 승인 후에 반영하면, 그사이 들어온 같은 후원자의 요청이
+      // 이 건이 빠진 집계를 읽고 함께 통과해 한도를 넘긴다. 실패하면 아래에서 되돌린다.
+      await commitCounters(donor.id, donation.creatorId, donation.amount, reservedAt, tx);
+    }
     return { limit, txn: row, alreadyApproved: false };
   }, {
     // 기본값(5초)에 기대지 않고 명시한다.
@@ -924,10 +947,11 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
     maxWait: 5_000,
     timeout: 10_000,
   });
-  // TODO(#counter-recovery): commitCounters 트랜잭션과 adapter.approve() 사이는 원자적이지 않다.
-  // 두 작업 사이에 프로세스가 크래시하면 카운터가 소진 상태로 고착된다.
-  // 복구를 위해서는 status=PENDING_PAYMENT 이고 paidAt=null 인 donation 을 주기적으로 스캔해
-  // DonationCounter 를 실결제 결과 기준으로 재집계하는 배치(/api/cron/cleanup)가 필요하다.
+  // 집계 예약(commitCounters) 트랜잭션과 adapter.approve() 사이는 원자적이지 않다.
+  // 두 작업 사이에 프로세스가 크래시하면 후원이 PENDING_PAYMENT 에 멈춘 채 집계만 예약된 상태로
+  // 남을 수 있다. 위에서 집계 커밋을 결제 트랜잭션 신규 생성 시에만 실행하도록 만들어
+  // executePayment 를 다시 불러도 안전(재예약되지 않음)하게 했으므로, 그 상태로 멈춘 건은
+  // reconcileStuckPendingPayments(정리 배치, /api/cron/cleanup) 가 주기적으로 재시도한다(M-2).
 
   const limitNow = decision.limit;
   if (!limitNow.ok) {
@@ -1156,6 +1180,41 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
   }
 
   return { ok: true, status: 'SETTLEMENT_PENDING', message: '후원이 완료되었습니다.' };
+}
+
+/**
+ * 정리 배치(/api/cron/cleanup) 훅 포인트 (M-2).
+ *
+ * 집계 예약(commitCounters) 이후 PG 승인 완료 사이에 프로세스가 죽으면 후원이
+ * PENDING_PAYMENT 에 멈춘다. executePayment 는 결제 트랜잭션을 주문번호로 재사용하고
+ * 집계는 그 행을 새로 만들 때만 커밋하므로(위 isNewTxn 분기), 다시 불러도 집계가
+ * 중복되지 않는다 — 그 성질을 이용해 멈춘 건을 그대로 재시도한다.
+ * (PG 쪽 approve() 도 같은 주문번호 재요청에는 기존 승인 결과를 그대로 돌려주므로 이중 출금도 없다)
+ */
+export async function reconcileStuckPendingPayments(now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - 5 * 60_000);
+  const stale = await prisma.donation.findMany({
+    where: {
+      status: 'PENDING_PAYMENT',
+      paidAt: null,
+      updatedAt: { lt: cutoff },
+      // UNKNOWN/TIMEOUT 로 확정된 건은 이미 관리자 수동 대사 큐(admin/payments)로 올라가 있다.
+      // 여기서는 결제사에 아직 결과를 확인하지 못한(REQUESTED) 순수 고착 건만 다룬다.
+      transactions: { some: { status: 'REQUESTED' } },
+    },
+    select: { id: true },
+  });
+
+  let count = 0;
+  for (const d of stale) {
+    try {
+      await executePayment(d.id);
+      count += 1;
+    } catch (e) {
+      logger.error('PENDING_PAYMENT 고착 건 재시도 실패', { donationId: d.id, message: (e as Error).message });
+    }
+  }
+  return count;
 }
 
 // ---------------------------------------------------------------------------

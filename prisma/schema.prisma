@@ -171,6 +171,9 @@ enum DeliveryStatus {
 enum RefundStatus {
   REQUESTED
   APPROVED
+  /// PG 취소 API 가 타임아웃/네트워크 오류로 결과를 확인하지 못한 상태.
+  /// APPROVED 에 영구 고착시키지 않고, 재시도(수동 또는 배치)로 이어갈 수 있게 분리한다.
+  PENDING_RECOVERY
   REJECTED
   DONE
   FAILED

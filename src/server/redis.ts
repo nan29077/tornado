@@ -15,6 +15,12 @@ export interface KvStore {
   del(key: string): Promise<void>;
   /** 원자적 선점. 이미 존재하면 false */
   setnx(key: string, value: string, ttlSec: number): Promise<boolean>;
+  /**
+   * Redis 명령 실패로 인메모리 폴백으로 강등된 상태인지.
+   * 폴백 중에는 인스턴스마다 카운터가 따로 놀아 속도 제한이 실제로는 우회될 수 있으므로,
+   * 호출부가 이 값을 보고 보수적으로 판단할 수 있게 노출한다(L-1).
+   */
+  isDegraded(): boolean;
 }
 
 class MemoryStore implements KvStore {
@@ -57,7 +63,23 @@ class MemoryStore implements KvStore {
     await this.set(key, value, ttlSec);
     return true;
   }
+
+  isDegraded() {
+    return false;
+  }
 }
+
+/** INCR 후 값이 1(최초 생성)일 때만 EXPIRE 를 같은 호출 안에서 원자적으로 건다. */
+const INCR_WITH_TTL_SCRIPT = `
+local v = redis.call('INCR', KEYS[1])
+if v == 1 then
+  local ttl = tonumber(ARGV[1])
+  if ttl and ttl > 0 then
+    redis.call('EXPIRE', KEYS[1], ttl)
+  end
+end
+return v
+`;
 
 /**
  * Redis 스토어.
@@ -102,9 +124,10 @@ class RedisStore implements KvStore {
   async incr(key: string, ttlSec?: number) {
     if (this.fallback) return this.fallback.incr(key, ttlSec);
     try {
-      const n = await this.client.incr(key);
-      if (n === 1 && ttlSec) await this.client.expire(key, ttlSec);
-      return n;
+      // INCR 다음에 EXPIRE 를 따로 호출하면 그 사이에 프로세스가 죽었을 때
+      // 카운터가 TTL 없이 영구히 남는다(L-7). Lua 스크립트로 한 번에 묶어 원자적으로 처리한다.
+      const n = await this.client.eval(INCR_WITH_TTL_SCRIPT, 1, key, String(ttlSec ?? 0));
+      return Number(n);
     } catch (e) {
       return this.degrade(e).incr(key, ttlSec);
     }
@@ -127,6 +150,10 @@ class RedisStore implements KvStore {
     } catch (e) {
       return this.degrade(e).setnx(key, value, ttlSec);
     }
+  }
+
+  isDegraded() {
+    return this.fallback !== null;
   }
 }
 

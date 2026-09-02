@@ -79,6 +79,7 @@ export const paymentTxStatusLabel: Record<PaymentTxStatus, { text: string; tone:
 export const refundStatusLabel: Record<RefundStatus, { text: string; tone: Tone }> = {
   REQUESTED: { text: '요청', tone: 'warning' },
   APPROVED: { text: '승인', tone: 'brand' },
+  PENDING_RECOVERY: { text: '재시도 대기', tone: 'danger' },
   REJECTED: { text: '거절', tone: 'neutral' },
   DONE: { text: '완료', tone: 'success' },
   FAILED: { text: '실패', tone: 'danger' },

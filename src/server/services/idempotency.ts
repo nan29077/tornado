@@ -1,6 +1,7 @@
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
 import { addDays } from '@/lib/datetime';
+import { Prisma } from '@/generated/prisma/client';
 
 /**
  * 멱등성 유틸.
@@ -45,7 +46,10 @@ export async function acquireIdempotency<T = unknown>(
         await prisma.idempotencyKey.delete({ where: { id: row.id } }).catch(() => undefined);
       },
     };
-  } catch {
+  } catch (e) {
+    // 유니크 충돌(P2002)만 "중복 요청"으로 취급한다. 그 외 DB 오류(연결 끊김 등)까지
+    // 중복으로 삼키면 실제로는 생성되지 않은 거래가 조용히 무시된다.
+    if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== 'P2002') throw e;
     const existing = await prisma.idempotencyKey.findUnique({ where: { scope_key: { scope, key } } });
     return { status: 'DUPLICATE', resourceId: existing?.resourceId ?? null };
   }

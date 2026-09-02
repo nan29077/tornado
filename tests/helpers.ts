@@ -43,6 +43,13 @@ export async function seedBasics(options: { paymentMode?: 'CONFIRM_LINK' | 'DIRE
   await prisma.feePolicy.create({
     data: { id: newId(), scope: 'GLOBAL', pgFeeRate: '0.018', platformFeeRate: '0.15' },
   });
+  // ALLOW_DIRECT_TRIGGER=true 만으로는 DIRECT_TRIGGER 가 열리지 않는다(M-3).
+  // 테스트에서도 이 경로를 검증하므로 DB 서면승인 레코드를 함께 넣어 둔다.
+  await prisma.systemSetting.upsert({
+    where: { key: 'financial_direct_trigger_written_approval' },
+    create: { key: 'financial_direct_trigger_written_approval', value: { approved: true, documentRef: 'TEST-FIXTURE' } },
+    update: { value: { approved: true, documentRef: 'TEST-FIXTURE' } },
+  });
 
   for (const t of ['TERMS_SERVICE', 'PRIVACY', 'E_FINANCE', 'WITHDRAWAL_AGREE', 'AGE_CONFIRM'] as const) {
     await prisma.termsVersion.create({

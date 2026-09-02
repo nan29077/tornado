@@ -8,6 +8,7 @@ import { newId, newCreatorCode } from '@/lib/id';
 import { env } from '@/lib/env';
 import type { AdminActionState } from '@/components/admin/state';
 import { issueTemporaryPassword } from '@/server/services/password-reset';
+import { hasDirectTriggerWrittenApproval } from '@/server/services/financial-approval';
 import { run, text, optText, money, optMoney, enumValue, requiredId } from './shared';
 
 /**
@@ -253,8 +254,12 @@ export async function updateCreatorPaymentMode(_prev: AdminActionState, fd: Form
     if (!['', 'CONFIRM_LINK', 'DIRECT_TRIGGER'].includes(raw)) throw new Error('결제 모드 값이 올바르지 않습니다.');
     const paymentMode = raw === '' ? null : (raw as 'CONFIRM_LINK' | 'DIRECT_TRIGGER');
 
-    if (paymentMode === 'DIRECT_TRIGGER' && !env.safety.allowDirectTrigger) {
-      throw new Error('금융사 서면승인이 등록되지 않아 즉시형 결제를 활성화할 수 없습니다.');
+    if (paymentMode === 'DIRECT_TRIGGER') {
+      // 환경변수(ALLOW_DIRECT_TRIGGER)만으로는 열지 않는다. DB 에 금융사 서면승인
+      // 레코드가 실제로 있는 경우에만 허용한다(M-3).
+      if (!env.safety.allowDirectTrigger || !(await hasDirectTriggerWrittenApproval())) {
+        throw new Error('금융사 서면승인이 등록되지 않아 즉시형 결제를 활성화할 수 없습니다.');
+      }
     }
 
     const before = await prisma.creatorProfile.findUnique({

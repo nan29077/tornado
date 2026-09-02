@@ -3,10 +3,12 @@ import { env, isLocal } from '@/lib/env';
 import { safeEqual } from '@/lib/crypto';
 import { logger } from '@/lib/logger';
 import { kv } from '@/server/redis';
-import { expireStalePinSessions } from '@/server/services/pin-authorization';
-import { expireStaleConfirmations } from '@/server/services/donation-confirm';
+import { expireStalePinSessions, recoverStalePinCompletions } from '@/server/services/pin-authorization';
+import { expireStaleConfirmations, recoverStaleConfirmedDonations } from '@/server/services/donation-confirm';
 import { purgeExpiredIdempotencyKeys } from '@/server/services/idempotency';
 import { purgeExpiredResetTokens } from '@/server/services/password-reset';
+import { retryAllPendingRefundRecoveries } from '@/server/services/refund';
+import { reconcileStuckPendingPayments } from '@/server/services/donation-flow';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,11 +21,19 @@ export const dynamic = 'force-dynamic';
  *   Authorization: Bearer ${CRON_SECRET}
  *
  * 하는 일
- *  1) expireStalePinSessions      — PIN 을 입력하지 않아 TTL 이 지난 후원을 자동 취소한다.
- *                                   (결제사 콜백이 오지 않은 PENDING_PIN 건의 보정 경로이기도 하다)
- *  2) expireStaleConfirmations    — 구 확인 링크(CONFIRM_LINK) 만료 건을 자동 취소한다.
- *  3) purgeExpiredIdempotencyKeys — 만료된 멱등키를 지운다.
- *  4) purgeExpiredResetTokens     — 만료된 비밀번호 재설정 토큰을 지운다.
+ *  1) expireStalePinSessions          — PIN 을 입력하지 않아 TTL 이 지난 후원을 자동 취소한다.
+ *                                       (결제사 콜백이 오지 않은 PENDING_PIN 건의 보정 경로이기도 하다)
+ *  2) expireStaleConfirmations        — 구 확인 링크(CONFIRM_LINK) 만료 건을 자동 취소한다.
+ *  3) purgeExpiredIdempotencyKeys     — 만료된 멱등키를 지운다.
+ *  4) purgeExpiredResetTokens         — 만료된 비밀번호 재설정 토큰을 지운다.
+ *  5) recoverStalePinCompletions      — PIN 콜백을 COMPLETED 로 선점한 직후 크래시해 결제 실행까지
+ *                                       이어지지 못한 건(PENDING_PIN 고착)을 복구한다.
+ *  6) recoverStaleConfirmedDonations  — 확인 링크를 소비한 직후 크래시해 결제 실행까지 이어지지
+ *                                       못한 건(PENDING_CONFIRM 고착)을 복구한다.
+ *  7) retryAllPendingRefundRecoveries — PG 취소 API 오류로 재시도 대기(PENDING_RECOVERY) 에 머문
+ *                                       환불을 다시 시도한다.
+ *  8) reconcileStuckPendingPayments   — 집계 예약 이후 크래시해 PENDING_PAYMENT 에 멈춘 후원을
+ *                                       재시도한다.
  *
  * 원칙
  *  - 인증은 fail-closed. 비밀이 없으면 로컬에서만 통과한다.
@@ -86,8 +96,21 @@ export async function GET(req: Request) {
     const confirmations = await step('만료 확인 링크 취소', () => expireStaleConfirmations());
     const idempotencyKeys = await step('만료 멱등키 삭제', () => purgeExpiredIdempotencyKeys());
     const resetTokens = await step('만료 재설정 토큰 삭제', () => purgeExpiredResetTokens());
+    const pinCompletions = await step('PIN 완료 후 결제 미실행 복구', () => recoverStalePinCompletions());
+    const confirmedPayments = await step('확인 링크 소비 후 결제 미실행 복구', () => recoverStaleConfirmedDonations());
+    const refundRecoveries = await step('환불 취소 재시도', () => retryAllPendingRefundRecoveries());
+    const stuckPayments = await step('PENDING_PAYMENT 고착 건 재시도', () => reconcileStuckPendingPayments());
 
-    const steps = { pinSessions, confirmations, idempotencyKeys, resetTokens };
+    const steps = {
+      pinSessions,
+      confirmations,
+      idempotencyKeys,
+      resetTokens,
+      pinCompletions,
+      confirmedPayments,
+      refundRecoveries,
+      stuckPayments,
+    };
     const allOk = Object.values(steps).every((s) => s.ok);
     return NextResponse.json({
       ok: allOk,

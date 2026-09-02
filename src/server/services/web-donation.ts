@@ -5,7 +5,7 @@ import { donorDisplayName } from '@/lib/donor-name';
 import { filterContent } from './content-filter';
 import { checkLimits } from './limits';
 import { acquireIdempotency } from './idempotency';
-import { executePayment, loadBannedWords, resolvePaymentMode, startPinAuthorization } from './donation-flow';
+import { executePayment, loadBannedWords, resolvePaymentModeChecked, startPinAuthorization } from './donation-flow';
 import { allowLegacyWebInstantPay } from '@/lib/env';
 import type { DonationStatus } from '@/generated/prisma/enums';
 
@@ -128,7 +128,7 @@ export async function createWebDonation(input: WebDonationInput): Promise<WebDon
         messageRawEnc: encrypt(input.message),
         status: 'RECEIVED',
         statusReason: '후원샵 웹 후원',
-        paymentMode: resolvePaymentMode(creator.paymentMode),
+        paymentMode: await resolvePaymentModeChecked(creator.paymentMode),
       },
     });
   } catch (error) {

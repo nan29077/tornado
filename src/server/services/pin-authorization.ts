@@ -327,3 +327,29 @@ export async function expireStalePinSessions(now = new Date()): Promise<number> 
   }
   return count;
 }
+
+/**
+ * PIN 콜백을 `PENDING → COMPLETED` 로 선점한 직후 executePayment 로 이어지지 못하고
+ * 크래시한 건을 복구한다 (M-5). 세션은 COMPLETED 인데 후원은 여전히 PENDING_PIN 인 건이 대상이다.
+ *
+ * executePayment 는 결제 트랜잭션을 주문번호(orderNo)로 재사용하므로 다시 호출해도
+ * 이중 승인되지 않는다. 정상 처리 중인 건과 겹치지 않도록 선점 후 일정 시간이 지난 건만 다룬다.
+ */
+export async function recoverStalePinCompletions(now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - 30_000);
+  const stale = await prisma.paymentPinSession.findMany({
+    where: { status: 'COMPLETED', completedAt: { lt: cutoff }, donation: { status: 'PENDING_PIN' } },
+    select: { donationId: true },
+  });
+
+  let count = 0;
+  for (const s of stale) {
+    try {
+      await executePayment(s.donationId);
+      count += 1;
+    } catch (e) {
+      logger.error('PIN 완료 후 결제 재시도 실패', { donationId: s.donationId, message: (e as Error).message });
+    }
+  }
+  return count;
+}
