@@ -5,6 +5,8 @@ import { AdminField, AdminInput, AdminSelect, AdminTextarea } from '@/components
 import { ActionFormWithDetail } from '@/components/admin/action-form';
 import { maskLinkTokens, shortId } from '@/components/admin/mask';
 import { runMoSimulation } from '@/app/actions/admin/simulator';
+import { runEmmaSimulation } from '@/app/actions/admin/emma-simulator';
+import { formatMoNumber } from '@/server/emma';
 import { prisma } from '@/server/db';
 import { readMockOutbox } from '@/server/adapters/mt';
 import { env, isLocal } from '@/lib/env';
@@ -78,11 +80,107 @@ export default async function AdminSimulatorPage() {
         </div>
       ) : null}
 
+      {env.emma.enabled ? (
+        <div className="mt-5">
+          <Card>
+            <CardTitle>EMMA 수신 시뮬레이션 (인포뱅크 경로)</CardTitle>
+            <p className="mt-1 mb-3 text-[12px] leading-relaxed text-ink-400">
+              EMMA 가 하는 일을 그대로 흉내냅니다. 수신 테이블(<code>em_mo_log_YYYYMM</code>)에 문자를 넣고
+              폴러를 1회 실행합니다. 운영에서 <code>/api/cron/emma-mo</code> 가 도는 것과 완전히 같은 코드
+              경로입니다. 아래 <strong className="text-ink-200">번호 분할 방식</strong>은 셋 중 무엇을 골라도
+              같은 수신번호로 복원되어야 정상입니다.
+            </p>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ActionFormWithDetail
+                action={runEmmaSimulation}
+                submitLabel="EMMA 경로로 실행"
+                confirm="실제 후원 거래가 생성됩니다. 계속할까요?"
+                detailLabels={{
+                  'EMMA 저장 형태': 'EMMA 저장 형태',
+                  '복원된 수신번호': '복원된 수신번호',
+                  '폴러 결과': '폴러 결과',
+                  mo_key: 'mo_key',
+                  크리에이터: '크리에이터',
+                  '처리 결과': '처리 결과',
+                  거래번호: '거래번호',
+                  '후원 상태': '후원 상태',
+                }}
+              >
+                <AdminField label="수신번호 (배정된 MO 번호)">
+                  <AdminSelect name="to" defaultValue={numbers[0]?.phoneNumber ?? ''} required>
+                    {numbers.length === 0 ? <option value="">배정된 번호 없음</option> : null}
+                    {numbers.map((n) => (
+                      <option key={n.id} value={n.phoneNumber}>
+                        {formatMoNumber(n.phoneNumber)} · {n.creator?.displayName ?? '미배정'}
+                      </option>
+                    ))}
+                  </AdminSelect>
+                </AdminField>
+                <AdminField
+                  label="번호 분할 방식"
+                  hint="사업자가 수신번호를 어느 지점에서 끊어 보내는지는 계약 후 확정됩니다. 셋 다 시험해 보세요."
+                >
+                  <AdminSelect name="splitMode" defaultValue="BASE_SUB">
+                    <option value="BASE_SUB">A) 대표번호 8자리 + 서브번호 4자리 (가장 유력)</option>
+                    <option value="PREFIX_REST">B) 앞 4자리 + 나머지 8자리</option>
+                    <option value="WHOLE">C) 전체번호가 한 컬럼에</option>
+                  </AdminSelect>
+                </AdminField>
+                <AdminField label="발신 휴대전화번호">
+                  <AdminInput name="from" placeholder="010-1234-5678" required />
+                </AdminField>
+                <AdminField label="문자 내용">
+                  <AdminTextarea name="content" rows={3} placeholder="오늘 방송 재밌어요" required />
+                </AdminField>
+              </ActionFormWithDetail>
+
+              <div className="text-[12px] leading-relaxed text-ink-400">
+                <SectionTitle title="현재 EMMA 설정" />
+                <Table>
+                  <tbody>
+                    <tr>
+                      <Th>대표번호</Th>
+                      <Td className="font-mono">{env.emma.baseNumber || '(미설정 — 계약 후 지정)'}</Td>
+                    </tr>
+                    <tr>
+                      <Th>EMMA DB</Th>
+                      <Td>{env.emma.dbUrl ? '전용 DB (권장)' : '앱과 같은 DB (분리 권장)'}</Td>
+                    </tr>
+                    <tr>
+                      <Th>MT 발송</Th>
+                      <Td>
+                        {env.mt.provider === 'emma' ? 'EMMA 발송 큐' : `${env.mt.provider} (문자는 개발 아웃박스로)`}
+                      </Td>
+                    </tr>
+                    <tr>
+                      <Th>이중화 ID</Th>
+                      <Td>{env.emma.emmaId ? env.emma.emmaId : '(비어 있음 — 정상)'}</Td>
+                    </tr>
+                  </tbody>
+                </Table>
+                <p className="mt-3">
+                  대표번호가 설정값과 다른 문자는 처리되지 않고 그대로 남습니다. 한 EMMA 에 여러 서비스의 번호가
+                  물린 구성에서 서로의 후원을 가로채지 않기 위한 안전장치입니다.
+                </p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      ) : (
+        <div className="mt-5">
+          <Notice tone="neutral" title="EMMA 연동이 꺼져 있습니다">
+            인포뱅크 EMMA 경로를 로컬에서 확인하려면 <code>.env</code> 에 <code>EMMA_ENABLED=true</code> 와{' '}
+            <code>EMMA_MO_BASE_NUMBER</code>(계약 대표번호, 미정이면 <code>16881234</code>)를 설정한 뒤 서버를
+            다시 시작해 주세요. 아래 기본 시뮬레이터는 EMMA 없이도 수신 처리 로직만 확인합니다.
+          </Notice>
+        </div>
+      )}
+
       <div className="mt-5 grid gap-4 lg:grid-cols-3">
         <Card>
-          <CardTitle>수신 문자 시뮬레이션</CardTitle>
+          <CardTitle>수신 문자 시뮬레이션 (EMMA 미경유)</CardTitle>
           <p className="mt-1 mb-3 text-[12px] leading-relaxed text-ink-400">
-            mock MO 어댑터의 파서를 그대로 사용해 실제 수신 처리 로직을 실행합니다.
+            mock MO 어댑터의 파서를 그대로 사용해 수신 처리 로직만 실행합니다. 번호 복원·폴러는 거치지 않습니다.
           </p>
           <ActionFormWithDetail
             action={runMoSimulation}

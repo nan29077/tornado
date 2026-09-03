@@ -14,6 +14,18 @@ process.env.ALLOW_INMEMORY_FALLBACK = 'true';
 process.env.REDIS_URL = '';
 process.env.MO_ALLOWED_IPS = '';
 
+/**
+ * EMMA(인포뱅크 에이전트) 연동 테스트 설정.
+ *
+ * env 는 모듈 로드 시 한 번만 읽히므로 여기서 미리 지정한다. 켜 두어도 다른 테스트에 영향이 없다.
+ * EMMA_ENABLED 는 운영 기동 점검과 폴링 배치·MT 어댑터에서만 참조하고, MT_PROVIDER 는
+ * 위에서 mock 으로 고정해 두었기 때문에 기존 문자 발송 검증(아웃박스)은 그대로 동작한다.
+ */
+process.env.EMMA_ENABLED = 'true';
+process.env.EMMA_MO_BASE_NUMBER = '16881234';
+process.env.EMMA_DB_URL = ''; // 테스트는 앱과 같은 DB(PGlite)를 쓴다
+process.env.EMMA_ID = ''; // 이중화 미사용 → em_smt_tran.emma_id 는 공백이어야 한다
+
 // 내장 DB(PGlite)는 단일 세션 위에 여러 연결을 다중화(multiplex)한다.
 // 연결 풀이 2개 이상이면 동시 요청의 트랜잭션·prepared statement 가 서로 섞여
 // "방금 만든 행을 찾을 수 없음", "bind message supplies N parameters" 같은 오류가 난다.

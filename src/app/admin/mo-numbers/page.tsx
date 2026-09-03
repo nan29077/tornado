@@ -5,6 +5,8 @@ import { AdminField, AdminInput, AdminSelect, FilterBar } from '@/components/adm
 import { ActionButton, ActionForm, DatalistActionForm, SelectActionForm } from '@/components/admin/action-form';
 import { createMoNumber, assignMoNumber, changeMoNumberStatus } from '@/app/actions/admin/transactions';
 import { prisma } from '@/server/db';
+import { env } from '@/lib/env';
+import { formatMoNumber } from '@/server/emma';
 import { formatWon, formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
 import { moNumberStatusLabel } from '@/lib/labels';
@@ -26,6 +28,14 @@ export default async function AdminMoNumbersPage({
   const sp = await searchParams;
   const q = (sp.q ?? '').trim();
   const status = STATUSES.includes(sp.status as MoNumberStatus) ? (sp.status as MoNumberStatus) : undefined;
+
+  /**
+   * 화면 안내에 쓰는 대표번호.
+   * 계약 확정 전에는 EMMA_MO_BASE_NUMBER 가 비어 있으므로 예시 번호를 보여 준다.
+   */
+  const moBaseSample = (env.emma.baseNumber || '16881234').replace(/\D/g, '');
+  const moBaseLabel = `${moBaseSample.slice(0, 4)}-${moBaseSample.slice(4)}`;
+  const cooldownDays = Number(process.env.MO_SUBCODE_COOLDOWN_DAYS ?? 180);
 
   const where: Prisma.CreatorMoNumberWhereInput = {
     ...(status ? { status } : {}),
@@ -97,14 +107,15 @@ export default async function AdminMoNumbersPage({
         <Card className="lg:col-span-1">
           <CardTitle>번호 등록</CardTitle>
           <p className="mt-1 mb-3 text-[12px] leading-relaxed text-ink-400">
-            사업자에게 발급받은 수신번호를 재고로 등록합니다. 대표번호 공유 모드는 키워드가 반드시 필요합니다.
+            크리에이터 승인 시 <strong className="text-ink-200">대표번호 + 4자리</strong> 번호가 자동으로
+            발급됩니다. 이 화면은 특정 번호를 직접 지정하거나 옛 번호를 정리할 때만 사용합니다.
           </p>
           <ActionForm action={createMoNumber} submitLabel="재고 등록">
-            <AdminField label="수신번호" hint="숫자만 입력 (예: 05051234567)">
-              <AdminInput name="phoneNumber" inputMode="numeric" placeholder="05051234567" required />
+            <AdminField label="수신번호" hint={`숫자만 입력 (예: ${moBaseSample}5678)`}>
+              <AdminInput name="phoneNumber" inputMode="numeric" placeholder={`${moBaseSample}5678`} required />
             </AdminField>
-            <AdminField label="키워드" hint="대표번호 공유 모드에서 문자 맨 앞에 붙는 식별 키워드">
-              <AdminInput name="keyword" placeholder="DONAIDO" />
+            <AdminField label="키워드" hint="대표번호 공유 모드에서만 사용합니다. 전용번호는 비워 둡니다.">
+              <AdminInput name="keyword" placeholder="(전용번호는 비워 둠)" />
             </AdminField>
             <AdminField label="수신 모드">
               <AdminSelect name="mode" defaultValue="DEDICATED">
@@ -122,15 +133,20 @@ export default async function AdminMoNumbersPage({
         </Card>
 
         <div className="lg:col-span-2">
-          <Notice tone="neutral" title="배정·회수 규칙">
-            승인된 크리에이터에게만 번호를 배정할 수 있습니다. 회수하면 크리에이터 연결이 끊기고 상태가 회수로
-            바뀌며, 해당 번호로 들어온 문자는 대상 없음으로 처리됩니다. 사용중지는 회선 해지 등 더 이상 사용하지 않는
-            번호에 사용합니다. 모든 변경은 감사로그에 기록됩니다.
+          <Notice tone="neutral" title="번호 체계와 배정·회수 규칙">
+            수신번호는 <strong className="text-ink-200">{moBaseLabel}-XXXX</strong> 형태입니다. 앞 8자리는 계약한
+            대표번호로 고정이고, 뒤 4자리만 크리에이터마다 다릅니다. 이 4자리는 인포뱅크 승인 없이 도네이도가
+            직접 부여하므로 크리에이터 승인과 동시에 자동 발급됩니다.
+            <br />
+            회수하면 크리에이터 연결이 끊기고 그 번호로 온 문자는 대상 없음으로 처리됩니다.{' '}
+            <strong className="text-ink-200">회수한 번호는 냉각기간({cooldownDays}일)이 지나야 다시 배정됩니다.</strong>{' '}
+            이전 크리에이터를 후원하던 사람의 문자가 새 크리에이터에게 결제되는 것을 막기 위함입니다.
+            모든 변경은 감사로그에 기록됩니다.
           </Notice>
           <div className="mt-3">
             <FilterBar action="/admin/mo-numbers" resetHref="/admin/mo-numbers">
               <AdminField label="번호·키워드 검색" className="w-52">
-                <AdminInput name="q" defaultValue={q} placeholder="0505... 또는 DONAIDO" />
+                <AdminInput name="q" defaultValue={q} placeholder={`${moBaseSample}... 또는 뒤 4자리`} />
               </AdminField>
               <AdminField label="상태" className="w-40">
                 <AdminSelect name="status" defaultValue={status ?? ''}>
@@ -185,7 +201,7 @@ export default async function AdminMoNumbersPage({
           <tbody>
             {numbers.map((n) => (
               <tr key={n.id}>
-                <Td className="font-mono text-[13px] font-semibold">{n.phoneNumber}</Td>
+                <Td className="font-mono text-[13px] font-semibold">{formatMoNumber(n.phoneNumber)}</Td>
                 <Td>{n.keyword ?? '-'}</Td>
                 <Td>{n.mode === 'DEDICATED' ? '전용번호' : '대표번호 공유'}</Td>
                 <Td>

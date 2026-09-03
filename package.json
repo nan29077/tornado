@@ -17,6 +17,7 @@
     "test:watch": "node tools/test.mjs --watch",
     "test:e2e": "node e2e/run-all.mjs",
     "check:db": "node tools/check-db.mjs",
+    "check:emma": "node tools/emma-check.mjs",
     "preview": "node tools/preview.mjs"
   },
   "dependencies": {

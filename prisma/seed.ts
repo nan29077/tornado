@@ -93,10 +93,17 @@ async function main() {
   });
 
   // ---------------------------------------------------------------- 크리에이터
+  /**
+   * MO 수신번호 체계: `1688-□□□□-XXXX`
+   *   앞 8자리 = 인포뱅크와 계약한 대표번호(고정). 계약 확정 전이라 예시로 16881234 를 쓴다.
+   *   뒤 4자리 = 도네이도가 크리에이터에게 직접 부여하는 서브번호.
+   * 실제 대표번호를 받으면 .env 의 EMMA_MO_BASE_NUMBER 를 바꾸고 이 시드도 함께 갱신한다.
+   */
+  const MO_BASE = (process.env.EMMA_MO_BASE_NUMBER ?? '').replace(/\D/g, '') || '16881234';
   const creatorSeeds = [
-    { email: 'creator1@tornado.kr', name: '바람소리', code: 'TOR-8K2M', mo: '05051001001', mode: 'DEDICATED' as const, keyword: null },
-    { email: 'creator2@tornado.kr', name: '별하늘', code: 'TOR-3QP7', mo: '05059000000', mode: 'SHARED_PREFIX' as const, keyword: 'TOR3QP7' },
-  ];
+    { email: 'creator1@tornado.kr', name: '바람소리', code: 'TOR-8K2M', sub: '1001', mode: 'DEDICATED' as const, keyword: null },
+    { email: 'creator2@tornado.kr', name: '별하늘', code: 'TOR-3QP7', sub: '2002', mode: 'DEDICATED' as const, keyword: null },
+  ].map((c) => ({ ...c, mo: `${MO_BASE}${c.sub}` }));
 
   for (const c of creatorSeeds) {
     const user = await prisma.user.upsert({
@@ -132,8 +139,9 @@ async function main() {
       await prisma.creatorMoNumber.create({
         data: {
           id: newId(), phoneNumber: c.mo, keyword: c.keyword, mode: c.mode,
-          status: 'ASSIGNED', creatorId: creator.id, providerId: 'mock',
-          assignedAt: new Date(), monthlyCost: c.mode === 'DEDICATED' ? 30000 : 0,
+          baseNumber: MO_BASE, subCode: c.sub,
+          status: 'ASSIGNED', creatorId: creator.id, providerId: 'emma',
+          assignedAt: new Date(), monthlyCost: 0,
         },
       });
     }
@@ -274,7 +282,7 @@ async function main() {
   }
 
   // ---------------------------------------------------------------- 옛 번호 샘플 정리
-  // 050 전환 이전 번호(1588…)로 들어가 UNKNOWN_ROUTE 로 실패한 샘플 수신문자를 지운다.
+  // 번호 체계 전환 이전 번호로 들어가 UNKNOWN_ROUTE 로 실패한 샘플 수신문자를 지운다.
   // 지워야 아래 샘플 후원 블록이 다시 실행되어 정상 데이터가 만들어진다.
   await prisma.moInboundMessage.deleteMany({
     where: { providerMessageId: { startsWith: 'SEED-MO-' }, result: 'UNKNOWN_ROUTE' },
@@ -353,10 +361,41 @@ async function main() {
     }
   }
 
-  // ---------------------------------------------------------------- 050 번호 전환
-  // 시드 v5: MO 수신번호를 050(0505) 체계로 전환한다. 기존 DB 의 옛 1588 번호를 갱신한다.
-  await prisma.creatorMoNumber.updateMany({ where: { phoneNumber: '15881001' }, data: { phoneNumber: '05051001001' } });
-  await prisma.creatorMoNumber.updateMany({ where: { phoneNumber: '15889000' }, data: { phoneNumber: '05059000000' } });
+  // ---------------------------------------------------------------- MO 번호 체계 전환
+  /**
+   * 시드 v6: MO 수신번호를 `1688-□□□□-XXXX` (인포뱅크 EMMA) 체계로 전환한다.
+   *
+   * 시드는 "이미 있으면 건너뛰기" 방식이라 기존 로컬 DB 의 옛 번호(1588…, 0505…)는
+   * 자동으로 갱신되지 않는다. 옛 번호가 남아 있으면 시뮬레이터·관리자 화면에 섞여 보이고,
+   * 무엇보다 **문자를 보내도 라우팅되지 않는다.** 여기서 명시적으로 옮긴다.
+   */
+  const legacyMoMigrations: Array<[string[], string, string]> = [
+    [['15881001', '05051001001'], `${MO_BASE}1001`, '1001'],
+    [['15889000', '05059000000'], `${MO_BASE}2002`, '2002'],
+  ];
+  for (const [oldNumbers, newNumber, sub] of legacyMoMigrations) {
+    // 새 번호가 이미 있으면 옛 행을 옮기지 않는다(유니크 충돌 방지).
+    const taken = await prisma.creatorMoNumber.findFirst({ where: { phoneNumber: newNumber } });
+    if (taken) continue;
+    await prisma.creatorMoNumber.updateMany({
+      where: { phoneNumber: { in: oldNumbers } },
+      data: {
+        phoneNumber: newNumber,
+        baseNumber: MO_BASE,
+        subCode: sub,
+        // 옛 대표번호+키워드 방식은 더 이상 쓰지 않는다. 번호 하나가 곧 크리에이터 하나다.
+        keyword: null,
+        mode: 'DEDICATED',
+        providerId: 'emma',
+      },
+    });
+  }
+  // 위에서 옮기지 못한(이미 새 번호가 있는) 옛 행은 재고에서 빼 둔다. 그대로 두면
+  // 관리자 화면에 배정된 것처럼 보이면서 실제로는 수신되지 않는 유령 번호가 된다.
+  await prisma.creatorMoNumber.updateMany({
+    where: { phoneNumber: { in: ['15881001', '15889000', '05051001001', '05059000000'] } },
+    data: { status: 'DISABLED', creatorId: null, releasedAt: new Date(), memo: '구 번호 체계 — 사용 중지' },
+  });
 
   // ---------------------------------------------------------------- 브랜드명 정리
   // 예전 시드로 만들어진 데이터에 남은 '토네이도' 를 '도네이도' 로 바꾼다.
@@ -417,8 +456,9 @@ async function main() {
 
   console.log('시드 완료');
   console.log('  관리자     : admin@tornado.kr / tornado1234!');
-  console.log('  크리에이터 : creator1@tornado.kr / tornado1234! (코드 TOR-8K2M, MO 0505-100-1001)');
-  console.log('  크리에이터 : creator2@tornado.kr / tornado1234! (코드 TOR-3QP7, MO 0505-900-0000 + 키워드 TOR3QP7)');
+  const fmtMo = (sub: string) => `${MO_BASE.slice(0, 4)}-${MO_BASE.slice(4)}-${sub}`;
+  console.log(`  크리에이터 : creator1@tornado.kr / tornado1234! (코드 TOR-8K2M, MO ${fmtMo('1001')})`);
+  console.log(`  크리에이터 : creator2@tornado.kr / tornado1234! (코드 TOR-3QP7, MO ${fmtMo('2002')})`);
   console.log('  후원자     : donor@tornado.kr / tornado1234! (010-1234-5678, 계좌 등록·계정 연결 완료)');
 }
 

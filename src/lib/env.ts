@@ -174,7 +174,41 @@ export const env = {
     mtonetApiKey: str('MTONET_API_KEY'),
   },
 
-  /** 문자 발송(MT). provider 는 mock | coolsms 를 지원한다. */
+  /**
+   * EMMA (인포뱅크 온프레미스 SMS 에이전트) 연동.
+   *
+   * EMMA 는 웹훅을 보내지 않고 자기 DB 테이블에 읽고 쓴다. 그래서 MO 는 폴링으로 가져오고
+   * MT 는 발송 큐 테이블에 적재하는 방식으로 붙는다.
+   *
+   * 활성 조건은 `EMMA_ENABLED=true` 하나로 모은다. MO_PROVIDER/MT_PROVIDER 와 따로 놀면
+   * "수신은 EMMA, 발송은 mock" 같은 어긋난 조합이 조용히 만들어진다.
+   */
+  emma: {
+    enabled: bool('EMMA_ENABLED', false),
+    /**
+     * EMMA 전용 DB 접속 URL. 비우면 앱과 같은 DB(DATABASE_URL)를 쓴다.
+     * EMMA 는 테이블·프로시저 생성 권한을 요구하므로 **분리를 권장**한다.
+     */
+    dbUrl: str('EMMA_DB_URL'),
+    poolMax: num('EMMA_DB_POOL_MAX', 4),
+    /**
+     * 계약한 대표번호(숫자만). 예: 1688 + 계약 4자리 = 16881234
+     * 설정하면 이 대표번호로 들어온 수신만 처리한다. 한 EMMA 에 여러 서비스의 번호가 물린
+     * 구성에서 서로의 문자를 가로채는 사고를 막는 안전판이다.
+     */
+    baseNumber: str('EMMA_MO_BASE_NUMBER'),
+    /**
+     * EMMA 이중화 인스턴스 ID(2자리). **이중화를 실제로 쓸 때만** 설정한다.
+     * 값이 EMMA 설정과 다르면 MT 가 큐에 쌓이기만 하고 발송되지 않는다(mt-sender.ts 주석 참고).
+     */
+    emmaId: str('EMMA_ID'),
+    /** 폴링 1회에 가져올 최대 건수. */
+    batchSize: num('EMMA_MO_BATCH_SIZE', 200),
+    /** 선점된 채 이 시간(초)을 넘긴 건은 중단된 것으로 보고 되살린다. */
+    staleSec: num('EMMA_MO_STALE_SEC', 300),
+  },
+
+  /** 문자 발송(MT). provider 는 mock | coolsms | emma 를 지원한다. */
   mt: {
     provider: str('MT_PROVIDER', 'mock') as ProviderMode,
     apiKey: str('MT_API_KEY'),
@@ -332,8 +366,17 @@ export function assertProductionSafety(): string[] {
   if (env.crypto.sessionSecret.startsWith('dev-only')) problems.push('SESSION_SECRET 이 기본값입니다.');
   if (env.crypto.phoneHashSecret.startsWith('dev-only')) problems.push('PHONE_HASH_SECRET 이 기본값입니다.');
   if (env.allowInMemoryFallback) problems.push('운영에서는 ALLOW_INMEMORY_FALLBACK=false 여야 합니다.');
-  if (env.mo.allowedIps.length === 0) problems.push('MO_ALLOWED_IPS 가 비어 있습니다.');
-  if (!env.mo.webhookSecret) problems.push('MO_WEBHOOK_SECRET 이 비어 있습니다.');
+  /**
+   * MO 수신 경로는 둘 중 하나다.
+   *  - 웹훅(사업자가 우리를 호출) → IP 허용목록·서명 시크릿이 유일한 방어선이므로 필수다.
+   *  - EMMA 폴링(우리가 EMMA DB 를 읽음) → 외부에서 들어오는 요청 자체가 없다.
+   * EMMA 를 쓰는데 웹훅 값을 강제하면 있지도 않은 시크릿을 만들어 넣게 되어 오히려 관리가 나빠진다.
+   * 다만 웹훅 엔드포인트는 그대로 살아 있고, 그쪽은 verifyMoRequest() 가 fail-closed 로 막는다.
+   */
+  if (!env.emma.enabled) {
+    if (env.mo.allowedIps.length === 0) problems.push('MO_ALLOWED_IPS 가 비어 있습니다.');
+    if (!env.mo.webhookSecret) problems.push('MO_WEBHOOK_SECRET 이 비어 있습니다.');
+  }
   // 비어 있으면 PIN 완료 콜백이 전건 거절되어 결제가 영원히 완료되지 않는다.
   if (!env.payment.pinCallbackSecret) problems.push('PAYMENT_PIN_CALLBACK_SECRET 이 비어 있습니다.');
   if (env.payment.provider === 'mock') problems.push('PAYMENT_PROVIDER 가 mock 입니다.');
@@ -345,7 +388,19 @@ export function assertProductionSafety(): string[] {
   // 실제로는 유튜브 채팅에도, 후원자 휴대폰에도 아무것도 나가지 않는다.
   if (env.youtube.provider === 'mock') problems.push('YOUTUBE_PROVIDER 가 mock 입니다.');
   if (env.mt.provider === 'mock') problems.push('MT_PROVIDER 가 mock 입니다.');
-  if (env.mo.provider === 'mock') problems.push('MO_PROVIDER 가 mock 입니다.');
+  // EMMA 폴링을 쓰면 MO 사업자 어댑터(웹훅 파서)는 사용되지 않는다.
+  if (!env.emma.enabled && env.mo.provider === 'mock') problems.push('MO_PROVIDER 가 mock 입니다.');
+  if (env.emma.enabled) {
+    // 대표번호가 비면 어떤 번호로 들어온 문자든 전부 받아들인다. 한 EMMA 에 여러 서비스의
+    // 번호가 물린 구성에서 남의 서비스 후원까지 우리 쪽에 쌓이므로 운영에서는 필수로 둔다.
+    if (!env.emma.baseNumber.replace(/\D/g, '')) {
+      problems.push('EMMA_ENABLED=true 인데 EMMA_MO_BASE_NUMBER 가 비어 있습니다. (계약한 대표번호를 지정하십시오)');
+    }
+    // 폴링 배치가 돌지 않으면 문자가 들어와도 후원이 만들어지지 않는다. 조용히 멈추는 실패다.
+    if (!env.cron.secret) {
+      problems.push('EMMA_ENABLED=true 인데 CRON_SECRET 이 비어 있습니다. (MO 폴링 배치가 전건 401 로 거절됩니다)');
+    }
+  }
   // 기본값에 MOCK/OK/SUCCESS 가 들어 있어, 그대로 두면 결제사가 무엇을 보내든 성공 처리된다.
   if (env.payment.pinSuccessCodes.some((c) => c === 'MOCK')) {
     problems.push('PAYMENT_PIN_SUCCESS_CODES 에 기본값 MOCK 이 남아 있습니다. 결제사 규격 코드로 교체해 주세요.');
@@ -388,6 +443,21 @@ export function bootWarnings(): string[] {
   // provider=local 인데 마스터키가 없으면 개인정보 암호화가 호출 시점에 예외가 된다.
   if (env.crypto.provider === 'local' && !env.crypto.masterKey) {
     warnings.push('CRYPTO_MASTER_KEY 가 비어 있습니다. 개인정보 암호화가 호출 시점에 실패합니다.');
+  }
+  if (env.emma.enabled && !env.emma.dbUrl.trim()) {
+    warnings.push(
+      'EMMA_DB_URL 이 비어 있어 EMMA 가 앱과 같은 DB 를 쓰는 구성입니다. EMMA 는 테이블·프로시저 ' +
+        '생성 권한을 요구하므로 전용 DB 분리를 권장합니다. (반대로 Prisma 작업이 em_* 테이블을 지울 수도 있습니다)',
+    );
+  }
+  if (env.mt.provider === 'emma' && !env.emma.enabled) {
+    warnings.push('MT_PROVIDER=emma 인데 EMMA_ENABLED 가 꺼져 있습니다. 문자 발송이 큐에 쌓이기만 하고 나가지 않습니다.');
+  }
+  if (env.emma.enabled && env.emma.emmaId.trim() !== '') {
+    warnings.push(
+      `EMMA_ID=${env.emma.emmaId} 가 설정되어 있습니다. 이 값은 EMMA 이중화 인스턴스 ID 이며, ` +
+        'EMMA 설정과 정확히 일치하지 않으면 MT 가 큐에 쌓이기만 하고 발송되지 않습니다. 이중화를 쓰지 않는다면 비워 두십시오.',
+    );
   }
   if (isProd && env.crypto.provider === 'local' && env.crypto.allowLocalInProd) {
     warnings.push(

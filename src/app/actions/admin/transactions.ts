@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/server/db';
 import { writeAudit } from '@/server/auth';
 import { newId } from '@/lib/id';
+import { splitMoNumber } from '@/server/emma';
 import { requestRefund, approveRefund, rejectRefund, retryRefundRecovery } from '@/server/services/refund';
 import { reconcileUnknownPayment } from '@/server/services/payment-reconcile';
 import type { AdminActionState } from '@/components/admin/state';
@@ -15,14 +16,35 @@ import { run, text, optText, money, enumValue, requiredId, assertFinanceAdmin, a
 
 // =========================================================== MO 번호
 
-// MO 수신번호는 050(0505/0507 등) 안심번호 체계를 사용한다.
-// 크리에이터마다 고유 번호를 부여하므로 형식을 강제해 오등록을 막는다.
-const PHONE_RE = /^050[0-9]{7,10}$/;
+/**
+ * MO 수신번호 형식.
+ *
+ * 두 체계를 함께 받는다.
+ *  1) 050 안심번호 — 기존 MO 사업자(MTONET) 체계. 번호 하나가 곧 크리에이터 하나다.
+ *  2) 대표번호 + 서브번호 — 인포뱅크 EMMA 체계. `1688-□□□□-XXXX` 처럼
+ *     앞 8자리는 계약한 대표번호로 고정이고 뒤 4자리를 크리에이터에게 부여한다.
+ *     15xx/16xx/18xx 계열 전국대표번호 8자리 + 서브번호 4자리 = 12자리다.
+ *
+ * 형식을 강제하는 이유는 오등록 때문이다. 자리수 하나가 틀린 번호를 배정하면 그 크리에이터는
+ * 후원 문자를 한 통도 못 받는데, 화면상으로는 정상 배정으로 보인다.
+ */
+const SAFE_NUMBER_RE = /^050[0-9]{7,10}$/;
+const REPRESENTATIVE_NUMBER_RE = /^1[5678][0-9]{2}[0-9]{4}[0-9]{4}$/;
+
+function isValidMoNumber(value: string): boolean {
+  return SAFE_NUMBER_RE.test(value) || REPRESENTATIVE_NUMBER_RE.test(value);
+}
 
 export async function createMoNumber(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
     const phoneNumber = text(fd, 'phoneNumber').replace(/[^0-9]/g, '');
-    if (!PHONE_RE.test(phoneNumber)) throw new Error('수신번호는 050 으로 시작하는 숫자 10~13자리로 입력해 주세요. (예: 05051001001)');
+    if (!isValidMoNumber(phoneNumber)) {
+      throw new Error(
+        '수신번호 형식이 올바르지 않습니다. ' +
+          '대표번호+서브번호 12자리(예: 168812345678) 로 입력해 주세요. ' +
+          '(구 050 안심번호 체계는 숫자 10~13자리)',
+      );
+    }
 
     const mode = enumValue(fd, 'mode', ['DEDICATED', 'SHARED_PREFIX'] as const, '수신 모드');
     const rawKeyword = optText(fd, 'keyword');
@@ -54,8 +76,26 @@ export async function createMoNumber(_prev: AdminActionState, fd: FormData): Pro
       throw new Error('이미 등록된 번호/키워드 조합입니다.');
     }
 
+    /**
+     * 전용번호는 대표번호 / 서브번호 축으로도 쪼개 둔다.
+     * 자동 발급(mo-number-issue.ts)과 같은 형태로 저장해야 소진 현황 집계와
+     * 중복 방지 인덱스(creator_mo_number_base_sub_uniq)가 두 경로에 똑같이 적용된다.
+     * 대표번호를 공유하는 키워드 방식은 번호를 나눠 쓰는 개념이 아니므로 비워 둔다.
+     */
+    const split = effectiveKeyword === null ? splitMoNumber(phoneNumber) : null;
+
     const created = await prisma.creatorMoNumber.create({
-      data: { id: newId(), phoneNumber, keyword: effectiveKeyword, mode, monthlyCost, memo, status: 'AVAILABLE' },
+      data: {
+        id: newId(),
+        phoneNumber,
+        keyword: effectiveKeyword,
+        baseNumber: split?.base ?? null,
+        subCode: split?.sub ?? null,
+        mode,
+        monthlyCost,
+        memo,
+        status: 'AVAILABLE',
+      },
     });
     await writeAudit({
       adminUserId: admin.id,

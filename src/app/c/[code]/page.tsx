@@ -16,6 +16,7 @@ import { LinkButton } from '@/components/ui';
 import { normalizeCreatorCode } from '@/lib/id';
 import { formatWon, formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
+import { formatMoNumber } from '@/server/emma/number';
 import { prisma } from '@/server/db';
 import { getSessionUser } from '@/server/auth';
 import { broadcastDonorName, defaultDonorName } from '@/lib/donor-name';
@@ -38,21 +39,13 @@ export const dynamic = 'force-dynamic';
 type Params = { params: Promise<{ code: string }> };
 
 /**
- * MO 후원번호 표시용 서식. DB 에는 하이픈 없이 저장하므로 화면에서만 끊어 보여 준다.
- * sms: 링크와 복사 값은 원본(숫자만)을 그대로 쓴다.
+ * MO 후원번호 표시용 서식은 공용 함수(@/server/emma/number)를 쓴다.
+ *
+ * 예전에는 이 파일에 따로 두었는데, 번호 체계가 `1688-□□□□-XXXX` (12자리)로 바뀌면서
+ * 이 화면만 서식이 적용되지 않아 후원자에게 168812345678 로 그대로 보였다.
+ * 표시 규칙이 두 군데에 있으면 반드시 한쪽이 뒤처진다.
+ * sms: 링크와 복사 값은 지금까지처럼 원본(숫자만)을 그대로 쓴다.
  */
-function formatMoNumber(raw: string) {
-  const digits = raw.replace(/[^0-9]/g, '');
-  if (/^050[0-9]{8}$/.test(digits)) return `${digits.slice(0, 4)}-${digits.slice(4, 8)}-${digits.slice(8)}`;
-  if (/^050[0-9]{7}$/.test(digits)) return `${digits.slice(0, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`;
-  if (/^1[0-9]{7}$/.test(digits)) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
-  if (/^0[0-9]{9,10}$/.test(digits)) {
-    const head = digits.startsWith('02') ? 2 : 3;
-    const tail = digits.length - head - 4;
-    return `${digits.slice(0, head)}-${digits.slice(head, head + tail)}-${digits.slice(head + tail)}`;
-  }
-  return raw;
-}
 
 /**
  * 로그인한 방문자의 후원자 프로필. 없으면 null.
@@ -144,8 +137,8 @@ export default async function CreatorDonationPage({ params }: Params) {
   } catch {
     paymentMock = true;
   }
-  // 크리에이터마다 050 전용번호가 부여되므로 keyword 없이 번호만으로 라우팅한다.
-  // (과거 대표번호 공유 방식의 keyword 선입력 로직 제거)
+  // 크리에이터마다 전용 수신번호(대표번호 + 서브번호 4자리)가 부여되므로
+  // keyword 없이 번호만으로 라우팅한다. (과거 대표번호 공유 방식의 keyword 선입력 로직 제거)
   const smsHref = route ? `sms:${route.phoneNumber}` : null;
   const moNumberLabel = route ? formatMoNumber(route.phoneNumber) : null;
 

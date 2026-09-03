@@ -6,7 +6,10 @@ import { writeAudit } from '@/server/auth';
 import { notifyUser } from '@/server/services/notifications';
 import { newId, newCreatorCode } from '@/lib/id';
 import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
+import { formatMoNumber } from '@/server/emma';
 import type { AdminActionState } from '@/components/admin/state';
+import { issueMoNumberForCreator, reclaimMoNumberForCreator } from '@/server/services/mo-number-issue';
 import { issueTemporaryPassword } from '@/server/services/password-reset';
 import { hasDirectTriggerWrittenApproval } from '@/server/services/financial-approval';
 import { resolvePolicy } from '@/server/services/limits';
@@ -260,6 +263,44 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
           : { status };
 
     await prisma.creatorProfile.update({ where: { id: creatorId }, data });
+
+    /**
+     * 승인과 동시에 MO 서브번호를 발급한다.
+     *
+     * 뒤 4자리는 인포뱅크 승인 없이 우리가 직접 부여하므로, 관리자가 따로 배정해 줄 때까지
+     * 기다릴 이유가 없다. 승인 즉시 후원을 받을 수 있게 한다.
+     *
+     * 실패해도 승인 자체는 되돌리지 않는다. 대표번호 계약 전이거나 번호가 소진된 상황에서
+     * 심사 승인까지 막히면 운영이 멈춘다. 대신 결과를 관리자에게 문장으로 알려 준다.
+     */
+    let numberNotice = '';
+    if (status === 'APPROVED') {
+      try {
+        const issued = await issueMoNumberForCreator(creatorId);
+        numberNotice = issued.reused
+          ? ` (기존 배정 번호 ${formatMoNumber(issued.phoneNumber)} 유지)`
+          : ` MO 번호 ${formatMoNumber(issued.phoneNumber)} 을(를) 발급했습니다.`;
+      } catch (e) {
+        numberNotice = ` (MO 번호 자동 발급 실패: ${(e as Error).message} — 관리자 화면에서 수동 배정해 주세요)`;
+        logger.warn('크리에이터 승인 후 MO 번호 자동 발급 실패', {
+          creatorId,
+          message: (e as Error).message,
+        });
+      }
+    }
+
+    /**
+     * 승인이 풀리면(정지·반려·대기) 번호를 회수한다.
+     * 배정을 남겨 두면 정지된 채널로 후원 문자가 계속 들어와 결제가 일어난다.
+     */
+    if (before.status === 'APPROVED' && status !== 'APPROVED') {
+      const reclaimed = await reclaimMoNumberForCreator(creatorId, `심사 상태 ${status} 로 변경`).catch((e) => {
+        logger.warn('크리에이터 상태 변경 시 MO 번호 회수 실패', { creatorId, message: (e as Error).message });
+        return 0;
+      });
+      if (reclaimed > 0) numberNotice = ' 배정된 MO 번호는 회수했습니다.';
+    }
+
     await notifyUser({
       userId: before.userId,
       title: status === 'APPROVED' ? '크리에이터 승인이 완료되었습니다' : '크리에이터 심사 상태가 변경되었습니다',
@@ -280,8 +321,8 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
     revalidatePath('/admin/creators');
     revalidatePath(`/admin/creators/${creatorId}`);
     return status === 'APPROVED'
-      ? `${before.displayName} 님을 승인했습니다. MO 번호 배정을 이어서 진행해 주세요.`
-      : `${before.displayName} 님의 심사 상태를 변경했습니다.`;
+      ? `${before.displayName} 님을 승인했습니다.${numberNotice}`
+      : `${before.displayName} 님의 심사 상태를 변경했습니다.${numberNotice}`;
   });
 }
 

@@ -584,6 +584,11 @@ model CreatorMoNumber {
   phoneNumber String         @map("phone_number")
   /// SHARED_PREFIX 모드에서 문자 맨 앞 키워드 (대문자 정규화 저장)
   keyword     String?
+  /// 대표번호 부분 (숫자만). 예: 1688 + 계약 4자리 = 16881234
+  /// phoneNumber 를 쪼개 둔 값이다. 대표번호가 늘어나도(1688-1235 추가 계약) 조회가 단순해진다.
+  baseNumber  String?        @map("base_number")
+  /// 크리에이터별 서브번호 4자리. 인포뱅크 승인 없이 토네이도가 직접 부여한다.
+  subCode     String?        @map("sub_code")
   mode        MoRouteMode    @default(DEDICATED)
   status      MoNumberStatus @default(AVAILABLE)
   providerId  String?        @map("provider_id")
@@ -600,6 +605,7 @@ model CreatorMoNumber {
   @@unique([phoneNumber, keyword])
   @@index([status])
   @@index([creatorId])
+  @@index([baseNumber, subCode])
   @@map("creator_mo_number")
 }
 
