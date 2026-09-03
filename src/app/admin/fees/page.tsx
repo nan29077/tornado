@@ -59,19 +59,34 @@ export default async function AdminFeesPage() {
         description="정책은 수정하지 않고 새 버전을 추가하는 방식으로 관리합니다. 기존 정책은 마감 처리되어 이력이 보존됩니다."
       />
 
+      <div className="mb-4">
+        <Notice tone="brand" title="수수료는 서비스 수수료와 PG 결제 수수료 두 가지입니다">
+          크리에이터는 후원금의 15%(서비스 수수료, 부가세 포함)와 PG 결제 수수료(약 1.8%)를 납부합니다. 별도 플랫폼
+          이용료는 없습니다. PG 결제 수수료는 도네이도의 수익이 아니라 결제대행사(PG)에 그대로 지급되는 비용입니다.
+        </Notice>
+      </div>
+
       <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
         <StatTile
-          label="전역 결제 수수료"
-          value={activeGlobal ? ratePercent(activeGlobal.pgFeeRate.toString()) : '미설정'}
-          sub={activeGlobal ? `고정비 ${formatWon(activeGlobal.pgFixedFee)}` : '기본값 1.80% 적용'}
+          label="서비스 수수료"
+          value={activeGlobal ? ratePercent(activeGlobal.platformFeeRate.toString()) : '미설정'}
+          sub={activeGlobal ? `문자 원가 ${formatWon(activeGlobal.smsCost)}` : '기본값 15.00% 적용'}
           tone="brand"
         />
         <StatTile
-          label="전역 플랫폼 수수료"
-          value={activeGlobal ? ratePercent(activeGlobal.platformFeeRate.toString()) : '미설정'}
-          sub={activeGlobal ? `문자 원가 ${formatWon(activeGlobal.smsCost)}` : '기본값 15.00% 적용'}
+          label="PG 결제 수수료"
+          value={activeGlobal ? ratePercent(activeGlobal.pgFeeRate.toString()) : '미설정'}
+          sub={
+            activeGlobal
+              ? `PG사 지급 비용 · 고정비 ${formatWon(activeGlobal.pgFixedFee)}`
+              : 'PG사 지급 비용 · 기본값 1.80% 적용'
+          }
         />
-        <StatTile label="크리에이터 개별 정책" value={formatNumber(activeCreatorCount)} />
+        <StatTile
+          label="크리에이터 개별 정책"
+          value={formatNumber(activeCreatorCount)}
+          sub="전역 정책보다 우선 적용"
+        />
         <StatTile label="전체 정책 이력" value={formatNumber(policies.length)} sub="최근 100건" />
       </div>
 
@@ -79,19 +94,27 @@ export default async function AdminFeesPage() {
         <CardTitle>{formatWon(SAMPLE)} 후원 기준 계산 예시</CardTitle>
         <p className="mt-1 text-[12px] leading-relaxed text-ink-400">
           현재 활성 전역 정책({sample.vatIncluded ? '부가세 포함 요율' : '부가세 별도 요율'})을 실제 정산 계산식에
-          그대로 넣은 결과입니다.
+          그대로 넣은 결과입니다. 후원 총액에서 서비스 수수료와 PG 결제 수수료를 빼면 크리에이터 정산금이 됩니다.
         </p>
-        <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-5">
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           <StatTile label="후원 총액" value={formatWon(sample.gross)} />
           <StatTile
-            label="결제 수수료"
-            value={formatWon(sample.pgFee)}
-            sub={sample.pgFeeVat > 0n ? `공급가 ${formatWon(sample.pgFeeSupply)} + 부가세 ${formatWon(sample.pgFeeVat)}` : '부가세 포함 요율'}
+            label="서비스 수수료"
+            value={formatWon(sample.platformFee)}
+            sub={
+              sample.platformFeeVat > 0n
+                ? `공급가 ${formatWon(sample.platformFeeSupply)} + 부가세 ${formatWon(sample.platformFeeVat)}`
+                : '부가세 포함 요율'
+            }
           />
           <StatTile
-            label="플랫폼 수수료"
-            value={formatWon(sample.platformFee)}
-            sub={sample.platformFeeVat > 0n ? `공급가 ${formatWon(sample.platformFeeSupply)} + 부가세 ${formatWon(sample.platformFeeVat)}` : '부가세 포함 요율'}
+            label="PG 결제 수수료"
+            value={formatWon(sample.pgFee)}
+            sub={
+              sample.pgFeeVat > 0n
+                ? `공급가 ${formatWon(sample.pgFeeSupply)} + 부가세 ${formatWon(sample.pgFeeVat)}`
+                : '부가세 포함 요율'
+            }
           />
           <StatTile label="부가세 합계" value={formatWon(sample.vat)} />
           <StatTile label="크리에이터 정산금" value={formatWon(sample.net)} tone="brand" />
@@ -99,10 +122,10 @@ export default async function AdminFeesPage() {
       </Card>
 
       <div className="mt-4">
-      <Notice tone="warning" title="정책 변경은 과거 거래에 소급되지 않습니다">
-        수수료는 결제 승인 시점의 활성 정책으로 계산되어 정산 원장에 확정 기록됩니다. 새 정책을 등록해도 이미 쌓인
-        원장 분개는 변경되지 않으며, 정정이 필요하면 조정(ADJUSTMENT) 분개를 사용해야 합니다.
-      </Notice>
+        <Notice tone="warning" title="정책 변경은 과거 거래에 소급되지 않습니다">
+          수수료는 결제 승인 시점의 활성 정책으로 계산되어 정산 원장에 확정 기록됩니다. 새 정책을 등록해도 이미 쌓인
+          원장 분개는 변경되지 않으며, 정정이 필요하면 조정(ADJUSTMENT) 분개를 사용해야 합니다.
+        </Notice>
       </div>
 
       <div className="mt-5 grid gap-4 lg:grid-cols-3">
@@ -124,17 +147,17 @@ export default async function AdminFeesPage() {
               </AdminSelect>
             </AdminField>
             <div className="grid grid-cols-2 gap-2">
-              <AdminField label="결제 수수료율" hint="예: 0.018 = 1.8%">
-                <AdminInput name="pgFeeRate" defaultValue="0.018" required />
-              </AdminField>
-              <AdminField label="건당 고정비 (원)">
-                <AdminInput name="pgFixedFee" inputMode="numeric" defaultValue="0" required />
-              </AdminField>
-              <AdminField label="플랫폼 수수료율" hint="예: 0.15 = 15%">
+              <AdminField label="서비스 수수료율" hint="예: 0.15 = 15%">
                 <AdminInput name="platformFeeRate" defaultValue="0.15" required />
               </AdminField>
               <AdminField label="문자 원가 (원)">
                 <AdminInput name="smsCost" inputMode="numeric" defaultValue="0" required />
+              </AdminField>
+              <AdminField label="PG 결제 수수료율" hint="예: 0.018 = 1.8%">
+                <AdminInput name="pgFeeRate" defaultValue="0.018" required />
+              </AdminField>
+              <AdminField label="건당 고정비 (원)" hint="PG사 건당 정액 비용">
+                <AdminInput name="pgFixedFee" inputMode="numeric" defaultValue="0" required />
               </AdminField>
             </div>
             <AdminField label="적용 시작일 (KST)">
@@ -154,16 +177,19 @@ export default async function AdminFeesPage() {
         <div className="lg:col-span-2">
           <SectionTitle title="정책 이력" description="활성 정책이 위에 표시됩니다." />
           {policies.length === 0 ? (
-            <EmptyState title="등록된 수수료 정책이 없습니다" description="정책이 없으면 코드 기본값(1.8% / 15%)이 적용됩니다." />
+            <EmptyState
+              title="등록된 수수료 정책이 없습니다"
+              description="정책이 없으면 코드 기본값(서비스 15% / PG 1.8%)이 적용됩니다."
+            />
           ) : (
             <Table className="min-w-[900px]">
               <thead>
                 <tr>
                   <Th>적용 범위</Th>
-                  <Th className="text-right">결제 수수료</Th>
-                  <Th className="text-right">고정비</Th>
-                  <Th className="text-right">플랫폼 수수료</Th>
+                  <Th className="text-right">서비스 수수료</Th>
                   <Th className="text-right">문자 원가</Th>
+                  <Th className="text-right">PG 결제 수수료</Th>
+                  <Th className="text-right">고정비</Th>
                   <Th>부가세</Th>
                   <Th>적용 기간</Th>
                   <Th>상태</Th>
@@ -184,10 +210,10 @@ export default async function AdminFeesPage() {
                         <span className="text-ink-300">-</span>
                       )}
                     </Td>
-                    <Td className="text-right tabular-nums">{ratePercent(p.pgFeeRate.toString())}</Td>
-                    <Td className="text-right tabular-nums">{formatWon(p.pgFixedFee)}</Td>
                     <Td className="text-right tabular-nums">{ratePercent(p.platformFeeRate.toString())}</Td>
                     <Td className="text-right tabular-nums">{formatWon(p.smsCost)}</Td>
+                    <Td className="text-right tabular-nums">{ratePercent(p.pgFeeRate.toString())}</Td>
+                    <Td className="text-right tabular-nums">{formatWon(p.pgFixedFee)}</Td>
                     <Td>{p.vatIncluded ? '포함' : '별도'}</Td>
                     <Td className="whitespace-nowrap text-[12px]">
                       {formatKst(p.effectiveFrom, false)}
