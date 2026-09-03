@@ -41,7 +41,7 @@ const STYLE: Record<SocialProvider, { className: string; mark: React.ReactNode }
   },
 };
 
-export function SocialAuthButtons({ mode }: { mode: 'login' | 'signup' }) {
+export function SocialAuthButtons({ mode, nextPath = '/my' }: { mode: 'login' | 'signup'; nextPath?: string }) {
   const providers = allSocialProviderStatus();
   const verb = mode === 'signup' ? '회원가입' : '로그인';
   const allPending = providers.every((p) => !p.ready);
@@ -57,7 +57,7 @@ export function SocialAuthButtons({ mode }: { mode: 'login' | 'signup' }) {
       {providers.map((p) => (
         <a
           key={p.provider}
-          href={`/api/auth/social/${p.provider}?mode=${mode}`}
+          href={`/api/auth/social/${p.provider}?mode=${mode}&next=${encodeURIComponent(nextPath)}`}
           className={cx(
             'flex h-13 w-full items-center justify-center gap-2 rounded-2xl px-4 text-[15px] font-bold transition-[filter]',
             'h-14',

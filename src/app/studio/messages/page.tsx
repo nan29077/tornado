@@ -6,6 +6,7 @@ import { InlineActionForm } from '@/components/studio/action-form';
 import { PAID_STATUSES, one, type SearchParamsRecord } from '@/components/studio/shared';
 import { blockDonorAction } from '@/app/actions/studio';
 import { MoNumberPanel, type MoNumberView } from '@/components/studio/mo-number-panel';
+import { formatMoNumber } from '@/server/emma';
 import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { formatNumber, formatWon } from '@/lib/money';
@@ -111,7 +112,7 @@ export default async function StudioMessagesPage({
 
   const numbers: MoNumberView[] = moNumbers.map((m) => ({
     id: m.id,
-    phoneNumber: m.phoneNumber,
+    phoneNumber: formatMoNumber(m.phoneNumber),
     keyword: m.keyword,
     mode: m.mode,
     statusText: moNumberStatusLabel[m.status].text,
@@ -124,7 +125,7 @@ export default async function StudioMessagesPage({
   const guideText = primary
     ? [
         `${creator?.displayName ?? '크리에이터'} 문자후원`,
-        `${primary.phoneNumber} 으로 문자를 보내주세요.`,
+        `${formatMoNumber(primary.phoneNumber)} 으로 문자를 보내주세요.`,
         primary.keyword ? `문자 맨 앞에 ${primary.keyword} 를 붙여주세요.` : null,
         `문자 1건당 ${formatWon(creator?.donationAmount ?? 3000n)}이 후원됩니다.`,
         '최초 1회 계좌 등록이 필요하며, 만 19세 이상만 이용할 수 있습니다.',

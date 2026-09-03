@@ -9,8 +9,8 @@
  * 🟢 You can import this file directly.
  */
 import type * as runtime from "@prisma/client/runtime/client"
-import type * as $Enums from "../enums.ts"
-import type * as Prisma from "../internal/prismaNamespace.ts"
+import type * as $Enums from "../enums"
+import type * as Prisma from "../internal/prismaNamespace"
 
 /**
  * Model CreatorProfile
@@ -54,6 +54,11 @@ export type CreatorProfileMinAggregateOutputType = {
   youtubeLiveUrl: string | null
   instagramLiveUrl: string | null
   tiktokLiveUrl: string | null
+  facebookLiveUrl: string | null
+  youtubeLive: boolean | null
+  instagramLive: boolean | null
+  tiktokLive: boolean | null
+  facebookLive: boolean | null
   channelUrl: string | null
   status: $Enums.CreatorStatus | null
   donationAmount: bigint | null
@@ -86,6 +91,11 @@ export type CreatorProfileMaxAggregateOutputType = {
   youtubeLiveUrl: string | null
   instagramLiveUrl: string | null
   tiktokLiveUrl: string | null
+  facebookLiveUrl: string | null
+  youtubeLive: boolean | null
+  instagramLive: boolean | null
+  tiktokLive: boolean | null
+  facebookLive: boolean | null
   channelUrl: string | null
   status: $Enums.CreatorStatus | null
   donationAmount: bigint | null
@@ -118,6 +128,11 @@ export type CreatorProfileCountAggregateOutputType = {
   youtubeLiveUrl: number
   instagramLiveUrl: number
   tiktokLiveUrl: number
+  facebookLiveUrl: number
+  youtubeLive: number
+  instagramLive: number
+  tiktokLive: number
+  facebookLive: number
   channelUrl: number
   status: number
   donationAmount: number
@@ -164,6 +179,11 @@ export type CreatorProfileMinAggregateInputType = {
   youtubeLiveUrl?: true
   instagramLiveUrl?: true
   tiktokLiveUrl?: true
+  facebookLiveUrl?: true
+  youtubeLive?: true
+  instagramLive?: true
+  tiktokLive?: true
+  facebookLive?: true
   channelUrl?: true
   status?: true
   donationAmount?: true
@@ -196,6 +216,11 @@ export type CreatorProfileMaxAggregateInputType = {
   youtubeLiveUrl?: true
   instagramLiveUrl?: true
   tiktokLiveUrl?: true
+  facebookLiveUrl?: true
+  youtubeLive?: true
+  instagramLive?: true
+  tiktokLive?: true
+  facebookLive?: true
   channelUrl?: true
   status?: true
   donationAmount?: true
@@ -228,6 +253,11 @@ export type CreatorProfileCountAggregateInputType = {
   youtubeLiveUrl?: true
   instagramLiveUrl?: true
   tiktokLiveUrl?: true
+  facebookLiveUrl?: true
+  youtubeLive?: true
+  instagramLive?: true
+  tiktokLive?: true
+  facebookLive?: true
   channelUrl?: true
   status?: true
   donationAmount?: true
@@ -347,6 +377,11 @@ export type CreatorProfileGroupByOutputType = {
   youtubeLiveUrl: string | null
   instagramLiveUrl: string | null
   tiktokLiveUrl: string | null
+  facebookLiveUrl: string | null
+  youtubeLive: boolean
+  instagramLive: boolean
+  tiktokLive: boolean
+  facebookLive: boolean
   channelUrl: string | null
   status: $Enums.CreatorStatus
   donationAmount: bigint
@@ -402,6 +437,11 @@ export type CreatorProfileWhereInput = {
   youtubeLiveUrl?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
   instagramLiveUrl?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
   tiktokLiveUrl?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
+  facebookLiveUrl?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
+  youtubeLive?: Prisma.BoolFilter<"CreatorProfile"> | boolean
+  instagramLive?: Prisma.BoolFilter<"CreatorProfile"> | boolean
+  tiktokLive?: Prisma.BoolFilter<"CreatorProfile"> | boolean
+  facebookLive?: Prisma.BoolFilter<"CreatorProfile"> | boolean
   channelUrl?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
   status?: Prisma.EnumCreatorStatusFilter<"CreatorProfile"> | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFilter<"CreatorProfile"> | bigint | number
@@ -453,6 +493,11 @@ export type CreatorProfileOrderByWithRelationInput = {
   youtubeLiveUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   instagramLiveUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   tiktokLiveUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  facebookLiveUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  youtubeLive?: Prisma.SortOrder
+  instagramLive?: Prisma.SortOrder
+  tiktokLive?: Prisma.SortOrder
+  facebookLive?: Prisma.SortOrder
   channelUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   status?: Prisma.SortOrder
   donationAmount?: Prisma.SortOrder
@@ -507,6 +552,11 @@ export type CreatorProfileWhereUniqueInput = Prisma.AtLeast<{
   youtubeLiveUrl?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
   instagramLiveUrl?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
   tiktokLiveUrl?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
+  facebookLiveUrl?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
+  youtubeLive?: Prisma.BoolFilter<"CreatorProfile"> | boolean
+  instagramLive?: Prisma.BoolFilter<"CreatorProfile"> | boolean
+  tiktokLive?: Prisma.BoolFilter<"CreatorProfile"> | boolean
+  facebookLive?: Prisma.BoolFilter<"CreatorProfile"> | boolean
   channelUrl?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
   status?: Prisma.EnumCreatorStatusFilter<"CreatorProfile"> | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFilter<"CreatorProfile"> | bigint | number
@@ -558,6 +608,11 @@ export type CreatorProfileOrderByWithAggregationInput = {
   youtubeLiveUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   instagramLiveUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   tiktokLiveUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  facebookLiveUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  youtubeLive?: Prisma.SortOrder
+  instagramLive?: Prisma.SortOrder
+  tiktokLive?: Prisma.SortOrder
+  facebookLive?: Prisma.SortOrder
   channelUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   status?: Prisma.SortOrder
   donationAmount?: Prisma.SortOrder
@@ -598,6 +653,11 @@ export type CreatorProfileScalarWhereWithAggregatesInput = {
   youtubeLiveUrl?: Prisma.StringNullableWithAggregatesFilter<"CreatorProfile"> | string | null
   instagramLiveUrl?: Prisma.StringNullableWithAggregatesFilter<"CreatorProfile"> | string | null
   tiktokLiveUrl?: Prisma.StringNullableWithAggregatesFilter<"CreatorProfile"> | string | null
+  facebookLiveUrl?: Prisma.StringNullableWithAggregatesFilter<"CreatorProfile"> | string | null
+  youtubeLive?: Prisma.BoolWithAggregatesFilter<"CreatorProfile"> | boolean
+  instagramLive?: Prisma.BoolWithAggregatesFilter<"CreatorProfile"> | boolean
+  tiktokLive?: Prisma.BoolWithAggregatesFilter<"CreatorProfile"> | boolean
+  facebookLive?: Prisma.BoolWithAggregatesFilter<"CreatorProfile"> | boolean
   channelUrl?: Prisma.StringNullableWithAggregatesFilter<"CreatorProfile"> | string | null
   status?: Prisma.EnumCreatorStatusWithAggregatesFilter<"CreatorProfile"> | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntWithAggregatesFilter<"CreatorProfile"> | bigint | number
@@ -629,6 +689,11 @@ export type CreatorProfileCreateInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -680,6 +745,11 @@ export type CreatorProfileUncheckedCreateInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -729,6 +799,11 @@ export type CreatorProfileUpdateInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -780,6 +855,11 @@ export type CreatorProfileUncheckedUpdateInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -830,6 +910,11 @@ export type CreatorProfileCreateManyInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -861,6 +946,11 @@ export type CreatorProfileUpdateManyMutationInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -893,6 +983,11 @@ export type CreatorProfileUncheckedUpdateManyInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -935,6 +1030,11 @@ export type CreatorProfileCountOrderByAggregateInput = {
   youtubeLiveUrl?: Prisma.SortOrder
   instagramLiveUrl?: Prisma.SortOrder
   tiktokLiveUrl?: Prisma.SortOrder
+  facebookLiveUrl?: Prisma.SortOrder
+  youtubeLive?: Prisma.SortOrder
+  instagramLive?: Prisma.SortOrder
+  tiktokLive?: Prisma.SortOrder
+  facebookLive?: Prisma.SortOrder
   channelUrl?: Prisma.SortOrder
   status?: Prisma.SortOrder
   donationAmount?: Prisma.SortOrder
@@ -973,6 +1073,11 @@ export type CreatorProfileMaxOrderByAggregateInput = {
   youtubeLiveUrl?: Prisma.SortOrder
   instagramLiveUrl?: Prisma.SortOrder
   tiktokLiveUrl?: Prisma.SortOrder
+  facebookLiveUrl?: Prisma.SortOrder
+  youtubeLive?: Prisma.SortOrder
+  instagramLive?: Prisma.SortOrder
+  tiktokLive?: Prisma.SortOrder
+  facebookLive?: Prisma.SortOrder
   channelUrl?: Prisma.SortOrder
   status?: Prisma.SortOrder
   donationAmount?: Prisma.SortOrder
@@ -1005,6 +1110,11 @@ export type CreatorProfileMinOrderByAggregateInput = {
   youtubeLiveUrl?: Prisma.SortOrder
   instagramLiveUrl?: Prisma.SortOrder
   tiktokLiveUrl?: Prisma.SortOrder
+  facebookLiveUrl?: Prisma.SortOrder
+  youtubeLive?: Prisma.SortOrder
+  instagramLive?: Prisma.SortOrder
+  tiktokLive?: Prisma.SortOrder
+  facebookLive?: Prisma.SortOrder
   channelUrl?: Prisma.SortOrder
   status?: Prisma.SortOrder
   donationAmount?: Prisma.SortOrder
@@ -1344,6 +1454,11 @@ export type CreatorProfileCreateWithoutUserInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -1393,6 +1508,11 @@ export type CreatorProfileUncheckedCreateWithoutUserInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -1458,6 +1578,11 @@ export type CreatorProfileUpdateWithoutUserInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -1507,6 +1632,11 @@ export type CreatorProfileUncheckedUpdateWithoutUserInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -1556,6 +1686,11 @@ export type CreatorProfileCreateWithoutDonorLinksInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -1606,6 +1741,11 @@ export type CreatorProfileUncheckedCreateWithoutDonorLinksInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -1670,6 +1810,11 @@ export type CreatorProfileUpdateWithoutDonorLinksInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -1720,6 +1865,11 @@ export type CreatorProfileUncheckedUpdateWithoutDonorLinksInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -1768,6 +1918,11 @@ export type CreatorProfileCreateWithoutBlockedDonorsInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -1818,6 +1973,11 @@ export type CreatorProfileUncheckedCreateWithoutBlockedDonorsInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -1882,6 +2042,11 @@ export type CreatorProfileUpdateWithoutBlockedDonorsInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -1932,6 +2097,11 @@ export type CreatorProfileUncheckedUpdateWithoutBlockedDonorsInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -1980,6 +2150,11 @@ export type CreatorProfileCreateWithoutCodesInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -2030,6 +2205,11 @@ export type CreatorProfileUncheckedCreateWithoutCodesInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -2094,6 +2274,11 @@ export type CreatorProfileUpdateWithoutCodesInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2144,6 +2329,11 @@ export type CreatorProfileUncheckedUpdateWithoutCodesInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2192,6 +2382,11 @@ export type CreatorProfileCreateWithoutMoRoutesInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -2242,6 +2437,11 @@ export type CreatorProfileUncheckedCreateWithoutMoRoutesInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -2306,6 +2506,11 @@ export type CreatorProfileUpdateWithoutMoRoutesInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2356,6 +2561,11 @@ export type CreatorProfileUncheckedUpdateWithoutMoRoutesInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2404,6 +2614,11 @@ export type CreatorProfileCreateWithoutMoMessagesInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -2454,6 +2669,11 @@ export type CreatorProfileUncheckedCreateWithoutMoMessagesInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -2518,6 +2738,11 @@ export type CreatorProfileUpdateWithoutMoMessagesInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2568,6 +2793,11 @@ export type CreatorProfileUncheckedUpdateWithoutMoMessagesInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2616,6 +2846,11 @@ export type CreatorProfileCreateWithoutDonationsInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -2666,6 +2901,11 @@ export type CreatorProfileUncheckedCreateWithoutDonationsInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -2730,6 +2970,11 @@ export type CreatorProfileUpdateWithoutDonationsInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2780,6 +3025,11 @@ export type CreatorProfileUncheckedUpdateWithoutDonationsInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2828,6 +3078,11 @@ export type CreatorProfileCreateWithoutLimitPoliciesInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -2878,6 +3133,11 @@ export type CreatorProfileUncheckedCreateWithoutLimitPoliciesInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -2942,6 +3202,11 @@ export type CreatorProfileUpdateWithoutLimitPoliciesInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2992,6 +3257,11 @@ export type CreatorProfileUncheckedUpdateWithoutLimitPoliciesInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3040,6 +3310,11 @@ export type CreatorProfileCreateWithoutBannedWordsInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -3090,6 +3365,11 @@ export type CreatorProfileUncheckedCreateWithoutBannedWordsInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -3154,6 +3434,11 @@ export type CreatorProfileUpdateWithoutBannedWordsInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3204,6 +3489,11 @@ export type CreatorProfileUncheckedUpdateWithoutBannedWordsInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3252,6 +3542,11 @@ export type CreatorProfileCreateWithoutYoutubeConnectionInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -3302,6 +3597,11 @@ export type CreatorProfileUncheckedCreateWithoutYoutubeConnectionInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -3366,6 +3666,11 @@ export type CreatorProfileUpdateWithoutYoutubeConnectionInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3416,6 +3721,11 @@ export type CreatorProfileUncheckedUpdateWithoutYoutubeConnectionInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3464,6 +3774,11 @@ export type CreatorProfileCreateWithoutYoutubeBroadcastsInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -3514,6 +3829,11 @@ export type CreatorProfileUncheckedCreateWithoutYoutubeBroadcastsInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -3578,6 +3898,11 @@ export type CreatorProfileUpdateWithoutYoutubeBroadcastsInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3628,6 +3953,11 @@ export type CreatorProfileUncheckedUpdateWithoutYoutubeBroadcastsInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3676,6 +4006,11 @@ export type CreatorProfileCreateWithoutOverlaySettingInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -3726,6 +4061,11 @@ export type CreatorProfileUncheckedCreateWithoutOverlaySettingInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -3790,6 +4130,11 @@ export type CreatorProfileUpdateWithoutOverlaySettingInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3840,6 +4185,11 @@ export type CreatorProfileUncheckedUpdateWithoutOverlaySettingInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3888,6 +4238,11 @@ export type CreatorProfileCreateWithoutOverlayTiersInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -3938,6 +4293,11 @@ export type CreatorProfileUncheckedCreateWithoutOverlayTiersInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -4002,6 +4362,11 @@ export type CreatorProfileUpdateWithoutOverlayTiersInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4052,6 +4417,11 @@ export type CreatorProfileUncheckedUpdateWithoutOverlayTiersInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4100,6 +4470,11 @@ export type CreatorProfileCreateWithoutTtsSettingInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -4150,6 +4525,11 @@ export type CreatorProfileUncheckedCreateWithoutTtsSettingInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -4214,6 +4594,11 @@ export type CreatorProfileUpdateWithoutTtsSettingInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4264,6 +4649,11 @@ export type CreatorProfileUncheckedUpdateWithoutTtsSettingInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4312,6 +4702,11 @@ export type CreatorProfileCreateWithoutFeePoliciesInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -4362,6 +4757,11 @@ export type CreatorProfileUncheckedCreateWithoutFeePoliciesInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -4426,6 +4826,11 @@ export type CreatorProfileUpdateWithoutFeePoliciesInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4476,6 +4881,11 @@ export type CreatorProfileUncheckedUpdateWithoutFeePoliciesInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4524,6 +4934,11 @@ export type CreatorProfileCreateWithoutSettlementAccountInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -4574,6 +4989,11 @@ export type CreatorProfileUncheckedCreateWithoutSettlementAccountInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -4638,6 +5058,11 @@ export type CreatorProfileUpdateWithoutSettlementAccountInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4688,6 +5113,11 @@ export type CreatorProfileUncheckedUpdateWithoutSettlementAccountInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4736,6 +5166,11 @@ export type CreatorProfileCreateWithoutLedgerEntriesInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -4786,6 +5221,11 @@ export type CreatorProfileUncheckedCreateWithoutLedgerEntriesInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -4850,6 +5290,11 @@ export type CreatorProfileUpdateWithoutLedgerEntriesInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4900,6 +5345,11 @@ export type CreatorProfileUncheckedUpdateWithoutLedgerEntriesInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4948,6 +5398,11 @@ export type CreatorProfileCreateWithoutSettlementRequestsInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -4998,6 +5453,11 @@ export type CreatorProfileUncheckedCreateWithoutSettlementRequestsInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -5062,6 +5522,11 @@ export type CreatorProfileUpdateWithoutSettlementRequestsInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -5112,6 +5577,11 @@ export type CreatorProfileUncheckedUpdateWithoutSettlementRequestsInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -5160,6 +5630,11 @@ export type CreatorProfileCreateWithoutGamesInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -5210,6 +5685,11 @@ export type CreatorProfileUncheckedCreateWithoutGamesInput = {
   youtubeLiveUrl?: string | null
   instagramLiveUrl?: string | null
   tiktokLiveUrl?: string | null
+  facebookLiveUrl?: string | null
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
   donationAmount?: bigint | number
@@ -5274,6 +5754,11 @@ export type CreatorProfileUpdateWithoutGamesInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -5324,6 +5809,11 @@ export type CreatorProfileUncheckedUpdateWithoutGamesInput = {
   youtubeLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instagramLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tiktokLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  facebookLiveUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  youtubeLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  instagramLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  tiktokLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -5521,6 +6011,11 @@ export type CreatorProfileSelect<ExtArgs extends runtime.Types.Extensions.Intern
   youtubeLiveUrl?: boolean
   instagramLiveUrl?: boolean
   tiktokLiveUrl?: boolean
+  facebookLiveUrl?: boolean
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: boolean
   status?: boolean
   donationAmount?: boolean
@@ -5573,6 +6068,11 @@ export type CreatorProfileSelectCreateManyAndReturn<ExtArgs extends runtime.Type
   youtubeLiveUrl?: boolean
   instagramLiveUrl?: boolean
   tiktokLiveUrl?: boolean
+  facebookLiveUrl?: boolean
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: boolean
   status?: boolean
   donationAmount?: boolean
@@ -5606,6 +6106,11 @@ export type CreatorProfileSelectUpdateManyAndReturn<ExtArgs extends runtime.Type
   youtubeLiveUrl?: boolean
   instagramLiveUrl?: boolean
   tiktokLiveUrl?: boolean
+  facebookLiveUrl?: boolean
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: boolean
   status?: boolean
   donationAmount?: boolean
@@ -5639,6 +6144,11 @@ export type CreatorProfileSelectScalar = {
   youtubeLiveUrl?: boolean
   instagramLiveUrl?: boolean
   tiktokLiveUrl?: boolean
+  facebookLiveUrl?: boolean
+  youtubeLive?: boolean
+  instagramLive?: boolean
+  tiktokLive?: boolean
+  facebookLive?: boolean
   channelUrl?: boolean
   status?: boolean
   donationAmount?: boolean
@@ -5655,7 +6165,7 @@ export type CreatorProfileSelectScalar = {
   updatedAt?: boolean
 }
 
-export type CreatorProfileOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "code" | "displayName" | "channelName" | "channelPlatform" | "avatarUrl" | "bannerUrl" | "description" | "liveOn" | "liveUrl" | "livePlatform" | "youtubeLiveUrl" | "instagramLiveUrl" | "tiktokLiveUrl" | "channelUrl" | "status" | "donationAmount" | "minAmount" | "maxAmount" | "paymentMode" | "thanksMtMessage" | "businessNo" | "onboardingObsLinked" | "onboardingTestDone" | "approvedAt" | "suspendedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["creatorProfile"]>
+export type CreatorProfileOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "code" | "displayName" | "channelName" | "channelPlatform" | "avatarUrl" | "bannerUrl" | "description" | "liveOn" | "liveUrl" | "livePlatform" | "youtubeLiveUrl" | "instagramLiveUrl" | "tiktokLiveUrl" | "facebookLiveUrl" | "youtubeLive" | "instagramLive" | "tiktokLive" | "facebookLive" | "channelUrl" | "status" | "donationAmount" | "minAmount" | "maxAmount" | "paymentMode" | "thanksMtMessage" | "businessNo" | "onboardingObsLinked" | "onboardingTestDone" | "approvedAt" | "suspendedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["creatorProfile"]>
 export type CreatorProfileInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   codes?: boolean | Prisma.CreatorProfile$codesArgs<ExtArgs>
@@ -5739,9 +6249,23 @@ export type $CreatorProfilePayload<ExtArgs extends runtime.Types.Extensions.Inte
      * 라이브 플랫폼별 주소. livePlatform 이 가리키는 값이 후원샵에 노출된다.
      */
     livePlatform: string | null
+    /**
+     * SNS 링크. 후원 페이지에 링크 버튼으로 노출되고, 아래 *Live 스위치가 켜지면
+     * 그 플랫폼의 ON AIR 배지가 이 주소로 연결된다.
+     * (컬럼 이름의 'live' 는 라이브 주소만 담던 시절의 흔적이다. 지금은 채널·라이브 링크를 겸한다)
+     */
     youtubeLiveUrl: string | null
     instagramLiveUrl: string | null
     tiktokLiveUrl: string | null
+    facebookLiveUrl: string | null
+    /**
+     * 플랫폼별 "지금 방송 중" 스위치. 동시송출을 하는 크리에이터가 있어 여러 개를 켤 수 있다.
+     * liveOn / livePlatform / liveUrl 은 이 값들에서 파생된다(우선순위: 유튜브 > 인스타 > 틱톡 > 페이스북).
+     */
+    youtubeLive: boolean
+    instagramLive: boolean
+    tiktokLive: boolean
+    facebookLive: boolean
     /**
      * 대표 채널 주소. 신청 때 받은 값을 소개글에 이어 붙이면 소개 길이 제한을 넘겨
      * 이후 후원샵 설정 저장이 영구히 막히므로 반드시 별도 컬럼에 보관한다.
@@ -6234,6 +6758,11 @@ export interface CreatorProfileFieldRefs {
   readonly youtubeLiveUrl: Prisma.FieldRef<"CreatorProfile", 'String'>
   readonly instagramLiveUrl: Prisma.FieldRef<"CreatorProfile", 'String'>
   readonly tiktokLiveUrl: Prisma.FieldRef<"CreatorProfile", 'String'>
+  readonly facebookLiveUrl: Prisma.FieldRef<"CreatorProfile", 'String'>
+  readonly youtubeLive: Prisma.FieldRef<"CreatorProfile", 'Boolean'>
+  readonly instagramLive: Prisma.FieldRef<"CreatorProfile", 'Boolean'>
+  readonly tiktokLive: Prisma.FieldRef<"CreatorProfile", 'Boolean'>
+  readonly facebookLive: Prisma.FieldRef<"CreatorProfile", 'Boolean'>
   readonly channelUrl: Prisma.FieldRef<"CreatorProfile", 'String'>
   readonly status: Prisma.FieldRef<"CreatorProfile", 'CreatorStatus'>
   readonly donationAmount: Prisma.FieldRef<"CreatorProfile", 'BigInt'>

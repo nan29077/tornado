@@ -95,7 +95,7 @@ export default async function LoginPage({
         </form>
 
         <div className="mt-5">
-          <SocialAuthButtons mode="login" />
+          <SocialAuthButtons mode="login" nextPath={sp.next} />
         </div>
 
         <p className="mt-4 text-center text-[13px] text-ink-500">

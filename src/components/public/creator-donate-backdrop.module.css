@@ -1,0 +1,48 @@
+.scene {
+  display: none;
+}
+
+/* 셸의 700px 본문 + 104px 메뉴 + 최대 20px 간격을 전부 비워 둔다.
+   좁은 PC에서도 장식이 본문이나 우측 메뉴 안으로 들어가지 않는다. */
+@media (min-width: 1024px) {
+  .scene {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    display: block;
+    overflow: hidden;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .side {
+    position: absolute;
+    top: 50%;
+    aspect-ratio: 2 / 3;
+    transform: translateY(-50%);
+    width: max(0px, calc((100% - 824px) / 2 - 12px));
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    opacity: 0.78;
+    /* 생성 이미지의 사각 경계를 지우고 기존 크림 배경에 자연스럽게 연결한다. */
+    mask-image: radial-gradient(ellipse at center, #000 42%, transparent 74%);
+    -webkit-mask-image: radial-gradient(ellipse at center, #000 42%, transparent 74%);
+  }
+
+  .left {
+    left: 0;
+    background-image: url('/assets/donaido-donation-margin-left-v1.webp');
+  }
+
+  .right {
+    right: 0;
+    background-image: url('/assets/donaido-donation-margin-right-v1.webp');
+  }
+}
+
+@media print {
+  .scene {
+    display: none;
+  }
+}

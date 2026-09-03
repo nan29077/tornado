@@ -25,7 +25,7 @@ import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { composeMoNumber, digitsOnly, isUsableSubCode, SUB_CODE_LENGTH } from '@/server/emma';
+import { composeMoNumber, digitsOnly, formatMoNumber, isUsableSubCode, SUB_CODE_LENGTH } from '@/server/emma';
 
 /**
  * 회수한 번호를 다시 쓰기까지의 냉각기간(일).
@@ -99,6 +99,22 @@ export interface IssuedMoNumber {
   subCode: string;
   /** 기존에 배정돼 있던 번호를 그대로 돌려준 경우 true (새로 발급하지 않음) */
   reused: boolean;
+  /**
+   * 구 체계 번호를 회수하고 새로 발급했을 때, 회수한 옛 번호.
+   * 관리자에게 "무엇이 무엇으로 바뀌었는지" 를 알려 주고 감사로그에 남기기 위해 돌려준다.
+   */
+  replaced?: string;
+}
+
+/**
+ * 지금 대표번호 체계에 속한 번호인가.
+ *
+ * 판정 기준은 **현재 설정된 대표번호로 시작하는가** 하나다. 구 050 안심번호·1588 번호는 물론,
+ * 인포뱅크 계약이 확정되어 대표번호가 교체되면 옛 대표번호로 발급된 번호도 여기서 걸린다.
+ * (그래서 대표번호 교체는 `.env` 값 변경 + 일괄 재발급 한 번으로 끝난다)
+ */
+function isCurrentScheme(phoneNumber: string, baseNumber: string): boolean {
+  return digitsOnly(phoneNumber).startsWith(baseNumber);
 }
 
 /**
@@ -112,32 +128,13 @@ export interface IssuedMoNumber {
  *   INSERT 하다 충돌하면 다음 후보로 넘어간다(낙관적 채번). 미리 조회한 목록만 믿으면
  *   동시에 승인된 두 크리에이터가 같은 번호를 받을 수 있다.
  */
-export async function issueMoNumberForCreator(creatorId: string): Promise<IssuedMoNumber> {
-  const baseNumber = requireBaseNumber();
-
-  const existing = await prisma.creatorMoNumber.findFirst({
-    where: { creatorId, status: 'ASSIGNED' },
-    select: { id: true, phoneNumber: true, baseNumber: true, subCode: true },
-  });
-  if (existing) {
-    return {
-      id: existing.id,
-      phoneNumber: existing.phoneNumber,
-      baseNumber: existing.baseNumber ?? baseNumber,
-      subCode: existing.subCode ?? '',
-      reused: true,
-    };
-  }
-
-  const creator = await prisma.creatorProfile.findUnique({
-    where: { id: creatorId },
-    select: { id: true, status: true, displayName: true },
-  });
-  if (!creator) throw new Error('크리에이터를 찾을 수 없습니다.');
-  if (creator.status !== 'APPROVED') {
-    throw new Error('승인된 크리에이터에게만 번호를 발급할 수 있습니다.');
-  }
-
+/**
+ * 대표번호 안에서 쓸 수 있는 서브번호를 뽑아 크리에이터에게 붙인다.
+ *
+ * 발급·재발급이 같은 채번 규칙(난수·예약번호 제외·냉각기간)을 쓰도록 한 곳에 모아 둔다.
+ * 두 경로가 갈라지면 재발급 쪽만 순번 채번이 되는 식의 사고가 난다.
+ */
+async function allocateSubCode(creatorId: string, baseNumber: string, memo: string): Promise<IssuedMoNumber> {
   const blocked = await loadBlockedSubCodes(baseNumber, prisma);
 
   for (let attempt = 0; attempt < MAX_PICK_ATTEMPTS; attempt += 1) {
@@ -159,7 +156,7 @@ export async function issueMoNumberForCreator(creatorId: string): Promise<Issued
           creatorId,
           assignedAt: new Date(),
           releasedAt: null,
-          memo: '크리에이터 승인 시 자동 발급',
+          memo,
         },
         select: { id: true },
       });
@@ -176,6 +173,180 @@ export async function issueMoNumberForCreator(creatorId: string): Promise<Issued
   }
 
   throw new MoNumberExhaustedError(baseNumber);
+}
+
+/**
+ * 크리에이터에게 MO 번호를 발급한다.
+ *
+ * - 이미 배정된 번호가 **현재 대표번호 체계면** 새로 발급하지 않고 그것을 돌려준다. (중복 발급 방지)
+ * - 배정된 번호가 **구 체계면**(0505·1588, 또는 교체 전 대표번호) 회수하고 새로 발급한다.
+ *   이 검사가 없으면 옛 번호를 이미 받아 둔 크리에이터는 몇 번을 다시 승인해도 영영 구 번호를 유지한다.
+ * - 크리에이터 상태가 APPROVED 가 아니면 발급하지 않는다.
+ *
+ * 동시 호출 안전성
+ *   `creator_mo_number_base_sub_uniq` 부분 유니크 인덱스가 최종 방어선이다. 후보를 뽑아
+ *   INSERT 하다 충돌하면 다음 후보로 넘어간다(낙관적 채번). 미리 조회한 목록만 믿으면
+ *   동시에 승인된 두 크리에이터가 같은 번호를 받을 수 있다.
+ */
+export async function issueMoNumberForCreator(creatorId: string): Promise<IssuedMoNumber> {
+  const baseNumber = requireBaseNumber();
+
+  const existing = await prisma.creatorMoNumber.findFirst({
+    where: { creatorId, status: 'ASSIGNED' },
+    select: { id: true, phoneNumber: true, baseNumber: true, subCode: true },
+  });
+
+  if (existing && isCurrentScheme(existing.phoneNumber, baseNumber)) {
+    return {
+      id: existing.id,
+      phoneNumber: existing.phoneNumber,
+      baseNumber: existing.baseNumber ?? baseNumber,
+      subCode: existing.subCode ?? '',
+      reused: true,
+    };
+  }
+
+  const creator = await prisma.creatorProfile.findUnique({
+    where: { id: creatorId },
+    select: { id: true, status: true, displayName: true },
+  });
+  if (!creator) throw new Error('크리에이터를 찾을 수 없습니다.');
+  if (creator.status !== 'APPROVED') {
+    throw new Error('승인된 크리에이터에게만 번호를 발급할 수 있습니다.');
+  }
+
+  // 구 체계 번호가 붙어 있으면 먼저 떼어 낸다. 새 번호를 붙인 뒤에 떼면 그 사이에 들어온
+  // 문자가 어느 쪽으로 갈지 모호해지고, 한 크리에이터에게 번호 두 개가 붙은 상태가 남는다.
+  if (existing) {
+    await releaseMoNumberRow(existing.id, '구 번호 체계 — 재발급으로 회수');
+    logger.info('구 체계 MO 번호 회수', { creatorId, phoneNumber: existing.phoneNumber });
+  }
+
+  const issued = await allocateSubCode(
+    creatorId,
+    baseNumber,
+    existing ? '구 번호 체계 재발급' : '크리에이터 승인 시 자동 발급',
+  );
+  return existing ? { ...issued, replaced: existing.phoneNumber } : issued;
+}
+
+/**
+ * 관리자가 특정 크리에이터의 번호를 강제로 다시 발급한다.
+ *
+ * 번호 유출·오배정 신고처럼 "지금 쓰는 번호를 버려야 하는" 상황에 쓴다.
+ * 옛 번호는 회수 처리되어 냉각기간 동안 아무에게도 가지 않는다.
+ */
+export async function reissueMoNumberForCreator(creatorId: string, reason: string): Promise<IssuedMoNumber> {
+  const baseNumber = requireBaseNumber();
+
+  const creator = await prisma.creatorProfile.findUnique({
+    where: { id: creatorId },
+    select: { id: true, status: true },
+  });
+  if (!creator) throw new Error('크리에이터를 찾을 수 없습니다.');
+  if (creator.status !== 'APPROVED') {
+    throw new Error('승인된 크리에이터에게만 번호를 발급할 수 있습니다.');
+  }
+
+  const existing = await prisma.creatorMoNumber.findFirst({
+    where: { creatorId, status: 'ASSIGNED' },
+    select: { id: true, phoneNumber: true },
+  });
+  if (existing) await releaseMoNumberRow(existing.id, reason);
+
+  const issued = await allocateSubCode(creatorId, baseNumber, reason);
+  return existing ? { ...issued, replaced: existing.phoneNumber } : issued;
+}
+
+export interface LegacyReissueResult {
+  baseNumber: string;
+  /** 새 번호를 받은 건 */
+  reissued: Array<{ creatorId: string; displayName: string; from: string; to: string }>;
+  /** 승인 상태가 아니어서 회수만 한 건 */
+  reclaimedOnly: Array<{ creatorId: string; displayName: string; from: string }>;
+  /** 실패한 건 (번호 소진 등) */
+  failed: Array<{ creatorId: string; displayName: string; from: string; message: string }>;
+}
+
+/**
+ * 현재 대표번호 체계에 속하지 않는 배정 번호를 **전부** 새 번호로 바꾼다.
+ *
+ * 두 경우에 쓴다.
+ *  1) 구 050·1588 번호를 쓰던 크리에이터를 1688 체계로 옮길 때 (1회성 정리)
+ *  2) 인포뱅크 계약으로 대표번호가 확정·교체됐을 때 (`.env` 의 EMMA_MO_BASE_NUMBER 교체 후 실행)
+ *
+ * 한 건이 실패해도 나머지는 계속 진행하고, 결과를 건별로 돌려준다.
+ * 전체를 트랜잭션으로 묶지 않는 이유는 수백 건 중 하나가 실패했다고 이미 잘 바뀐 것까지
+ * 되돌리면 크리에이터마다 번호가 왔다 갔다 하기 때문이다.
+ */
+export async function reissueLegacyMoNumbers(): Promise<LegacyReissueResult> {
+  const baseNumber = requireBaseNumber();
+
+  const assigned = await prisma.creatorMoNumber.findMany({
+    where: { status: 'ASSIGNED', creatorId: { not: null } },
+    select: {
+      id: true,
+      phoneNumber: true,
+      creatorId: true,
+      creator: { select: { status: true, displayName: true } },
+    },
+  });
+
+  const legacy = assigned.filter((row) => !isCurrentScheme(row.phoneNumber, baseNumber));
+  const result: LegacyReissueResult = { baseNumber, reissued: [], reclaimedOnly: [], failed: [] };
+
+  for (const row of legacy) {
+    const creatorId = row.creatorId;
+    if (!creatorId) continue;
+    const displayName = row.creator?.displayName ?? creatorId;
+
+    // 승인 상태가 아닌 채널에 번호가 붙어 있으면 새 번호를 주지 않고 회수만 한다.
+    // (정지된 채널로 후원 문자가 계속 들어오는 것을 막는 것이 우선이다)
+    if (row.creator?.status !== 'APPROVED') {
+      await releaseMoNumberRow(row.id, '구 번호 체계 정리 — 미승인 채널이라 회수만 함');
+      result.reclaimedOnly.push({ creatorId, displayName, from: row.phoneNumber });
+      continue;
+    }
+
+    try {
+      await releaseMoNumberRow(row.id, '구 번호 체계 — 일괄 재발급으로 회수');
+      const issued = await allocateSubCode(creatorId, baseNumber, '구 번호 체계 일괄 재발급');
+      result.reissued.push({ creatorId, displayName, from: row.phoneNumber, to: issued.phoneNumber });
+    } catch (e) {
+      result.failed.push({ creatorId, displayName, from: row.phoneNumber, message: (e as Error).message });
+      logger.warn('구 번호 일괄 재발급 실패', { creatorId, from: row.phoneNumber, message: (e as Error).message });
+    }
+  }
+
+  logger.info('구 번호 일괄 재발급 완료', {
+    baseNumber,
+    reissued: result.reissued.length,
+    reclaimedOnly: result.reclaimedOnly.length,
+    failed: result.failed.length,
+  });
+  return result;
+}
+
+/** 재발급 결과를 관리자 화면에 보여 줄 한 문장으로 만든다. */
+export function describeLegacyReissue(r: LegacyReissueResult): string {
+  if (r.reissued.length === 0 && r.reclaimedOnly.length === 0 && r.failed.length === 0) {
+    return `구 체계 번호가 없습니다. 배정된 번호가 모두 ${formatMoNumber(r.baseNumber)} 체계입니다.`;
+  }
+  const parts = [`${r.reissued.length}건을 ${formatMoNumber(r.baseNumber)} 체계로 재발급했습니다.`];
+  if (r.reclaimedOnly.length > 0) parts.push(`미승인 채널 ${r.reclaimedOnly.length}건은 회수만 했습니다.`);
+  if (r.failed.length > 0) parts.push(`${r.failed.length}건은 실패했습니다 (${r.failed[0].message}).`);
+  return parts.join(' ');
+}
+
+/**
+ * 번호 한 행의 배정을 푼다.
+ * 회수 시각(releasedAt)을 남겨야 냉각기간이 걸리므로, 배정 해제는 반드시 이 경로로만 한다.
+ */
+async function releaseMoNumberRow(id: string, memo: string): Promise<void> {
+  await prisma.creatorMoNumber.update({
+    where: { id },
+    data: { status: 'RECLAIMED', creatorId: null, releasedAt: new Date(), memo },
+  });
 }
 
 /**

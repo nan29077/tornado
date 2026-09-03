@@ -333,9 +333,24 @@ model User {
   consents       ConsentRecord[]
   notifications  Notification[]
   passwordResets PasswordResetToken[]
+  socialIdentities SocialIdentity[]
 
   @@index([role, status])
   @@map("app_user")
+}
+
+/// 이메일 일치가 아닌 공급자 고유 ID로만 계정을 연결한다.
+model SocialIdentity {
+  id             String @id
+  provider       String
+  providerUserId String @map("provider_user_id")
+  userId         String @map("user_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user           User @relation(fields: [userId], references: [id])
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+  @@map("social_identity")
 }
 
 model UserSession {
@@ -511,9 +526,19 @@ model CreatorProfile {
   liveUrl             String?       @map("live_url")
   /// 라이브 플랫폼별 주소. livePlatform 이 가리키는 값이 후원샵에 노출된다.
   livePlatform        String?       @map("live_platform")
+  /// SNS 링크. 후원 페이지에 링크 버튼으로 노출되고, 아래 *Live 스위치가 켜지면
+  /// 그 플랫폼의 ON AIR 배지가 이 주소로 연결된다.
+  /// (컬럼 이름의 'live' 는 라이브 주소만 담던 시절의 흔적이다. 지금은 채널·라이브 링크를 겸한다)
   youtubeLiveUrl      String?       @map("youtube_live_url")
   instagramLiveUrl    String?       @map("instagram_live_url")
   tiktokLiveUrl       String?       @map("tiktok_live_url")
+  facebookLiveUrl     String?       @map("facebook_live_url")
+  /// 플랫폼별 "지금 방송 중" 스위치. 동시송출을 하는 크리에이터가 있어 여러 개를 켤 수 있다.
+  /// liveOn / livePlatform / liveUrl 은 이 값들에서 파생된다(우선순위: 유튜브 > 인스타 > 틱톡 > 페이스북).
+  youtubeLive         Boolean       @default(false) @map("youtube_live")
+  instagramLive       Boolean       @default(false) @map("instagram_live")
+  tiktokLive          Boolean       @default(false) @map("tiktok_live")
+  facebookLive        Boolean       @default(false) @map("facebook_live")
   /// 대표 채널 주소. 신청 때 받은 값을 소개글에 이어 붙이면 소개 길이 제한을 넘겨
   /// 이후 후원샵 설정 저장이 영구히 막히므로 반드시 별도 컬럼에 보관한다.
   channelUrl          String?       @map("channel_url")
@@ -834,6 +859,7 @@ model Donation {
   secureLink     SecureLink?
   pinSession     PaymentPinSession?
   statusLogs     DonationStatusLog[]
+  reply          DonationReply?
 
   @@index([creatorId, receivedAt])
   @@index([donorId, receivedAt])
@@ -844,6 +870,18 @@ model Donation {
   @@index([creatorId, status])
   @@index([paidAt])
   @@map("donation")
+}
+
+/// 해당 크리에이터와 후원자만 열람하는 답글. 방송·MT로 자동 전송하지 않는다.
+model DonationReply {
+  id         String @id
+  donationId String @unique @map("donation_id")
+  body       String @db.VarChar(1000)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  donation   Donation @relation(fields: [donationId], references: [id], onDelete: Cascade)
+
+  @@map("donation_reply")
 }
 
 model DonationStatusLog {

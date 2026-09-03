@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { ActionForm } from '@/components/studio/action-form';
 import { blockDonorAction, replayOverlayTestAction } from '@/app/actions/studio';
 import { requireCreator } from '@/server/auth';
+import { replyToDonationAction } from '@/app/actions/donation-replies';
 import { prisma } from '@/server/db';
 import { formatWon } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
@@ -38,6 +39,7 @@ export default async function StudioDonationDetailPage({ params }: { params: Pro
       amount: true,
       displayName: true,
       message: true,
+      reply: { select: { body: true } },
       anonymous: true,
       channel: true,
       paymentMode: true,
@@ -141,6 +143,15 @@ export default async function StudioDonationDetailPage({ params }: { params: Pro
         </div>
 
         <section>
+          <SectionTitle title="후원 메시지에 답글" description="이 후원자에게만 표시됩니다. 문자 발송·방송 송출·결제에는 영향을 주지 않습니다." />
+          {donation.donorId ? <Card className="mb-5">
+            <ActionForm action={replyToDonationAction} submitLabel={donation.reply ? '답글 수정' : '답글 보내기'}>
+              <input type="hidden" name="donationId" value={donation.id} />
+              <label htmlFor="donation-reply" className="mb-2 block text-sm font-bold">크리에이터 답글</label>
+              <textarea id="donation-reply" name="body" defaultValue={donation.reply?.body ?? ''} required maxLength={1000} rows={4} placeholder="응원해 주신 후원자에게 마음을 전해 보세요." className="mb-3 w-full resize-y rounded-xl border border-ink-200 bg-white p-3 text-sm leading-relaxed text-ink-900 focus:border-brand-500 focus:outline-none" />
+              <p className="mb-3 text-xs text-ink-500">최대 1,000자 · 후원자는 내 문자후원 내역과 마이페이지에서 확인할 수 있습니다.</p>
+            </ActionForm>
+          </Card> : <Notice tone="neutral">연결된 후원자 정보가 없어 답글을 보낼 수 없습니다.</Notice>}
           <SectionTitle title="조치" description="아래 동작은 후원 상태를 변경하지 않습니다." />
           <div className="grid gap-2.5 lg:grid-cols-2">
             <Card>

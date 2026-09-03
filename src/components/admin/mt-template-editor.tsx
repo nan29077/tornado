@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { AdminField, AdminTextarea } from '@/components/admin/controls';
 import { Badge } from '@/components/ui';
+import { SMS_BYTE_LIMIT, smsByteLength } from '@/lib/sms';
 
 /**
  * MT 문자 본문 편집기.
@@ -25,21 +26,6 @@ export interface TemplateVariable {
 }
 
 const SENDER_TAG = '[도네이도]';
-
-/** SMS 단문 한계(바이트). 이 값을 넘으면 LMS 로 나간다. */
-const SMS_BYTE_LIMIT = 90;
-
-/**
- * EUC-KR 기준 문자 바이트 수. 국내 문자 사업자가 SMS/LMS 를 가르는 기준이다.
- * ASCII 는 1바이트, 그 밖(한글·전각기호·이모지)은 2바이트로 센다.
- */
-function smsByteLength(text: string): number {
-  let bytes = 0;
-  for (const ch of text) {
-    bytes += ch.charCodeAt(0) < 128 ? 1 : 2;
-  }
-  return bytes;
-}
 
 const TOKEN_RE = /\{([^{}\s]{1,12})\}/g;
 /** 대괄호로 잘못 쓴 치환자를 찾는다. `[보안링크]` 는 시스템이 채우는 자리라 제외한다. */

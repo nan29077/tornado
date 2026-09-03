@@ -7,6 +7,8 @@ import { newId } from '@/lib/id';
 import { createSession, hashPassword } from '@/server/auth';
 import { isLocal } from '@/lib/env';
 import { consumeIpRateLimit } from '@/server/rate-limit';
+import { authReturnPath } from '@/lib/auth-return-path';
+import { ensureDonorPreviewSeed } from '@/server/services/donor-preview-seed';
 
 /**
  * 후원자 회원가입.
@@ -130,6 +132,11 @@ export async function testLogin(_prev: TestLoginState, formData: FormData): Prom
   const account = TEST_ACCOUNTS[key];
   if (!account) return { message: '알 수 없는 테스트 계정입니다.' };
 
+  if (key === 'donor') {
+    try { await ensureDonorPreviewSeed(); }
+    catch { return { message: '테스트 후원자 데이터를 준비하지 못했습니다. DB 마이그레이션과 테스트 계정 연결을 확인해 주세요.' }; }
+  }
+
   const user = await prisma.user.findUnique({
     where: { email: account.email },
     select: { id: true, status: true, role: true },
@@ -144,6 +151,7 @@ export async function testLogin(_prev: TestLoginState, formData: FormData): Prom
     return { message: `${account.label} 계정이 활성 상태가 아닙니다.` };
   }
 
+  if (key === 'donor' && user.role !== 'DONOR') return { message: '테스트 후원자 계정의 역할을 확인해 주세요.' };
   await createSession(user.id);
-  redirect(account.redirect);
+  redirect(key === 'donor' ? authReturnPath(formData.get('next'), account.redirect) : account.redirect);
 }

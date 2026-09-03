@@ -4,6 +4,7 @@ import { encrypt, phoneHash, maskPhone, maskSecret, generateToken, tokenHash } f
 import { resetMockPaymentState } from '@/server/adapters/payment';
 import { clearMockOutbox } from '@/server/adapters/mt';
 import { setMockLive } from '@/server/adapters/youtube';
+import { clearMtTemplateOverrideCache } from '@/server/services/mt-templates';
 
 /** 테스트마다 DB 를 비운다. 순서는 FK 역순. */
 export async function resetDb() {
@@ -19,6 +20,11 @@ export async function resetDb() {
     'creator_mo_number', 'creator_code', 'banned_word', 'donation_limit_policy', 'creator_profile',
     'admin_profile', 'user_session', 'app_user', 'terms_version', 'idempotency_key',
     'content_post', 'banner', 'system_setting',
+    /**
+     * MT 커스텀 본문. 이 표가 빠져 있어서 한 테스트가 저장한 문구가 다음 테스트까지 살아남았다.
+     * (발송 문구는 전역 상태라 한 번 새면 관련 없는 테스트가 이유 없이 깨진다)
+     */
+    'mt_message_template',
   ];
   // 정산 원장은 append-only 트리거로 DELETE 가 막혀 있으므로 트리거를 잠시 끈다.
   await prisma.$executeRawUnsafe('ALTER TABLE settlement_ledger DISABLE TRIGGER settlement_ledger_append_only');
@@ -28,6 +34,8 @@ export async function resetDb() {
   resetMockPaymentState();
   clearMockOutbox();
   setMockLive(true);
+  // 커스텀 본문은 발송 경로에서 30초 캐싱된다. 표를 비웠으면 캐시도 함께 비워야 한다.
+  clearMtTemplateOverrideCache();
 }
 
 export interface Fixture {

@@ -27,6 +27,7 @@ import {
 } from '@/server/services/youtube-connection';
 import { getPublicBaseUrl } from '@/server/public-base-url';
 import { bankName } from '@/components/studio/banks';
+import { SNS_PLATFORMS, deriveLiveState, type SnsLinkState } from '@/lib/sns-platforms';
 
 /**
  * 크리에이터 관리자(/studio) 서버 액션.
@@ -1066,50 +1067,6 @@ const imageUrlSchema = z.union([
   z.string().regex(/^\/[^\s]*$/u, '이미지 주소는 http(s) 주소 또는 / 로 시작하는 경로여야 합니다.'),
 ]);
 
-function isYouTubeUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return /(^|\.)youtube\.com$/.test(u.hostname) || u.hostname === 'youtu.be';
-  } catch {
-    return false;
-  }
-}
-
-/** 후원샵 라이브에 연결할 수 있는 플랫폼과 허용 호스트 */
-const LIVE_PLATFORMS = {
-  YOUTUBE: { label: '유튜브', field: 'youtubeLiveUrl', test: isYouTubeUrl, hint: 'youtube.com 또는 youtu.be' },
-  INSTAGRAM: {
-    label: '인스타그램',
-    field: 'instagramLiveUrl',
-    test: (url: string) => {
-      try {
-        return /(^|\.)instagram\.com$/.test(new URL(url).hostname);
-      } catch {
-        return false;
-      }
-    },
-    hint: 'instagram.com',
-  },
-  TIKTOK: {
-    label: '틱톡',
-    field: 'tiktokLiveUrl',
-    test: (url: string) => {
-      try {
-        return /(^|\.)tiktok\.com$/.test(new URL(url).hostname);
-      } catch {
-        return false;
-      }
-    },
-    hint: 'tiktok.com',
-  },
-} as const;
-
-export type LivePlatform = keyof typeof LIVE_PLATFORMS;
-
-function isLivePlatform(v: string): v is LivePlatform {
-  return v in LIVE_PLATFORMS;
-}
-
 export async function updateCreatorProfileAction(
   _prev: StudioActionState,
   formData: FormData,
@@ -1152,9 +1109,10 @@ export async function updateCreatorProfileAction(
 }
 
 /**
- * 후원 페이지 설정 (배너 · 라이브 링크 · 방송중 스위치).
- * 라이브 링크는 방송마다 바뀌므로 언제든 수정할 수 있고,
- * 스위치를 켜면 후원 페이지 프로필에 두근두근 효과와 라이브중 배지가 표시된다.
+ * 후원 페이지 설정 (배너 · 소개).
+ *
+ * 라이브 링크와 방송중 스위치는 **SNS·라이브 탭**(updateSnsLinksAction)으로 분리했다.
+ * 한 폼에 같이 두면 배너만 바꾸려고 저장했을 때 폼에 없는 라이브 필드가 함께 덮여 꺼진다.
  */
 export async function updateDonationPageAction(
   _prev: StudioActionState,
@@ -1166,17 +1124,10 @@ export async function updateDonationPageAction(
       .object({
         bannerUrl: imageUrlSchema,
         description: z.string().trim().max(300),
-        youtubeLiveUrl: z.string().trim().max(300),
-        instagramLiveUrl: z.string().trim().max(300),
-        tiktokLiveUrl: z.string().trim().max(300),
       })
       .safeParse({
         bannerUrl: text(formData, 'bannerUrl'),
         description: text(formData, 'description'),
-        // 예전 단일 필드(liveUrl)로 저장하던 폼과도 호환되게 받는다.
-        youtubeLiveUrl: text(formData, 'youtubeLiveUrl') || text(formData, 'liveUrl'),
-        instagramLiveUrl: text(formData, 'instagramLiveUrl'),
-        tiktokLiveUrl: text(formData, 'tiktokLiveUrl'),
       });
     if (!parsed.success) {
       return {
@@ -1192,62 +1143,94 @@ export async function updateDonationPageAction(
     const bannerUrl =
       bannerPreset === 'custom' ? parsed.data.bannerUrl || null : bannerPreset ? bannerPreset : null;
 
-    const liveOn = checked(formData, 'liveOn');
-    const rawPlatform = text(formData, 'livePlatform') || 'YOUTUBE';
-    if (!isLivePlatform(rawPlatform)) {
-      return { ok: false, message: '라이브 플랫폼 선택 값이 올바르지 않습니다.' };
-    }
-    const platform: LivePlatform = rawPlatform;
+    await prisma.creatorProfile.update({
+      where: { id: creatorId },
+      data: { bannerUrl, description: parsed.data.description || null },
+    });
 
-    const urls: Record<LivePlatform, string> = {
-      YOUTUBE: parsed.data.youtubeLiveUrl,
-      INSTAGRAM: parsed.data.instagramLiveUrl,
-      TIKTOK: parsed.data.tiktokLiveUrl,
-    };
+    revalidatePath('/studio/settings');
+    revalidatePath('/studio/profile');
+    revalidatePath('/studio');
+    revalidatePath('/c');
+    return { ok: true, message: '후원페이지 설정을 저장했습니다.' };
+  });
+}
 
-    // 입력한 주소는 플랫폼별 호스트로 검증한다. 엉뚱한 주소가 저장되면 후원자가 빈 페이지로 이동한다.
-    for (const key of Object.keys(urls) as LivePlatform[]) {
-      const url = urls[key];
-      if (url && !LIVE_PLATFORMS[key].test(url)) {
+// ===========================================================================
+// SNS 링크 · 플랫폼별 방송중 스위치
+// ===========================================================================
+
+/**
+ * SNS 링크와 플랫폼별 "지금 방송 중" 스위치를 저장한다.
+ *
+ * 링크는 방송 여부와 무관하게 후원 페이지에 버튼으로 노출된다. 스위치를 켠 플랫폼은
+ * 프로필에 ON AIR 배지가 붙고, 배지를 누르면 그 주소로 이동한다.
+ * 유튜브와 인스타에 동시송출하는 크리에이터가 있으므로 스위치는 여러 개를 켤 수 있다.
+ *
+ * liveOn / livePlatform / liveUrl 은 여기서 파생시켜 함께 저장한다(deriveLiveState).
+ * 네 컬럼을 매번 OR 로 묶게 하면 한 화면만 빠뜨려도 서로 어긋나기 때문이다.
+ */
+export async function updateSnsLinksAction(
+  _prev: StudioActionState,
+  formData: FormData,
+): Promise<StudioActionState> {
+  return withCreator(async (creatorId) => {
+    const links: SnsLinkState[] = [];
+
+    for (const platform of SNS_PLATFORMS) {
+      const url = text(formData, platform.urlField);
+      const live = checked(formData, platform.liveField);
+
+      if (url.length > 300) {
+        return { ok: false, message: `${platform.label} 링크가 너무 깁니다. 300자 이내로 입력해 주세요.` };
+      }
+      // 엉뚱한 주소가 저장되면 후원자가 빈 페이지로 이동한다. 호스트까지 확인한다.
+      if (url && !platform.test(url)) {
+        return { ok: false, message: `${platform.label} 링크는 ${platform.hostHint} 주소만 사용할 수 있습니다.` };
+      }
+      // 스위치만 켜고 주소가 없으면 배지가 갈 곳이 없다.
+      if (live && !url) {
         return {
           ok: false,
-          message: `${LIVE_PLATFORMS[key].label} 라이브 주소는 ${LIVE_PLATFORMS[key].hint} 주소만 사용할 수 있습니다.`,
+          message: `${platform.label} 방송중 스위치를 켜려면 ${platform.label} 링크를 먼저 입력해 주세요.`,
         };
       }
+
+      links.push({ platform, url, live });
     }
 
-    // 실제로 노출되는 주소는 선택한 플랫폼의 주소다.
-    const activeUrl = urls[platform];
-    if (liveOn && !activeUrl) {
-      return {
-        ok: false,
-        message: `방송중 스위치를 켜려면 ${LIVE_PLATFORMS[platform].label} 라이브 주소를 먼저 입력해 주세요.`,
-      };
-    }
+    const derived = deriveLiveState(links);
+    const byField = (field: SnsLinkState['platform']['urlField']) =>
+      links.find((l) => l.platform.urlField === field);
 
     await prisma.creatorProfile.update({
       where: { id: creatorId },
       data: {
-        bannerUrl,
-        description: parsed.data.description || null,
-        liveOn,
-        livePlatform: platform,
-        youtubeLiveUrl: urls.YOUTUBE || null,
-        instagramLiveUrl: urls.INSTAGRAM || null,
-        tiktokLiveUrl: urls.TIKTOK || null,
-        // 후원샵은 liveUrl 하나만 보므로 선택한 플랫폼 주소를 여기에 반영한다.
-        liveUrl: activeUrl || null,
+        youtubeLiveUrl: byField('youtubeLiveUrl')?.url || null,
+        instagramLiveUrl: byField('instagramLiveUrl')?.url || null,
+        tiktokLiveUrl: byField('tiktokLiveUrl')?.url || null,
+        facebookLiveUrl: byField('facebookLiveUrl')?.url || null,
+        youtubeLive: Boolean(byField('youtubeLiveUrl')?.live),
+        instagramLive: Boolean(byField('instagramLiveUrl')?.live),
+        tiktokLive: Boolean(byField('tiktokLiveUrl')?.live),
+        facebookLive: Boolean(byField('facebookLiveUrl')?.live),
+        liveOn: derived.liveOn,
+        livePlatform: derived.livePlatform,
+        liveUrl: derived.liveUrl,
       },
     });
 
     revalidatePath('/studio/settings');
     revalidatePath('/studio/profile');
     revalidatePath('/studio');
+
+    const liveLabels = links.filter((l) => l.live).map((l) => l.platform.label);
     return {
       ok: true,
-      message: liveOn
-        ? `후원샵 설정을 저장했습니다. ${LIVE_PLATFORMS[platform].label} 라이브로 온에어 표시가 켜졌습니다.`
-        : '후원샵 설정을 저장했습니다.',
+      message:
+        liveLabels.length > 0
+          ? `SNS 링크를 저장했습니다. ${liveLabels.join(' · ')} 방송중 표시가 켜졌습니다.`
+          : 'SNS 링크를 저장했습니다. 방송중 표시는 모두 꺼져 있습니다.',
     };
   });
 }

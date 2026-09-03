@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { EmptyState, LinkButton, Badge, Card } from '@/components/ui';
 import { RefundRequestForm } from '@/components/my/refund-request-form';
+import { DonationReply } from '@/components/public/donation-reply';
 import { requireDonorContext, NO_DONOR_TITLE, NO_DONOR_DESC } from '@/components/my/donor';
 import { prisma } from '@/server/db';
 import { formatWon, formatNumber } from '@/lib/money';
@@ -78,6 +79,7 @@ export default async function MyDonationsPage({
         transactionNo: true,
         amount: true,
         message: true,
+        reply: { select: { body: true, updatedAt: true } },
         status: true,
         receivedAt: true,
         paidAt: true,
@@ -154,6 +156,7 @@ export default async function MyDonationsPage({
                     </p>
                   </div>
 
+                  {d.reply ? <DonationReply {...d.reply} name={d.creator.displayName} /> : null}
                   {/* 자세한 정보는 접어둔다 */}
                   <details className="group mt-3 border-t border-ink-100 pt-2.5">
                     <summary className="cursor-pointer list-none text-[12px] font-semibold text-ink-400 transition-colors hover:text-ink-700">

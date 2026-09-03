@@ -279,7 +279,9 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
         const issued = await issueMoNumberForCreator(creatorId);
         numberNotice = issued.reused
           ? ` (기존 배정 번호 ${formatMoNumber(issued.phoneNumber)} 유지)`
-          : ` MO 번호 ${formatMoNumber(issued.phoneNumber)} 을(를) 발급했습니다.`;
+          : issued.replaced
+            ? ` 구 체계 번호 ${formatMoNumber(issued.replaced)} 을(를) 회수하고 ${formatMoNumber(issued.phoneNumber)} 으로 재발급했습니다. 크리에이터에게 방송 안내 문구 교체를 알려 주세요.`
+            : ` MO 번호 ${formatMoNumber(issued.phoneNumber)} 을(를) 발급했습니다.`;
       } catch (e) {
         numberNotice = ` (MO 번호 자동 발급 실패: ${(e as Error).message} — 관리자 화면에서 수동 배정해 주세요)`;
         logger.warn('크리에이터 승인 후 MO 번호 자동 발급 실패', {

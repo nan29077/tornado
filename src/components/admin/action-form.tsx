@@ -327,3 +327,76 @@ export function ActionFormWithDetail({
     </form>
   );
 }
+
+/**
+ * 결과가 **목록으로 나오는** 일괄 작업용 폼. (MO 번호 일괄 재발급 등)
+ *
+ * `DetailActionForm` 은 미리 정해 둔 라벨 목록(detailLabels)만 렌더하므로,
+ * 대상이 실행 시점에 정해지는 일괄 작업에는 쓸 수 없다. 여기서는 서버가 돌려준
+ * detail 을 있는 그대로 전부 그린다.
+ *
+ * 결과를 화면에 남겨 두는 이유: 번호가 바뀐 크리에이터에게 관리자가 직접 안내해야 하는데,
+ * 그 목록이 사라지면 감사로그를 다시 뒤져야 한다.
+ */
+export function BulkActionForm({
+  action,
+  children,
+  submitLabel,
+  pendingLabel = '처리 중',
+  variant = 'primary',
+  confirm,
+  emptyLabel = '변경된 항목이 없습니다.',
+}: {
+  action: AdminServerAction;
+  children?: React.ReactNode;
+  submitLabel: string;
+  pendingLabel?: string;
+  variant?: Variant;
+  confirm?: string;
+  emptyLabel?: string;
+}) {
+  const [state, formAction, pending] = React.useActionState(action, initialAdminState);
+  const entries = Object.entries(state.detail ?? {});
+
+  return (
+    <form
+      action={formAction}
+      onSubmit={
+        confirm
+          ? (e) => {
+              if (!window.confirm(confirm)) e.preventDefault();
+            }
+          : undefined
+      }
+      className="space-y-3"
+    >
+      {children}
+      <Button type="submit" variant={variant} disabled={pending}>
+        {pending ? pendingLabel : submitLabel}
+      </Button>
+
+      {state.message ? (
+        <div role="status" aria-live="polite">
+          <Notice tone={state.ok ? 'success' : 'danger'}>{state.message}</Notice>
+        </div>
+      ) : null}
+
+      {state.ok && state.message ? (
+        <div className="rounded-xl border border-ink-100 bg-ink-50 p-3">
+          {entries.length === 0 ? (
+            <p className="text-[12px] text-ink-400">{emptyLabel}</p>
+          ) : (
+            <ul className="space-y-1">
+              {entries.map(([name, change]) => (
+                <li key={name} className="flex flex-wrap items-baseline justify-between gap-2 text-[12px]">
+                  <span className="font-semibold text-ink-700">{name}</span>
+                  <span className="font-mono text-[11.5px] break-all text-ink-900">{change}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
+    </form>
+  );
+}

@@ -4,7 +4,12 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/server/db';
 import { writeAudit } from '@/server/auth';
 import { newId } from '@/lib/id';
-import { splitMoNumber } from '@/server/emma';
+import { formatMoNumber, splitMoNumber } from '@/server/emma';
+import {
+  describeLegacyReissue,
+  reissueLegacyMoNumbers,
+  reissueMoNumberForCreator,
+} from '@/server/services/mo-number-issue';
 import { requestRefund, approveRefund, rejectRefund, retryRefundRecovery } from '@/server/services/refund';
 import { reconcileUnknownPayment } from '@/server/services/payment-reconcile';
 import type { AdminActionState } from '@/components/admin/state';
@@ -19,20 +24,21 @@ import { run, text, optText, money, enumValue, requiredId, assertFinanceAdmin, a
 /**
  * MO 수신번호 형식.
  *
- * 두 체계를 함께 받는다.
- *  1) 050 안심번호 — 기존 MO 사업자(MTONET) 체계. 번호 하나가 곧 크리에이터 하나다.
- *  2) 대표번호 + 서브번호 — 인포뱅크 EMMA 체계. `1688-□□□□-XXXX` 처럼
- *     앞 8자리는 계약한 대표번호로 고정이고 뒤 4자리를 크리에이터에게 부여한다.
- *     15xx/16xx/18xx 계열 전국대표번호 8자리 + 서브번호 4자리 = 12자리다.
+ * 체계는 하나뿐이다 — **대표번호 + 서브번호** (인포뱅크 EMMA).
+ * `1688-□□□□-XXXX` 처럼 앞 8자리는 계약한 대표번호로 고정이고 뒤 4자리를 크리에이터에게 부여한다.
+ * 15xx/16xx/18xx 계열 전국대표번호 8자리 + 서브번호 4자리 = 12자리다.
+ *
+ * 구 050 안심번호(MTONET 체계)는 **더 이상 등록할 수 없다.** 재고에 섞이면 배정은 되는데
+ * 수신이 되지 않는 유령 번호가 생기고, 크리에이터는 그 사실을 알 방법이 없다.
+ * 남아 있는 구 번호는 `reissueLegacyMoNumbers()` 로 일괄 전환한다.
  *
  * 형식을 강제하는 이유는 오등록 때문이다. 자리수 하나가 틀린 번호를 배정하면 그 크리에이터는
  * 후원 문자를 한 통도 못 받는데, 화면상으로는 정상 배정으로 보인다.
  */
-const SAFE_NUMBER_RE = /^050[0-9]{7,10}$/;
 const REPRESENTATIVE_NUMBER_RE = /^1[5678][0-9]{2}[0-9]{4}[0-9]{4}$/;
 
 function isValidMoNumber(value: string): boolean {
-  return SAFE_NUMBER_RE.test(value) || REPRESENTATIVE_NUMBER_RE.test(value);
+  return REPRESENTATIVE_NUMBER_RE.test(value);
 }
 
 export async function createMoNumber(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
@@ -42,7 +48,7 @@ export async function createMoNumber(_prev: AdminActionState, fd: FormData): Pro
       throw new Error(
         '수신번호 형식이 올바르지 않습니다. ' +
           '대표번호+서브번호 12자리(예: 168812345678) 로 입력해 주세요. ' +
-          '(구 050 안심번호 체계는 숫자 10~13자리)',
+          '구 050 안심번호는 더 이상 등록할 수 없습니다.',
       );
     }
 
@@ -192,6 +198,95 @@ export async function changeMoNumberStatus(_prev: AdminActionState, fd: FormData
     });
     revalidatePath('/admin/mo-numbers');
     return `${before.phoneNumber} 번호 상태를 변경했습니다.`;
+  });
+}
+
+// =========================================================== 구 번호 체계 정리 / 재발급
+
+/**
+ * 구 체계 번호를 쓰는 크리에이터 전원을 현재 대표번호 체계로 옮긴다.
+ *
+ * 언제 쓰는가
+ *  1) 0505·1588 등 구 번호가 남아 있을 때 (1회성 정리)
+ *  2) **인포뱅크 계약으로 대표번호가 확정·교체됐을 때** — `.env` 의 EMMA_MO_BASE_NUMBER 를
+ *     새 번호로 바꾸고 서버를 재시작한 뒤 이 버튼을 누르면 전원이 새 대표번호로 옮겨진다.
+ *
+ * 주의: 실행하면 후원자들이 알고 있던 번호가 바뀐다. 방송 안내 문구를 다시 내보내도록
+ * 크리에이터에게 알림이 나가야 하므로, 결과를 관리자에게 건별로 돌려준다.
+ */
+// 입력값이 없는 액션이지만 서버 액션 시그니처는 (prev, formData) 로 고정이라 두 자리를 남긴다.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function reissueLegacyMoNumbersAction(_prev: AdminActionState, _fd: FormData): Promise<AdminActionState> {
+  return run(async (admin) => {
+    assertOperationAdmin(admin, 'MO 번호 일괄 재발급');
+
+    const result = await reissueLegacyMoNumbers();
+
+    // 한 건도 바뀌지 않았으면 감사로그를 남기지 않는다(로그가 의미 없이 불어난다).
+    if (result.reissued.length > 0 || result.reclaimedOnly.length > 0 || result.failed.length > 0) {
+      await writeAudit({
+        adminUserId: admin.id,
+        action: 'MO_NUMBER_LEGACY_REISSUE',
+        targetType: 'CreatorMoNumber',
+        targetId: result.baseNumber,
+        after: {
+          baseNumber: result.baseNumber,
+          reissued: result.reissued.map((r) => `${r.displayName}: ${r.from} → ${r.to}`),
+          reclaimedOnly: result.reclaimedOnly.map((r) => `${r.displayName}: ${r.from}`),
+          failed: result.failed.map((r) => `${r.displayName}: ${r.from} (${r.message})`),
+        },
+      });
+    }
+
+    revalidatePath('/admin/mo-numbers');
+    revalidatePath('/admin/creators');
+
+    // 어떤 번호가 어떤 번호로 바뀌었는지 화면에 그대로 보여 준다.
+    // (크리에이터에게 안내할 때 관리자가 이 목록을 그대로 쓴다)
+    const detail: Record<string, string> = {};
+    for (const r of result.reissued) {
+      detail[r.displayName] = `${formatMoNumber(r.from)} → ${formatMoNumber(r.to)}`;
+    }
+    for (const r of result.reclaimedOnly) {
+      detail[r.displayName] = `${formatMoNumber(r.from)} → 회수 (미승인 채널)`;
+    }
+    for (const r of result.failed) {
+      detail[r.displayName] = `${formatMoNumber(r.from)} → 실패: ${r.message}`;
+    }
+
+    return { message: describeLegacyReissue(result), detail };
+  });
+}
+
+/**
+ * 크리에이터 한 명의 번호를 새로 발급한다.
+ * 번호 유출·오배정 신고처럼 지금 쓰는 번호를 버려야 하는 상황에 쓴다.
+ */
+export async function reissueCreatorMoNumberAction(
+  _prev: AdminActionState,
+  fd: FormData,
+): Promise<AdminActionState> {
+  return run(async (admin) => {
+    assertOperationAdmin(admin, 'MO 번호 재발급');
+    const creatorId = requiredId(fd, 'creatorId', '크리에이터');
+    const reason = text(fd, 'reason') || '관리자 수동 재발급';
+
+    const issued = await reissueMoNumberForCreator(creatorId, reason);
+
+    await writeAudit({
+      adminUserId: admin.id,
+      action: 'MO_NUMBER_REISSUE',
+      targetType: 'CreatorProfile',
+      targetId: creatorId,
+      before: issued.replaced ? { phoneNumber: issued.replaced } : undefined,
+      after: { phoneNumber: issued.phoneNumber, reason },
+    });
+
+    revalidatePath('/admin/mo-numbers');
+    revalidatePath(`/admin/creators/${creatorId}`);
+    return issued.replaced
+      ? `MO 번호를 ${formatMoNumber(issued.replaced)} 에서 ${formatMoNumber(issued.phoneNumber)} 으로 재발급했습니다. 크리에이터에게 방송 안내 문구 교체를 알려 주세요.`
+      : `MO 번호 ${formatMoNumber(issued.phoneNumber)} 을(를) 발급했습니다.`;
   });
 }
 

@@ -1,14 +1,27 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { Camera, MessageSquareText, Music2, Radio, Video } from 'lucide-react';
+import { Camera, Music2, Radio, ThumbsUp, Video } from 'lucide-react';
 import { Badge, Card, CardTitle, DataRow, Field, Input, Notice, SectionTitle, Textarea, cx } from '@/components/ui';
 import { DEFAULT_BANNERS, defaultBannerFor } from '@/lib/banners';
 import { PageHeader } from '@/components/layout/console-shell';
 import { ActionForm } from '@/components/studio/action-form';
 import { ImageUploadField } from '@/components/studio/image-upload-field';
 import { DonationPageShare } from '@/components/studio/donation-page-share';
-import { updateDonationSettingsAction, updateDonationPageAction, updateThanksMessageAction } from '@/app/actions/studio';
-import { THANKS_MT_MAX_LENGTH, THANKS_MT_VARIABLES, tplDonationSuccess } from '@/server/services/mt-templates';
+import {
+  updateDonationSettingsAction,
+  updateDonationPageAction,
+  updateThanksMessageAction,
+  updateSnsLinksAction,
+} from '@/app/actions/studio';
+import {
+  THANKS_MT_MAX_LENGTH,
+  THANKS_MT_VARIABLES,
+  applyMtTemplateOverride,
+  tplDonationSuccess,
+} from '@/server/services/mt-templates';
+import { ThanksMessageEditor } from '@/components/studio/thanks-message-editor';
+import { formatMoNumber } from '@/server/emma';
+import { SNS_PLATFORMS, type SnsPlatform } from '@/lib/sns-platforms';
 import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { resolvePolicy } from '@/server/services/limits';
@@ -19,9 +32,72 @@ import { getPublicBaseUrl } from '@/server/public-base-url';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * 플랫폼 아이콘.
+ *
+ * lucide 에는 브랜드 로고 아이콘이 없다(정책상 제거됐다). 프로젝트 규칙도 라인형 스트로크
+ * 아이콘만 쓰므로, 플랫폼의 성격을 나타내는 일반 아이콘으로 묶는다.
+ * 로고 대신 각 플랫폼의 상징색(SNS_PLATFORMS.color)으로 구분한다.
+ */
+const SNS_ICONS: Record<SnsPlatform, typeof Video> = {
+  YOUTUBE: Video,
+  INSTAGRAM: Camera,
+  TIKTOK: Music2,
+  FACEBOOK: ThumbsUp,
+};
+
+/**
+ * 크리에이터 레코드에서 플랫폼별 값을 꺼낸다.
+ *
+ * 동적 키(`creator[platform.urlField]`)로 접근하면 select 로 좁혀 둔 타입이 풀려
+ * 컬럼 이름 오타를 컴파일러가 잡지 못한다. 그래서 명시적으로 분기한다.
+ */
+function snsUrlOf(
+  creator: {
+    youtubeLiveUrl: string | null;
+    instagramLiveUrl: string | null;
+    tiktokLiveUrl: string | null;
+    facebookLiveUrl: string | null;
+  },
+  platform: SnsPlatform,
+): string {
+  switch (platform) {
+    case 'YOUTUBE':
+      return creator.youtubeLiveUrl ?? '';
+    case 'INSTAGRAM':
+      return creator.instagramLiveUrl ?? '';
+    case 'TIKTOK':
+      return creator.tiktokLiveUrl ?? '';
+    case 'FACEBOOK':
+      return creator.facebookLiveUrl ?? '';
+  }
+}
+
+function snsLiveOf(
+  creator: {
+    youtubeLive: boolean;
+    instagramLive: boolean;
+    tiktokLive: boolean;
+    facebookLive: boolean;
+  },
+  platform: SnsPlatform,
+): boolean {
+  switch (platform) {
+    case 'YOUTUBE':
+      return creator.youtubeLive;
+    case 'INSTAGRAM':
+      return creator.instagramLive;
+    case 'TIKTOK':
+      return creator.tiktokLive;
+    case 'FACEBOOK':
+      return creator.facebookLive;
+  }
+}
+
 const SETTINGS_TABS = [
   { key: 'amount', label: '후원금' },
   { key: 'thanks', label: '감사문자' },
+  { key: 'sns', label: 'SNS·라이브' },
   { key: 'payment', label: '결제 모드' },
   { key: 'number', label: '문자번호' },
   { key: 'page', label: '후원페이지' },
@@ -69,6 +145,11 @@ export default async function StudioSettingsPage({
         youtubeLiveUrl: true,
         instagramLiveUrl: true,
         tiktokLiveUrl: true,
+        facebookLiveUrl: true,
+        youtubeLive: true,
+        instagramLive: true,
+        tiktokLive: true,
+        facebookLive: true,
       },
     }),
     prisma.creatorMoNumber.findMany({
@@ -87,16 +168,26 @@ export default async function StudioSettingsPage({
   const effMax = creator.maxAmount < policy.maxAmount ? creator.maxAmount : policy.maxAmount;
   const donationPageUrl = `${await getPublicBaseUrl()}/c/${creator.code}`;
 
-  // 지금 설정으로 실제 발송되는 문장과, 설정을 비웠을 때의 기본 문장.
-  const thanksPreview = tplDonationSuccess({
-    ...THANKS_PREVIEW,
-    creatorName: creator.displayName,
-    custom: creator.thanksMtMessage,
-  }).text;
-  const thanksDefaultPreview = tplDonationSuccess({
-    ...THANKS_PREVIEW,
-    creatorName: creator.displayName,
-  }).text;
+  /**
+   * 지금 설정으로 실제 발송되는 문장과, 설정을 비웠을 때의 기본 문장.
+   *
+   * **`applyMtTemplateOverride()` 를 반드시 거친다.** 이걸 빼면 최고관리자가 감사 문자 문구를
+   * 바꿔 놓아도 크리에이터 화면에는 코드 기본값이 "기본 문구"로 표시되어, 화면에 보이는 문장과
+   * 실제로 후원자에게 나가는 문장이 달라진다.
+   * (크리에이터가 직접 설정한 경우에는 그 문구가 우선이므로 오버라이드가 적용되지 않는다)
+   */
+  const [thanksPreview, thanksDefaultPreview] = await Promise.all([
+    applyMtTemplateOverride(
+      tplDonationSuccess({
+        ...THANKS_PREVIEW,
+        creatorName: creator.displayName,
+        custom: creator.thanksMtMessage,
+      }),
+    ).then((o) => o.text),
+    applyMtTemplateOverride(
+      tplDonationSuccess({ ...THANKS_PREVIEW, creatorName: creator.displayName }),
+    ).then((o) => o.text),
+  ]);
 
   return (
     <>
@@ -105,11 +196,11 @@ export default async function StudioSettingsPage({
       <nav
         aria-label="후원 설정 메뉴"
         /**
-         * 탭이 5개다. 360px 폭 휴대폰에서 5칸 그리드로 나누면 한 칸이 60px 남짓이라
+         * 탭이 6개다. 360px 폭 휴대폰에서 6칸 그리드로 나누면 한 칸이 50px 남짓이라
          * "후원페이지" 같은 이름이 두 줄로 접히거나 잘렸다. 좁은 화면에서는 가로 스크롤로
-         * 두어 글자가 온전히 보이게 하고, sm 이상에서만 5칸으로 나눠 담는다.
+         * 두어 글자가 온전히 보이게 하고, sm 이상에서만 6칸으로 나눠 담는다.
          */
-        className="mb-5 flex snap-x snap-mandatory gap-1 overflow-x-auto rounded-2xl border border-ink-100 bg-white p-1 shadow-[0_8px_24px_rgba(23,22,26,0.05)] [scrollbar-width:none] sm:grid sm:grid-cols-5 sm:gap-0 sm:overflow-hidden"
+        className="mb-5 flex snap-x snap-mandatory gap-1 overflow-x-auto rounded-2xl border border-ink-100 bg-white p-1 shadow-[0_8px_24px_rgba(23,22,26,0.05)] [scrollbar-width:none] sm:grid sm:grid-cols-6 sm:gap-0 sm:overflow-hidden"
       >
         {SETTINGS_TABS.map((tab) => (
           <Link
@@ -161,62 +252,101 @@ export default async function StudioSettingsPage({
           />
           <Card>
             <ActionForm action={updateThanksMessageAction} submitLabel="감사 문자 저장">
-              <Field
-                label="감사 문자 본문"
-                hint={`${THANKS_MT_MAX_LENGTH}자 이내. 비워두면 기본 문구로 발송됩니다.`}
-              >
-                <Textarea
-                  name="thanksMtMessage"
-                  rows={4}
-                  maxLength={THANKS_MT_MAX_LENGTH}
-                  defaultValue={creator.thanksMtMessage ?? ''}
-                  placeholder={'{후원자}님 감사합니다! {금액} 후원 잘 받았어요. 남겨주신 말: {메시지}'}
-                />
-              </Field>
-
-              <div className="rounded-2xl border border-ink-100 bg-ink-50 px-4 py-3">
-                <p className="flex items-center gap-1.5 text-[12.5px] font-extrabold text-ink-900">
-                  <MessageSquareText size={16} strokeWidth={1.7} className="text-brand-700" />
-                  사용할 수 있는 치환자
-                </p>
-                <ul className="mt-2 space-y-1">
-                  {THANKS_MT_VARIABLES.map((v) => (
-                    <li key={v.token} className="flex items-center gap-2 text-[12px] text-ink-700">
-                      <span className="rounded bg-white px-1.5 py-0.5 font-mono text-[11.5px] font-bold text-brand-700">
-                        {v.token}
-                      </span>
-                      {v.label}
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              <ThanksMessageEditor
+                defaultBody={creator.thanksMtMessage ?? ''}
+                variables={THANKS_MT_VARIABLES.map((v) => ({ token: v.token, label: v.label }))}
+                maxLength={THANKS_MT_MAX_LENGTH}
+                defaultPreview={thanksDefaultPreview}
+              />
             </ActionForm>
 
             <div className="mt-5">
-              <p className="text-[13px] font-bold text-ink-900">현재 설정으로 발송되는 문자</p>
-              <p className="mt-2 whitespace-pre-wrap rounded-2xl bg-brand-50 px-4 py-3 text-[13px] leading-relaxed text-ink-900">
+              <p className="text-[13px] font-bold text-ink-900">현재 저장된 상태로 발송되는 문자</p>
+              <p className="mt-2 whitespace-pre-wrap rounded-2xl bg-ink-50 px-4 py-3 text-[13px] leading-relaxed text-ink-500">
                 {thanksPreview}
               </p>
               <p className="mt-1.5 text-[11.5px] text-ink-400">
-                후원자 이름·금액·메시지는 실제 후원 값으로 바뀝니다. 저장한 뒤 화면이 갱신되면 위 미리보기도 함께
-                바뀝니다.
+                {creator.thanksMtMessage
+                  ? '직접 설정한 문구가 적용되어 있습니다. 본문을 비우고 저장하면 기본 문구로 돌아갑니다.'
+                  : '아직 직접 설정하지 않아 플랫폼 기본 문구가 나갑니다. 위에서 본문을 입력하면 그 문구가 우선합니다.'}
               </p>
             </div>
-
-            {creator.thanksMtMessage ? (
-              <div className="mt-4">
-                <p className="text-[13px] font-bold text-ink-900">기본 문구 (설정을 비우면 이 문구로 발송)</p>
-                <p className="mt-2 whitespace-pre-wrap rounded-2xl bg-ink-50 px-4 py-3 text-[13px] leading-relaxed text-ink-500">
-                  {thanksDefaultPreview}
-                </p>
-              </div>
-            ) : null}
 
             <div className="mt-4">
               <Notice tone="warning" title="링크와 개인정보는 넣을 수 없습니다">
                 감사 문자에 링크(http, www)나 전화번호·계좌번호를 넣으면 저장되지 않습니다. 통신사 스팸 차단으로 문자
                 자체가 전달되지 않거나 후원자가 피싱으로 오인할 수 있기 때문입니다. 발신 주체 표기 [도네이도] 는 항상 문장
                 앞에 자동으로 붙습니다.
+              </Notice>
+            </div>
+          </Card>
+        </section> : null}
+
+        {activeTab === 'sns' ? <section>
+          <SectionTitle
+            title="SNS 링크 · 라이브"
+            description="등록한 링크는 후원 페이지에 버튼으로 표시됩니다. 방송 중인 플랫폼의 스위치를 켜면 프로필이 두근거리고 ON AIR 배지가 붙습니다."
+          />
+          <Card>
+            <ActionForm action={updateSnsLinksAction} submitLabel="SNS 링크 저장">
+              <div className="space-y-3">
+                {SNS_PLATFORMS.map((platform) => {
+                  const Icon = SNS_ICONS[platform.value];
+                  const url = snsUrlOf(creator, platform.value);
+                  const live = snsLiveOf(creator, platform.value);
+                  return (
+                    <div key={platform.value} className="rounded-2xl border border-ink-100 bg-white p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="flex min-w-0 items-center gap-2 text-[13.5px] font-extrabold text-ink-900">
+                          <span
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-xl"
+                            style={{ backgroundColor: `${platform.color}14`, color: platform.color }}
+                          >
+                            <Icon size={16} strokeWidth={1.8} />
+                          </span>
+                          {platform.label}
+                        </span>
+
+                        {/*
+                          플랫폼마다 스위치를 따로 둔다. 동시송출을 하는 크리에이터가 있어
+                          하나만 고르게 하면 나머지 방송은 배지가 붙지 않는다.
+                        */}
+                        <label className="flex shrink-0 cursor-pointer items-center gap-2">
+                          <span className="text-[11.5px] font-bold text-ink-500">방송중</span>
+                          <input
+                            type="checkbox"
+                            name={platform.liveField}
+                            defaultChecked={live}
+                            className="peer sr-only"
+                          />
+                          <span className="relative h-6 w-11 rounded-full bg-ink-200 transition-colors peer-checked:bg-danger-500 after:absolute after:top-1 after:left-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-5" />
+                        </label>
+                      </div>
+
+                      <Input
+                        name={platform.urlField}
+                        defaultValue={url}
+                        placeholder={platform.placeholder}
+                        className="mt-3"
+                      />
+                      <p className="mt-1.5 text-[11.5px] text-ink-400">{platform.hostHint} 주소만 사용할 수 있습니다.</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </ActionForm>
+
+            <div className="mt-4">
+              <Notice tone="brand" title="스위치를 켜면 후원 페이지가 이렇게 바뀝니다">
+                <span className="flex items-center gap-1.5">
+                  <Radio size={14} strokeWidth={1.8} className="shrink-0 text-danger-500" />
+                  프로필 사진이 두근두근 움직이고, 그 아래에 <strong className="text-ink-900">ON AIR</strong> 배지가
+                  붙습니다. 후원자가 배지를 누르면 그 플랫폼 링크로 이동합니다.
+                </span>
+                <span className="mt-2 block">
+                  여러 곳에 동시송출 중이면 스위치를 여러 개 켜도 됩니다. 배지도 플랫폼마다 하나씩 표시됩니다.
+                  방송이 끝나면 스위치를 꺼주세요.
+                </span>
               </Notice>
             </div>
           </Card>
@@ -263,7 +393,10 @@ export default async function StudioSettingsPage({
               <div className="space-y-3">
                 {moNumbers.map((mo) => (
                   <div key={mo.id} className="rounded-xl border border-ink-100 px-3 py-2">
-                    <DataRow label="수신번호" value={<span className="font-mono">{mo.phoneNumber}</span>} />
+                    <DataRow
+                      label="수신번호"
+                      value={<span className="font-mono">{formatMoNumber(mo.phoneNumber)}</span>}
+                    />
                     <DataRow
                       label="수신 방식"
                       value={mo.mode === 'DEDICATED' ? '전용번호 (문자 내용만 전송)' : '대표번호 + 키워드'}
@@ -352,71 +485,9 @@ export default async function StudioSettingsPage({
                 <Textarea name="description" rows={3} maxLength={300} defaultValue={creator.description ?? ''} />
               </Field>
 
-              <div>
-                <p className="text-[13px] font-bold text-ink-900">라이브 연결</p>
-                <p className="mt-0.5 text-[12px] leading-relaxed text-ink-400">
-                  사용할 플랫폼을 선택하고 해당 라이브 주소를 입력하세요. 프로필과 온에어 버튼이 선택한 방송으로 연결됩니다.
-                </p>
-
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  {([
-                    { value: 'YOUTUBE', label: '유튜브', icon: Video },
-                    { value: 'INSTAGRAM', label: '인스타그램', icon: Camera },
-                    { value: 'TIKTOK', label: '틱톡', icon: Music2 },
-                  ] as const).map((platform) => {
-                    const Icon = platform.icon;
-                    const selected = (creator.livePlatform ?? 'YOUTUBE') === platform.value;
-                    return (
-                      <label key={platform.value} className="cursor-pointer">
-                        <input type="radio" name="livePlatform" value={platform.value} defaultChecked={selected} className="peer sr-only" />
-                        <span className="flex min-h-12 items-center justify-center gap-1.5 rounded-xl border border-ink-200 bg-white px-2 text-[11.5px] font-bold text-ink-500 transition-all peer-checked:border-brand-400 peer-checked:bg-brand-50 peer-checked:text-ink-900 peer-checked:shadow-sm sm:text-[12.5px]">
-                          <Icon size={15} /> {platform.label}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-3 space-y-2.5">
-                  <Field label="유튜브 라이브 주소" hint="youtube.com 또는 youtu.be 주소">
-                    {/*
-                      liveUrl 은 플랫폼 구분이 없던 시절의 단일 필드이고, 지금은 "선택한 플랫폼의 주소"가 들어간다.
-                      조건 없이 폴백하면 인스타/틱톡을 고른 크리에이터의 유튜브 칸에 인스타 주소가 채워지고,
-                      이후 저장은 매번 유튜브 주소 검증에 걸려 영구 실패한다.
-                      따라서 플랫폼이 유튜브이거나 아직 지정되지 않은 예전 데이터일 때만 폴백한다.
-                    */}
-                    <Input
-                      name="youtubeLiveUrl"
-                      defaultValue={
-                        creator.youtubeLiveUrl ??
-                        (!creator.livePlatform || creator.livePlatform === 'YOUTUBE' ? creator.liveUrl ?? '' : '')
-                      }
-                      placeholder="https://www.youtube.com/watch?v=..."
-                    />
-                  </Field>
-                  <Field label="인스타그램 라이브 주소" hint="instagram.com 주소">
-                    <Input name="instagramLiveUrl" defaultValue={creator.instagramLiveUrl ?? ''} placeholder="https://www.instagram.com/..." />
-                  </Field>
-                  <Field label="틱톡 라이브 주소" hint="tiktok.com 주소">
-                    <Input name="tiktokLiveUrl" defaultValue={creator.tiktokLiveUrl ?? ''} placeholder="https://www.tiktok.com/@.../live" />
-                  </Field>
-                </div>
-
-                <label className="mt-4 flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-ink-100 bg-ink-50 px-4 py-3.5">
-                  <span>
-                    <span className="flex items-center gap-1.5 text-[13px] font-extrabold text-ink-900">
-                      <Radio size={15} strokeWidth={1.8} className="text-danger-500" /> 현재 방송중
-                    </span>
-                    <span className="mt-0.5 block text-[11.5px] text-ink-400">켜면 프로필이 뛰고 온에어 버튼이 표시됩니다.</span>
-                  </span>
-                  <input type="checkbox" name="liveOn" defaultChecked={creator.liveOn} className="peer sr-only" />
-                  <span className="relative h-7 w-12 shrink-0 rounded-full bg-ink-200 transition-colors after:absolute after:left-1 after:top-1 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-brand-400 peer-checked:after:translate-x-5" />
-                </label>
-              </div>
-
-              <Notice tone="brand">
-                방송중 스위치를 켜면 후원페이지 프로필이 두근두근 움직이고, 프로필 아래에 온에어 배지가 표시되어
-                시청자가 바로 라이브로 이동할 수 있습니다. 방송이 끝나면 스위치를 꺼주세요.
+              <Notice tone="neutral">
+                라이브 링크와 방송중 스위치는 <strong className="text-ink-900">SNS·라이브</strong> 탭으로 옮겼습니다.
+                유튜브·인스타그램·틱톡·페이스북 링크를 각각 등록하고, 방송 중인 플랫폼의 스위치만 켜면 됩니다.
               </Notice>
             </ActionForm>
           </Card>

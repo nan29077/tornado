@@ -6,6 +6,8 @@ import {
 } from '@/components/ui';
 import { ActionButton, ActionForm, SelectActionForm } from '@/components/admin/action-form';
 import { updateCreatorStatus, updateCreatorPaymentMode, reissueCreatorCode, updateCreatorAmountBounds, setSettlementAccountVerified } from '@/app/actions/admin/accounts';
+import { reissueCreatorMoNumberAction } from '@/app/actions/admin/transactions';
+import { formatMoNumber } from '@/server/emma';
 import { prisma } from '@/server/db';
 import { getSettlementSummary } from '@/server/services/settlement';
 import { resolveFeePolicy } from '@/server/services/settlement';
@@ -279,7 +281,7 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
                   <tbody>
                     {creator.moRoutes.map((m) => (
                       <tr key={m.id}>
-                        <Td className="font-mono text-[12px]">{m.phoneNumber}</Td>
+                        <Td className="font-mono text-[12px]">{formatMoNumber(m.phoneNumber)}</Td>
                         <Td>{m.keyword ?? '-'}</Td>
                         <Td>{m.mode === 'DEDICATED' ? '전용번호' : '대표번호 공유'}</Td>
                         <Td>
@@ -291,6 +293,27 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
                   </tbody>
                 </Table>
               )}
+              <div className="mt-3 border-t border-ink-100 pt-3">
+                <p className="text-[12px] font-semibold text-ink-900">번호 재발급</p>
+                <p className="mt-1 mb-2 text-[11.5px] leading-relaxed text-ink-400">
+                  번호 유출·오배정 신고처럼 지금 쓰는 번호를 버려야 할 때만 사용합니다. 실행하면 후원자가 알고 있던
+                  번호가 즉시 바뀌므로, 크리에이터에게 방송 안내 문구 교체를 알려야 합니다. 옛 번호는 회수되어
+                  냉각기간 동안 다른 크리에이터에게 배정되지 않습니다.
+                </p>
+                <ActionForm
+                  action={reissueCreatorMoNumberAction}
+                  submitLabel="MO 번호 재발급"
+                  variant="danger"
+                  compact
+                  confirm={`${creator.displayName} 님의 MO 번호를 새 번호로 바꿉니다. 지금 쓰는 번호로 오는 후원 문자는 더 이상 접수되지 않습니다. 진행할까요?`}
+                >
+                  <input type="hidden" name="creatorId" value={creator.id} />
+                  <AdminField label="사유 (감사로그에 남습니다)">
+                    <AdminInput name="reason" placeholder="예: 번호 유출 신고" />
+                  </AdminField>
+                </ActionForm>
+              </div>
+
               <div className="mt-3">
                 <Link href="/admin/mo-numbers" className="text-[12px] font-semibold text-brand-700">
                   MO 번호 관리로 이동

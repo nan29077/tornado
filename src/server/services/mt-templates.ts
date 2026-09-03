@@ -39,10 +39,17 @@ export interface TemplateOutput {
    * 관리자 커스텀 본문(MtMessageTemplate)에 치환해 넣을 값.
    *
    * 이 값이 있는 템플릿만 관리자 화면에서 본문을 바꿀 수 있다.
-   * 보안링크가 들어가는 본문(등록 안내/결제 확인/PIN 요청)은 링크가 빠지면
-   * 흐름 자체가 끊기므로 vars 를 두지 않아 오버라이드 대상에서 제외된다.
+   * 보안링크가 들어가는 본문(등록 안내/결제 확인/PIN 요청)도 `{보안링크}` 치환자로 넘기되,
+   * 저장 단계에서 그 치환자가 빠지면 거부한다(validateMtTemplateBody).
+   * 크리에이터가 직접 설정한 감사 문자만 vars 를 두지 않아 오버라이드 대상에서 빠진다.
    */
   vars?: Record<string, string>;
+  /**
+   * 관리자가 무슨 문구를 쓰든 **반드시 본문 앞에 남아야 하는 표시.**
+   * 지금은 mock 결제 표시(`[MOCK]`) 하나뿐이다. 이 표시가 사라지면 연동 시험용 문자를
+   * 실제 결제로 오인한다.
+   */
+  forcedTag?: string;
 }
 
 function withLink(body: string, link: string): TemplateOutput['text'] {
@@ -71,7 +78,12 @@ export function tplRegisterGuide(
     `[도네이도] ${creatorName} 크리에이터 문자후원을 이용하려면 ${what}과 이용 동의가 필요합니다. 최초 문자는 후원 처리되지 않았습니다. 등록 화면에서 방송에 표시될 닉네임도 정할 수 있습니다. 등록:`,
     link,
   );
-  return { code: MT_TEMPLATE.REGISTER_GUIDE, text, masked: maskLink(text) };
+  return {
+    code: MT_TEMPLATE.REGISTER_GUIDE,
+    text,
+    masked: maskLink(text),
+    vars: { 크리에이터: creatorName, 등록수단: what, 보안링크: link },
+  };
 }
 
 export function tplConfirmPayment(creatorName: string, amount: bigint, link: string, ttlMin: number): TemplateOutput {
@@ -79,7 +91,17 @@ export function tplConfirmPayment(creatorName: string, amount: bigint, link: str
     `[도네이도] ${creatorName} 크리에이터에게 ${formatNumber(amount)}원을 후원하시려면 아래 링크에서 확인해 주세요. ${ttlMin}분 내 미확인 시 자동 취소됩니다. 확인:`,
     link,
   );
-  return { code: MT_TEMPLATE.CONFIRM_PAYMENT, text, masked: maskLink(text) };
+  return {
+    code: MT_TEMPLATE.CONFIRM_PAYMENT,
+    text,
+    masked: maskLink(text),
+    vars: {
+      크리에이터: creatorName,
+      금액: `${formatNumber(amount)}원`,
+      유효시간: String(ttlMin),
+      보안링크: link,
+    },
+  };
 }
 
 /**
@@ -104,7 +126,19 @@ export function tplPinRequest(input: {
       `아직 결제되지 않았습니다. 결제 PIN 입력 링크: `,
     `${input.pinUrl} (유효시간: ${input.ttlMin}분)`,
   );
-  return { code: MT_TEMPLATE.PIN_REQUEST, text, masked: maskLink(text) };
+  return {
+    code: MT_TEMPLATE.PIN_REQUEST,
+    text,
+    masked: maskLink(text),
+    // mock 표시는 관리자가 본문을 어떻게 바꾸든 강제로 남긴다.
+    forcedTag: input.mock ? '[MOCK]' : undefined,
+    vars: {
+      크리에이터: input.creatorName,
+      금액: `${formatNumber(input.amount)}원`,
+      유효시간: String(input.ttlMin),
+      보안링크: input.pinUrl,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -315,32 +349,55 @@ const V = {
   cumulative: { token: '{누적}', label: '누적 후원 금액', sample: '52,000원' },
   reason: { token: '{사유}', label: '실패·제한 사유', sample: '잔액 부족' },
   verifyCode: { token: '{인증번호}', label: '6자리 인증번호', sample: '482913' },
-  ttl: { token: '{유효시간}', label: '인증번호 유효시간(분)', sample: '3' },
+  ttl: { token: '{유효시간}', label: '유효시간(분)', sample: '3' },
+  /**
+   * 1회용 보안링크. **이 치환자가 빠진 본문은 저장되지 않는다.**
+   * 링크가 없으면 후원자가 등록·결제를 끝낼 방법이 사라진다.
+   */
+  link: { token: '{보안링크}', label: '1회용 보안링크 (반드시 포함)', sample: 'https://donaeido.kr/r/xxxxxxxx' },
+  method: { token: '{등록수단}', label: '등록 수단 (계좌 등록 / 카드 등록)', sample: '계좌 등록' },
 } as const;
+
+/**
+ * 본문에 보안링크가 들어가는 템플릿.
+ *
+ * 최고관리자가 **안내 문장은 고칠 수 있지만 링크는 뺄 수 없다.** 저장 시
+ * `{보안링크}` 치환자 포함 여부를 강제 검사한다.
+ * 크리에이터에게는 열지 않는다 — 결제 흐름 자체를 좌우하는 문자다.
+ */
+export const SECURE_LINK_TEMPLATES: ReadonlySet<string> = new Set([
+  MT_TEMPLATE.REGISTER_GUIDE,
+  MT_TEMPLATE.CONFIRM_PAYMENT,
+  MT_TEMPLATE.PIN_REQUEST,
+]);
 
 export const MT_TEMPLATE_META: Record<MtTemplateCode, MtTemplateMeta> = {
   [MT_TEMPLATE.REGISTER_GUIDE]: {
     label: '최초 결제수단 등록 안내',
-    description: '처음 문자를 보낸 후원자에게 계좌/카드 등록 링크를 보냅니다.',
-    editable: false,
+    description:
+      '처음 문자를 보낸 후원자에게 계좌/카드 등록 링크를 보냅니다. 최고관리자만 수정할 수 있고, {보안링크} 는 뺄 수 없습니다.',
+    editable: true,
     defaultBody:
-      '{크리에이터} 크리에이터 문자후원을 이용하려면 계좌 등록과 이용 동의가 필요합니다. 최초 문자는 후원 처리되지 않았습니다. 등록: [보안링크]',
-    variables: [V.creator],
+      '{크리에이터} 크리에이터 문자후원을 이용하려면 {등록수단}과 이용 동의가 필요합니다. 최초 문자는 후원 처리되지 않았습니다. 등록 화면에서 방송에 표시될 닉네임도 정할 수 있습니다. 등록: {보안링크}',
+    variables: [V.creator, V.method, V.link],
   },
   [MT_TEMPLATE.CONFIRM_PAYMENT]: {
     label: '후원 확인 링크',
-    description: '후원 진행 여부를 확인받는 링크를 보냅니다.',
-    editable: false,
-    defaultBody: '{크리에이터} 크리에이터에게 {금액}을 후원하시려면 아래 링크에서 확인해 주세요. 확인: [보안링크]',
-    variables: [V.creator, V.amount],
+    description:
+      '후원 진행 여부를 확인받는 링크를 보냅니다. 최고관리자만 수정할 수 있고, {보안링크} 는 뺄 수 없습니다.',
+    editable: true,
+    defaultBody:
+      '{크리에이터} 크리에이터에게 {금액}을 후원하시려면 아래 링크에서 확인해 주세요. {유효시간}분 내 미확인 시 자동 취소됩니다. 확인: {보안링크}',
+    variables: [V.creator, V.amount, V.ttl, V.link],
   },
   [MT_TEMPLATE.PIN_REQUEST]: {
     label: '결제 PIN 입력 요청',
-    description: '결제사 PIN 입력 링크를 보냅니다. 이 시점에는 아직 출금되지 않았습니다.',
-    editable: false,
+    description:
+      '결제사 PIN 입력 링크를 보냅니다. 이 시점에는 아직 출금되지 않았습니다. 최고관리자만 수정할 수 있고, {보안링크} 는 뺄 수 없습니다.',
+    editable: true,
     defaultBody:
-      '{크리에이터} 크리에이터에게 {금액} 후원을 진행합니다. 아직 결제되지 않았습니다. 결제 PIN 입력 링크: [보안링크]',
-    variables: [V.creator, V.amount],
+      '{크리에이터} 크리에이터에게 {금액} 후원을 진행합니다. 아직 결제되지 않았습니다. 결제 PIN 입력 링크: {보안링크} (유효시간: {유효시간}분)',
+    variables: [V.creator, V.amount, V.ttl, V.link],
   },
   [MT_TEMPLATE.DONATION_SUCCESS]: {
     label: '후원 완료 감사 문자',
@@ -427,9 +484,15 @@ export const MT_TEMPLATE_BODY_MAX_LENGTH = 400;
 
 const SENDER_TAG = '[도네이도]';
 
-/** 발신 주체 표기는 어떤 커스텀 본문에서도 빠지지 않게 강제한다. */
-function ensureSenderTag(text: string): string {
-  return text.startsWith(SENDER_TAG) ? text : `${SENDER_TAG} ${text}`;
+/**
+ * 발신 주체 표기(와 mock 표시)는 어떤 커스텀 본문에서도 빠지지 않게 강제한다.
+ *
+ * 관리자가 본문 앞에 `[도네이도]` 를 직접 적어 두었을 수도 있으므로, 있으면 떼어 낸 뒤
+ * 다시 붙인다(`[도네이도] [도네이도] ...` 방지). forcedTag 는 항상 발신 표기 바로 뒤에 온다.
+ */
+function ensureSenderTag(text: string, forcedTag?: string): string {
+  const body = text.startsWith(SENDER_TAG) ? text.slice(SENDER_TAG.length).trim() : text;
+  return forcedTag ? `${SENDER_TAG} ${forcedTag} ${body}` : `${SENDER_TAG} ${body}`;
 }
 
 const OVERRIDE_TOKEN_RE = /\{([^{}\s]{1,12})\}/g;
@@ -471,6 +534,20 @@ export function validateMtTemplateBody(code: MtTemplateCode, body: string): stri
   if (allowed.has('인증번호') && !trimmed.includes('{인증번호}')) {
     return '인증번호 문자에는 {인증번호} 치환자가 반드시 들어가야 합니다.';
   }
+
+  /**
+   * 보안링크가 빠지면 등록·결제 흐름이 그 자리에서 끊긴다.
+   * 후원자는 문자를 받고도 할 수 있는 일이 없고, 관리자는 문구만 보고는 알아채지 못한다.
+   * 그래서 저장 자체를 막는다.
+   */
+  if (SECURE_LINK_TEMPLATES.has(code) && !trimmed.includes('{보안링크}')) {
+    return `${meta.label} 문자에는 {보안링크} 치환자가 반드시 들어가야 합니다. 링크가 빠지면 후원자가 등록·결제를 끝낼 수 없습니다.`;
+  }
+
+  // 링크를 직접 적어 넣으면 1회용 보안링크 대신 그 주소가 나가고, 스팸 필터에도 걸린다.
+  if (/https?:\/\/|www\./i.test(trimmed)) {
+    return '본문에 주소를 직접 적을 수 없습니다. 링크가 필요한 문자에는 {보안링크} 치환자를 사용해 주세요.';
+  }
   return null;
 }
 
@@ -508,9 +585,12 @@ export async function loadMtTemplateOverrides(): Promise<Map<string, string>> {
  * 템플릿 결과에 관리자 커스텀 본문을 적용한다.
  *
  * 적용하지 않는 경우 (원본을 그대로 돌려준다)
- *  - vars 가 없는 템플릿 (보안링크 포함 본문, 크리에이터가 직접 설정한 감사 문자)
+ *  - vars 가 없는 템플릿 (크리에이터가 직접 설정한 감사 문자)
  *  - editable=false 인 템플릿
  *  - 저장된 본문이 없거나 치환 후 빈 문자열이 되는 경우
+ *
+ * 보안링크가 들어가는 본문도 여기서 적용된다. 링크 누락은 저장 단계
+ * (validateMtTemplateBody)에서 이미 막았으므로, 여기까지 온 본문에는 링크가 들어 있다.
  */
 export async function applyMtTemplateOverride(out: TemplateOutput): Promise<TemplateOutput> {
   if (!out.vars) return out;
@@ -522,7 +602,7 @@ export async function applyMtTemplateOverride(out: TemplateOutput): Promise<Temp
   const rendered = sanitizeLine(renderMtTemplateBody(body, out.vars));
   if (rendered === '') return out;
 
-  const text = ensureSenderTag(rendered);
+  const text = ensureSenderTag(rendered, out.forcedTag);
   const verifyCode = out.vars['인증번호'];
   const masked = verifyCode ? maskVerifyCode(maskLink(text), verifyCode) : maskLink(text);
   return { ...out, text, masked };
