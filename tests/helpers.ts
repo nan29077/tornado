@@ -71,7 +71,7 @@ export async function seedBasics(options: { paymentMode?: 'CONFIRM_LINK' | 'DIRE
     },
   });
 
-  const moNumber = '15881001';
+  const moNumber = '168812341001';
   await prisma.creatorMoNumber.create({
     data: {
       id: newId(), phoneNumber: moNumber, mode: 'DEDICATED', status: 'ASSIGNED',

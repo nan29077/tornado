@@ -213,12 +213,12 @@ export const env = {
     provider: str('MT_PROVIDER', 'mock') as ProviderMode,
     apiKey: str('MT_API_KEY'),
     apiSecret: str('MT_API_SECRET'),
-    fromNumber: str('MT_FROM_NUMBER', '15880000'),
+    fromNumber: str('MT_FROM_NUMBER', '16881234'),
     /**
      * 사업자에 등록한 발신번호. 사업자 규격에서 부르는 이름이 sender 이므로 별도 변수로 받는다.
      * 미설정이면 기존 MT_FROM_NUMBER 를 그대로 쓴다 (두 값을 따로 관리하다 어긋나는 사고 방지).
      */
-    senderNumber: str('MT_SENDER_NUMBER', str('MT_FROM_NUMBER', '15880000')),
+    senderNumber: str('MT_SENDER_NUMBER', str('MT_FROM_NUMBER', '16881234')),
   },
 
   youtube: {

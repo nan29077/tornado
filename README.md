@@ -67,8 +67,8 @@ npm run dev                       # http://localhost:3025
 | 구분 | 계정 | 비밀번호 |
 |---|---|---|
 | 통합 관리자 | `admin@tornado.kr` | `tornado1234!` |
-| 크리에이터 | `creator1@tornado.kr` | `tornado1234!` (코드 `TOR-8K2M`, 전용번호 `15881001`) |
-| 크리에이터 | `creator2@tornado.kr` | `tornado1234!` (코드 `TOR-3QP7`, 대표번호 `15889000` + 키워드 `TOR3QP7`) |
+| 크리에이터 | `creator1@tornado.kr` | `tornado1234!` (코드 `TOR-8K2M`, 전용번호 `168812341001`) |
+| 크리에이터 | `creator2@tornado.kr` | `tornado1234!` (코드 `TOR-3QP7`, 전용번호 `168812342002`) |
 | 테스트 후원자 | `010-1234-5678` | 계좌 등록 완료 상태 |
 
 ---
@@ -78,7 +78,7 @@ npm run dev                       # http://localhost:3025
 가장 쉬운 방법은 **관리자 → MO 시뮬레이터** (`/admin/simulator`) 입니다.
 
 1. `admin@tornado.kr` 로 로그인 → `/admin/simulator`
-2. 수신번호 `15881001`, 발신번호 아무 번호, 문자 내용 입력 후 실행
+2. 수신번호 `168812341001`, 발신번호 아무 번호, 문자 내용 입력 후 실행
 3. 미등록 번호라면 계좌 등록 안내가 발송됩니다. 로컬에서는 `GET /api/dev/outbox` 로 발송된 문자와 보안링크 원문을 확인할 수 있습니다 (`APP_ENV=local` 에서만 동작).
 4. 등록 링크 → 동의 → 모의 결제창에서 계좌 등록
 5. 같은 번호로 다시 시뮬레이션 → 확인 링크 → `3,000원 후원하기`
@@ -87,7 +87,7 @@ npm run dev                       # http://localhost:3025
 MO Webhook 을 직접 호출하려면 HMAC 서명이 필요합니다.
 
 ```bash
-BODY='{"messageId":"MO-1","to":"15881001","from":"01012345678","text":"오늘 방송 재미있어요","type":"SMS"}'
+BODY='{"messageId":"MO-1","to":"168812341001","from":"01012345678","text":"오늘 방송 재미있어요","type":"SMS"}'
 SIG=$(node -e "const c=require('crypto');process.stdout.write(c.createHmac('sha256',process.env.MO_WEBHOOK_SECRET).update(process.argv[1]).digest('hex'))" "$BODY")
 curl -X POST http://localhost:3025/api/webhooks/mo \
   -H 'Content-Type: application/json' \

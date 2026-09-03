@@ -144,7 +144,7 @@ try {
 
   r.ok('모바일: 전용 후원 번호 카드', mText.includes(`${SEED.creator1Name} 전용 후원 번호`));
   {
-    // 화면은 0505-1001-001 처럼 끊어 보여 주고 DB 에는 하이픈 없이 저장한다.
+    // 화면은 1688-1234-1001 처럼 끊어 보여 주고 DB 에는 하이픈 없이 저장한다.
     // 서식이 바뀌어도 깨지지 않게 숫자만 남겨 비교한다.
     const digits = mText.replace(/[^0-9]/g, '');
     r.ok('모바일: 배정된 MO 번호가 보인다', digits.includes(SEED.creator1Mo), '화면에서 번호를 찾지 못함');

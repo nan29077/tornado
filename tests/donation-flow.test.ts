@@ -351,7 +351,7 @@ describe('MO 수신 → 후원 → 결제 → 방송 흐름', () => {
 
   it('[18] 알 수 없는 수신번호는 결제하지 않고 안내한다', async () => {
     await seedRegisteredDonor(fx.donorPhone);
-    const res = await inbound(moPayload({ to: '15889999' }));
+    const res = await inbound(moPayload({ to: '168812349999' }));
     expect(res.result).toBe('UNKNOWN_ROUTE');
     expect(await prisma.donation.count()).toBe(0);
     const mt = readMockOutbox(3).find((m) => m.text.includes('찾을 수 없습니다'));
@@ -473,7 +473,7 @@ describe('대표번호 + 키워드 라우팅', () => {
     fx = await seedBasics({ paymentMode: 'DIRECT_TRIGGER' });
     await prisma.creatorMoNumber.create({
       data: {
-        id: newId(), phoneNumber: '15889000', keyword: 'TOR3QP7', mode: 'SHARED_PREFIX',
+        id: newId(), phoneNumber: '16881234', keyword: 'TOR3QP7', mode: 'SHARED_PREFIX',
         status: 'ASSIGNED', creatorId: fx.creatorId, providerId: 'mock', assignedAt: new Date(),
       },
     });
@@ -481,7 +481,7 @@ describe('대표번호 + 키워드 라우팅', () => {
 
   it('키워드로 크리에이터를 식별하고 키워드는 메시지에서 제거된다', async () => {
     await seedRegisteredDonor(fx.donorPhone);
-    const res = await inbound(moPayload({ to: '15889000', text: 'TOR3QP7 응원합니다' }));
+    const res = await inbound(moPayload({ to: '16881234', text: 'TOR3QP7 응원합니다' }));
 
     expect(res.result).toBe('ROUTED');
     const donation = await prisma.donation.findFirstOrThrow({ where: { id: res.donationId } });
@@ -491,7 +491,7 @@ describe('대표번호 + 키워드 라우팅', () => {
 
   it('키워드가 없으면 라우팅되지 않는다', async () => {
     await seedRegisteredDonor(fx.donorPhone);
-    const res = await inbound(moPayload({ to: '15889000', text: '응원합니다' }));
+    const res = await inbound(moPayload({ to: '16881234', text: '응원합니다' }));
     expect(res.result).toBe('UNKNOWN_ROUTE');
   });
 });

@@ -28,8 +28,8 @@ export const SEED = {
   creator1Code: 'TOR-8K2M',
   creator2Code: 'TOR-3QP7',
   creator1Name: '바람소리',
-  creator1Mo: '05051001001',
-  creator2Mo: '05059000000',
+  creator1Mo: '168812341001',
+  creator2Mo: '168812342002',
   creator2Keyword: 'TOR3QP7',
   donorPhone: '010-1234-5678',
 };

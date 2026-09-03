@@ -84,11 +84,11 @@ export function formatMoNumber(fullNumber: string): string {
   if (digits.length === 8 + SUB_CODE_LENGTH && /^1[568]\d{2}/.test(digits)) {
     return `${digits.slice(0, 4)}-${digits.slice(4, 8)}-${digits.slice(8)}`;
   }
-  // 기존 050 안심번호 → 0505-1001-1001 / 0505-100-1001
+  // 구 번호 체계로 저장된 050 안심번호 잔존 데이터 → 0505-1001-1001 / 0505-100-1001
   if (/^050\d/.test(digits) && digits.length >= 10 && digits.length <= 13) {
     return `${digits.slice(0, 4)}-${digits.slice(4, -4)}-${digits.slice(-4)}`;
   }
-  // 서브번호가 붙지 않은 대표번호 → 1588-1001
+  // 서브번호가 붙지 않은 대표번호 → 1688-1234
   if (/^1[0-9]{7}$/.test(digits)) {
     return `${digits.slice(0, 4)}-${digits.slice(4)}`;
   }

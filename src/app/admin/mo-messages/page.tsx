@@ -111,7 +111,7 @@ export default async function AdminMoMessagesPage({
           </AdminSelect>
         </AdminField>
         <AdminField label="수신번호" className="w-40">
-          <AdminInput name="number" defaultValue={receivedNumber} placeholder="15880000" />
+          <AdminInput name="number" defaultValue={receivedNumber} placeholder="168812341001" />
         </AdminField>
         <AdminField label="시작일 (KST)" className="w-40">
           <AdminInput type="date" name="from" defaultValue={sp.from ?? ''} />

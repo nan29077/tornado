@@ -387,7 +387,7 @@ describe('서브번호 발급 · 회수', () => {
   beforeEach(async () => {
     await resetDb();
     fx = await seedBasics();
-    // 기본 픽스처는 050/1588 계열 번호를 미리 붙여 준다. 발급 로직 자체를 보려면
+    // 기본 픽스처는 MO 번호를 미리 붙여 준다. 발급 로직 자체를 보려면
     // 배정이 없는 상태에서 시작해야 한다(이미 있으면 재사용이 정상 동작이다).
     await prisma.creatorMoNumber.deleteMany({ where: { creatorId: fx.creatorId } });
   });
