@@ -141,3 +141,18 @@ export async function insertDevMo(input: DevMoInsert): Promise<{ moKey: string; 
 
   return { moKey, moRecipient, emoRecipient };
 }
+
+/**
+ * 세 가지 분할 방식이 모두 같은 수신번호로 복원되는지 한 번에 확인한다.
+ * 문자를 실제로 넣지 않고 계산만 하므로 후원이 생기지 않는다.
+ *
+ * 순수 계산이라 Server Action 으로 둘 이유가 없다. `'use server'` 파일에 있으면
+ * 인증 없이 호출 가능한 엔드포인트가 하나 더 생기므로 여기(일반 모듈)에 둔다.
+ */
+export function previewSplitModes(fullNumber: string) {
+  const modes: MoSplitMode[] = ['BASE_SUB', 'PREFIX_REST', 'WHOLE'];
+  return modes.map((mode) => {
+    const { moRecipient, emoRecipient } = splitForCarrier(fullNumber, mode);
+    return { mode, moRecipient, emoRecipient };
+  });
+}

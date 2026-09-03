@@ -6,6 +6,7 @@ import { updateCreatorTtsSetting } from '@/app/actions/admin/broadcast';
 import { prisma } from '@/server/db';
 import { env } from '@/lib/env';
 import { formatNumber, formatWon } from '@/lib/money';
+import { requireAdminPage } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +28,10 @@ const VOICES = [
 ];
 
 export default async function AdminTtsPage() {
+  // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
+  // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
+  await requireAdminPage('/admin/tts');
+
   const creators = await prisma.creatorProfile.findMany({
     // 승인된 채널만, 상한을 두고 읽는다. 예전에는 미승인·반려·정지 채널까지 전부 불러와
     // 각각 입력 8개짜리 카드를 렌더해 크리에이터가 늘면 페이지가 열리지 않았다.

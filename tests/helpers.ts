@@ -16,7 +16,7 @@ export async function resetDb() {
     'payment_attempt', 'payment_transaction', 'refund',
     'donation_status_log', 'secure_link', 'mt_outbound_message', 'donation',
     'mo_inbound_message', 'donation_counter', 'risk_detection', 'blocked_donor',
-    'donor_creator_link', 'payment_method_token', 'payment_registration', 'donor_profile',
+    'creator_fan_account', 'donor_creator_link', 'payment_method_token', 'payment_registration', 'donor_profile',
     'creator_mo_number', 'creator_code', 'banned_word', 'donation_limit_policy', 'creator_profile',
     'admin_profile', 'user_session', 'app_user', 'terms_version', 'idempotency_key',
     'content_post', 'banner', 'system_setting',
@@ -40,6 +40,8 @@ export async function resetDb() {
 
 export interface Fixture {
   creatorId: string;
+  /** 후원 페이지 주소(/c/{code})에 쓰이는 크리에이터 코드 */
+  creatorCode: string;
   creatorUserId: string;
   moNumber: string;
   donorPhone: string;
@@ -111,7 +113,13 @@ export async function seedBasics(options: { paymentMode?: 'CONFIRM_LINK' | 'DIRE
     },
   });
 
-  return { creatorId: creator.id, creatorUserId: user.id, moNumber, donorPhone: '01012345678' } as Fixture;
+  return {
+    creatorId: creator.id,
+    creatorCode: creator.code,
+    creatorUserId: user.id,
+    moNumber,
+    donorPhone: '01012345678',
+  } as Fixture;
 }
 
 /** 계좌 등록이 완료된 후원자를 만든다. */

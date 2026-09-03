@@ -11,6 +11,7 @@ import { formatKst, kstMonthKey } from '@/lib/datetime';
 import { settlementStatusLabel, ledgerEntryLabel } from '@/lib/labels';
 import type { Prisma } from '@/generated/prisma/client';
 import type { SettlementRequestStatus } from '@/generated/prisma/enums';
+import { requireAdminPage } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +27,10 @@ export default async function AdminSettlementsPage({
 }: {
   searchParams: Promise<{ status?: string; creatorId?: string; key?: string; page?: string; rpage?: string }>;
 }) {
+  // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
+  // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
+  await requireAdminPage('/admin/settlements');
+
   const sp = await searchParams;
   const page = parsePage(sp.page);
   // 요청 목록과 원장 목록은 페이지를 따로 넘긴다 (하나의 page 로 묶으면 요청 목록이 2페이지부터 같은 내용을 반복한다)

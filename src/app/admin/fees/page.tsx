@@ -6,8 +6,9 @@ import { ActionButton, ActionForm } from '@/components/admin/action-form';
 import { createFeePolicy, deactivateFeePolicy } from '@/app/actions/admin/settlement';
 import { prisma } from '@/server/db';
 import { formatWon, formatNumber } from '@/lib/money';
-import { computeFees } from '@/server/services/settlement';
+import { computeFees, feeRatesOf } from '@/server/services/settlement';
 import { formatKst, kstDateKey } from '@/lib/datetime';
+import { requireAdminPage } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,10 @@ function ratePercent(value: string): string {
 }
 
 export default async function AdminFeesPage() {
+  // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
+  // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
+  await requireAdminPage('/admin/fees');
+
   const [policies, creators] = await Promise.all([
     prisma.feePolicy.findMany({
       orderBy: [{ active: 'desc' }, { effectiveFrom: 'desc' }],
@@ -43,14 +48,33 @@ export default async function AdminFeesPage() {
   const activeGlobal = policies.find((p) => p.active && p.scope === 'GLOBAL');
   const activeCreatorCount = policies.filter((p) => p.active && p.scope === 'CREATOR').length;
 
+  /**
+   * 지금 실제로 적용되는 요율.
+   *
+   * 안내 문구·요약 타일·계산 예시가 모두 이 값 하나를 본다. 화면 곳곳에 요율을 적어 두면
+   * 관리자가 정책을 바꿨을 때 어딘가는 옛 숫자로 남아 서로 모순되는 안내가 된다.
+   * 정책이 없을 때의 기본값도 `feeRatesOf` 가 정산과 같은 것(FALLBACK_FEE_RATES)을 준다.
+   */
+  const effective = feeRatesOf(
+    activeGlobal
+      ? {
+          pgFeeRate: activeGlobal.pgFeeRate.toString(),
+          pgFixedFee: activeGlobal.pgFixedFee,
+          platformFeeRate: activeGlobal.platformFeeRate.toString(),
+          vatIncluded: activeGlobal.vatIncluded,
+        }
+      : null,
+  );
+  const servicePercent = ratePercent(String(effective.platformFeeRate));
+  const pgPercent = ratePercent(String(effective.pgFeeRate));
+  const pgFixedSuffix =
+    effective.pgFixedFee && effective.pgFixedFee > 0n
+      ? ` + 건당 ${formatWon(effective.pgFixedFee)}`
+      : '';
+
   // 실제 정산과 같은 함수로 계산한 예시. 요율만 보고는 부가세 반영 결과를 알기 어렵다.
   const SAMPLE = 3_000n;
-  const sample = computeFees(SAMPLE, {
-    pgFeeRate: activeGlobal ? activeGlobal.pgFeeRate.toString() : '0.018',
-    pgFixedFee: activeGlobal?.pgFixedFee ?? 0n,
-    platformFeeRate: activeGlobal ? activeGlobal.platformFeeRate.toString() : '0.15',
-    vatIncluded: activeGlobal ? activeGlobal.vatIncluded : true,
-  });
+  const sample = computeFees(SAMPLE, effective);
 
   return (
     <>
@@ -61,25 +85,32 @@ export default async function AdminFeesPage() {
 
       <div className="mb-4">
         <Notice tone="brand" title="수수료는 서비스 수수료와 PG 결제 수수료 두 가지입니다">
-          크리에이터는 후원금의 15%(서비스 수수료, 부가세 포함)와 PG 결제 수수료(약 1.8%)를 납부합니다. 별도 플랫폼
-          이용료는 없습니다. PG 결제 수수료는 도네이도의 수익이 아니라 결제대행사(PG)에 그대로 지급되는 비용입니다.
+          {`크리에이터는 후원금의 ${servicePercent}(서비스 수수료, ${
+            effective.vatIncluded ? '부가세 포함' : '부가세 별도'
+          })와 PG 결제 수수료(${pgPercent}${pgFixedSuffix})를 납부합니다. 별도 플랫폼 이용료는 없습니다. PG 결제 수수료는 도네이도의 수익이 아니라 결제대행사(PG)에 그대로 지급되는 비용입니다.${
+            activeGlobal ? '' : ' 현재 활성 전역 정책이 없어 코드 기본값을 적용한 수치입니다.'
+          }`}
         </Notice>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
         <StatTile
           label="서비스 수수료"
-          value={activeGlobal ? ratePercent(activeGlobal.platformFeeRate.toString()) : '미설정'}
-          sub={activeGlobal ? `문자 원가 ${formatWon(activeGlobal.smsCost)}` : '기본값 15.00% 적용'}
+          value={servicePercent}
+          sub={
+            activeGlobal
+              ? `문자 원가 ${formatWon(activeGlobal.smsCost)}`
+              : '전역 정책 없음 — 코드 기본값 적용'
+          }
           tone="brand"
         />
         <StatTile
           label="PG 결제 수수료"
-          value={activeGlobal ? ratePercent(activeGlobal.pgFeeRate.toString()) : '미설정'}
+          value={pgPercent}
           sub={
             activeGlobal
               ? `PG사 지급 비용 · 고정비 ${formatWon(activeGlobal.pgFixedFee)}`
-              : 'PG사 지급 비용 · 기본값 1.80% 적용'
+              : 'PG사 지급 비용 · 코드 기본값 적용'
           }
         />
         <StatTile
@@ -93,8 +124,9 @@ export default async function AdminFeesPage() {
       <Card className="mt-4">
         <CardTitle>{formatWon(SAMPLE)} 후원 기준 계산 예시</CardTitle>
         <p className="mt-1 text-[12px] leading-relaxed text-ink-400">
-          현재 활성 전역 정책({sample.vatIncluded ? '부가세 포함 요율' : '부가세 별도 요율'})을 실제 정산 계산식에
-          그대로 넣은 결과입니다. 후원 총액에서 서비스 수수료와 PG 결제 수수료를 빼면 크리에이터 정산금이 됩니다.
+          {activeGlobal ? '현재 활성 전역 정책' : '전역 정책이 없어 적용되는 코드 기본값'}(
+          {sample.vatIncluded ? '부가세 포함 요율' : '부가세 별도 요율'})을 실제 정산 계산식에 그대로 넣은
+          결과입니다. 후원 총액에서 서비스 수수료와 PG 결제 수수료를 빼면 크리에이터 정산금이 됩니다.
         </p>
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           <StatTile label="후원 총액" value={formatWon(sample.gross)} />
@@ -179,7 +211,7 @@ export default async function AdminFeesPage() {
           {policies.length === 0 ? (
             <EmptyState
               title="등록된 수수료 정책이 없습니다"
-              description="정책이 없으면 코드 기본값(서비스 15% / PG 1.8%)이 적용됩니다."
+              description={`정책이 없으면 코드 기본값(서비스 ${servicePercent} / PG ${pgPercent})이 적용됩니다.`}
             />
           ) : (
             <Table className="min-w-[900px]">

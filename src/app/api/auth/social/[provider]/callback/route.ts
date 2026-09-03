@@ -5,6 +5,7 @@ import { authReturnPath } from '@/lib/auth-return-path';
 import { createSession } from '@/server/auth';
 import { SOCIAL_PROVIDERS, getSocialAdapter, type SocialProvider } from '@/server/adapters/social';
 import { findSocialDonor, validSocialState, socialPendingCookie, SOCIAL_PENDING_COOKIE } from '@/server/services/social-login';
+import { attributeFanByCreatorCode } from '@/server/services/creator-fans';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,6 +32,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ provider: strin
     const user = await findSocialDonor(profile);
     if (user) {
       await createSession(user.id);
+      // 크리에이터 후원 페이지로 들어온 로그인이면 그 크리에이터의 팬으로 귀속한다.
+      if (creator) await attributeFanByCreatorCode(user.id, creator[1]);
       return NextResponse.redirect(new URL(next, req.url), 303);
     }
     jar.set(SOCIAL_PENDING_COOKIE, socialPendingCookie(profile, next), { httpOnly: true, sameSite: 'lax', secure: env.baseUrl.startsWith('https'), path: '/', maxAge: 600 });

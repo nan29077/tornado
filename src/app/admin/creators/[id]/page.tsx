@@ -18,6 +18,7 @@ import { creatorStatusLabel, donationStatusLabel, paymentModeLabel, moNumberStat
 import { AdminField, AdminInput } from '@/components/admin/controls';
 import { bankLabel, shortId } from '@/components/admin/mask';
 import { hasDirectTriggerWrittenApproval } from '@/server/services/financial-approval';
+import { requireAdminPage } from '@/server/admin-guard';
 
 /** 소수 요율(0.018)을 사람이 읽는 퍼센트(1.8%)로 바꾼다. */
 function percentText(rate: unknown): string {
@@ -29,6 +30,10 @@ function percentText(rate: unknown): string {
 export const dynamic = 'force-dynamic';
 
 export default async function AdminCreatorDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
+  // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
+  await requireAdminPage('/admin/creators');
+
   const { id } = await params;
 
   const creator = await prisma.creatorProfile.findUnique({

@@ -75,24 +75,28 @@ export async function GET(req: Request) {
     const result = await runEmmaMoPolling();
     const latencyMs = Date.now() - started;
 
-    if (result.handed > 0 || result.failed > 0) {
+    if (result.handed > 0 || result.failed > 0 || result.abandoned > 0) {
       logger.info('EMMA MO 폴링', {
         fetched: result.fetched,
         handed: result.handed,
         skipped: result.skipped,
         failed: result.failed,
+        deferred: result.deferred,
+        abandoned: result.abandoned,
         latencyMs,
       });
     }
 
     return NextResponse.json({
-      ok: result.failed === 0,
+      ok: result.failed === 0 && result.abandoned === 0,
       at: new Date().toISOString(),
       latencyMs,
       fetched: result.fetched,
       handed: result.handed,
       skipped: result.skipped,
       failed: result.failed,
+      deferred: result.deferred,
+      abandoned: result.abandoned,
       // 상세는 운영 진단용이다. 전화번호·본문은 담기지 않는다(mo_key 와 결과 코드뿐).
       details: result.details,
     });

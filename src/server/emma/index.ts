@@ -13,6 +13,7 @@ export type {
   EmmaMoRow,
   EmmaMoMessage,
   EmmaMoHandler,
+  EmmaMoHandlerResult,
   EmmaMtRequest,
   EmmaMtQueued,
   EmmaPollResult,
@@ -37,8 +38,16 @@ export {
   moTableSuffix,
   pollingSuffixes,
   moTableExists,
-  mtQueueExists,
+  emmaTableExists,
+  mmsQueueExists,
 } from './client';
 
-export { pollEmmaMo, toMoMessage } from './mo-poller';
-export { queueEmmaMt } from './mt-sender';
+export {
+  pollEmmaMo,
+  toMoMessage,
+  parseEmmaTimestamp,
+  readEmmaLastPollAt,
+  readEmmaPollHealth,
+  EMMA_LAST_POLL_KEY,
+} from './mo-poller';
+export { queueEmmaMt, queueEmmaMms } from './mt-sender';

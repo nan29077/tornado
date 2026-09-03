@@ -1,6 +1,6 @@
-import { ShieldCheck, ShieldAlert, TriangleAlert } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, TriangleAlert, Info } from 'lucide-react';
 import { Badge, Card, CardTitle, Notice } from '@/components/ui';
-import { env, assertProductionSafety } from '@/lib/env';
+import { env, assertProductionSafety, bootWarnings } from '@/lib/env';
 
 /**
  * 운영 안전 배너.
@@ -24,6 +24,11 @@ export function SafetyBanner() {
     tts: env.tts.provider,
   };
   const warnings = assertProductionSafety();
+  /**
+   * 기동을 막지는 않지만 특정 기능이 조용히 멈추는 설정(EMMA 장문 미지원, 헥토 PIN mock 등).
+   * 예전에는 부팅 콘솔에만 찍혀서 배포 뒤에는 아무도 볼 수 없었다.
+   */
+  const notices = bootWarnings();
   const mockCount = providerRows.filter((r) => providers[r.key] === 'mock').length;
 
   return (
@@ -98,6 +103,19 @@ export function SafetyBanner() {
             {warnings.map((w) => (
               <li key={w} className="flex items-start gap-1.5">
                 <TriangleAlert size={14} strokeWidth={1.7} className="mt-0.5 shrink-0" />
+                <span>{w}</span>
+              </li>
+            ))}
+          </ul>
+        </Notice>
+      ) : null}
+
+      {notices.length > 0 ? (
+        <Notice tone="warning" title="확인이 필요한 설정 (기동은 되지만 일부 기능이 멈출 수 있습니다)">
+          <ul className="mt-1 space-y-1">
+            {notices.map((w) => (
+              <li key={w} className="flex items-start gap-1.5">
+                <Info size={14} strokeWidth={1.7} className="mt-0.5 shrink-0" />
                 <span>{w}</span>
               </li>
             ))}

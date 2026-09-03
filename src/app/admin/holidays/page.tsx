@@ -10,6 +10,7 @@ import { formatDateKeyKo, toDateKey } from '@/lib/business-day';
 import { findYearsMissingHolidays } from '@/server/services/settlement-schedule';
 import { holidayKindLabel } from '@/lib/labels';
 import type { HolidayKind } from '@/generated/prisma/enums';
+import { requireAdminPage } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,10 @@ export default async function AdminHolidaysPage({
 }: {
   searchParams: Promise<{ year?: string }>;
 }) {
+  // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
+  // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
+  await requireAdminPage('/admin/holidays');
+
   const sp = await searchParams;
 
   // 정산일 계산은 KST 기준이므로 "올해" 판단도 KST 기준으로 맞춘다.

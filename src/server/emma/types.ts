@@ -37,10 +37,16 @@ export interface EmmaMoRow {
   msg_status: string;
   subject: string | null;
   content: string | null;
-  /** MO 발생 시각 */
-  date_mo: Date;
-  /** 인포뱅크로부터 수신한 시각 */
-  date_mo_recv: Date;
+  /**
+   * MO 발생 시각.
+   *
+   * 원본 컬럼은 시간대가 없는 TIMESTAMP 다. 폴러가 SELECT 단계에서 `AT TIME ZONE 'UTC'` 로
+   * 확정하지만, 드라이버에 따라 Date 가 아니라 문자열로 올 수 있어 두 형태를 모두 받는다.
+   * (해석은 `parseEmmaTimestamp` 한 곳에서만 한다)
+   */
+  date_mo: Date | string;
+  /** 인포뱅크로부터 수신한 시각. date_mo 와 같은 이유로 두 형태를 모두 받는다. */
+  date_mo_recv: Date | string;
   /** 착신망. 10001(SKT) 10002(KT) 10003(LGU+) 10008(NGM) 10000(ETC) */
   carrier: number | null;
   rs_id: string | null;
@@ -107,12 +113,27 @@ export interface EmmaMoMessage {
 }
 
 /**
+ * 도메인 핸들러가 "아직 확정할 수 없으니 다음 폴링에서 다시 보라"고 알릴 때 쓰는 반환값.
+ *
+ * 예외와 다르다. 예외는 "처리하다 실패했다"이고, 이쪽은 "실패한 것이 아니라 판단을 미룬다"이다.
+ * 대표 사례는 **직전 수신 처리가 강제 종료로 중단돼 PENDING 으로 남은 경우**다. 그 행을 완료('9')로
+ * 덮으면 사업자·EMMA 재전송이 영영 오지 않아 후원 문자 한 통이 통째로 유실된다(E-3).
+ */
+export interface EmmaMoHandlerResult {
+  outcome: 'DONE' | 'RETRY';
+  /** 폴링 로그에 남길 요약 */
+  detail?: string;
+}
+
+/**
  * 수신 문자 1건을 처리하는 도메인 핸들러.
  *
  * 반환 문자열은 폴링 결과 로그에 남는 요약이다(예: 'ROUTED', 'UNKNOWN_ROUTE').
- * **예외를 던지면** 폴러가 해당 행의 상태를 신규('3')로 되돌려 다음 폴링에서 재시도한다.
+ * `{ outcome: 'RETRY' }` 를 돌려주면 폴러가 상태를 신규('3')로 되돌려 다음 폴링에서 다시 본다.
+ * **예외를 던지면** 마찬가지로 신규('3')로 되돌리되, 반복 실패 횟수를 세어 상한을 넘기면
+ * 완료로 내려 무한 재시도(독약 메시지)를 끊는다.
  */
-export type EmmaMoHandler = (message: EmmaMoMessage) => Promise<string | void>;
+export type EmmaMoHandler = (message: EmmaMoMessage) => Promise<string | void | EmmaMoHandlerResult>;
 
 /** 폴링 1회 결과 */
 export interface EmmaPollResult {
@@ -124,9 +145,13 @@ export interface EmmaPollResult {
   skipped: number;
   /** 처리 중 예외가 난 행 수 (다음 폴링에서 재시도) */
   failed: number;
+  /** 핸들러가 판단을 미뤄 신규 상태로 되돌린 행 수 (다음 폴링에서 다시 본다) */
+  deferred: number;
+  /** 반복 실패 상한을 넘겨 재시도를 포기한 행 수 (사람이 봐야 하는 건) */
+  abandoned: number;
   details: Array<{
     moKey: string;
-    outcome: 'handed' | 'skipped' | 'failed';
+    outcome: 'handed' | 'skipped' | 'failed' | 'deferred' | 'abandoned';
     /** 도메인 처리 결과(예: ROUTED, UNKNOWN_ROUTE) 또는 오류 사유 */
     detail?: string;
   }>;

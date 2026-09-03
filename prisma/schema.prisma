@@ -326,27 +326,43 @@ model User {
   updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz(3)
 
-  donorProfile   DonorProfile?
-  creatorProfile CreatorProfile?
-  adminProfile   AdminProfile?
-  sessions       UserSession[]
-  consents       ConsentRecord[]
-  notifications  Notification[]
-  passwordResets PasswordResetToken[]
+  /**
+   * 이 계정이 처음 만들어진 크리에이터 후원 페이지.
+   *
+   * `/c/{코드}/login` 으로 가입·로그인하면 그 크리에이터의 팬으로 귀속된다.
+   * 휴대폰을 아직 연결하지 않아 DonorProfile 이 없는 팬은 이 값으로만 식별되고,
+   * 번호를 연결하는 순간 donor_creator_link 로 옮겨 간다(팬 목록은 두 곳을 합쳐 본다).
+   * 한 번 정해지면 바꾸지 않는다 — "누구를 통해 들어온 후원자인가"는 사실 기록이다.
+   */
+  signupCreatorId  String?    @map("signup_creator_id")
+
+  donorProfile     DonorProfile?
+  creatorProfile   CreatorProfile?
+  adminProfile     AdminProfile?
+  sessions         UserSession[]
+  consents         ConsentRecord[]
+  notifications    Notification[]
+  passwordResets   PasswordResetToken[]
   socialIdentities SocialIdentity[]
+  signupCreator    CreatorProfile? @relation("CreatorSignupFans", fields: [signupCreatorId], references: [id], onDelete: SetNull)
+  fanAccounts      CreatorFanAccount[]
 
   @@index([role, status])
+  @@index([signupCreatorId])
   @@map("app_user")
 }
 
 /// 이메일 일치가 아닌 공급자 고유 ID로만 계정을 연결한다.
 model SocialIdentity {
-  id             String @id
+  id             String   @id
   provider       String
-  providerUserId String @map("provider_user_id")
-  userId         String @map("user_id")
+  providerUserId String   @map("provider_user_id")
+  userId         String   @map("user_id")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  user           User @relation(fields: [userId], references: [id])
+  /// 마이그레이션 SQL 이 ON DELETE 를 생략해 NO ACTION 으로 만들었다.
+  /// Prisma 기본값(Restrict)과 다르므로 명시해 드리프트를 없앤다.
+  /// (둘 다 소셜 연결이 남은 app_user 삭제를 막는다 — 검사 시점만 다르다)
+  user           User     @relation(fields: [userId], references: [id], onDelete: NoAction)
 
   @@unique([provider, providerUserId])
   @@index([userId])
@@ -397,7 +413,6 @@ model AdminProfile {
   memo       String?
   /**
    * 관리자 자격을 회수한 시각.
-   *
    * 행을 지우지 않는 이유: admin_audit_log.admin_id 가 이 행을 참조한다.
    * 지우면 "누가 무엇을 했는지" 기록이 함께 끊긴다. 자격은 회수하되 기록은 남긴다.
    * 실제 접근 차단은 user.role 을 일반 회원(DONOR)으로 되돌리는 것으로 이루어진다.
@@ -463,6 +478,33 @@ model DonorProfile {
 }
 
 /// 후원자 x 크리에이터 관계 (동의/차단/누적)
+/**
+ * 휴대폰을 아직 연결하지 않은 계정 기반 팬.
+ *
+ * 팬 소속은 **크리에이터마다 따로** 생긴다. 민수가 A 페이지로 가입하고 B 페이지에도
+ * 로그인하면 A 와 B 모두의 팬이다. 그런데 donor_creator_link 는 전화번호(DonorProfile)를
+ * 요구해서, 번호를 연결하지 않은 계정은 담을 수 없다. 그 자리를 이 표가 맡는다.
+ *
+ * app_user.signup_creator_id 와 혼동하면 안 된다. 그쪽은 "이 계정을 **처음 데려온**
+ * 크리에이터"라는 유입 실적이라 계정당 하나뿐이고 바뀌지 않는다.
+ * 이 표는 "지금 누구의 팬 목록에 보여야 하는가"라서 여러 개가 생긴다.
+ *
+ * 번호를 연결하면 donor_creator_link 로 옮겨지고 이 행은 지워진다(집계가 두 벌이 되지 않게).
+ */
+model CreatorFanAccount {
+  id        String   @id
+  creatorId String   @map("creator_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([creatorId, userId])
+  @@index([userId])
+  @@map("creator_fan_account")
+}
+
 model DonorCreatorLink {
   id             String    @id
   donorId        String    @map("donor_id")
@@ -473,6 +515,13 @@ model DonorCreatorLink {
   /// 한 컬럼에 두 방향을 같이 쓰면 크리에이터가 차단을 해제할 때 후원자가 건 차단까지 풀린다.
   donorBlockedAt DateTime? @map("donor_blocked_at") @db.Timestamptz(3)
   dailyLimit     BigInt?   @map("daily_limit")
+  /**
+   * 이 크리에이터의 팬이 된 경로.
+   *   DONATION — 이 크리에이터의 MO 번호로 후원해서 생김(기존 동작)
+   *   SIGNUP   — 이 크리에이터 후원 페이지로 로그인·가입해서 생김
+   * 후원 이력이 없어도 팬 목록에 남아야 하므로 링크 행 자체를 만든다.
+   */
+  joinedVia      String    @default("DONATION") @map("joined_via")
   totalAmount    BigInt    @default(0) @map("total_amount")
   totalCount     Int       @default(0) @map("total_count")
   lastDonatedAt  DateTime? @map("last_donated_at") @db.Timestamptz(3)
@@ -570,6 +619,10 @@ model CreatorProfile {
   moRoutes           CreatorMoNumber[]
   donations          Donation[]
   donorLinks         DonorCreatorLink[]
+  /// 이 후원 페이지가 **처음 데려온** 계정들 (유입 실적. 계정당 한 명의 크리에이터)
+  signupFans         User[]                @relation("CreatorSignupFans")
+  /// 이 후원 페이지의 팬 중 아직 휴대폰을 연결하지 않은 계정들
+  fanAccounts        CreatorFanAccount[]
   blockedDonors      BlockedDonor[]
   overlaySetting     OverlaySetting?
   overlayTiers       OverlayTier[]
@@ -765,38 +818,41 @@ model PaymentRegistration {
 }
 
 model PaymentMethodToken {
-  id           String             @id
-  donorId      String             @map("donor_id")
-  provider     String             @default("HECTO")
+  id              String             @id
+  donorId         String             @map("donor_id")
+  provider        String             @default("HECTO")
   /// 빌키 종류. ACCOUNT = 내통장결제 계좌 빌키, CARD = 카드 빌링키(추후 연동)
-  method       PaymentMethodKind  @default(ACCOUNT)
+  method          PaymentMethodKind  @default(ACCOUNT)
   /// 빌키 암호문. 복호화는 결제 워커에서만 수행하며 로그 출력 금지
-  billKeyEnc   String             @map("bill_key_enc")
-  billKeyHint  String             @map("bill_key_hint")
-  bankCode     String?            @map("bank_code")
-  bankName     String?            @map("bank_name")
+  billKeyEnc      String             @map("bill_key_enc")
+  billKeyHint     String             @map("bill_key_hint")
+  bankCode        String?            @map("bank_code")
+  bankName        String?            @map("bank_name")
   /// 계좌 원문 저장 금지. 끝 4자리만 보관
-  accountTail4 String?            @map("account_tail4")
+  accountTail4    String?            @map("account_tail4")
   /// 카드 빌링키용. 카드 원문 저장 금지, 발급사명과 끝 4자리만 보관
-  cardIssuer   String?            @map("card_issuer")
-  cardTail4    String?            @map("card_tail4")
-  status       PaymentTokenStatus @default(ACTIVE)
-  registeredAt DateTime           @default(now()) @map("registered_at") @db.Timestamptz(3)
-  revokedAt    DateTime?          @map("revoked_at") @db.Timestamptz(3)
+  cardIssuer      String?            @map("card_issuer")
+  cardTail4       String?            @map("card_tail4")
+  status          PaymentTokenStatus @default(ACTIVE)
+  registeredAt    DateTime           @default(now()) @map("registered_at") @db.Timestamptz(3)
+  revokedAt       DateTime?          @map("revoked_at") @db.Timestamptz(3)
   /**
    * 사업자(PG) 빌키 해지가 실패한 시각.
-   *
    * 내부 상태를 REVOKED 로 바꾸는 것만으로는 **PG 쪽 빌키가 살아 있다.** 후원자는
    * 자동출금 동의를 해지했다고 알고 있는데 출금 수단은 그대로 남아 있는 상태다.
    * 실패를 여기 남겨 재시도 대상으로 삼고, 계속 실패하면 관리자에게 알린다.
    * null 이면 해지가 확정된 것이다.
    */
-  revokeFailedAt   DateTime? @map("revoke_failed_at") @db.Timestamptz(3)
-  /** 사업자 해지 재시도 횟수. 상한을 넘으면 관리자 확인 큐로 넘긴다. */
-  revokeAttempts   Int       @default(0) @map("revoke_attempts")
-  /** 마지막 해지 실패 사유(마스킹된 메시지). 빌키 원문은 절대 담지 않는다. */
-  revokeLastError  String?   @map("revoke_last_error")
-  updatedAt    DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  revokeFailedAt  DateTime?          @map("revoke_failed_at") @db.Timestamptz(3)
+  /**
+   * 사업자 해지 재시도 횟수. 상한을 넘으면 관리자 확인 큐로 넘긴다.
+   */
+  revokeAttempts  Int                @default(0) @map("revoke_attempts")
+  /**
+   * 마지막 해지 실패 사유(마스킹된 메시지). 빌키 원문은 절대 담지 않는다.
+   */
+  revokeLastError String?            @map("revoke_last_error")
+  updatedAt       DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   donor DonorProfile @relation(fields: [donorId], references: [id], onDelete: Cascade)
 
@@ -874,9 +930,9 @@ model Donation {
 
 /// 해당 크리에이터와 후원자만 열람하는 답글. 방송·MT로 자동 전송하지 않는다.
 model DonationReply {
-  id         String @id
-  donationId String @unique @map("donation_id")
-  body       String @db.VarChar(1000)
+  id         String   @id
+  donationId String   @unique @map("donation_id")
+  body       String   @db.VarChar(1000)
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   donation   Donation @relation(fields: [donationId], references: [id], onDelete: Cascade)
@@ -1702,17 +1758,17 @@ model MtMessageTemplate {
 
 /// 게임 정의. 한 번 만들어 두고 회차를 반복해서 돌린다.
 model Game {
-  id        String @id
-  creatorId String @map("creator_id")
+  id                String @id
+  creatorId         String @map("creator_id")
   /// ROULETTE | LADDER | RANKING | VOTE | QUIZ | KEYWORD | NUMBER_GUESS | GOAL_GAUGE
-  type      String
-  title     String
+  type              String
+  title             String
   /// 항목형 게임의 항목 목록 (JSON 문자열 배열)
-  items     Json   @default("[]")
+  items             Json   @default("[]")
   /// 타입별 설정. 정답·키워드가 들어 있으므로 공개 응답에서는 반드시 걸러낸다.
-  config    Json   @default("{}")
+  config            Json   @default("{}")
   /// 참여 방식: LINK(링크·QR) | DONATION(후원 자동 참여) | BOTH
-  entryMode String @default("LINK") @map("entry_mode")
+  entryMode         String @default("LINK") @map("entry_mode")
   /// 후원 자동 참여로 인정할 최소 후원 금액(원). 0 이면 금액 제한 없음
   donationMinAmount BigInt @default(0) @map("donation_min_amount")
   /// 참여 자동 마감(초). 0 이면 크리에이터가 직접 마감한다
@@ -1732,27 +1788,27 @@ model Game {
 /// 게임 1회차. 방송 화면에 실제로 뜨는 단위다.
 /// 한 크리에이터에게 OPEN/CLOSED/RESULT 상태의 회차는 동시에 하나만 존재한다(서비스에서 보장).
 model GameRound {
-  id        String @id
-  gameId    String @map("game_id")
-  creatorId String @map("creator_id")
-  seq       Int
+  id          String    @id
+  gameId      String    @map("game_id")
+  creatorId   String    @map("creator_id")
+  seq         Int
   /// OPEN(참여·진행 중) | CLOSED(마감, 발표 대기) | RESULT(결과 공개) | ENDED(화면에서 내림)
-  status    String @default("OPEN")
+  status      String    @default("OPEN")
   /// 참여 페이지 주소(/play/{code})에 쓰는 짧은 코드
-  joinCode  String @unique @map("join_code")
+  joinCode    String    @unique @map("join_code")
   /// 자동 마감 예정 시각. null 이면 수동 마감
-  closesAt  DateTime? @map("closes_at") @db.Timestamptz(3)
+  closesAt    DateTime? @map("closes_at") @db.Timestamptz(3)
   /// 확정된 결과 (타입별 구조). 발표 전에는 null
-  result    Json?
+  result      Json?
   /// GOAL_GAUGE 기준 시각 이후의 후원만 집계한다
-  openedAt   DateTime  @default(now()) @map("opened_at") @db.Timestamptz(3)
-  closedAt   DateTime? @map("closed_at") @db.Timestamptz(3)
-  revealedAt DateTime? @map("revealed_at") @db.Timestamptz(3)
+  openedAt    DateTime  @default(now()) @map("opened_at") @db.Timestamptz(3)
+  closedAt    DateTime? @map("closed_at") @db.Timestamptz(3)
+  revealedAt  DateTime? @map("revealed_at") @db.Timestamptz(3)
   /// 결과를 발표한 횟수. 발표 취소 후 재발표해도 줄지 않는다(조작 시비 대응 기록).
-  revealCount Int      @default(0) @map("reveal_count")
-  endedAt    DateTime? @map("ended_at") @db.Timestamptz(3)
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  revealCount Int       @default(0) @map("reveal_count")
+  endedAt     DateTime? @map("ended_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   game         Game              @relation(fields: [gameId], references: [id], onDelete: Cascade)
   participants GameParticipant[]
@@ -1766,27 +1822,27 @@ model GameRound {
 
 /// 회차 참여자. 회차를 리셋해도 지우지 않고 남긴다(분쟁 대응).
 model GameParticipant {
-  id         String  @id
-  roundId    String  @map("round_id")
-  gameId     String  @map("game_id")
-  creatorId  String  @map("creator_id")
-  donorId    String? @map("donor_id")
+  id          String   @id
+  roundId     String   @map("round_id")
+  gameId      String   @map("game_id")
+  creatorId   String   @map("creator_id")
+  donorId     String?  @map("donor_id")
   /// 후원 자동 참여로 들어온 경우의 후원 건 (관계는 걸지 않는다)
-  donationId String? @map("donation_id")
+  donationId  String?  @map("donation_id")
   /// 방송에 노출되는 표시명. 금칙어·개인정보 필터를 통과한 값만 저장한다
-  displayName String @map("display_name")
+  displayName String   @map("display_name")
   /// 참여 입력값 (선택지 index / 숫자 / 키워드)
-  entry      String?
+  entry       String?
   /// LINK(직접 참여) | DONATION(후원 자동 참여)
-  source     String  @default("LINK")
+  source      String   @default("LINK")
   /// 같은 회차 중복 참여 차단용 식별키 (후원자 계정 · 브라우저 식별값)
-  entryKey   String  @map("entry_key")
+  entryKey    String   @map("entry_key")
   /// 서버가 만든 네트워크 지문(IP + UA) 해시. 회차당 참여 횟수 상한에 쓴다.
   /// 유니크로 걸지 않는다 — 이동통신망 NAT 뒤의 정상 시청자들이 서로를 막기 때문이다.
-  netHash    String? @map("net_hash")
+  netHash     String?  @map("net_hash")
   /// 후원 자동 참여일 때의 후원 금액(원)
-  amount     BigInt  @default(0)
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  amount      BigInt   @default(0)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   round GameRound     @relation(fields: [roundId], references: [id], onDelete: Cascade)
   donor DonorProfile? @relation(fields: [donorId], references: [id])
@@ -1800,15 +1856,15 @@ model GameParticipant {
 
 /// 당첨자. 보상은 무형 보상의 이름만 남기고, 지급은 크리에이터가 방송에서 직접 한다.
 model GameWinner {
-  id          String  @id
-  roundId     String  @map("round_id")
-  gameId      String  @map("game_id")
-  creatorId   String  @map("creator_id")
-  rank        Int     @default(1)
-  displayName String  @map("display_name")
-  donorId     String? @map("donor_id")
+  id          String    @id
+  roundId     String    @map("round_id")
+  gameId      String    @map("game_id")
+  creatorId   String    @map("creator_id")
+  rank        Int       @default(1)
+  displayName String    @map("display_name")
+  donorId     String?   @map("donor_id")
   /// 보상 이름 (샤라웃 · 신청곡 · 굿즈 등). 금전 지급 수단이 아니다
-  prize       String  @default("")
+  prize       String    @default("")
   /// 크리에이터가 보상 전달을 마쳤다고 체크한 시각
   fulfilledAt DateTime? @map("fulfilled_at") @db.Timestamptz(3)
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)

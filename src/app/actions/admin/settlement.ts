@@ -74,7 +74,22 @@ export async function updateSettlementRequestStatus(
           : status === 'REJECTED'
             ? { status, rejectedAt: now, adminId: admin.id, adminMemo: memo ?? undefined }
             : { status, adminId: admin.id, adminMemo: memo ?? undefined };
-      await prisma.settlementRequest.update({ where: { id: requestId }, data });
+      /**
+       * 위 가드가 읽은 상태(before.status)가 **그대로 남아 있을 때만** 쓴다.
+       *
+       * 조건 없이 update 하면 두 관리자가 거의 동시에 서로 다른 상태를 누를 때 둘 다 옛 상태로
+       * 가드를 통과하고 나중 쓰기가 이긴다. 반려된 요청이 다시 APPROVED 로 덮이면
+       * markSettlementPaid 의 전제 조건을 충족해 지급 대상으로 되돌아온다.
+       * (돈이 나가는 markSettlementPaid 자체는 advisory lock 으로 멱등하므로 중복 지급은
+       *  발생하지 않지만, 상태 기계가 뚫리는 것 자체를 막는다)
+       */
+      const claimed = await prisma.settlementRequest.updateMany({
+        where: { id: requestId, status: before.status },
+        data,
+      });
+      if (claimed.count === 0) {
+        throw new Error('상태가 이미 변경되었습니다. 화면을 새로고침한 뒤 다시 확인해 주세요.');
+      }
       if (status === 'APPROVED') await notifySettlement(before.creatorId, '정산 요청이 승인되었습니다', '지급대행을 통해 곧 지급됩니다.');
       if (status === 'REJECTED') await notifySettlement(before.creatorId, '정산 요청이 반려되었습니다', `사유: ${memo}`);
     }

@@ -11,6 +11,7 @@ import { formatKst } from '@/lib/datetime';
 import { paymentTxStatusLabel, donationStatusLabel } from '@/lib/labels';
 import type { Prisma } from '@/generated/prisma/client';
 import type { PaymentTxStatus } from '@/generated/prisma/enums';
+import { requireAdminPage } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -179,6 +180,10 @@ export default async function AdminPaymentsPage({
 }: {
   searchParams: Promise<{ status?: string; q?: string; page?: string }>;
 }) {
+  // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
+  // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
+  await requireAdminPage('/admin/payments');
+
   const sp = await searchParams;
   const page = parsePage(sp.page);
   const q = (sp.q ?? '').trim();

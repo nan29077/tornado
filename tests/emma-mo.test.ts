@@ -1,4 +1,5 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import crypto from 'node:crypto';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
 import {
@@ -9,6 +10,8 @@ import {
   isUsableSubCode,
   queueEmmaMt,
   moTableSuffix,
+  pollEmmaMo,
+  RESERVED_SUB_CODES,
 } from '@/server/emma';
 import { ensureDevEmmaTables, insertDevMo, splitForCarrier } from '@/server/emma/dev-schema';
 import { runEmmaMoPolling } from '@/server/services/emma-mo-ingest';
@@ -270,6 +273,57 @@ describe('EMMA MO 폴링 → 후원 처리', () => {
     expect(await readMoStatus(moKey)).toBe('9');
   });
 
+  it('[11] 직전 처리가 PENDING 으로 남은 문자는 완료 처리하지 않고 재처리 대상으로 남긴다', async () => {
+    // E-3. 강제 종료로 수신 로그가 PENDING 에 멈춘 상황을 만든다.
+    // 이때 재수신을 "중복이니 끝"으로 처리하면 EMMA 행이 '9' 가 되어 그 문자는 영영 유실된다.
+    await assignBaseNumber('5678', fx.creatorId);
+    await seedRegisteredDonor(fx.donorPhone);
+
+    const moKey = await insertFakeMo({ moRecipient: BASE, emoRecipient: '5678', from: fx.donorPhone });
+    await prisma.moInboundMessage.create({
+      data: {
+        id: newId(),
+        providerMessageId: moKey,
+        providerCode: 'infobank-emma',
+        receivedNumber: '168812345678',
+        phoneHash: 'test-hash',
+        phoneEnc: 'test-enc',
+        phoneMasked: '010-****-5678',
+        contentEnc: 'test-enc',
+        result: 'PENDING',
+        receivedAt: new Date(),
+      },
+    });
+
+    const result = await runEmmaMoPolling();
+
+    expect(result.deferred).toBe(1);
+    expect(result.handed).toBe(0);
+    expect(await prisma.donation.count()).toBe(0);
+    // 신규 상태로 되돌아가 다음 폴링(정리 배치가 PENDING 을 풀어 준 뒤)에서 다시 처리된다.
+    expect(await readMoStatus(moKey)).toBe('3');
+  });
+
+  it('[12] 무엇을 해도 실패하는 문자는 상한 횟수 뒤 재시도를 포기한다', async () => {
+    // E-7. 되돌리기만 반복하면 그 행이 배치 앞자리를 영원히 차지해 정상 후원까지 밀린다.
+    const moKey = await insertFakeMo({ moRecipient: BASE, emoRecipient: '5678', from: fx.donorPhone });
+    const failing = async () => {
+      throw new Error('언제나 실패');
+    };
+
+    // 상한(5회)까지는 재시도 대상으로 남는다.
+    for (let i = 0; i < 5; i += 1) {
+      const r = await pollEmmaMo(failing);
+      expect(r.failed).toBe(1);
+      expect(await readMoStatus(moKey)).toBe('3');
+    }
+
+    // 상한을 넘기면 완료로 내리고(무한 재시도 차단) 포기 건으로 집계한다.
+    const last = await pollEmmaMo(failing);
+    expect(last.abandoned).toBe(1);
+    expect(await readMoStatus(moKey)).toBe('9');
+  });
+
   it('[10] 방금 선점된 건은 다른 폴링이 가져가지 않는다', async () => {
     await assignBaseNumber('5678', fx.creatorId);
     await seedRegisteredDonor(fx.donorPhone);
@@ -438,9 +492,45 @@ describe('서브번호 발급 · 회수', () => {
     expect(row?.releasedAt).not.toBeNull();
 
     // 회수된 번호는 여전히 후보에서 제외된다(냉각기간 미경과).
+    // 여유 수량은 "실제로 뽑힐 수 있는 후보"다. 오입력이 몰려 채번에서 제외한 예약 번호도 빠진다.
     const capacity = await getMoNumberCapacity(BASE);
     expect(capacity.blocked).toBe(1);
-    expect(capacity.available).toBe(10000 - 1);
+    expect(capacity.reserved).toBe(RESERVED_SUB_CODES.size);
+    expect(capacity.available).toBe(10000 - RESERVED_SUB_CODES.size - 1);
+  });
+
+  it('냉각기간이 지난 회수 번호는 다시 배정된다', async () => {
+    // 이 경로가 막히면(create 유니크 충돌) 회수 번호가 영원히 재사용되지 않아 대표번호가 말라붙는다.
+    const issued = await issueMoNumberForCreator(fx.creatorId);
+    await reclaimMoNumberForCreator(fx.creatorId, '테스트 회수');
+
+    // 냉각기간을 지난 것으로 만든다(기본 180일).
+    await prisma.creatorMoNumber.updateMany({
+      where: { subCode: issued.subCode },
+      data: { releasedAt: new Date(Date.now() - 400 * 24 * 60 * 60 * 1000) },
+    });
+
+    // 냉각기간이 끝났으므로 후보에서 풀려 있어야 한다.
+    const capacity = await getMoNumberCapacity(BASE);
+    expect(capacity.blocked).toBe(0);
+
+    // 채번은 난수라 그대로 두면 같은 번호가 다시 뽑힐 확률이 1/10000 이다.
+    // 그 번호가 뽑혔을 때 create 유니크 충돌로 실패하지 않는지가 이 테스트의 핵심이므로 고정한다.
+    const spy = vi.spyOn(crypto, 'randomInt').mockReturnValue(Number(issued.subCode) as never);
+    try {
+      const reissued = await issueMoNumberForCreator(fx.creatorId);
+      expect(reissued.subCode).toBe(issued.subCode);
+      expect(reissued.phoneNumber).toBe(issued.phoneNumber);
+    } finally {
+      spy.mockRestore();
+    }
+
+    // 행이 새로 생기지 않고(유니크 충돌 없이) 기존 행의 배정만 바뀐다.
+    const rows = await prisma.creatorMoNumber.findMany({ where: { baseNumber: BASE } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('ASSIGNED');
+    expect(rows[0].creatorId).toBe(fx.creatorId);
+    expect(rows[0].releasedAt).toBeNull();
   });
 
   it('승인되지 않은 크리에이터에게는 발급하지 않는다', async () => {

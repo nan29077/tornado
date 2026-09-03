@@ -25,12 +25,12 @@ export default async function CreatorMessagesPage({ params, searchParams }: { pa
       <p className="mb-3 flex items-center gap-2 text-sm font-bold text-brand-700"><MessageCircleHeart size={19} />나의 응원 기록</p>
       <h1 className="text-2xl font-extrabold tracking-tight text-ink-900">내 문자후원 내역</h1>
       <p className="mt-3 text-sm leading-relaxed text-ink-600">{creator.displayName}님에게 보낸 문자와 크리에이터의 답글을 확인하세요. 이 화면은 나에게만 보입니다.</p>
-      <div className="mt-4 flex flex-wrap gap-2"><LinkButton href={`/c/${creator.code}`} variant="secondary" size="sm">후원 페이지로</LinkButton><LinkButton href="/my" variant="secondary" size="sm">모든 후원·결제 내역</LinkButton></div>
+      <div className="mt-4 flex flex-wrap gap-2"><LinkButton href={`/c/${creator.code}`} variant="secondary" size="sm">후원 페이지로</LinkButton><LinkButton href={`/c/${creator.code}/account`} variant="secondary" size="sm">내 정보</LinkButton></div>
     </section>
     {!data.connected ? <div className="rounded-3xl border border-warm-300 bg-white p-6">
       <h2 className="font-bold text-ink-900">휴대폰 번호를 연결해 주세요</h2>
       <p className="my-3 text-sm leading-relaxed text-ink-600">카카오·네이버 로그인만으로 문자 발신번호가 연결되지는 않습니다. 본인 휴대폰을 인증하면 해당 번호로 보낸 후원 내역을 안전하게 확인할 수 있습니다.</p>
-      <LinkButton href="/my/account#phone-link" size="md">휴대폰 번호 연결하기</LinkButton>
+      <LinkButton href={`/c/${creator.code}/account`} size="md">휴대폰 번호 연결하기</LinkButton>
     </div> : data.rows.length === 0 ? <p className="rounded-3xl border border-dashed border-warm-300 bg-white p-8 text-center text-sm text-ink-600">아직 이 크리에이터에게 보낸 문자후원이 없습니다.</p> : <>
       <p className="mb-3 text-sm font-semibold text-ink-500">총 {data.total}건 · 결제 상태는 각 내역을 확인하세요</p>
       <ul className="space-y-4">{data.rows.map((d) => <li key={d.id} className="rounded-3xl border border-warm-300/70 bg-white p-5 shadow-card">

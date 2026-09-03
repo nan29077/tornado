@@ -7,6 +7,7 @@ import { env } from '@/lib/env';
 import { formatWon, formatNumber } from '@/lib/money';
 import { formatKst, kstStartOfDay } from '@/lib/datetime';
 import { deliveryStatusLabel } from '@/lib/labels';
+import { requireAdminPage } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,10 @@ export const dynamic = 'force-dynamic';
 const CREATOR_OPTION_LIMIT = 300;
 
 export default async function AdminOverlayPage() {
+  // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
+  // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
+  await requireAdminPage('/admin/overlay');
+
   const todayStart = kstStartOfDay();
 
   const [creators, events, todayStats] = await Promise.all([

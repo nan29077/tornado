@@ -34,6 +34,16 @@ export interface MoHandleResult {
   donationId?: string;
   status?: DonationStatus;
   message: string;
+  /**
+   * "지금은 중복으로 보이지만 확정된 결과가 아니다" 라는 표시 (E-3).
+   *
+   * 직전 수신 처리가 강제 종료로 중단되면 수신 로그가 PENDING 인 채 남는다. 그 상태에서
+   * 같은 문자가 다시 들어오면 여기서 DUPLICATE 로 반려되는데, 호출부(EMMA 폴러)가 그것을
+   * "처리 완료"로 받아들여 원본 행을 완료 처리해 버리면 **그 문자는 영영 재처리되지 않는다.**
+   * 정리 배치(recoverStuckMoMessages)가 5분 뒤 PENDING 을 ERROR 로 풀어 주므로, 그때까지
+   * 원본을 재처리 대상으로 남겨 두라고 호출부에 알린다.
+   */
+  retryLater?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -326,12 +336,21 @@ export async function handleMoInbound(inbound: MoInbound): Promise<MoHandleResul
   // 그 외에는 모두 중복으로 막는다.
   const retryable = Boolean(dup && dup.result === 'ERROR' && !dup.donation);
   if (dup && !retryable) {
+    /**
+     * 아직 처리가 끝나지 않은(PENDING) 채 후원도 만들어지지 않은 행이면 결과가 확정된 것이
+     * 아니다. 강제 종료로 중단된 흔적일 수 있다. 이 경우 "중복이니 끝"이 아니라
+     * "나중에 다시 보라"고 알려 원본 수신 건을 재처리 대상으로 남긴다(E-3).
+     */
+    const unsettled = dup.result === 'PENDING' && !dup.donation;
     return {
       result: 'DUPLICATE',
       moMessageId: dup.id,
       donationId: dup.donation?.id,
       status: dup.donation?.status,
-      message: '이미 처리된 문자입니다. 중복 결제는 발생하지 않습니다.',
+      retryLater: unsettled || undefined,
+      message: unsettled
+        ? '직전 처리가 아직 끝나지 않았습니다. 잠시 후 다시 처리됩니다.'
+        : '이미 처리된 문자입니다. 중복 결제는 발생하지 않습니다.',
     };
   }
 
@@ -863,6 +882,29 @@ export interface PaymentOutcome {
   message: string;
 }
 
+/** 결제가 이미 끝난 상태. 다시 승인하지 않는다. */
+const COMPLETED_PAYMENT_STATUSES: DonationStatus[] = [
+  'PAYMENT_SUCCESS',
+  'BROADCAST_PENDING',
+  'BROADCASTED',
+  'PARTIAL_DELIVERY_FAILED',
+  'SETTLEMENT_PENDING',
+  'SETTLED',
+];
+
+/**
+ * 결제를 실행하면 안 되는 종료 상태 (P-1).
+ * 환불·차단·실패로 끝난 건이 어떤 경로로든 다시 승인되지 않게 막는다.
+ */
+const NON_PAYABLE_STATUSES: DonationStatus[] = [
+  'REFUNDED',
+  'REFUND_REQUESTED',
+  'PAYMENT_FAILED',
+  'LIMIT_BLOCKED',
+  'CONTENT_BLOCKED',
+  'UNREGISTERED',
+];
+
 export async function executePayment(donationId: string): Promise<PaymentOutcome> {
   const donation = await prisma.donation.findUnique({
     where: { id: donationId },
@@ -874,8 +916,36 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
   const donor = donation.donor;
   const { donorId } = donation;
 
-  if (['PAYMENT_SUCCESS', 'BROADCAST_PENDING', 'BROADCASTED', 'PARTIAL_DELIVERY_FAILED', 'SETTLEMENT_PENDING', 'SETTLED'].includes(donation.status)) {
+  /**
+   * 이미 결제가 끝난 상태. 다시 승인하지 않는다.
+   */
+  if (COMPLETED_PAYMENT_STATUSES.includes(donation.status)) {
     return { ok: true, status: donation.status, message: '이미 결제가 완료된 거래입니다.' };
+  }
+
+  /**
+   * 결제를 실행하면 안 되는 종료 상태 가드 (P-1).
+   *
+   * 예전에는 "완료"만 걸렀다. 그래서 아래 상태에서도 승인이 다시 나갈 수 있었다.
+   *  - REFUNDED / REFUND_REQUESTED : 환불했거나 환불 심사 중인 건을 **다시 출금**한다.
+   *    같은 주문번호를 재사용하므로 PG 가 기존 승인을 돌려줄 수도 있는데, 그러면 이번엔
+   *    환불된 거래가 성공으로 되살아나 정산 원장에 3분개가 한 번 더 쌓인다.
+   *  - PAYMENT_FAILED / LIMIT_BLOCKED / CONTENT_BLOCKED / UNREGISTERED
+   *    : 사유를 해소하지 않은 채 재시도해도 결과가 같거나, 차단 판정을 우회한다.
+   *
+   * 진입 경로가 여러 개(PIN 콜백·확인 링크·정리 배치·관리자 화면)이고 각자 상태를 따로
+   * 확인하기 때문에, 실제 출금 직전인 이 지점에 마지막 방어선을 둔다.
+   */
+  if (NON_PAYABLE_STATUSES.includes(donation.status)) {
+    logger.warn('결제를 실행할 수 없는 상태에서 executePayment 가 호출되었습니다.', {
+      donationId,
+      status: donation.status,
+    });
+    return {
+      ok: false,
+      status: donation.status,
+      message: `현재 상태(${donation.status})에서는 결제를 실행할 수 없습니다.`,
+    };
   }
 
   const token = await prisma.paymentMethodToken.findFirst({
@@ -1318,6 +1388,121 @@ export async function redispatchMissedBroadcasts(now = new Date(), staleMinutes 
   }
   if (count > 0) logger.warn('송출 누락 건 재송출', { count });
   return count;
+}
+
+/**
+ * 발송 실패한 MT 문자를 다시 보낸다 (E-5, 정리 배치 훅).
+ *
+ * 왜 필요한가
+ * ----------
+ * MT 발송은 실패해도 이력만 FAILED 로 남기고 아무도 다시 시도하지 않았다(절대규칙 3 때문에
+ * 결제 결과는 건드리지 않는 것이 맞지만, 그것이 "재시도하지 않는다"를 뜻하지는 않는다).
+ * 이통사 일시 오류·EMMA 큐 순간 장애 한 번에 후원자는 결제됐다는 사실조차 통보받지 못한다.
+ *
+ * 무엇을 다시 보내는가 — **재발송해도 안전한 문자만** 보낸다.
+ *  - 저장된 본문(bodyMasked)은 1회용 보안링크와 인증번호가 지워진 마스킹 본문이다.
+ *    그런 문자는 원문을 복원할 수 없고, 복원할 수 있다 해도 유효시간(5분)이 지나 의미가 없다.
+ *    잘못 보내면 `[보안링크]` 라는 글자가 그대로 찍힌 문자가 나간다.
+ *  - 그래서 링크·인증번호가 없는 **안내 문자**(감사·실패·차단·환불 안내)만 대상으로 한다.
+ *    이 문자들은 마스킹 본문과 원문이 같다.
+ *
+ * 재시도 정책
+ *  - 최대 `maxAttempts` 회(기본 3). attempts 컬럼으로 센다.
+ *  - 지수 백오프: 생성 후 2^attempts 분이 지난 건만 다시 시도한다(2분 → 4분 → 8분).
+ *    (MtOutboundMessage 에는 마지막 시도 시각이 없어 createdAt 기준으로 누적 지연을 잡는다)
+ *  - 24시간이 지난 건은 포기한다. 뒤늦게 도착한 안내는 오히려 혼란을 준다.
+ */
+const MT_RETRY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/** 마스킹 본문 그대로 다시 보내도 되는 템플릿 (1회용 링크·인증번호가 없다). */
+const RETRYABLE_MT_TEMPLATES: ReadonlySet<string> = new Set<string>([
+  tpl.MT_TEMPLATE.DONATION_SUCCESS,
+  tpl.MT_TEMPLATE.DONATION_FAILED,
+  tpl.MT_TEMPLATE.ACCOUNT_INACTIVE,
+  tpl.MT_TEMPLATE.LIMIT_BLOCKED,
+  tpl.MT_TEMPLATE.CONTENT_BLOCKED,
+  tpl.MT_TEMPLATE.REFUND_DONE,
+  tpl.MT_TEMPLATE.UNKNOWN_ROUTE,
+]);
+
+export async function retryFailedMtMessages(now = new Date(), maxAttempts = 3): Promise<number> {
+  const rows = await prisma.mtOutboundMessage.findMany({
+    where: {
+      status: 'FAILED',
+      attempts: { gt: 0, lt: maxAttempts },
+      templateCode: { in: [...RETRYABLE_MT_TEMPLATES] },
+      createdAt: { gt: new Date(now.getTime() - MT_RETRY_MAX_AGE_MS) },
+    },
+    orderBy: { createdAt: 'asc' },
+    take: 50,
+    select: {
+      id: true,
+      phoneEnc: true,
+      bodyMasked: true,
+      templateCode: true,
+      attempts: true,
+      createdAt: true,
+      donationId: true,
+    },
+  });
+
+  const adapter = getMtAdapter();
+  let sent = 0;
+
+  for (const row of rows) {
+    // 지수 백오프. 앞선 시도로부터 충분히 지나지 않았으면 다음 배치로 미룬다.
+    const waitMs = 2 ** row.attempts * 60_000;
+    if (now.getTime() - row.createdAt.getTime() < waitMs) continue;
+
+    // 마스킹 흔적이 남은 본문은 절대 그대로 보내지 않는다(원문 복원 불가).
+    if (row.bodyMasked.includes('[보안링크]') || row.bodyMasked.includes('[인증번호]')) continue;
+
+    let phone: string;
+    try {
+      phone = decrypt(row.phoneEnc);
+    } catch (e) {
+      logger.error('MT 재발송 실패 — 수신번호 복호화 불가', { id: row.id, message: (e as Error).message });
+      continue;
+    }
+
+    try {
+      const res = await adapter.send({
+        to: normalizePhone(phone),
+        text: row.bodyMasked,
+        templateCode: row.templateCode ?? undefined,
+      });
+      await prisma.mtOutboundMessage.update({
+        where: { id: row.id },
+        data: {
+          status: res.ok ? 'SENT' : 'FAILED',
+          providerCode: adapter.info().provider,
+          providerMessageId: res.data?.providerMessageId ?? null,
+          resultCode: res.code ?? null,
+          resultMessage: res.message ?? null,
+          attempts: { increment: 1 },
+          sentAt: res.ok ? new Date() : null,
+        },
+      });
+      if (row.donationId) {
+        // 발송 결과는 결제 상태와 무관하다. 알림 상태(mtStatus)만 갱신한다.
+        await prisma.donation
+          .update({ where: { id: row.donationId }, data: { mtStatus: res.ok ? 'SENT' : 'FAILED' } })
+          .catch(() => undefined);
+      }
+      if (res.ok) sent += 1;
+    } catch (e) {
+      await prisma.mtOutboundMessage
+        .update({
+          where: { id: row.id },
+          data: { resultMessage: (e as Error).message, attempts: { increment: 1 } },
+        })
+        .catch(() => undefined);
+      logger.error('MT 재발송 실패', { id: row.id, message: (e as Error).message });
+    }
+  }
+
+  if (sent > 0) logger.info('실패 MT 재발송', { sent });
+  return sent;
 }
 
 // ---------------------------------------------------------------------------

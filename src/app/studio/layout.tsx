@@ -18,6 +18,7 @@ const groups: NavGroup[] = [
       { href: '/studio', label: '대시보드', icon: 'dashboard' },
       { href: '/studio/donations', label: '후원 내역', icon: 'donations' },
       { href: '/studio/messages', label: '문자 관리', icon: 'messages' },
+      { href: '/studio/fans', label: '팬 관리', icon: 'donors' },
     ],
   },
   {

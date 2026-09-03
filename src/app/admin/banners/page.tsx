@@ -6,6 +6,7 @@ import { saveBanner, deleteBanner } from '@/app/actions/admin/content';
 import { prisma } from '@/server/db';
 import { formatNumber } from '@/lib/money';
 import { formatKst, kstDateKey } from '@/lib/datetime';
+import { requireAdminPage } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,10 @@ function endDateValue(d: Date | null): string {
 }
 
 export default async function AdminBannersPage() {
+  // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
+  // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
+  await requireAdminPage('/admin/banners');
+
   const banners = await prisma.banner.findMany({
     orderBy: [{ position: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'desc' }],
     take: 100,

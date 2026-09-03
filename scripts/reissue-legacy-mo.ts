@@ -31,10 +31,51 @@ async function main() {
     where: { status: 'ASSIGNED', creatorId: { not: null } },
     select: { phoneNumber: true, creator: { select: { displayName: true, status: true } } },
   });
+
+  /**
+   * 재고(크리에이터에게 붙지 않은 번호)도 함께 본다.
+   * 0505 가 보인다는 신고의 상당수는 배정된 번호가 아니라 **재고에 남은 구 번호**다.
+   * 관리자 화면과 MO 시뮬레이터 선택지에 그대로 나오기 때문이다.
+   */
+  const stock = await prisma.creatorMoNumber.findMany({
+    where: { creatorId: null },
+    select: { phoneNumber: true, status: true },
+    orderBy: { phoneNumber: 'asc' },
+  });
+  const legacyStock = stock.filter((r) => !digitsOnly(r.phoneNumber).startsWith(baseNumber));
   const legacy = assigned.filter((r) => !digitsOnly(r.phoneNumber).startsWith(baseNumber));
 
-  if (legacy.length === 0) {
-    console.log('구 체계 번호가 없습니다. 배정된 번호가 모두 현재 대표번호 체계입니다.');
+  /**
+   * 현재 배정 상태를 항상 출력한다.
+   *
+   * 예전에는 "바꿀 게 없다" 한 줄만 찍고 끝냈는데, 그러면 **정말 다 1688 인지**
+   * 아니면 **배정된 번호가 하나도 없는 건지** 구분이 되지 않았다.
+   * 번호가 잘못 보인다는 신고를 받았을 때 가장 먼저 봐야 하는 것이 이 목록이다.
+   */
+  console.log(`배정된 번호 ${assigned.length}건:`);
+  if (assigned.length === 0) {
+    console.log('  (없음) — 승인된 크리에이터에게 배정된 MO 번호가 하나도 없습니다.');
+  } else {
+    for (const r of assigned) {
+      const ok = digitsOnly(r.phoneNumber).startsWith(baseNumber) ? '' : '   <-- 구 체계';
+      console.log(`  - ${(r.creator?.displayName ?? '(이름 없음)').padEnd(16)} ${formatMoNumber(r.phoneNumber)}${ok}`);
+    }
+  }
+  console.log('');
+
+  console.log(`재고(미배정) ${stock.length}건 · 그중 구 체계 ${legacyStock.length}건:`);
+  if (stock.length === 0) {
+    console.log('  (없음)');
+  } else {
+    for (const r of stock) {
+      const mark = digitsOnly(r.phoneNumber).startsWith(baseNumber) ? '' : '   <-- 구 체계';
+      console.log(`  - ${formatMoNumber(r.phoneNumber).padEnd(16)} ${r.status}${mark}`);
+    }
+  }
+  console.log('');
+
+  if (legacy.length === 0 && legacyStock.length === 0) {
+    console.log('구 체계 번호가 없습니다. 배정된 번호와 재고가 모두 현재 대표번호 체계입니다.');
     return;
   }
 
@@ -61,9 +102,13 @@ async function main() {
   for (const r of result.failed) {
     console.log(`  [실패] ${r.displayName}: ${formatMoNumber(r.from)} — ${r.message}`);
   }
+  for (const r of result.retiredStock) {
+    console.log(`  [재고정리] ${formatMoNumber(r.phoneNumber)} (${r.previousStatus}) -> 사용중지`);
+  }
 
   console.log(
-    `\n재발급 ${result.reissued.length}건 · 회수 ${result.reclaimedOnly.length}건 · 실패 ${result.failed.length}건`,
+    `\n재발급 ${result.reissued.length}건 · 회수 ${result.reclaimedOnly.length}건 · ` +
+      `재고정리 ${result.retiredStock.length}건 · 실패 ${result.failed.length}건`,
   );
   if (result.reissued.length > 0) {
     console.log('바뀐 번호를 크리에이터에게 안내해 주세요. 방송 화면의 후원 번호 문구를 교체해야 합니다.');

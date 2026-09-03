@@ -90,7 +90,13 @@ export function getEmmaQuerier(): EmmaQuerier {
   };
 }
 
-/** 테스트·종료 시 전용 풀을 닫는다. 같은 DB 구성에서는 아무것도 하지 않는다. */
+/**
+ * 테스트·종료 시 전용 풀을 닫는다. 같은 DB 구성에서는 아무것도 하지 않는다.
+ *
+ * 지금은 호출부가 없다(전용 DB 구성을 아직 쓰지 않는다). 그래도 남겨 두는 이유는
+ * 이 풀이 프로세스 수명 동안 열려 있는 유일한 외부 커넥션이기 때문이다. 전용 DB 로 전환하는
+ * 순간 종료 훅과 통합 테스트에서 반드시 필요해지고, 없으면 테스트가 커넥션을 붙든 채 끝나지 않는다.
+ */
 export async function closeEmmaPool(): Promise<void> {
   const pool = globalForEmma.emmaPool;
   if (!pool) return;
@@ -130,6 +136,17 @@ export function pollingSuffixes(date = new Date()): string[] {
  * 예외로 배치가 죽으면 다른 정리 작업까지 멈추므로, 미리 확인하고 조용히 건너뛴다.
  */
 export async function moTableExists(suffix: string): Promise<boolean> {
+  assertSafeSuffix(suffix);
+  return emmaTableExists(`em_mo_log_${suffix}`);
+}
+
+/**
+ * EMMA 테이블 존재 여부.
+ *
+ * 어느 서비스(SMS MO / SMS MT / MMS MT)를 켰는지에 따라 있는 테이블이 다르다.
+ * 없는 테이블을 조회하면 예외가 나 배치 전체가 죽으므로, 먼저 확인하고 조용히 건너뛴다.
+ */
+export async function emmaTableExists(tableName: string): Promise<boolean> {
   const q = getEmmaQuerier();
   try {
     const rows = await q.query<{ exists: boolean }>(
@@ -137,29 +154,23 @@ export async function moTableExists(suffix: string): Promise<boolean> {
          SELECT 1 FROM information_schema.tables
          WHERE table_schema = current_schema() AND table_name = $1
        ) AS exists`,
-      [`em_mo_log_${suffix}`],
+      [tableName],
     );
     return Boolean(rows[0]?.exists);
   } catch (e) {
-    logger.warn('EMMA MO 테이블 존재 확인 실패', { suffix, message: (e as Error).message });
+    logger.warn('EMMA 테이블 존재 확인 실패', { tableName, message: (e as Error).message });
     return false;
   }
 }
 
-/** em_smt_tran(발송 큐) 존재 여부. MT 어댑터가 실연동 가능 여부를 판단할 때 쓴다. */
-export async function mtQueueExists(): Promise<boolean> {
-  const q = getEmmaQuerier();
-  try {
-    const rows = await q.query<{ exists: boolean }>(
-      `SELECT EXISTS (
-         SELECT 1 FROM information_schema.tables
-         WHERE table_schema = current_schema() AND table_name = 'em_smt_tran'
-       ) AS exists`,
-    );
-    return Boolean(rows[0]?.exists);
-  } catch {
-    return false;
-  }
+/**
+ * em_mmt_tran(장문/MMS 발송 큐) 존재 여부.
+ *
+ * MMS MT 서비스를 계약·활성화한 설치에만 있다. MT 어댑터가 90바이트를 넘는 본문을
+ * 장문 큐로 넘길 수 있는지 판단할 때 쓴다(없으면 발송을 실패로 돌려준다 — 잘라 보내지 않는다).
+ */
+export async function mmsQueueExists(): Promise<boolean> {
+  return emmaTableExists('em_mmt_tran');
 }
 
 /**

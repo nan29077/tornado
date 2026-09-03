@@ -13,6 +13,7 @@ import type { Prisma } from '@/generated/prisma/client';
 import type { UserRole, UserStatus } from '@/generated/prisma/enums';
 import { ProfileAvatar } from '@/components/profile/generated-avatar';
 import { userStatusLabel, adminPermissionLabel } from '@/lib/labels';
+import { requireAdminPage } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +23,10 @@ export default async function AdminUsersPage({
 }: {
   searchParams: Promise<{ q?: string; role?: string; status?: string; page?: string }>;
 }) {
+  // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
+  // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
+  await requireAdminPage('/admin/users');
+
   const sp = await searchParams;
   const now = new Date();
   const page = parsePage(sp.page);

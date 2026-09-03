@@ -479,7 +479,7 @@ export default async function CreatorDonationPage({ params }: Params) {
               : `닉네임을 정하지 않아 번호 끝 4자리(${broadcastDonorName(defaultDonorName(viewerDonor.phoneMasked))})로 표시됩니다. 닉네임을 정하면 크리에이터가 누가 보냈는지 알아볼 수 있습니다.`}
           </p>
           <Link
-            href="/my/account#nickname"
+            href={`/c/${creator.code}/account`}
             className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-bold text-brand-700 underline underline-offset-2"
           >
             닉네임 {viewerDonor.displayName ? '변경하기' : '설정하기'}
@@ -632,7 +632,7 @@ export default async function CreatorDonationPage({ params }: Params) {
             부적절한 후원 유도, 결제 오류, 원치 않는 후원 노출은 고객센터로 신고해 주세요. 거래번호를 함께
             알려주시면 빠르게 확인할 수 있습니다.
           </p>
-          <LinkButton href="/support" variant="secondary" size="sm" className="mt-2.5">
+          <LinkButton href={`/c/${creator.code}/support`} variant="secondary" size="sm" className="mt-2.5">
             신고 · 문의하기
           </LinkButton>
         </div>
@@ -679,6 +679,13 @@ function Step({ no, icon, title, body }: { no: string; icon: React.ReactNode; ti
   );
 }
 
+/**
+ * 크리에이터를 찾지 못했을 때.
+ *
+ * 후원 페이지는 밖으로 나가는 길을 두지 않는 것이 원칙이지만, **이 화면만은 예외다.**
+ * 코드가 잘못됐거나 정지된 채널이면 머무를 후원 페이지 자체가 없다. 여기서까지 길을 막으면
+ * 방문자는 아무 데도 갈 수 없는 막다른 화면에 갇힌다.
+ */
 function NotFoundView() {
   return (
     <div className="grid min-h-dvh place-items-center bg-warm-50 px-4 py-10">

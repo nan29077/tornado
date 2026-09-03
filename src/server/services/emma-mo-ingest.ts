@@ -23,7 +23,12 @@ import { logger } from '@/lib/logger';
 import { maskPhone } from '@/lib/crypto';
 import type { MoInbound } from '@/server/adapters/mo';
 import { handleMoInbound } from '@/server/services/donation-flow';
-import { pollEmmaMo, type EmmaMoMessage, type EmmaPollResult } from '@/server/emma';
+import {
+  pollEmmaMo,
+  type EmmaMoHandlerResult,
+  type EmmaMoMessage,
+  type EmmaPollResult,
+} from '@/server/emma';
 
 /** 수신 로그·후원 기록에 남는 사업자 코드. */
 export const EMMA_PROVIDER_CODE = 'infobank-emma';
@@ -48,7 +53,7 @@ export function toMoInbound(message: EmmaMoMessage): MoInbound {
  * @returns 폴링 로그에 남길 요약(도메인 처리 결과 코드)
  * @throws  도메인 처리가 실패하면 그대로 던진다(폴러가 재시도 대상으로 되돌린다).
  */
-export async function ingestEmmaMo(message: EmmaMoMessage): Promise<string> {
+export async function ingestEmmaMo(message: EmmaMoMessage): Promise<string | EmmaMoHandlerResult> {
   // 발신번호가 비면 후원자를 식별할 수 없다. 재시도해도 결과가 같으므로 예외 대신 결과 코드로 끝낸다.
   if (!message.fromNumber) {
     logger.warn('EMMA MO 발신번호 없음 — 처리하지 않음', { moKey: message.moKey });
@@ -67,6 +72,17 @@ export async function ingestEmmaMo(message: EmmaMoMessage): Promise<string> {
     result: result.result,
     donationId: result.donationId,
   });
+
+  /**
+   * 직전 처리가 중단돼 수신 로그가 PENDING 으로 남은 상태다(E-3).
+   *
+   * 여기서 완료로 끝내면 EMMA 원본 행이 '9' 가 되어 다시는 폴링되지 않는다. 후원자는 문자
+   * 요금을 냈는데 후원은 만들어지지 않고, EMMA 쪽에도 재전송을 요청할 근거가 남지 않는다.
+   * 정리 배치(recoverStuckMoMessages)가 PENDING 을 풀어 줄 때까지 원본을 신규 상태로 되돌린다.
+   */
+  if (result.retryLater) {
+    return { outcome: 'RETRY', detail: `${result.result}_PENDING` };
+  }
 
   return result.result;
 }

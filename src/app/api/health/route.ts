@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/server/db';
 import { kv } from '@/server/redis';
-import { env, assertProductionSafety } from '@/lib/env';
+import { env, assertProductionSafety, bootWarnings } from '@/lib/env';
 import { getSessionUser } from '@/server/auth';
+import { readEmmaLastPollAt } from '@/server/emma';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,10 @@ export async function GET() {
     return NextResponse.json({ ok: healthy }, { status: healthy ? 200 : 503 });
   }
 
+  // EMMA 폴링이 멈추면 문자가 들어와도 후원이 만들어지지 않는데 아무 오류도 나지 않는다(E-8).
+  const lastPoll = env.emma.enabled ? await readEmmaLastPollAt().catch(() => null) : null;
+  const emmaPollAt = lastPoll ? lastPoll.toISOString() : null;
+
   return NextResponse.json(
     {
       ok: healthy,
@@ -51,6 +56,9 @@ export async function GET() {
       },
       checks,
       productionWarnings: assertProductionSafety(),
+      // 기동을 막지는 않지만 특정 기능이 멈추는 설정(EMMA 장문 미지원, 헥토 PIN mock 등).
+      configWarnings: bootWarnings(),
+      emmaLastPollAt: emmaPollAt,
       at: new Date().toISOString(),
     },
     { status: healthy ? 200 : 503 },

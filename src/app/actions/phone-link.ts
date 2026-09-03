@@ -10,6 +10,7 @@ import { getMtAdapter } from '@/server/adapters/mt';
 import { applyMtTemplateOverride, tplPhoneLinkVerify } from '@/server/services/mt-templates';
 import { env, isLocal } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { promoteSignupFan } from '@/server/services/creator-fans';
 
 /**
  * 휴대폰 번호 인증 → DonorProfile 연결.
@@ -232,6 +233,18 @@ export async function confirmPhoneVerification(
   });
 
   logger.info('휴대폰 번호 연결 완료', { userId: user.id });
+
+  /**
+   * 후원 페이지로 가입만 해 두었던 팬을 링크 행으로 승격시킨다.
+   * 번호가 붙어야 후원 내역을 집계할 수 있으므로, 연결이 끝난 지금이 그 시점이다.
+   * 실패해도 번호 연결 자체는 되돌리지 않는다(귀속은 부가 기록이다).
+   */
+  const linkedDonor = await prisma.donorProfile.findUnique({
+    where: { userId: user.id },
+    select: { id: true },
+  });
+  if (linkedDonor) await promoteSignupFan(user.id, linkedDonor.id);
+
   revalidatePath('/my');
   revalidatePath('/my/account');
 

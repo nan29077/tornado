@@ -10,7 +10,9 @@ import { env } from '@/lib/env';
 import { formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
 import { getYouTubeQuotaUsage } from '@/server/services/broadcast-dispatch';
+import { readEmmaPollHealth } from '@/server/emma';
 import { moResultLabel } from '@/lib/labels';
+import { requireAdminPage } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,6 +44,10 @@ async function checkCache(): Promise<{ ok: boolean; detail: string; latencyMs: n
 }
 
 export default async function AdminSystemPage() {
+  // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
+  // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
+  await requireAdminPage('/admin/system');
+
   /**
    * **이 화면은 장애 중에도 반드시 열려야 한다.**
    *
@@ -51,7 +57,7 @@ export default async function AdminSystemPage() {
    * 정성껏 그려도 페이지 전체가 500 이 되어 **장애를 진단할 수단이 장애 때 사라졌다.**
    * 모든 부가 조회를 개별적으로 감싸고, 실패하면 "조회 실패"로 표시한다.
    */
-  const [db, cache, quota, webhooks, moErrors, paymentErrors] = await Promise.all([
+  const [db, cache, quota, webhooks, moErrors, paymentErrors, emmaPoll] = await Promise.all([
     checkDatabase(),
     checkCache(),
     getYouTubeQuotaUsage().catch(() => null),
@@ -78,7 +84,16 @@ export default async function AdminSystemPage() {
         transaction: { select: { orderNo: true, status: true } },
       },
     }).catch(() => []),
+    /**
+     * EMMA MO 폴링 생존 여부(E-8).
+     *
+     * 배치가 멈추면 문자가 들어와도 후원이 만들어지지 않는데 어디에도 오류가 뜨지 않는다.
+     * 스케줄러 주기는 1분이므로, 5분 넘게 흔적이 없으면 멈춘 것으로 본다.
+     */
+    readEmmaPollHealth().catch(() => ({ at: null, ageSec: null, stalled: true })),
   ]);
+
+  const emmaStalled = env.emma.enabled && emmaPoll.stalled;
 
   const providers: Array<{ label: string; mode: string }> = [
     { label: '결제(PG)', mode: env.payment.provider },
@@ -146,6 +161,23 @@ export default async function AdminSystemPage() {
             ))}
             <DataRow label="APP_BASE_URL" value={env.baseUrl} />
             <DataRow label="MO 허용 IP" value={env.mo.allowedIps.length > 0 ? env.mo.allowedIps.join(', ') : '미설정'} />
+            <DataRow
+              label="EMMA MO 폴링"
+              value={
+                !env.emma.enabled ? (
+                  <Badge tone="neutral">사용 안 함</Badge>
+                ) : (
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <Badge tone={emmaStalled ? 'danger' : 'success'}>{emmaStalled ? '정지 의심' : '정상'}</Badge>
+                    <span className="text-[12px] text-ink-400">
+                      {emmaPoll.at
+                        ? `마지막 폴링 ${formatKst(emmaPoll.at)} (${formatNumber(emmaPoll.ageSec ?? 0)}초 전)`
+                        : '기록 없음 — 폴링 배치(/api/cron/emma-mo)가 한 번도 성공하지 않았습니다.'}
+                    </span>
+                  </span>
+                )
+              }
+            />
           </Card>
         </section>
 

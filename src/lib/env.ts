@@ -202,10 +202,27 @@ export const env = {
      * 값이 EMMA 설정과 다르면 MT 가 큐에 쌓이기만 하고 발송되지 않는다(mt-sender.ts 주석 참고).
      */
     emmaId: str('EMMA_ID'),
-    /** 폴링 1회에 가져올 최대 건수. */
-    batchSize: num('EMMA_MO_BATCH_SIZE', 200),
-    /** 선점된 채 이 시간(초)을 넘긴 건은 중단된 것으로 보고 되살린다. */
-    staleSec: num('EMMA_MO_STALE_SEC', 300),
+    /**
+     * 장문(MMS) 발송 큐 `em_mmt_tran` 의 service_type 값.
+     *
+     * 단문 큐는 '0'(SMS) 으로 확정돼 있지만, 장문 큐 값은 설치본·계약 형태에 따라 다를 수 있다.
+     * 코드를 고치지 않고 맞출 수 있도록 열어 둔다. 값이 틀리면 큐에 쌓이기만 하고 발송되지 않는다.
+     */
+    mmsServiceType: str('EMMA_MMS_SERVICE_TYPE', '0'),
+    /**
+     * 폴링 1회에 가져올 최대 건수.
+     *
+     * 0 이나 음수가 들어오면 `LIMIT 0` 이 되어 **문자가 들어와도 한 건도 처리되지 않는다.**
+     * 그런데 배치는 성공(fetched=0)으로 끝나므로 아무도 알아채지 못한다. 오타 하나로
+     * 후원 전건이 조용히 멈추는 것을 막기 위해 최솟값 1 을 강제한다.
+     * 상한도 둔다(1000). 지나치게 크면 한 번의 폴링이 잠금 시간을 넘겨 중복 처리를 유발한다.
+     */
+    batchSize: Math.min(1000, Math.max(1, Math.trunc(num('EMMA_MO_BATCH_SIZE', 200)))),
+    /**
+     * 선점된 채 이 시간(초)을 넘긴 건은 중단된 것으로 보고 되살린다.
+     * 너무 짧으면 정상 처리 중인 건을 다른 폴링이 가로채므로 최솟값 30초를 강제한다.
+     */
+    staleSec: Math.max(30, Math.trunc(num('EMMA_MO_STALE_SEC', 300))),
   },
 
   /** 문자 발송(MT). provider 는 mock | coolsms | emma 를 지원한다. */
@@ -463,6 +480,34 @@ export function bootWarnings(): string[] {
     warnings.push(
       'ALLOW_LOCAL_CRYPTO_IN_PROD=true 로 운영 중입니다. 개인정보가 KMS 가 아닌 로컬 마스터키로 ' +
         '암호화됩니다. KMS 계약 후 반드시 CRYPTO_PROVIDER=aws-kms 로 전환하십시오.',
+    );
+  }
+  /**
+   * E-1. EMMA MT 는 단문 큐(em_smt_tran)만 확실하다.
+   *
+   * 90바이트를 넘는 본문(PIN 인증 링크·등록 안내 등 결제 흐름의 필수 문자 대부분)은 장문이라
+   * MMS MT 서비스를 따로 계약·활성화해야 나간다. 활성화되어 있으면 어댑터가 장문 큐(em_mmt_tran)로
+   * 폴백하지만, 그 테이블이 없으면 **해당 문자는 전건 실패한다.** 기동은 막지 않되(폴백이 성공할
+   * 수도 있으므로) 반드시 눈에 띄게 남긴다.
+   */
+  if (env.mt.provider === 'emma') {
+    warnings.push(
+      'MT_PROVIDER=emma 설정 시 LMS(90바이트 초과 장문) 발송 불가 — 반드시 MMS MT 계약이 필요합니다. ' +
+        'EMMA 에 MMS MT 서비스(장문 큐 em_mmt_tran)가 없으면 PIN 인증 링크·등록 안내 문자가 전건 실패합니다. ' +
+        '계약이 어렵다면 MT 템플릿 본문을 90바이트 이내로 줄이십시오.',
+    );
+  }
+  /**
+   * E-2. 헥토 PIN 인증창은 아직 mock 이다(adapters/payment/hecto.ts requestPinLink).
+   *
+   * 실키를 모두 넣고 SAFE_MODE 까지 꺼도 이 경로만은 토네이도 내부의 모의 PIN 화면 주소를
+   * 돌려준다. 문자에는 [MOCK] 이 붙지만, 운영자가 "결제 연동 완료"로 오인하기 쉬운 지점이다.
+   */
+  if (env.payment.provider === 'hecto' || (env.payment.provider !== 'mock' && env.payment.hectoMid)) {
+    warnings.push(
+      `PAYMENT_PROVIDER=${env.payment.provider} 이지만 PIN 인증창 발급(requestPinLink)은 아직 mock 입니다. ` +
+        '헥토 PIN 인증창 연동규격서 수령 전까지는 실제 결제사 인증창이 아니라 토네이도 내부 모의 화면 주소가 ' +
+        '발송됩니다(본문에 [MOCK] 표기). 규격 수령 후 실제 API 로 교체해야 실결제가 완료됩니다.',
     );
   }
   return warnings;

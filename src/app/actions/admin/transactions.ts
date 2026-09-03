@@ -223,7 +223,12 @@ export async function reissueLegacyMoNumbersAction(_prev: AdminActionState, _fd:
     const result = await reissueLegacyMoNumbers();
 
     // 한 건도 바뀌지 않았으면 감사로그를 남기지 않는다(로그가 의미 없이 불어난다).
-    if (result.reissued.length > 0 || result.reclaimedOnly.length > 0 || result.failed.length > 0) {
+    const touched =
+      result.reissued.length +
+      result.reclaimedOnly.length +
+      result.failed.length +
+      result.retiredStock.length;
+    if (touched > 0) {
       await writeAudit({
         adminUserId: admin.id,
         action: 'MO_NUMBER_LEGACY_REISSUE',
@@ -234,6 +239,7 @@ export async function reissueLegacyMoNumbersAction(_prev: AdminActionState, _fd:
           reissued: result.reissued.map((r) => `${r.displayName}: ${r.from} → ${r.to}`),
           reclaimedOnly: result.reclaimedOnly.map((r) => `${r.displayName}: ${r.from}`),
           failed: result.failed.map((r) => `${r.displayName}: ${r.from} (${r.message})`),
+          retiredStock: result.retiredStock.map((r) => `${r.phoneNumber} (${r.previousStatus})`),
         },
       });
     }
@@ -252,6 +258,9 @@ export async function reissueLegacyMoNumbersAction(_prev: AdminActionState, _fd:
     }
     for (const r of result.failed) {
       detail[r.displayName] = `${formatMoNumber(r.from)} → 실패: ${r.message}`;
+    }
+    for (const r of result.retiredStock) {
+      detail[`(재고) ${formatMoNumber(r.phoneNumber)}`] = `${r.previousStatus} → 사용중지`;
     }
 
     return { message: describeLegacyReissue(result), detail };

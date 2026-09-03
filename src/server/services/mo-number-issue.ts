@@ -66,19 +66,28 @@ function pickSubCode(): string {
 }
 
 /**
- * 지금 쓸 수 없는 서브번호 집합.
- *  - 이미 등록된 번호 전부 (상태 무관: 회수된 번호도 냉각기간 동안은 막는다)
- *  - 냉각기간이 지난 회수 번호는 다시 열어 준다.
+ * 서브번호 채번에 필요한 현재 상태.
+ *
+ *  - blocked  : 지금 쓸 수 없는 번호 (이미 배정됐거나, 회수됐지만 냉각기간이 남은 번호)
+ *  - reusable : 냉각기간이 지나 **다시 배정해도 되는** 회수 번호 → 서브번호 → 기존 행 id
+ *
+ * reusable 을 따로 돌려주는 이유(E-4)
+ * -----------------------------------
+ * 회수 이력이 있는 번호는 행이 그대로 남아 있다. 냉각기간이 지났다고 해서 같은 번호로
+ * `create` 를 하면 `creator_mo_number_base_sub_uniq` 유니크 제약에 걸려 **영원히 실패한다.**
+ * 그러면 회수된 번호는 냉각기간이 아무리 지나도 재사용되지 않고, 대표번호가 서서히 말라붙는다.
+ * 재배정은 새 행 생성이 아니라 **기존 행 갱신**으로 해야 한다.
  */
-async function loadBlockedSubCodes(baseNumber: string, tx: Prisma.TransactionClient | typeof prisma) {
+async function loadSubCodeState(baseNumber: string, tx: Prisma.TransactionClient | typeof prisma) {
   const rows = await tx.creatorMoNumber.findMany({
     where: { baseNumber, keyword: null, subCode: { not: null } },
-    select: { subCode: true, status: true, releasedAt: true },
+    select: { id: true, subCode: true, status: true, releasedAt: true },
   });
 
   const cooldownMs = REUSE_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
   const now = Date.now();
   const blocked = new Set<string>();
+  const reusable = new Map<string, string>();
 
   for (const row of rows) {
     if (!row.subCode) continue;
@@ -87,9 +96,10 @@ async function loadBlockedSubCodes(baseNumber: string, tx: Prisma.TransactionCli
       (row.status === 'RECLAIMED' || row.status === 'DISABLED') &&
       row.releasedAt != null &&
       now - row.releasedAt.getTime() >= cooldownMs;
-    if (!releasable) blocked.add(row.subCode);
+    if (releasable) reusable.set(row.subCode, row.id);
+    else blocked.add(row.subCode);
   }
-  return blocked;
+  return { blocked, reusable };
 }
 
 export interface IssuedMoNumber {
@@ -135,7 +145,7 @@ function isCurrentScheme(phoneNumber: string, baseNumber: string): boolean {
  * 두 경로가 갈라지면 재발급 쪽만 순번 채번이 되는 식의 사고가 난다.
  */
 async function allocateSubCode(creatorId: string, baseNumber: string, memo: string): Promise<IssuedMoNumber> {
-  const blocked = await loadBlockedSubCodes(baseNumber, prisma);
+  const { blocked, reusable } = await loadSubCodeState(baseNumber, prisma);
 
   for (let attempt = 0; attempt < MAX_PICK_ATTEMPTS; attempt += 1) {
     const subCode = pickSubCode();
@@ -143,6 +153,39 @@ async function allocateSubCode(creatorId: string, baseNumber: string, memo: stri
     if (blocked.has(subCode)) continue;
 
     const phoneNumber = composeMoNumber(baseNumber, subCode);
+
+    /**
+     * 냉각기간이 지난 회수 번호는 행이 이미 있다. create 하면 유니크 제약에 걸리므로
+     * 기존 행을 되살려 배정한다(E-4).
+     *
+     * updateMany 로 상태 조건을 함께 걸어 **다른 실행이 먼저 가져갔으면 0행**이 되게 한다.
+     * (동시에 두 크리에이터가 같은 번호를 받는 것을 막는 낙관적 잠금)
+     */
+    const reuseId = reusable.get(subCode);
+    if (reuseId) {
+      const claimed = await prisma.creatorMoNumber.updateMany({
+        where: { id: reuseId, creatorId: null, status: { in: ['RECLAIMED', 'DISABLED'] } },
+        data: {
+          phoneNumber,
+          keyword: null,
+          mode: 'DEDICATED',
+          status: 'ASSIGNED',
+          creatorId,
+          assignedAt: new Date(),
+          releasedAt: null,
+          memo,
+        },
+      });
+      if (claimed.count === 0) {
+        // 다른 실행이 먼저 선점했다. 다음 후보로 넘어간다.
+        reusable.delete(subCode);
+        blocked.add(subCode);
+        continue;
+      }
+      logger.info('MO 서브번호 재배정(냉각기간 경과)', { creatorId, phoneNumber, subCode });
+      return { id: reuseId, phoneNumber, baseNumber, subCode, reused: false };
+    }
+
     try {
       const created = await prisma.creatorMoNumber.create({
         data: {
@@ -266,6 +309,13 @@ export interface LegacyReissueResult {
   reclaimedOnly: Array<{ creatorId: string; displayName: string; from: string }>;
   /** 실패한 건 (번호 소진 등) */
   failed: Array<{ creatorId: string; displayName: string; from: string; message: string }>;
+  /**
+   * 배정되지 않은 채 재고에 남아 있던 구 체계 번호. 사용중지로 내렸다.
+   *
+   * 배정된 번호만 정리하면 0505 가 재고 목록·MO 시뮬레이터 선택지에 계속 남는다.
+   * 관리자는 그 번호를 다시 배정할 수 있고, 배정해도 문자는 오지 않는다.
+   */
+  retiredStock: Array<{ phoneNumber: string; previousStatus: string }>;
 }
 
 /**
@@ -293,7 +343,7 @@ export async function reissueLegacyMoNumbers(): Promise<LegacyReissueResult> {
   });
 
   const legacy = assigned.filter((row) => !isCurrentScheme(row.phoneNumber, baseNumber));
-  const result: LegacyReissueResult = { baseNumber, reissued: [], reclaimedOnly: [], failed: [] };
+  const result: LegacyReissueResult = { baseNumber, reissued: [], reclaimedOnly: [], failed: [], retiredStock: [] };
 
   for (const row of legacy) {
     const creatorId = row.creatorId;
@@ -309,13 +359,69 @@ export async function reissueLegacyMoNumbers(): Promise<LegacyReissueResult> {
     }
 
     try {
-      await releaseMoNumberRow(row.id, '구 번호 체계 — 일괄 재발급으로 회수');
+      /**
+       * **새 번호를 먼저 발급하고, 성공한 뒤에 옛 번호를 회수한다.**
+       *
+       * 회수를 먼저 하면 발급이 실패했을 때(번호 소진·일시적 DB 오류) 그 크리에이터는
+       * 배정 번호가 하나도 없는 상태로 남는다. 회수된 번호는 냉각기간 때문에 즉시 되돌려
+       * 줄 수도 없어서, 관리자가 알아채기 전까지 후원 문자가 전부 UNKNOWN_ROUTE 가 된다.
+       *
+       * 순서를 뒤집으면 최악의 경우가 "옛 번호가 남아 있다"(발급 실패) 또는
+       * "두 번호가 동시에 살아 있다"(회수 실패)가 된다. 둘 다 후원은 계속 접수되고,
+       * 라우팅은 phone_number 완전일치(routeCreator)라 번호가 둘이어도 서로 충돌하지 않는다.
+       * (base_number+sub_code 유니크는 상태와 무관하므로 새 번호 발급 자체는 막히지 않는다)
+       *
+       * 단건 경로(issueMoNumberForCreator)는 반대 순서를 쓴다. 그쪽은 호출자가 결과를 즉시
+       * 확인하므로 실패가 드러나고, 번호가 둘이면 화면에 어느 것을 보여 줄지 모호해지는 쪽이
+       * 더 문제다. 수백 건을 한 번에 훑는 이 경로는 실패가 목록 속에 묻히므로 판단이 다르다.
+       */
       const issued = await allocateSubCode(creatorId, baseNumber, '구 번호 체계 일괄 재발급');
+      try {
+        await releaseMoNumberRow(row.id, '구 번호 체계 — 일괄 재발급으로 회수');
+      } catch (e) {
+        // 새 번호는 이미 살아 있다. 옛 번호가 함께 남아도 후원 접수에는 지장이 없으므로
+        // 실패로 처리하지 않고, 관리자가 정리할 수 있도록 경고만 남긴다.
+        logger.error('구 번호 회수 실패 — 옛 번호가 배정된 채로 남았습니다. 수동 회수가 필요합니다.', {
+          creatorId,
+          from: row.phoneNumber,
+          to: issued.phoneNumber,
+          message: (e as Error).message,
+        });
+      }
       result.reissued.push({ creatorId, displayName, from: row.phoneNumber, to: issued.phoneNumber });
     } catch (e) {
       result.failed.push({ creatorId, displayName, from: row.phoneNumber, message: (e as Error).message });
-      logger.warn('구 번호 일괄 재발급 실패', { creatorId, from: row.phoneNumber, message: (e as Error).message });
+      logger.warn('구 번호 일괄 재발급 실패 — 옛 번호를 그대로 유지합니다.', {
+        creatorId,
+        from: row.phoneNumber,
+        message: (e as Error).message,
+      });
     }
+  }
+
+  /**
+   * 배정되지 않은 구 체계 재고 정리.
+   *
+   * 크리에이터에게 붙어 있지 않아도 목록과 시뮬레이터 선택지에는 그대로 나온다.
+   * 지우지 않고 DISABLED 로 내리는 이유: 과거 수신 이력(mo_inbound_message)이 이 번호를
+   * 참조하고, 어떤 번호가 언제 쓰였는지는 분쟁 대응에 필요하다.
+   */
+  const stock = await prisma.creatorMoNumber.findMany({
+    where: { status: { not: 'DISABLED' }, creatorId: null },
+    select: { id: true, phoneNumber: true, status: true },
+  });
+  for (const row of stock) {
+    if (isCurrentScheme(row.phoneNumber, baseNumber)) continue;
+    await prisma.creatorMoNumber.update({
+      where: { id: row.id },
+      data: {
+        status: 'DISABLED',
+        creatorId: null,
+        releasedAt: new Date(),
+        memo: '구 번호 체계 — 재고에서 사용중지',
+      },
+    });
+    result.retiredStock.push({ phoneNumber: row.phoneNumber, previousStatus: row.status });
   }
 
   logger.info('구 번호 일괄 재발급 완료', {
@@ -323,17 +429,21 @@ export async function reissueLegacyMoNumbers(): Promise<LegacyReissueResult> {
     reissued: result.reissued.length,
     reclaimedOnly: result.reclaimedOnly.length,
     failed: result.failed.length,
+    retiredStock: result.retiredStock.length,
   });
   return result;
 }
 
 /** 재발급 결과를 관리자 화면에 보여 줄 한 문장으로 만든다. */
 export function describeLegacyReissue(r: LegacyReissueResult): string {
-  if (r.reissued.length === 0 && r.reclaimedOnly.length === 0 && r.failed.length === 0) {
-    return `구 체계 번호가 없습니다. 배정된 번호가 모두 ${formatMoNumber(r.baseNumber)} 체계입니다.`;
+  const touched =
+    r.reissued.length + r.reclaimedOnly.length + r.failed.length + r.retiredStock.length;
+  if (touched === 0) {
+    return `구 체계 번호가 없습니다. 배정된 번호와 재고가 모두 ${formatMoNumber(r.baseNumber)} 체계입니다.`;
   }
   const parts = [`${r.reissued.length}건을 ${formatMoNumber(r.baseNumber)} 체계로 재발급했습니다.`];
   if (r.reclaimedOnly.length > 0) parts.push(`미승인 채널 ${r.reclaimedOnly.length}건은 회수만 했습니다.`);
+  if (r.retiredStock.length > 0) parts.push(`재고에 남아 있던 구 번호 ${r.retiredStock.length}건은 사용중지했습니다.`);
   if (r.failed.length > 0) parts.push(`${r.failed.length}건은 실패했습니다 (${r.failed[0].message}).`);
   return parts.join(' ');
 }
@@ -368,16 +478,47 @@ export async function reclaimMoNumberForCreator(creatorId: string, reason?: stri
   return r.count;
 }
 
-/** 대표번호 사용 현황. 관리자 화면에서 소진도를 보여 줄 때 쓴다. */
+/**
+ * 대표번호 사용 현황. 관리자 화면에서 소진도를 보여 줄 때 쓴다.
+ *
+ * available 계산에 대하여(E-4)
+ * ----------------------------
+ * 예전에는 `total - blocked` 였다. 두 가지가 빠져 있었다.
+ *  1) **예약(오입력 다발) 번호**(0000·1234·1111 …)는 애초에 채번 후보에서 빠지는데도 여유로 셌다.
+ *  2) 냉각기간이 지난 회수 번호는 blocked 에서 빠지므로 여유로 잡히는데, 실제로는 재배정
+ *     경로가 없어 쓸 수 없었다. 지금은 재배정이 되므로 여유로 세는 것이 맞다.
+ * 그래서 "실제로 뽑힐 수 있는 후보"를 그대로 세는 방식으로 바꾼다.
+ */
 export async function getMoNumberCapacity(baseNumber = digitsOnly(env.emma.baseNumber)) {
-  if (!baseNumber) return { baseNumber: '', total: 10 ** SUB_CODE_LENGTH, assigned: 0, blocked: 0, available: 0 };
   const total = 10 ** SUB_CODE_LENGTH;
+  /** 오입력이 몰려 채번에서 제외한 번호 수. 대표번호와 무관하게 고정이다. */
+  const reserved = countReservedSubCodes();
+  if (!baseNumber) {
+    return { baseNumber: '', total, assigned: 0, blocked: 0, reserved, available: total - reserved };
+  }
   const assigned = await prisma.creatorMoNumber.count({
     where: { baseNumber, keyword: null, status: 'ASSIGNED' },
   });
-  const blocked = (await loadBlockedSubCodes(baseNumber, prisma)).size;
-  // 예약 번호는 애초에 후보에서 빠진다.
-  return { baseNumber, total, assigned, blocked, available: total - blocked };
+  const { blocked } = await loadSubCodeState(baseNumber, prisma);
+  // 예약 번호와 사용 중인 번호가 겹칠 수 있으므로 빼기가 아니라 실제 후보를 센다.
+  let available = 0;
+  for (let n = 0; n < total; n += 1) {
+    const code = String(n).padStart(SUB_CODE_LENGTH, '0');
+    if (!isUsableSubCode(code)) continue;
+    if (blocked.has(code)) continue;
+    available += 1;
+  }
+  return { baseNumber, total, assigned, blocked: blocked.size, reserved, available };
+}
+
+/** 채번에서 제외되는 번호(오입력 다발) 개수. */
+function countReservedSubCodes(): number {
+  const total = 10 ** SUB_CODE_LENGTH;
+  let count = 0;
+  for (let n = 0; n < total; n += 1) {
+    if (!isUsableSubCode(String(n).padStart(SUB_CODE_LENGTH, '0'))) count += 1;
+  }
+  return count;
 }
 
 function isUniqueViolation(e: unknown): boolean {

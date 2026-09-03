@@ -16,6 +16,7 @@ import {
   reconcileStuckPendingPayments,
   recoverStuckMoMessages,
   redispatchMissedBroadcasts,
+  retryFailedMtMessages,
 } from '@/server/services/donation-flow';
 import { retryFailedYouTubeDeliveries } from '@/server/services/broadcast-dispatch';
 import { retryFailedBillKeyRevocations } from '@/server/services/donor-registration';
@@ -51,6 +52,8 @@ export const dynamic = 'force-dynamic';
  *                                       표시한다(사업자 재전송이 DUPLICATE 로 반려되는 것을 푼다).
  * 11) redispatchMissedBroadcasts      — 결제는 끝났는데 송출이 시작되지 않은 건을 다시 송출한다.
  * 12) retryFailedYouTubeDeliveries    — 일시적 사유로 실패한 유튜브 채팅 전송을 다시 시도한다.
+ * 12-1) retryFailedMtMessages         — 발송 실패한 안내 문자를 다시 보낸다(최대 3회·지수 백오프).
+ *                                       1회용 링크·인증번호가 든 문자는 대상에서 제외한다.
  * 13) clearExpiredFailureLocks        — 잠금 시간이 지난 후원자의 실패 카운터를 초기화한다.
  * 14) purgeOldWebhookLogs            — 보존 기간이 지난 웹훅 원문 로그를 지운다.
  *
@@ -123,6 +126,7 @@ export async function GET(req: Request) {
     const stuckMoMessages = await step('중단된 수신 문자 복구', () => recoverStuckMoMessages());
     const missedBroadcasts = await step('송출 누락 건 재송출', () => redispatchMissedBroadcasts());
     const youtubeRetries = await step('유튜브 전송 재시도', () => retryFailedYouTubeDeliveries());
+    const mtRetries = await step('실패 MT 재발송', () => retryFailedMtMessages());
     const failureLocks = await step('만료된 실패 잠금 해제', () => clearExpiredFailureLocks());
     const webhookLogs = await step('오래된 웹훅 로그 정리', () => purgeOldWebhookLogs());
     const billKeyRevokes = await step('사업자 빌키 해지 재시도', () => retryFailedBillKeyRevocations());
@@ -140,6 +144,7 @@ export async function GET(req: Request) {
       stuckMoMessages,
       missedBroadcasts,
       youtubeRetries,
+      mtRetries,
       failureLocks,
       webhookLogs,
       billKeyRevokes,
