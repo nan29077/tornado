@@ -3,7 +3,7 @@
 import { headers } from 'next/headers';
 import { prisma } from '@/server/db';
 import { loadConfirmContext, confirmDonation } from '@/server/services/donation-confirm';
-import { clientIpFrom } from '@/server/rate-limit';
+import { clientIpFrom, consumeIpRateLimit } from '@/server/rate-limit';
 import { checkDonorName } from '@/lib/donor-name';
 import { validateDonorName } from '@/server/services/donor-name';
 
@@ -56,11 +56,19 @@ export interface NicknameUpdateResult {
 }
 
 /**
- * PIN 입력 화면에서 후원자 닉네임·SNS 플랫폼을 저장/수정한다.
+ * 확인 화면에서 후원자 닉네임·SNS 플랫폼을 저장/수정한다.
  * 닉네임이 비어 있으면 아무것도 하지 않는다(기존 값 유지).
+ *
+ * 소유권 검증
+ *  - **`donorId` 를 인자로 받지 않는다.** 서버 액션은 액션 ID 만 알면 누구나 호출할 수 있어서,
+ *    예전 구현은 임의의 donorId 로 남의 방송 표시 닉네임을 바꿀 수 있었다(그 값은 오버레이와
+ *    TTS 로 방송에 그대로 나간다). 방어는 ULID 추측 난이도뿐이었다.
+ *  - 대신 이 화면이 이미 들고 있는 **보안링크 토큰**으로 대상을 정한다. 토큰이 가리키는
+ *    후원 건의 후원자만 수정된다. (토큰은 여기서 소비하지 않는다 — 결제 확인 때 1회 소비된다)
+ *  - 무제한 시도를 막기 위해 IP 단위 속도 제한도 함께 건다.
  */
 export async function updateDonorNicknameAction(
-  donorId: string,
+  token: string,
   nickname: string,
   snsPlatform?: string,
 ): Promise<NicknameUpdateResult> {
@@ -69,6 +77,14 @@ export async function updateDonorNicknameAction(
 
   const clientCheck = checkDonorName(trimmed);
   if (!clientCheck.ok) return { ok: false, message: clientCheck.message };
+
+  const limited = await consumeIpRateLimit('donor-nickname', 20, 600);
+  if (!limited.ok) return { ok: false, message: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.' };
+
+  const loaded = await loadConfirmContext(String(token ?? ''));
+  if (!loaded.ok) return { ok: false, message: loaded.reason };
+  const donorId = loaded.ctx.donorId;
+  if (!donorId) return { ok: false, message: '후원자 정보를 찾을 수 없습니다.' };
 
   try {
     const serverCheck = await validateDonorName(trimmed);

@@ -12,6 +12,23 @@ export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 20;
 
+/**
+ * **표시용** 누적 집계 상태.
+ *
+ * 환불 요청 가능 여부(REFUNDABLE)와 같은 집합을 누적 금액에도 쓰면, 환불을 요청만 해도
+ * (승인 전) 누적 금액이 줄어 후원자가 "돈이 사라졌다"고 오인한다. 환불이 확정될 때까지는
+ * 누적에 남긴다.
+ */
+const COUNTED_FOR_TOTAL: DonationStatus[] = [
+  'PAYMENT_SUCCESS',
+  'BROADCAST_PENDING',
+  'BROADCASTED',
+  'PARTIAL_DELIVERY_FAILED',
+  'SETTLEMENT_PENDING',
+  'SETTLED',
+  'REFUND_REQUESTED',
+];
+
 /** 결제가 완료되어 환불 요청이 가능한 상태 */
 const REFUNDABLE: DonationStatus[] = [
   'PAYMENT_SUCCESS',
@@ -73,7 +90,7 @@ export default async function MyDonationsPage({
       },
     }),
     prisma.donation.aggregate({
-      where: { donorId, status: { in: REFUNDABLE } },
+      where: { donorId, status: { in: COUNTED_FOR_TOTAL } },
       _sum: { amount: true },
       _count: { _all: true },
     }),

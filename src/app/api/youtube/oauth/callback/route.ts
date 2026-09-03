@@ -1,9 +1,10 @@
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
-import { encrypt, safeEqual, tokenHash } from '@/lib/crypto';
+import { encrypt } from '@/lib/crypto';
 import { logger } from '@/lib/logger';
-import { getSessionUser } from '@/server/auth';
+import { requireCreator } from '@/server/auth';
 import { getYouTubeAdapter } from '@/server/adapters/youtube';
+import { consumeYouTubeOAuthState, hasRequiredScope } from '@/server/services/youtube-connection';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,22 +30,22 @@ export async function GET(req: Request) {
   if (error) return back('youtube=denied');
   if (!code) return back('youtube=invalid');
 
-  const session = await getSessionUser();
-  if (!session?.creatorId) {
+  // getSessionUser() 로는 심사 대기·반려·정지 채널이 그대로 통과한다.
+  // 스튜디오 레이아웃이 막는 상태를 이 API 로 우회하지 못하도록 requireCreator() 를 쓴다.
+  let sessionCreatorId: string;
+  try {
+    const creator = await requireCreator();
+    sessionCreatorId = creator.creatorId;
+  } catch {
     return Response.redirect(new URL('/login?next=/studio/youtube', url.origin), 302);
   }
 
-  // state 검증
-  const [stateCreatorId, signature] = state.split('.');
-  if (!stateCreatorId || stateCreatorId !== session.creatorId) {
-    return back('youtube=state_mismatch');
+  // state 는 1회성이다. 서명 + 세션 일치 + 미사용 여부를 모두 확인하고 소비한다.
+  const stateResult = await consumeYouTubeOAuthState(state, sessionCreatorId);
+  if (!stateResult.ok) {
+    return back(stateResult.reason === 'USED_OR_EXPIRED' ? 'youtube=state_expired' : 'youtube=state_mismatch');
   }
-  // 서명이 없는 state 는 거절한다. (서명 없이 creatorId 만으로 통과하면 공격자의 인증 코드가 담긴
-  // 콜백 URL 을 피해자가 열었을 때 피해자 계정에 다른 채널이 연결된다)
-  if (!signature || !safeEqual(tokenHash(stateCreatorId), signature)) {
-    return back('youtube=state_mismatch');
-  }
-  const creatorId = session.creatorId;
+  const creatorId = stateResult.creatorId;
 
   try {
     const adapter = getYouTubeAdapter();
@@ -54,6 +55,12 @@ export async function GET(req: Request) {
       return back(`youtube=token_failed&code=${encodeURIComponent(exchanged.code ?? '')}`);
     }
     const tokens = exchanged.data;
+
+    // 동의 화면에서 채팅 권한 체크를 해제하면 연결은 되지만 전송이 전건 실패한다.
+    // 그 사실을 후원이 들어온 뒤가 아니라 연결 시점에 알려 준다.
+    if (!hasRequiredScope(tokens.scope)) {
+      return back('youtube=scope_missing');
+    }
 
     const channelRes = await adapter.getChannel(tokens.accessToken);
     if (!channelRes.ok || !channelRes.data) {

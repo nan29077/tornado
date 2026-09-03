@@ -60,6 +60,8 @@ export function ActionForm({
       {state.message ? (
         compact ? (
           <span
+            role="status"
+            aria-live="polite"
             className={cx(
               'block max-w-[220px] text-[11px] leading-tight',
               state.ok ? 'text-success-500' : 'text-danger-500',
@@ -102,6 +104,100 @@ export function ActionButton({
   );
 }
 
+/**
+ * 목록에서 하나를 골라 실행하는 폼. **선택지를 행마다 렌더하지 않는다.**
+ *
+ * `SelectActionForm` 은 `<option>` 을 행마다 새로 그린다. MO 번호 화면처럼
+ * 200행 x 크리에이터 300명이면 `<option>` 이 6만 개가 되어 페이지가 사실상 열리지 않는다.
+ * 여기서는 `<datalist>` 를 화면에 **한 번만** 두고 각 행은 그것을 참조한다(`list` 속성).
+ * 선택지 DOM 은 목록 크기와 무관하게 한 벌이다.
+ *
+ * 입력값은 사람이 읽는 라벨이고, 제출 직전에 라벨 → 값으로 바꿔 보낸다.
+ * 목록에 없는 값을 손으로 적어 넣으면 제출을 막는다(서버도 다시 검증한다).
+ */
+export function DatalistActionForm({
+  action,
+  values,
+  name,
+  listId,
+  options,
+  placeholder = '이름 입력 또는 선택',
+  submitLabel = '변경',
+  confirm,
+  hint,
+  disabled,
+}: {
+  action: AdminServerAction;
+  values: Record<string, string>;
+  name: string;
+  /** 화면에 한 번만 렌더된 <datalist> 의 id */
+  listId: string;
+  /** 라벨 → 값 대조표. <option> 을 그리지는 않는다. */
+  options: Array<{ value: string; label: string }>;
+  placeholder?: string;
+  submitLabel?: string;
+  confirm?: string;
+  hint?: string;
+  disabled?: boolean;
+}) {
+  const [state, formAction, pending] = React.useActionState(action, initialAdminState);
+  const [label, setLabel] = React.useState('');
+
+  const byLabel = React.useMemo(() => new Map(options.map((o) => [o.label, o.value])), [options]);
+  const matched = byLabel.get(label.trim());
+  const typedButUnmatched = label.trim() !== '' && !matched;
+
+  return (
+    <form
+      action={formAction}
+      onSubmit={(e) => {
+        if (!matched) {
+          e.preventDefault();
+          return;
+        }
+        if (confirm && !window.confirm(confirm)) e.preventDefault();
+      }}
+      className="flex flex-col gap-1"
+    >
+      {Object.entries(values).map(([k, v]) => (
+        <input key={k} type="hidden" name={k} value={v} />
+      ))}
+      {/* 서버로는 라벨이 아니라 실제 값이 간다. */}
+      <input type="hidden" name={name} value={matched ?? ''} />
+      <div className="flex items-center gap-1.5">
+        <input
+          list={listId}
+          aria-label={placeholder}
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          disabled={disabled}
+          placeholder={placeholder}
+          className="h-9 w-44 rounded-lg border border-ink-200 bg-white px-2 text-[13px] text-ink-900 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-ink-50 disabled:text-ink-400"
+        />
+        <Button type="submit" size="sm" variant="secondary" disabled={pending || disabled || !matched}>
+          {pending ? '처리 중' : submitLabel}
+        </Button>
+      </div>
+      {typedButUnmatched ? (
+        <span className="text-[11px] leading-tight font-semibold text-danger-500">
+          목록에 없는 이름입니다. 칸을 비우면 전체 목록이 나옵니다.
+        </span>
+      ) : hint ? (
+        <span className="text-[11px] leading-tight text-ink-400">{hint}</span>
+      ) : null}
+      {state.message ? (
+        <span
+          role="status"
+          aria-live="polite"
+          className={cx('text-[11px] leading-tight', state.ok ? 'text-success-500' : 'text-danger-500')}
+        >
+          {state.message}
+        </span>
+      ) : null}
+    </form>
+  );
+}
+
 /** 표 안에서 선택값 하나를 바꾸는 액션 (상태 변경 등) */
 export function SelectActionForm({
   action,
@@ -113,6 +209,7 @@ export function SelectActionForm({
   confirm,
   hint,
   disabled,
+  ariaLabel,
 }: {
   action: AdminServerAction;
   values: Record<string, string>;
@@ -123,6 +220,12 @@ export function SelectActionForm({
   confirm?: string;
   hint?: string;
   disabled?: boolean;
+  /**
+   * 표 안에 홀로 놓인 <select> 라 연결된 <label> 이 없다. 화면 낭독기에서는
+   * "콤보 상자"라고만 읽혀 무엇을 고르는 칸인지 알 수 없었다.
+   * 주지 않으면 name 을 쓰되, 사람이 읽을 이름을 주는 편이 낫다.
+   */
+  ariaLabel?: string;
 }) {
   const [state, formAction, pending] = React.useActionState(action, initialAdminState);
 
@@ -144,6 +247,7 @@ export function SelectActionForm({
       <div className="flex items-center gap-1.5">
         <select
           name={name}
+          aria-label={ariaLabel ?? name}
           defaultValue={defaultValue}
           disabled={disabled}
           className="h-9 rounded-lg border border-ink-200 bg-white px-2 text-[13px] text-ink-900 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-ink-50 disabled:text-ink-400"
@@ -160,7 +264,11 @@ export function SelectActionForm({
       </div>
       {hint ? <span className="text-[11px] leading-tight text-ink-400">{hint}</span> : null}
       {state.message ? (
-        <span className={cx('text-[11px] leading-tight', state.ok ? 'text-success-500' : 'text-danger-500')}>
+        <span
+          role="status"
+          aria-live="polite"
+          className={cx('text-[11px] leading-tight', state.ok ? 'text-success-500' : 'text-danger-500')}
+        >
           {state.message}
         </span>
       ) : null}

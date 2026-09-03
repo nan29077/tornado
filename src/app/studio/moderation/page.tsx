@@ -15,6 +15,9 @@ import { formatKst } from '@/lib/datetime';
 
 export const dynamic = 'force-dynamic';
 
+/** 한 화면에 그리는 목록 상한. 넘치면 "더 있음"을 안내한다. */
+const LIST_LIMIT = 200;
+
 const ACTION_LABEL: Record<string, { text: string; tone: 'neutral' | 'warning' | 'danger' }> = {
   BLOCK: { text: '차단 (후원 접수 거부)', tone: 'danger' },
   MASK: { text: '마스킹 (별표 처리)', tone: 'warning' },
@@ -24,21 +27,30 @@ const ACTION_LABEL: Record<string, { text: string; tone: 'neutral' | 'warning' |
 export default async function StudioModerationPage() {
   const { creatorId } = await requireCreator();
 
-  const [myWords, globalWords, blocked, blockHistory] = await Promise.all([
+  // 세 목록 모두 상한 없이 전량을 읽고 있었다. 금칙어·차단이 쌓이면 그대로 화면 무게가 된다.
+  // 상한을 두고, 넘치면 화면에서 "더 있음"을 알린다.
+  const [myWords, myWordTotal, globalWords, globalWordTotal, blocked, blockedTotal, blockHistory] = await Promise.all([
     prisma.bannedWord.findMany({
       where: { creatorId, scope: 'CREATOR' },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: LIST_LIMIT,
+      select: { id: true, word: true, action: true, active: true, createdAt: true },
     }),
+    prisma.bannedWord.count({ where: { creatorId, scope: 'CREATOR' } }),
     prisma.bannedWord.findMany({
       where: { scope: 'GLOBAL', active: true },
       orderBy: { word: 'asc' },
+      take: LIST_LIMIT,
       select: { id: true, word: true, action: true },
     }),
+    prisma.bannedWord.count({ where: { scope: 'GLOBAL', active: true } }),
     prisma.blockedDonor.findMany({
       where: { creatorId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: LIST_LIMIT,
       include: { donor: { select: { id: true, phoneMasked: true, displayName: true } } },
     }),
+    prisma.blockedDonor.count({ where: { creatorId } }),
     // 금칙어 차단으로 접수 거부된 최근 문자 (차단 사유 조정 근거)
     prisma.donation.findMany({
       where: { creatorId, status: 'CONTENT_BLOCKED' },
@@ -97,7 +109,14 @@ export default async function StudioModerationPage() {
         </section>
 
         <section>
-          <SectionTitle title="내 금칙어" description={`${myWords.length}건 등록됨`} />
+          <SectionTitle
+            title="내 금칙어"
+            description={
+              myWordTotal > myWords.length
+                ? `${myWordTotal}건 등록됨 (최근 ${myWords.length}건 표시)`
+                : `${myWordTotal}건 등록됨`
+            }
+          />
           {myWords.length === 0 ? (
             <EmptyState title="등록한 금칙어가 없습니다" description="방송에 노출되지 않았으면 하는 단어를 추가해 보세요." />
           ) : (
@@ -149,7 +168,14 @@ export default async function StudioModerationPage() {
         </section>
 
         <section>
-          <SectionTitle title="전역 금칙어" description="플랫폼 공통 금칙어입니다. 크리에이터는 변경할 수 없습니다." />
+          <SectionTitle
+            title="전역 금칙어"
+            description={
+              globalWordTotal > globalWords.length
+                ? `플랫폼 공통 금칙어 ${globalWordTotal}건 (앞 ${globalWords.length}건 표시). 크리에이터는 변경할 수 없습니다.`
+                : '플랫폼 공통 금칙어입니다. 크리에이터는 변경할 수 없습니다.'
+            }
+          />
           {globalWords.length === 0 ? (
             <EmptyState title="등록된 전역 금칙어가 없습니다" />
           ) : (
@@ -169,7 +195,10 @@ export default async function StudioModerationPage() {
         </section>
 
         <section>
-          <SectionTitle title="차단된 후원자" description={`${blocked.length}명`} />
+          <SectionTitle
+            title="차단된 후원자"
+            description={blockedTotal > blocked.length ? `${blockedTotal}명 (최근 ${blocked.length}명 표시)` : `${blockedTotal}명`}
+          />
           {blocked.length === 0 ? (
             <EmptyState title="차단된 후원자가 없습니다" description="후원 내역이나 문자 관리 화면에서 차단할 수 있습니다." />
           ) : (

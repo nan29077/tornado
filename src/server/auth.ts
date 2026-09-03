@@ -1,4 +1,4 @@
-import { env } from '@/lib/env';
+import { env, isLocal } from '@/lib/env';
 import { cookies, headers } from 'next/headers';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/server/db';
@@ -7,11 +7,13 @@ import { generateToken, tokenHash } from '@/lib/crypto';
 import { addDays } from '@/lib/datetime';
 import type { UserRole, CreatorStatus } from '@/generated/prisma/enums';
 import { clientIpFrom } from '@/server/rate-limit';
+import { logger } from '@/lib/logger';
 
 /**
  * 세션 기반 인증.
  * - 세션 토큰 원문은 쿠키에만 존재하고 DB 에는 해시만 저장한다.
- * - 관리자 화면은 role + permission 을 함께 검사한다.
+ * - `requireAdmin()` 은 role 만 본다. 권한 등급(permission) 검사는 변경 액션 래퍼
+ *   (`app/actions/admin/shared.ts` 의 requireWriteAdmin / assertFinanceAdmin)에서 한다.
  */
 
 export const SESSION_COOKIE = 'tornado_session';
@@ -58,9 +60,15 @@ export async function createSession(userId: string) {
   jar.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
-    // 프로덕션 빌드를 http(사내망 IP 등)로 접근하는 미리보기에서 세션이 떨어지지 않도록
-    // 실제 서비스 주소가 https 일 때만 Secure 속성을 붙인다.
-    secure: process.env.NODE_ENV === 'production' && env.baseUrl.startsWith('https'),
+    /**
+     * 프로덕션 빌드를 http(사내망 IP 등)로 접근하는 미리보기에서 세션이 떨어지지 않도록
+     * 실제 서비스 주소가 https 일 때만 Secure 속성을 붙인다.
+     *
+     * 판단 기준은 `NODE_ENV` 가 아니라 **APP_ENV + 서비스 주소**다. CLAUDE.md 는 .env 에
+     * NODE_ENV 를 넣지 말라고 하고 있어서, https 로 서비스하는데 NODE_ENV 가 production 이
+     * 아니면 세션 쿠키가 Secure 없이 나갈 수 있었다. 웹 후원 쪽 쿠키와도 기준이 달랐다.
+     */
+    secure: !isLocal && env.baseUrl.startsWith('https'),
     path: '/',
     maxAge: SESSION_DAYS * 86400,
   });
@@ -165,18 +173,46 @@ export async function writeAudit(input: {
   if (input.adminUserId) {
     const p = await prisma.adminProfile.findUnique({ where: { userId: input.adminUserId }, select: { id: true } });
     adminProfileId = p?.id ?? null;
+    if (!adminProfileId) {
+      // 권한 등급 없이 role 만 ADMIN 인 계정. 이 경우 감사로그가 "시스템"으로만 남아 추적이 안 된다.
+      // requireWriteAdmin() 이 이런 계정을 막지만, 흔적은 반드시 남긴다.
+      logger.error('감사로그: 관리자 프로필이 없는 계정의 변경', {
+        adminUserId: input.adminUserId,
+        action: input.action,
+        targetType: input.targetType,
+      });
+    }
   }
-  await prisma.adminAuditLog.create({
-    data: {
-      id: newId(),
-      adminId: adminProfileId,
+
+  /**
+   * 감사 기록 실패가 **작업 실패로 보이면 안 된다.**
+   *
+   * 예전에는 이 함수가 던지는 예외를 액션 래퍼가 잡아 `ok:false` 로 돌려줬다. 그런데 변경은
+   * 이미 DB 에 반영된 뒤라, 운영자는 "실패"를 보고 재시도하고 두 번째 시도는
+   * "이미 해당 상태입니다"로 거절되어 무슨 일이 일어났는지 알 수 없었다. 그리고 감사로그에는
+   * 아무 기록도 남지 않았다. 기록에 실패하면 애플리케이션 로그로라도 남기고 작업은 성공으로 둔다.
+   */
+  try {
+    await prisma.adminAuditLog.create({
+      data: {
+        id: newId(),
+        adminId: adminProfileId,
+        action: input.action,
+        targetType: input.targetType,
+        targetId: input.targetId ?? null,
+        beforeValue: (input.before ?? null) as object,
+        afterValue: (input.after ?? null) as object,
+        ip: clientIpFrom((name) => h.get(name)),
+        userAgent: h.get('user-agent') ?? null,
+      },
+    });
+  } catch (e) {
+    logger.error('감사로그 기록 실패 (작업 자체는 반영됨)', {
+      adminUserId: input.adminUserId ?? null,
       action: input.action,
       targetType: input.targetType,
       targetId: input.targetId ?? null,
-      beforeValue: (input.before ?? null) as object,
-      afterValue: (input.after ?? null) as object,
-      ip: clientIpFrom((name) => h.get(name)),
-      userAgent: h.get('user-agent') ?? null,
-    },
-  });
+      message: (e as Error).message,
+    });
+  }
 }

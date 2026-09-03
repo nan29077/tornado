@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { PageHeader } from '@/components/layout/console-shell';
 import { EmptyState, Notice, SectionTitle, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminInput, AdminSelect, CreatorOptions, FilterBar, Pager } from '@/components/admin/controls';
-import { PAGE_SIZE, parsePage } from '@/components/admin/constants';
+import { PAGE_SIZE, parsePage, clampPageOrRedirect } from '@/components/admin/constants';
 import { SettlementRequestsPanel, type SettlementRow } from '@/components/admin/settlement-requests';
 import { prisma } from '@/server/db';
 import { getSettlementSummary } from '@/server/services/settlement';
@@ -13,6 +13,11 @@ import type { Prisma } from '@/generated/prisma/client';
 import type { SettlementRequestStatus } from '@/generated/prisma/enums';
 
 export const dynamic = 'force-dynamic';
+
+/** 크리에이터 필터 드롭다운에 담을 최대 인원. 넘으면 화면에 절단 사실을 알린다. */
+const CREATOR_FILTER_LIMIT = 200;
+/** 요약 표에 계산할 최대 인원. 1명당 원장 집계 쿼리가 돌므로 무제한으로 둘 수 없다. */
+const SUMMARY_LIMIT = 50;
 
 const REQUEST_STATUSES: SettlementRequestStatus[] = ['REQUESTED', 'REVIEWING', 'APPROVED', 'PAID', 'PAYOUT_FAILED', 'REJECTED'];
 
@@ -44,7 +49,8 @@ export default async function AdminSettlementsPage({
     prisma.creatorProfile.findMany({
       where: { status: 'APPROVED' },
       orderBy: { displayName: 'asc' },
-      take: 60,
+      // 절단 여부를 알아야 경고를 띄울 수 있으므로 한 건 더 가져온다.
+      take: CREATOR_FILTER_LIMIT + 1,
       select: { id: true, displayName: true, code: true },
     }),
     prisma.settlementRequest.count({ where: requestWhere }),
@@ -89,13 +95,55 @@ export default async function AdminSettlementsPage({
     }),
   ]);
 
+  /**
+   * 요약 대상 선정.
+   *
+   * 예전에는 **이름순 상위 30명**만 계산했다. 정산할 돈이 있는지와 이름 순서는 아무 관계가 없어서,
+   * 이름이 뒤쪽인 크리에이터는 잔액이 아무리 많아도 이 표에 나타나지 않았고 경고도 없었다.
+   * 원장에 움직임이 있는 크리에이터를 **금액 순으로** 먼저 잡는다.
+   */
+  const ledgerCreators = await prisma.settlementLedger.groupBy({
+    by: ['creatorId'],
+    _sum: { amount: true },
+    orderBy: { _sum: { amount: 'desc' } },
+    take: SUMMARY_LIMIT + 1,
+  });
+  const summaryTruncated = ledgerCreators.length > SUMMARY_LIMIT;
+  const creatorFilterTruncated = creators.length > CREATOR_FILTER_LIMIT;
+  const creatorOptions = creators.slice(0, CREATOR_FILTER_LIMIT);
+  const summaryIds = ledgerCreators.slice(0, SUMMARY_LIMIT).map((g) => g.creatorId);
+  const summaryCreators = summaryIds.length
+    ? await prisma.creatorProfile.findMany({
+        where: { id: { in: summaryIds } },
+        select: { id: true, displayName: true, code: true },
+      })
+    : [];
+  const summaryCreatorMap = new Map(summaryCreators.map((c) => [c.id, c]));
+
   const summaries = await Promise.all(
-    creators.slice(0, 30).map(async (c) => ({ creator: c, summary: await getSettlementSummary(c.id) })),
+    summaryIds.map(async (id) => {
+      const creator = summaryCreatorMap.get(id);
+      return creator ? { creator, summary: await getSettlementSummary(id) } : null;
+    }),
   );
-  const visibleSummaries = summaries.filter((s) => s.summary.balance !== 0n || s.summary.pending !== 0n);
+  const visibleSummaries = summaries
+    .filter((s): s is NonNullable<typeof s> => s != null)
+    .filter((s) => s.summary.balance !== 0n || s.summary.pending !== 0n);
 
   const lastPage = Math.max(1, Math.ceil(ledgerTotal / PAGE_SIZE));
   const requestLastPage = Math.max(1, Math.ceil(requestTotal / PAGE_SIZE));
+
+  // 필터를 바꿔 결과가 줄었을 때 URL 의 옛 page 번호 때문에 빈 목록이 뜨는 것을 막는다.
+  // 목록이 둘이라 page 파라미터도 둘(page / rpage)이다. 각각 따로 본다.
+  const settlementParams = {
+    status: status ?? '',
+    creatorId: creatorId ?? '',
+    key: settlementKey,
+    page: String(page),
+    rpage: String(requestPage),
+  };
+  clampPageOrRedirect('/admin/settlements', settlementParams, page, lastPage, ledgerTotal, 'page');
+  clampPageOrRedirect('/admin/settlements', settlementParams, requestPage, requestLastPage, requestTotal, 'rpage');
 
   // 클라이언트 패널로 넘길 직렬화 행 (BigInt·Date 를 문자열로)
   const requestRows: SettlementRow[] = requests.map((r) => ({
@@ -145,8 +193,16 @@ export default async function AdminSettlementsPage({
       <section className="mt-5">
         <SectionTitle
           title="크리에이터별 정산 요약"
-          description="잔액 = 원장 합계 / 보류 = 정산 요청 중 금액 / 가능 = 지금 요청 가능한 금액"
+          description={`잔액 = 원장 합계 / 보류 = 정산 요청 중 금액 / 가능 = 지금 요청 가능한 금액 · 원장 금액 상위 ${SUMMARY_LIMIT}명까지 계산합니다`}
         />
+        {summaryTruncated ? (
+          <div className="mb-2">
+            <Notice tone="warning" title={`원장 금액 상위 ${SUMMARY_LIMIT}명만 표시하고 있습니다`}>
+              정산 원장이 있는 크리에이터가 {SUMMARY_LIMIT}명을 넘습니다. 여기에 없는 크리에이터의 잔액은
+              위 필터에서 해당 크리에이터를 선택하거나 크리에이터 상세 화면에서 확인해 주세요.
+            </Notice>
+          </div>
+        ) : null}
         {visibleSummaries.length === 0 ? (
           <EmptyState title="정산 원장이 있는 크리에이터가 없습니다" />
         ) : (
@@ -202,9 +258,17 @@ export default async function AdminSettlementsPage({
               ))}
             </AdminSelect>
           </AdminField>
-          <AdminField label="크리에이터" className="w-52">
+          <AdminField
+            label="크리에이터"
+            className="w-52"
+            hint={
+              creatorFilterTruncated
+                ? `이름순 ${CREATOR_FILTER_LIMIT}명까지만 표시됩니다`
+                : undefined
+            }
+          >
             <AdminSelect name="creatorId" defaultValue={creatorId ?? ''}>
-              <CreatorOptions creators={creators} />
+              <CreatorOptions creators={creatorOptions} />
             </AdminSelect>
           </AdminField>
           <AdminField label="정산 월 (원장 필터)" className="w-40">

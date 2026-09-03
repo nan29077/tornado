@@ -9,7 +9,8 @@ import { env } from '@/lib/env';
 import type { AdminActionState } from '@/components/admin/state';
 import { issueTemporaryPassword } from '@/server/services/password-reset';
 import { hasDirectTriggerWrittenApproval } from '@/server/services/financial-approval';
-import { run, text, optText, money, optMoney, enumValue, requiredId } from './shared';
+import { resolvePolicy } from '@/server/services/limits';
+import { run, text, optText, money, optMoney, enumValue, requiredId, assertOperationAdmin } from './shared';
 
 /**
  * 회원 / 후원자 / 크리에이터 / 코드 / 관리자 권한 관련 서버 액션.
@@ -30,6 +31,16 @@ export async function updateUserStatus(_prev: AdminActionState, fd: FormData): P
     if (!before) throw new Error('회원을 찾을 수 없습니다.');
     if (before.id === admin.id) throw new Error('본인 계정의 상태는 변경할 수 없습니다.');
     if (before.status === status) throw new Error('이미 해당 상태입니다.');
+    /**
+     * 관리자 계정의 상태 변경은 최고관리자만 할 수 있다.
+     *
+     * 상태를 내리면 그 계정의 모든 세션이 즉시 무효화되고 재로그인도 막힌다.
+     * 이 가드가 없으면 고객지원·재무 계정 하나로 **모든 최고관리자를 잠글 수 있다.**
+     * (바로 아래 임시 비밀번호 발급에는 같은 가드가 이미 있었다)
+     */
+    if (before.role === 'ADMIN' && admin.adminPermission !== 'SUPER_ADMIN') {
+      throw new Error('관리자 계정의 상태 변경은 SUPER_ADMIN 만 수행할 수 있습니다.');
+    }
 
     await prisma.user.update({ where: { id: userId }, data: { status } });
     if (status !== 'ACTIVE') {
@@ -177,6 +188,31 @@ export async function updateDonorLimitsByAdmin(_prev: AdminActionState, fd: Form
     if (dailyLimit !== null && monthlyLimit !== null && dailyLimit > monthlyLimit) {
       throw new Error('일일 한도는 월간 한도보다 클 수 없습니다.');
     }
+    if ((dailyLimit !== null && dailyLimit <= 0n) || (monthlyLimit !== null && monthlyLimit <= 0n)) {
+      throw new Error('한도는 0원보다 커야 합니다. 이용을 막으려면 [이용 제한]을 사용해 주세요.');
+    }
+
+    /**
+     * **개인 한도는 전역 정책을 넘을 수 없다.**
+     *
+     * `checkLimits` 는 개인값이 있으면 정책보다 우선 적용한다. 그래서 상한 검증이 없으면
+     * 관리자 화면에서 특정 후원자의 한도를 15자리까지 올려 플랫폼 한도 정책을 무제한으로
+     * 우회시킬 수 있었다. 후원자 본인 화면(actions/donor.ts)은 이미 정책 초과를 막고 있으니
+     * 관리자 경로도 같은 기준을 따른다. 정말 필요하면 전역 정책 자체를 바꿔야 한다.
+     */
+    const policy = await resolvePolicy(null, donorId);
+    if (dailyLimit !== null && dailyLimit > policy.donorDailyLimit) {
+      throw new Error(
+        `일일 한도는 전역 정책(${policy.donorDailyLimit.toString()}원)을 넘을 수 없습니다. ` +
+          '더 높이려면 한도 정책을 변경해 주세요.',
+      );
+    }
+    if (monthlyLimit !== null && monthlyLimit > policy.donorMonthlyLimit) {
+      throw new Error(
+        `월간 한도는 전역 정책(${policy.donorMonthlyLimit.toString()}원)을 넘을 수 없습니다. ` +
+          '더 높이려면 한도 정책을 변경해 주세요.',
+      );
+    }
 
     const before = await prisma.donorProfile.findUnique({
       where: { id: donorId },
@@ -203,6 +239,8 @@ export async function updateDonorLimitsByAdmin(_prev: AdminActionState, fd: Form
 
 export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
+    // 승인 취소·정지는 크리에이터의 수입이 그날로 끊기는 조치다. 고객지원 권한으로 할 일이 아니다.
+    assertOperationAdmin(admin, '크리에이터 심사 상태 변경');
     const creatorId = requiredId(fd, 'creatorId', '크리에이터');
     const status = enumValue(fd, 'status', ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'] as const, '심사 상태');
 
@@ -342,15 +380,25 @@ export async function applyGlobalAmountBounds(_prev: AdminActionState, fd: FormD
     const maxAmount = money(fd, 'maxAmount', '1건 최대 후원금', { min: 100n });
     if (minAmount > maxAmount) throw new Error('최소 금액이 최대 금액보다 클 수 없습니다.');
 
+    /**
+     * 되돌릴 수 없는 일괄 변경이므로 **최고관리자·운영 권한으로 제한**하고,
+     * 대상도 승인된 크리에이터로 좁힌다. 예전에는 where 없이 전 행을 덮어써
+     * 반려·정지 채널까지 함께 바뀌었고, 개별 조정값도 한 번에 사라졌다.
+     */
+    if (admin.adminPermission !== 'SUPER_ADMIN' && admin.adminPermission !== 'OPERATION') {
+      throw new Error('전체 일괄 적용은 최고관리자 또는 운영 권한에서만 가능합니다.');
+    }
+
+    const scope = { status: 'APPROVED' as const };
     const result = await prisma.$transaction(async (tx) => {
-      const total = await tx.creatorProfile.count();
-      await tx.creatorProfile.updateMany({ data: { minAmount, maxAmount } });
+      const total = await tx.creatorProfile.count({ where: scope });
+      await tx.creatorProfile.updateMany({ where: scope, data: { minAmount, maxAmount } });
       const below = await tx.creatorProfile.updateMany({
-        where: { donationAmount: { lt: minAmount } },
+        where: { ...scope, donationAmount: { lt: minAmount } },
         data: { donationAmount: minAmount },
       });
       const above = await tx.creatorProfile.updateMany({
-        where: { donationAmount: { gt: maxAmount } },
+        where: { ...scope, donationAmount: { gt: maxAmount } },
         data: { donationAmount: maxAmount },
       });
       return { total, clamped: below.count + above.count };
@@ -445,6 +493,8 @@ async function generateUniqueCode(): Promise<string> {
 
 export async function reissueCreatorCode(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
+    // 코드를 바꾸면 밖에 안내된 기존 코드가 전부 죽는다. 되돌릴 수 없다.
+    assertOperationAdmin(admin, '후원 코드 재발급');
     const creatorId = requiredId(fd, 'creatorId', '크리에이터');
     const before = await prisma.creatorProfile.findUnique({
       where: { id: creatorId },
@@ -497,16 +547,20 @@ export async function updateAdminPermission(_prev: AdminActionState, fd: FormDat
 
     const before = await prisma.adminProfile.findUnique({
       where: { id: profileId },
-      select: { id: true, permission: true, userId: true, user: { select: { email: true } } },
+      select: { id: true, permission: true, userId: true, revokedAt: true, user: { select: { email: true } } },
     });
     if (!before) throw new Error('관리자를 찾을 수 없습니다.');
+    // 자격이 회수된 계정은 권한만 올려도 콘솔에 들어오지 못한다(role 이 USER). 오해를 막는다.
+    if (before.revokedAt) {
+      throw new Error('관리자 자격이 회수된 계정입니다. 다시 부여하려면 [관리자 추가]에서 이메일로 등록해 주세요.');
+    }
     if (before.userId === admin.id && permission !== before.permission) {
       throw new Error('본인의 권한은 변경할 수 없습니다. 다른 SUPER_ADMIN 에게 요청해 주세요.');
     }
     if (before.permission === permission) throw new Error('이미 해당 권한입니다.');
 
     if (before.permission === 'SUPER_ADMIN' && permission !== 'SUPER_ADMIN') {
-      const superCount = await prisma.adminProfile.count({ where: { permission: 'SUPER_ADMIN' } });
+      const superCount = await prisma.adminProfile.count({ where: { permission: 'SUPER_ADMIN', revokedAt: null } });
       if (superCount <= 1) throw new Error('마지막 SUPER_ADMIN 의 권한은 강등할 수 없습니다.');
     }
 
@@ -521,6 +575,73 @@ export async function updateAdminPermission(_prev: AdminActionState, fd: FormDat
     });
     revalidatePath('/admin/admins');
     return `${before.user.email ?? profileId} 의 권한을 ${permission} 으로 변경했습니다.`;
+  });
+}
+
+// =========================================================== 관리자 권한 회수
+
+/**
+ * 관리자 자격을 **완전히** 회수한다(AdminProfile 삭제 + role 을 USER 로 되돌림).
+ *
+ * 기존 화면에는 권한 "변경" 만 있어서, 퇴사자를 처리할 수 있는 가장 낮은 단계가
+ * READ_ONLY 였다. 그런데 READ_ONLY 도 후원자 연락처·결제 이력·정산 내역을 전부 열람한다.
+ * 조직을 떠난 사람의 계정이 관리자 콘솔에 계속 들어올 수 있다는 뜻이다.
+ *
+ * 감사로그(admin_audit_log)는 누가 무엇을 했는지의 기록이므로 **지우지 않는다.**
+ * 그래서 AdminProfile 행이 사라져도 로그의 adminUserId 는 그대로 남는다.
+ */
+export async function revokeAdmin(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
+  return run(async (admin) => {
+    if (admin.adminPermission !== 'SUPER_ADMIN') {
+      throw new Error('관리자 권한 회수는 SUPER_ADMIN 만 수행할 수 있습니다.');
+    }
+    const profileId = requiredId(fd, 'profileId', '관리자');
+
+    const before = await prisma.adminProfile.findUnique({
+      where: { id: profileId },
+      select: { id: true, permission: true, userId: true, user: { select: { email: true, role: true } } },
+    });
+    if (!before) throw new Error('관리자를 찾을 수 없습니다.');
+
+    // 본인 회수는 막는다. 실수 한 번으로 콘솔에서 스스로 잠기는 사고를 만들지 않는다.
+    if (before.userId === admin.id) {
+      throw new Error('본인의 관리자 자격은 회수할 수 없습니다. 다른 SUPER_ADMIN 에게 요청해 주세요.');
+    }
+    // 마지막 SUPER_ADMIN 을 없애면 아무도 권한을 되돌릴 수 없다.
+    if (before.permission === 'SUPER_ADMIN') {
+      const superCount = await prisma.adminProfile.count({ where: { permission: 'SUPER_ADMIN', revokedAt: null } });
+      if (superCount <= 1) throw new Error('마지막 SUPER_ADMIN 의 자격은 회수할 수 없습니다.');
+    }
+
+    /**
+     * 프로필 행은 남기고 회수 표시만 한다(감사로그 FK 보존). 실제 접근 차단은
+     * role 을 USER 로 되돌리는 쪽이 한다 — requireAdmin 이 role 만 본다.
+     * 권한도 READ_ONLY 로 낮춰, 나중에 role 이 잘못 되돌아가도 최소 권한만 남게 한다.
+     * 열려 있는 세션도 함께 끊는다. 그러지 않으면 브라우저를 켜 둔 사람은 그대로 들어온다.
+     */
+    await prisma.$transaction([
+      prisma.adminProfile.update({
+        where: { id: profileId },
+        data: { revokedAt: new Date(), permission: 'READ_ONLY' },
+      }),
+      prisma.user.update({ where: { id: before.userId }, data: { role: 'DONOR' } }),
+      prisma.userSession.updateMany({
+        where: { userId: before.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+
+    await writeAudit({
+      adminUserId: admin.id,
+      action: 'ADMIN_REVOKE',
+      targetType: 'User',
+      targetId: before.userId,
+      before: { role: before.user.role, permission: before.permission },
+      after: { role: 'DONOR', permission: null },
+    });
+    revalidatePath('/admin/admins');
+    revalidatePath('/admin/users');
+    return `${before.user.email ?? before.userId} 계정의 관리자 자격을 회수했습니다.`;
   });
 }
 
@@ -542,23 +663,35 @@ export async function createAdminByEmail(_prev: AdminActionState, fd: FormData):
 
     const user = await prisma.user.findUnique({
       where: { email },
-      select: { id: true, role: true, status: true, adminProfile: { select: { id: true } } },
+      select: {
+        id: true, role: true, status: true,
+        adminProfile: { select: { id: true, revokedAt: true } },
+      },
     });
     if (!user) throw new Error('해당 이메일로 가입된 계정이 없습니다. 먼저 일반 회원가입을 완료해 주세요.');
-    if (user.adminProfile) throw new Error('이미 관리자로 등록된 계정입니다.');
+    // 자격을 회수했던 계정은 프로필 행이 남아 있다(감사로그 보존). 새로 만들지 말고 되살린다.
+    if (user.adminProfile && !user.adminProfile.revokedAt) {
+      throw new Error('이미 관리자로 등록된 계정입니다.');
+    }
     if (user.role === 'CREATOR') {
       throw new Error('크리에이터 계정은 관리자를 겸할 수 없습니다. 별도 계정으로 등록해 주세요.');
     }
     if (user.status !== 'ACTIVE') throw new Error('활성 상태의 계정만 관리자로 등록할 수 있습니다.');
 
+    const reinstating = !!user.adminProfile;
     await prisma.$transaction([
       prisma.user.update({ where: { id: user.id }, data: { role: 'ADMIN' } }),
-      prisma.adminProfile.create({ data: { id: newId(), userId: user.id, permission } }),
+      user.adminProfile
+        ? prisma.adminProfile.update({
+            where: { id: user.adminProfile.id },
+            data: { permission, revokedAt: null },
+          })
+        : prisma.adminProfile.create({ data: { id: newId(), userId: user.id, permission } }),
     ]);
 
     await writeAudit({
       adminUserId: admin.id,
-      action: 'ADMIN_CREATE',
+      action: reinstating ? 'ADMIN_REINSTATE' : 'ADMIN_CREATE',
       targetType: 'User',
       targetId: user.id,
       before: { role: user.role },
@@ -566,6 +699,6 @@ export async function createAdminByEmail(_prev: AdminActionState, fd: FormData):
     });
     revalidatePath('/admin/admins');
     revalidatePath('/admin/users');
-    return `${email} 계정을 ${permission} 권한의 관리자로 등록했습니다.`;
+    return `${email} 계정을 ${permission} 권한의 관리자로 ${reinstating ? '다시 등록' : '등록'}했습니다.`;
   });
 }

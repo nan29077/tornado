@@ -1,6 +1,6 @@
 import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle, Notice, SectionTitle } from '@/components/ui';
-import { AdminField, AdminTextarea } from '@/components/admin/controls';
+import { MtTemplateEditor } from '@/components/admin/mt-template-editor';
 import { ActionButton, ActionForm } from '@/components/admin/action-form';
 import { saveMtTemplateAction, resetMtTemplateAction } from '@/app/actions/admin/mt-templates';
 import { prisma } from '@/server/db';
@@ -94,19 +94,17 @@ export default async function AdminMtTemplatesPage() {
               </div>
 
               <div className="mt-3">
-                <ActionForm action={saveMtTemplateAction} submitLabel="본문 저장">
-                  <input type="hidden" name="code" value={code} />
-                  <AdminField
-                    label="문자 본문"
-                    hint={`최대 ${MT_TEMPLATE_BODY_MAX_LENGTH}자. 비우고 저장할 수는 없으며, 기본 문구로 되돌리려면 아래 초기화를 사용하세요.`}
-                  >
-                    <AdminTextarea
-                      name="body"
-                      rows={5}
-                      maxLength={MT_TEMPLATE_BODY_MAX_LENGTH}
-                      defaultValue={row?.body ?? meta.defaultBody}
-                    />
-                  </AdminField>
+                <ActionForm
+                  action={saveMtTemplateAction}
+                  submitLabel="본문 저장"
+                  confirm={`"${meta.label}" 문구를 저장하면 다음 발송부터 후원자 휴대폰에 이 내용이 그대로 찍힙니다. 진행할까요?`}
+                >
+                  <MtTemplateEditor
+                    code={code}
+                    defaultBody={row?.body ?? meta.defaultBody}
+                    variables={meta.variables.map((v) => ({ ...v }))}
+                    maxLength={MT_TEMPLATE_BODY_MAX_LENGTH}
+                  />
                 </ActionForm>
               </div>
 

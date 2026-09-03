@@ -12,11 +12,16 @@ import { MAX_NICKNAME_LEN } from '@/lib/game-catalog';
  *  - 한 화면에 입력 하나. 방송을 보면서 한 손으로 끝나야 한다.
  *  - 참여 후에는 결과를 조회하지 않는다. 결과는 방송 화면에서 발표된다.
  *    (시청자 수천 명이 각자 폴링하면 참여 API 보다 결과 조회가 서버를 먼저 무너뜨린다)
- *  - 기기 식별값은 브라우저가 만들어 보관한다. IP 로 묶으면 이동통신망 NAT 때문에
+ *  - 기기 식별값은 브라우저가 만들어 보관한다. IP 만으로 묶으면 이동통신망 NAT 때문에
  *    서로 다른 시청자가 한 사람으로 취급되어 정상 참여가 막힌다.
+ *    (중복 방지의 두 번째 겹인 네트워크 지문 단위 상한은 서버가 처리한다)
+ *  - 정답 여부는 서버가 알려 주지 않는다. 응답으로 알려 주면 참여 API 가 정답 오라클이 된다.
  */
 
 const CLIENT_KEY = 'donaido_play_id';
+
+/** localStorage 를 쓸 수 없는 브라우저용 폴백. 탭이 살아 있는 동안 값을 유지한다. */
+let memoryClientId = '';
 
 function clientId(): string {
   if (typeof window === 'undefined') return '';
@@ -29,8 +34,15 @@ function clientId(): string {
     window.localStorage.setItem(CLIENT_KEY, id);
     return id;
   } catch {
-    // 저장이 막힌 브라우저(사생활 보호 모드 등)에서는 매번 새 값으로 참여한다.
-    return `tmp${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+    // 저장이 막힌 브라우저(사생활 보호 모드 등). 매번 새 값을 만들면 새로고침만으로
+    // 반복 참여가 되므로, 이 세션 안에서는 같은 값을 유지한다.
+    // (그래도 서버가 네트워크 지문 단위 상한을 따로 걸고 있다)
+    if (!memoryClientId) {
+      const bytes = new Uint8Array(16);
+      window.crypto.getRandomValues(bytes);
+      memoryClientId = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    }
+    return memoryClientId;
   }
 }
 
@@ -72,7 +84,7 @@ export function PlayClient({
   const [choice, setChoice] = React.useState<number | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
-  const [done, setDone] = React.useState<{ correct?: boolean; count: number } | null>(null);
+  const [done, setDone] = React.useState<{ count: number } | null>(null);
   const [left, setLeft] = React.useState<number | null>(null);
 
   React.useEffect(() => {
@@ -112,7 +124,7 @@ export function PlayClient({
         setError(data.error || '참여에 실패했습니다.');
         return;
       }
-      setDone({ correct: data.correct, count: data.participantCount ?? participantCount + 1 });
+      setDone({ count: data.participantCount ?? participantCount + 1 });
     } catch {
       setError('네트워크 오류입니다. 잠시 후 다시 시도해 주세요.');
     } finally {
@@ -133,8 +145,10 @@ export function PlayClient({
             <br />
             결과는 방송 화면에서 발표됩니다.
           </p>
-          {type === 'QUIZ' && done.correct != null ? (
-            <p className="mt-3 text-[13px] font-bold text-ink-400">답안이 접수되었습니다.</p>
+          {type === 'QUIZ' || type === 'KEYWORD' || type === 'NUMBER_GUESS' ? (
+            <p className="mt-3 text-[13px] font-bold text-ink-400">
+              답안이 접수되었습니다. 정답은 방송에서 공개됩니다.
+            </p>
           ) : null}
         </div>
       </Card>

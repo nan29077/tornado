@@ -5,11 +5,13 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { ActionForm } from '@/components/studio/action-form';
 import { BANKS } from '@/components/studio/banks';
 import { ResidentField } from '@/components/studio/resident-field';
+import { SettlementAmountField } from '@/components/studio/settlement-amount-field';
 import { requestSettlementAction, saveSettlementAccountAction } from '@/app/actions/studio';
 import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { getSettlementSummary, resolveFeePolicy, calculateWithholding, computeFees } from '@/server/services/settlement';
 import { formatWon, formatNumber } from '@/lib/money';
+import { env } from '@/lib/env';
 import { formatKst, kstDateKey, kstMonthKey } from '@/lib/datetime';
 import { settlementDateFor, toDateKey, formatDateKeyKo, SETTLEMENT_BUSINESS_DAYS } from '@/lib/business-day';
 import { loadHolidaysAround, buildScheduleNotice } from '@/server/services/settlement-schedule';
@@ -65,10 +67,32 @@ export default async function StudioSettlementPage({
       take: 50,
       select: { id: true, entryType: true, amount: true, memo: true, occurredAt: true, settlementKey: true },
     }),
+    /**
+     * `select` 를 명시한다.
+     *
+     * 없으면 주민등록번호 암호문(`residentEnc`)까지 전 컬럼이 이 화면의 메모리로 올라온다.
+     * 지금은 안전한 필드만 렌더하지만, 이 배열을 클라이언트 컴포넌트로 넘기는 리팩터가
+     * 한 번만 있어도 곧바로 유출이 된다.
+     */
     prisma.settlementRequest.findMany({
       where: { creatorId },
-      orderBy: { requestedAt: 'desc' },
+      orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
       take: 20,
+      select: {
+        id: true,
+        status: true,
+        amount: true,
+        withholding: true,
+        payoutAmount: true,
+        memo: true,
+        adminMemo: true,
+        payoutFailReason: true,
+        payoutBatchNo: true,
+        requestedAt: true,
+        approvedAt: true,
+        paidAt: true,
+        rejectedAt: true,
+      },
     }),
     prisma.settlementAccount.findUnique({
       where: { creatorId },
@@ -86,6 +110,9 @@ export default async function StudioSettlementPage({
         paidAt: { gte: new Date(range.start.getTime() - 45 * 86_400_000), lt: range.end },
       },
       select: { paidAt: true, amount: true, netAmount: true },
+      // 일별 집계용이라 정렬·상한이 없으면 후원이 많은 채널에서 수만 행이 매 요청마다 올라온다.
+      orderBy: { paidAt: 'desc' },
+      take: 20000,
     }),
     prisma.settlementRequest.findMany({
       where: { creatorId, paidAt: { gte: range.start, lt: range.end } },
@@ -170,6 +197,7 @@ export default async function StudioSettlementPage({
   // 원천징수 미리보기는 실제 요청 시 계산과 **같은 함수**를 써야 한다.
   // 화면은 3.3% 단일 절사, 서버는 2단계 계산이면 요청 직후 금액이 달라져
   // 크리에이터가 "표시된 금액과 다르다"고 느끼게 된다.
+  const minSettlement = env.settlement.minRequestAmount;
   const previewWithholding = calculateWithholding(summary.available);
   const isCurrentMonth = range.key === kstMonthKey();
 
@@ -424,22 +452,17 @@ export default async function StudioSettlementPage({
                   />
                   <DataRow label="정산 가능금" value={formatWon(summary.available)} />
                   <DataRow
-                    label="소득세 (3%)"
-                    value={formatWon(previewWithholding.incomeTax)}
-                  />
-                  <DataRow
-                    label="지방소득세 (소득세의 10%)"
-                    value={formatWon(previewWithholding.localTax)}
-                  />
-                  <DataRow
-                    label="원천징수 합계"
+                    label="전액 요청 시 원천징수"
                     value={
                       previewWithholding.exempt
                         ? '0원 (소액부징수)'
                         : formatWon(previewWithholding.total)
                     }
                   />
-                  <DataRow label="실지급 예상" value={formatWon(summary.available - previewWithholding.total)} />
+                  <DataRow
+                    label="전액 요청 시 실지급"
+                    value={formatWon(summary.available - previewWithholding.total)}
+                  />
                 </div>
 
                 {!account || !account.verified ? (
@@ -449,16 +472,17 @@ export default async function StudioSettlementPage({
                   </Notice>
                 ) : summary.available <= 0n ? (
                   <Notice tone="neutral">현재 정산 가능한 금액이 없습니다.</Notice>
+                ) : minSettlement > 0n && summary.available < minSettlement ? (
+                  <Notice tone="neutral" title={`최소 정산 요청 금액은 ${formatWon(minSettlement)}입니다`}>
+                    현재 정산 가능금은 {formatWon(summary.available)} 입니다. {formatWon(minSettlement)} 이상
+                    쌓이면 정산을 요청할 수 있습니다.
+                  </Notice>
                 ) : (
                   <ActionForm action={requestSettlementAction} submitLabel="정산 요청">
-                    <Field label="요청 금액 (원)" hint={`정산 가능금 ${formatWon(summary.available)} 이하로 입력해 주세요.`}>
-                      <Input
-                        name="amount"
-                        inputMode="numeric"
-                        defaultValue={summary.available.toString()}
-                        className="tabular-nums"
-                      />
-                    </Field>
+                    <SettlementAmountField
+                      available={summary.available.toString()}
+                      minAmount={env.settlement.minRequestAmount.toString()}
+                    />
 
                     <ResidentField priorMasked={priorResident?.residentMasked ?? null} />
 

@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle, EmptyState, Notice, SectionTitle, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminInput, AdminSelect, FilterBar, Pager } from '@/components/admin/controls';
 import { ActionForm, SelectActionForm } from '@/components/admin/action-form';
-import { PAGE_SIZE, parsePage } from '@/components/admin/constants';
+import { PAGE_SIZE, parsePage, clampPageOrRedirect } from '@/components/admin/constants';
 import { updateCreatorStatus, applyGlobalAmountBounds } from '@/app/actions/admin/accounts';
 import { prisma } from '@/server/db';
 import { formatWon, formatNumber } from '@/lib/money';
@@ -28,7 +28,6 @@ const creatorSelect = {
   code: true,
   status: true,
   donationAmount: true,
-  businessNo: true,
   approvedAt: true,
   createdAt: true,
   user: { select: { email: true, name: true, phoneMasked: true } },
@@ -46,7 +45,6 @@ function CreatorRows({
     code: string;
     status: CreatorStatus;
     donationAmount: bigint;
-    businessNo: string | null;
     approvedAt: Date | null;
     createdAt: Date;
     user: { email: string | null; name: string | null; phoneMasked: string | null };
@@ -92,6 +90,7 @@ function CreatorRows({
           </Td>
           <Td>
             <SelectActionForm
+                        ariaLabel="크리에이터 심사 상태 변경"
               action={updateCreatorStatus}
               values={{ creatorId: c.id }}
               name="status"
@@ -133,7 +132,13 @@ export default async function AdminCreatorsPage({
   const status = STATUS_OPTIONS.some((s) => s.value === sp.status) ? (sp.status as CreatorStatus) : undefined;
 
   const where: Prisma.CreatorProfileWhereInput = {
-    ...(status ? { status } : {}),
+    /**
+     * 상단 "심사 대기" 표에 이미 나오는 대상은 하단 전체 목록에서 뺀다.
+     * 두 곳에 같은 크리에이터의 심사 폼이 동시에 뜨면, 한쪽에서 승인한 뒤에도
+     * 다른 쪽 폼이 옛 상태를 그대로 보여 준다(낙관적 상태가 서로 동기화되지 않는다).
+     * 상태 필터를 직접 '심사대기'로 고른 경우에는 그대로 보여 준다.
+     */
+    ...(status ? { status } : { status: { not: 'PENDING' } }),
     ...(q
       ? {
           OR: [
@@ -146,7 +151,7 @@ export default async function AdminCreatorsPage({
       : {}),
   };
 
-  const [pending, pendingTotal, total, creators, byStatus] = await Promise.all([
+  const [pending, pendingTotal, total, creators, byStatus, bounds] = await Promise.all([
     prisma.creatorProfile.findMany({
       where: { status: 'PENDING' },
       orderBy: { createdAt: 'asc' },
@@ -157,15 +162,29 @@ export default async function AdminCreatorsPage({
     prisma.creatorProfile.count({ where }),
     prisma.creatorProfile.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       select: creatorSelect,
     }),
+    // 상단 타일은 전체 현황을 보여 주는 것이 목적이므로 필터를 적용하지 않는다(라벨로 명시).
     prisma.creatorProfile.groupBy({ by: ['status'], _count: { _all: true } }),
+    // 일괄 적용 폼에 채울 "현재 적용 중인 범위". 대다수가 공유하는 값을 대표값으로 쓴다.
+    prisma.creatorProfile.aggregate({
+      where: { status: 'APPROVED' },
+      _min: { minAmount: true },
+      _max: { maxAmount: true },
+    }),
   ]);
 
+  const currentBounds = {
+    min: (bounds._min.minAmount ?? 1000n).toString(),
+    max: (bounds._max.maxAmount ?? 50000n).toString(),
+  };
+
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // 필터를 바꿔 결과가 줄었을 때 URL 의 옛 page 번호 때문에 빈 목록이 뜨는 것을 막는다.
+  clampPageOrRedirect('/admin/creators', { q, status: status ?? '' }, page, lastPage, total);
   const count = (s: CreatorStatus) => byStatus.find((b) => b.status === s)?._count._all ?? 0;
 
   return (
@@ -176,10 +195,10 @@ export default async function AdminCreatorsPage({
       />
 
       <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-        <StatTile label="심사대기" value={formatNumber(count('PENDING'))} tone={count('PENDING') > 0 ? 'warning' : 'neutral'} />
-        <StatTile label="승인" value={formatNumber(count('APPROVED'))} tone="success" />
-        <StatTile label="반려" value={formatNumber(count('REJECTED'))} />
-        <StatTile label="정지" value={formatNumber(count('SUSPENDED'))} tone={count('SUSPENDED') > 0 ? 'danger' : 'neutral'} />
+        <StatTile label="심사대기" value={formatNumber(count('PENDING'))} sub="전체 기준" tone={count('PENDING') > 0 ? 'warning' : 'neutral'} />
+        <StatTile label="승인" value={formatNumber(count('APPROVED'))} sub="전체 기준" tone="success" />
+        <StatTile label="반려" value={formatNumber(count('REJECTED'))} sub="전체 기준" />
+        <StatTile label="정지" value={formatNumber(count('SUSPENDED'))} sub="전체 기준" tone={count('SUSPENDED') > 0 ? 'danger' : 'neutral'} />
       </div>
 
       <section className="mb-5">
@@ -189,21 +208,24 @@ export default async function AdminCreatorsPage({
             <Badge tone="warning">전체 크리에이터 일괄 변경</Badge>
           </div>
           <p className="mt-1 mb-3 text-[12.5px] leading-relaxed text-ink-500">
-            모든 크리에이터의 문자 1건당 후원금 최소·최대 허용 범위를 한 번에 변경합니다. 크리에이터는 이 범위 안에서만
-            1건 후원금을 정할 수 있으며, 현재 설정 금액이 새 범위를 벗어난 크리에이터는 범위 안으로 자동 보정됩니다.
-            개별 크리에이터의 범위는 상세 화면에서 따로 조정할 수 있습니다.
+            승인된 크리에이터 <strong>{formatNumber(count('APPROVED'))}명</strong>의 문자 1건당 후원금 최소·최대 허용
+            범위를 한 번에 변경합니다. 현재 설정 금액이 새 범위를 벗어난 크리에이터는 범위 안으로 자동 보정되며,
+            <strong> 개별로 조정해 둔 값도 함께 덮어씁니다.</strong> 개별 범위는 상세 화면에서 다시 조정할 수 있습니다.
           </p>
           <ActionForm
             action={applyGlobalAmountBounds}
             submitLabel="전체 적용"
-            confirm="모든 크리에이터에게 새 허용 범위를 일괄 적용합니다. 범위를 벗어난 1건 후원금은 자동 보정되며 감사로그에 기록됩니다. 계속할까요?"
+            confirm={`승인된 크리에이터 ${count('APPROVED')}명 전체에 새 허용 범위를 적용합니다. 개별로 조정해 둔 값도 함께 덮어쓰며 되돌릴 수 없습니다. 계속할까요?`}
           >
             <div className="grid max-w-xl grid-cols-2 gap-2">
               <AdminField label="1건 최소 (원)">
-                <AdminInput name="minAmount" inputMode="numeric" defaultValue="1000" required />
+                {/* 기본값을 하드코딩하지 않고 현재 적용 중인 값을 그대로 보여 준다.
+                    예전에는 1000/50000 이 늘 채워져 있어, 다른 목적으로 들어온 운영자가
+                    그 값을 현재 설정으로 오해하고 [전체 적용]을 눌러 전원을 초기화할 수 있었다. */}
+                <AdminInput name="minAmount" inputMode="numeric" defaultValue={String(currentBounds.min)} required />
               </AdminField>
               <AdminField label="1건 최대 (원)">
-                <AdminInput name="maxAmount" inputMode="numeric" defaultValue="50000" required />
+                <AdminInput name="maxAmount" inputMode="numeric" defaultValue={String(currentBounds.max)} required />
               </AdminField>
             </div>
           </ActionForm>

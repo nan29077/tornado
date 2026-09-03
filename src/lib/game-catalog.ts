@@ -326,6 +326,20 @@ export function normalizeConfig(type: string, input: Record<string, unknown>): R
   }
 }
 
+/**
+ * 키워드 정규화 — **저장 · 집계 · 판정 · 발표가 반드시 이 함수 하나를 쓴다.**
+ *
+ * 예전에는 저장 시에만 공백을 지우고(`replace(/\s+/g,'')`) 집계·발표는 공백을 남겨서,
+ * 크리에이터가 키워드를 "해피 뉴이어" 처럼 띄어쓰기와 함께 저장하면
+ *  - 참여자에게는 "정답" 으로 보이는데
+ *  - 방송 화면의 정답자 수는 계속 0이고
+ *  - [결과 발표]를 눌러도 **당첨자 없이** 발표되는
+ * 사고가 났다. 규칙을 한 곳에만 둔다.
+ */
+export function normalizeKeyword(raw: string | null | undefined): string {
+  return (raw ?? '').trim().toLowerCase().replace(/\s+/g, '').slice(0, MAX_KEYWORD_LEN);
+}
+
 /** 상태 라벨 (스튜디오 · 오버레이 공용) */
 export const ROUND_STATUS_LABEL: Record<RoundStatus, string> = {
   OPEN: '진행 중',

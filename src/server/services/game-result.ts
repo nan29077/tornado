@@ -1,4 +1,5 @@
 import { randomInt } from 'node:crypto';
+import { normalizeKeyword } from '@/lib/game-catalog';
 
 /**
  * 게임 결과 계산 (순수 로직).
@@ -161,13 +162,16 @@ export function computeEntryResult(
       };
     }
     case 'KEYWORD': {
-      const keyword = String(config.keyword ?? '').trim().toLowerCase();
+      // 참여 저장·실시간 집계와 **같은 정규화**를 써야 한다.
+      // 여기만 공백을 남겨 두면 키워드에 띄어쓰기가 있을 때 정답자가 있어도 당첨자 0명이 된다.
+      const keyword = normalizeKeyword(String(config.keyword ?? ''));
       const winnerCount = Math.max(1, Number(config.winnerCount) || 1);
+      const correctAll = participants.filter((p) => (p.entry ?? '') === keyword);
       // 선착순이므로 섞지 않는다. 들어온 순서 그대로 자른다.
-      const matched = participants.filter((p) => (p.entry ?? '') === keyword).slice(0, winnerCount);
+      const matched = correctAll.slice(0, winnerCount);
       return {
         keyword: String(config.keyword ?? ''),
-        totalCorrect: participants.filter((p) => (p.entry ?? '') === keyword).length,
+        totalCorrect: correctAll.length,
         ranks: matched.map((p, i) => ({
           rank: i + 1,
           name: p.displayName,

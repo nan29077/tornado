@@ -53,8 +53,14 @@ export interface WebDonationResult {
 }
 
 export async function createWebDonation(input: WebDonationInput): Promise<WebDonationResult> {
+  /**
+   * 크리에이터 프로필 승인 여부만 보면 안 된다.
+   * 공개 후원 페이지는 `user.status === 'ACTIVE'` 까지 함께 확인하는데(정지 계정에 돈이 계속
+   * 쌓이는 것을 막기 위해서다) 정작 결제 파이프라인 진입부에서 빠져 있었다.
+   * creatorId 를 직접 POST 하면 정지된 계정도 후원을 계속 받을 수 있었다.
+   */
   const creator = await prisma.creatorProfile.findFirst({
-    where: { id: input.creatorId, status: 'APPROVED' },
+    where: { id: input.creatorId, status: 'APPROVED', user: { status: 'ACTIVE' } },
   });
   if (!creator) return { ok: false, message: '후원할 수 없는 크리에이터입니다.' };
 
@@ -89,6 +95,14 @@ export async function createWebDonation(input: WebDonationInput): Promise<WebDon
     creatorId: creator.id,
     amount: input.amount,
     blockedByCreator: Boolean(blocked),
+    /**
+     * 속도 카운터는 접수 시점에 소비한다(executePayment 는 재검사만 한다).
+     *
+     * 이 흐름은 본인확인 없이 남의 번호로도 시작할 수 있어 "피해자 카운터 태우기"가
+     * 이론적으로 가능하지만, 카운터를 여기서 빼면 웹 PIN 경로 전체가 속도 제한 밖으로
+     * 나가 실제 남용을 막지 못한다. 남용 방어를 유지하고, 가용성 쪽은 발신 IP 제한과
+     * 번호당 발송 제한(10분 3건)으로 좁힌다.
+     */
   });
   if (!limit.ok) {
     // 금액 범위 오류는 입력 실수라 이상거래로 기록하지 않는다.

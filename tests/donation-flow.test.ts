@@ -377,8 +377,10 @@ describe('MO 수신 → 후원 → 결제 → 방송 흐름', () => {
   it('[20] 유튜브 할당량이 소진되면 전송을 보류하되 결제는 유지된다', async () => {
     await seedRegisteredDonor(fx.donorPhone);
     const { kv } = await import('@/server/redis');
-    const { kstDateKey } = await import('@/lib/datetime');
-    await kv.set(`yt:quota:${kstDateKey()}`, '10000', 3600);
+    // 유튜브 일일 할당량은 **태평양시 자정**에 초기화된다(구글 규격). KST 기준으로 세면
+    // 하루 중 16~17시간 동안 카운터와 실제 잔량이 어긋난다. 카운터 키도 PT 날짜를 쓴다.
+    const { ptDateKey } = await import('@/lib/datetime');
+    await kv.set(`yt:quota:${ptDateKey()}`, '10000', 3600);
 
     const res = await inbound(moPayload({ to: fx.moNumber }));
     const donation = await prisma.donation.findFirstOrThrow({ where: { id: res.donationId } });
@@ -388,7 +390,7 @@ describe('MO 수신 → 후원 → 결제 → 방송 흐름', () => {
 
     const delivery = await prisma.youTubeChatDelivery.findFirstOrThrow();
     expect(delivery.errorCode).toBe('QUOTA_EXCEEDED');
-    await kv.del(`yt:quota:${kstDateKey()}`);
+    await kv.del(`yt:quota:${ptDateKey()}`);
   });
 });
 

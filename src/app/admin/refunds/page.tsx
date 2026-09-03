@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle, EmptyState, Notice, SectionTitle, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminInput, AdminSelect, AdminTextarea, FilterBar, Pager } from '@/components/admin/controls';
 import { ActionButton, ActionForm } from '@/components/admin/action-form';
-import { PAGE_SIZE, parsePage } from '@/components/admin/constants';
+import { PAGE_SIZE, parsePage, clampPageOrRedirect } from '@/components/admin/constants';
 import {
   approveRefundAction,
   rejectRefundAction,
@@ -40,7 +40,7 @@ export default async function AdminRefundsPage({
     prisma.refund.count({ where }),
     prisma.refund.findMany({
       where,
-      orderBy: { requestedAt: 'desc' },
+      orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       select: {
@@ -60,6 +60,8 @@ export default async function AdminRefundsPage({
   ]);
 
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // 필터를 바꿔 결과가 줄었을 때 URL 의 옛 page 번호 때문에 빈 목록이 뜨는 것을 막는다.
+  clampPageOrRedirect('/admin/refunds', { q, status: status ?? '' }, page, lastPage, total);
   const countOf = (s: RefundStatus) => grouped.find((g) => g.status === s)?._count._all ?? 0;
   const doneSum = grouped.find((g) => g.status === 'DONE')?._sum.amount ?? 0n;
 

@@ -2,6 +2,7 @@ import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
 import { decrypt, encrypt, maskSecret } from '@/lib/crypto';
 import { logger } from '@/lib/logger';
+import { notifySuperAdmins } from './notifications';
 import { env } from '@/lib/env';
 import { getPaymentAdapter } from '@/server/adapters/payment';
 import { resolveSecureLink, consumeSecureLink } from './secure-link';
@@ -249,19 +250,57 @@ export async function completeRegistration(input: {
   };
 }
 
+/**
+ * 사업자(PG) 빌키 해지를 한 번 시도하고 결과를 행에 남긴다.
+ *
+ * 성공하면 빌키 암호문까지 지운다. 해지된 빌키를 계속 보관할 이유가 없고,
+ * 남겨 두면 유출 시 그대로 위험이 된다.
+ * 실패하면 암호문을 **남겨 둔다.** 지우면 다시 시도할 방법이 사라지고,
+ * 후원자는 해지한 줄 아는데 PG 쪽 빌키만 영원히 살아 있게 된다.
+ */
+async function attemptBillKeyRevoke(token: { id: string; donorId: string; billKeyEnc: string; revokeAttempts: number }) {
+  const adapter = getPaymentAdapter();
+  const revoked = await adapter
+    .revokeBillKey(decrypt(token.billKeyEnc))
+    .catch((e: unknown) => ({ ok: false as const, message: (e as Error)?.message }));
+
+  if (revoked.ok) {
+    await prisma.paymentMethodToken.update({
+      where: { id: token.id },
+      data: { billKeyEnc: '', revokeFailedAt: null, revokeLastError: null },
+    });
+    return true;
+  }
+
+  const attempts = token.revokeAttempts + 1;
+  await prisma.paymentMethodToken.update({
+    where: { id: token.id },
+    data: {
+      revokeFailedAt: new Date(),
+      revokeAttempts: attempts,
+      // 사유는 사고 조사용이다. 길게 남기면 응답 원문이 통째로 들어올 수 있어 자른다.
+      revokeLastError: (revoked.message ?? '알 수 없는 오류').slice(0, 300),
+    },
+  });
+  logger.error('빌키 해지 실패 (내부 상태는 폐기, 재시도 대상)', {
+    donorId: token.donorId,
+    tokenId: token.id,
+    attempts,
+    message: revoked.message,
+  });
+  return false;
+}
+
 /** 자동출금 동의 해지 = 등록 결제수단 폐기 */
 export async function revokePaymentMethod(donorId: string) {
   const active = await prisma.paymentMethodToken.findFirst({ where: { donorId, status: 'ACTIVE' } });
   if (!active) return false;
-  // 사업자에는 빌키 원문을 보내야 한다(암호문을 보내면 PG 측 빌키가 살아남는다).
-  // 사업자 해지 실패는 로그로 남기고, 내부 상태는 폐기로 바꿔 더 이상 출금에 쓰지 않는다.
-  const adapter = getPaymentAdapter();
-  const revoked = await adapter
-    .revokeBillKey(decrypt(active.billKeyEnc))
-    .catch((e: unknown) => ({ ok: false as const, message: (e as Error)?.message }));
-  if (!revoked.ok) {
-    logger.error('빌키 해지 실패 (내부 상태는 폐기 처리)', { donorId, tokenId: active.id, message: revoked.message });
-  }
+
+  /**
+   * 내부 상태를 먼저 폐기로 바꾼다. 사업자 해지가 실패해도 이 빌키로는 더 이상 출금하지 않는다.
+   * 사업자 쪽 해지는 실패해도 여기서 되돌리지 않고 `retryFailedBillKeyRevocations` 가 이어받는다.
+   * (해지 요청 자체가 실패로 보이면 후원자가 다시 눌러도 이미 REVOKED 라 아무 일도 일어나지 않는다)
+   */
   await prisma.paymentMethodToken.update({
     where: { id: active.id },
     data: { status: 'REVOKED', revokedAt: new Date() },
@@ -270,5 +309,61 @@ export async function revokePaymentMethod(donorId: string) {
     where: { id: donorId },
     data: { onboardingStatus: 'SUSPENDED' },
   });
+
+  // 사업자에는 빌키 원문을 보내야 한다(암호문을 보내면 PG 측 빌키가 살아남는다).
+  await attemptBillKeyRevoke(active);
   return true;
+}
+
+/** 재시도 상한. 넘으면 자동 재시도를 멈추고 관리자 확인 큐로 넘긴다. */
+const BILLKEY_REVOKE_MAX_ATTEMPTS = 12;
+/** 재시도 간격(분). 사업자 장애가 몇 시간 이어져도 따라붙을 만큼만 촘촘하게. */
+const BILLKEY_REVOKE_RETRY_MINUTES = 30;
+
+/**
+ * 사업자 해지에 실패한 빌키를 다시 해지한다. (크론)
+ *
+ * 이 배치가 없으면 "동의를 해지한 후원자의 빌키가 PG 에 살아 있는" 상태가 아무도 모르게 쌓인다.
+ * 상한을 넘긴 건은 자동 재시도를 멈추고 최고관리자에게 알린다 — 사업자 계약/키 문제라
+ * 코드가 반복해도 풀리지 않고, 사람이 봐야 한다.
+ */
+export async function retryFailedBillKeyRevocations(now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - BILLKEY_REVOKE_RETRY_MINUTES * 60_000);
+  const targets = await prisma.paymentMethodToken.findMany({
+    where: {
+      revokeFailedAt: { not: null, lt: cutoff },
+      revokeAttempts: { lt: BILLKEY_REVOKE_MAX_ATTEMPTS },
+      billKeyEnc: { not: '' },
+    },
+    select: { id: true, donorId: true, billKeyEnc: true, revokeAttempts: true },
+    orderBy: { revokeFailedAt: 'asc' },
+    take: 50,
+  });
+
+  let recovered = 0;
+  for (const t of targets) {
+    // 한 건이 실패해도 나머지는 계속 시도한다.
+    try {
+      if (await attemptBillKeyRevoke(t)) recovered += 1;
+    } catch (e) {
+      logger.error('빌키 해지 재시도 중 예외', { tokenId: t.id, message: (e as Error).message });
+    }
+  }
+
+  /**
+   * 상한을 넘겨 자동 재시도가 멈춘 건을 알린다.
+   * 조용히 포기하면 이 배치를 만든 의미가 없다.
+   */
+  const givenUp = await prisma.paymentMethodToken.count({
+    where: { revokeFailedAt: { not: null }, revokeAttempts: { gte: BILLKEY_REVOKE_MAX_ATTEMPTS } },
+  });
+  if (givenUp > 0) {
+    await notifySuperAdmins({
+      title: '사업자 빌키 해지에 반복 실패한 건이 있습니다',
+      body: `${givenUp}건이 자동 재시도 상한(${BILLKEY_REVOKE_MAX_ATTEMPTS}회)을 넘겼습니다. 후원자는 자동출금 동의를 해지했지만 결제사 빌키가 남아 있을 수 있습니다. 결제사에 직접 해지를 요청해 주세요.`,
+      linkUrl: '/admin/donors',
+    }).catch(() => undefined);
+  }
+
+  return recovered;
 }

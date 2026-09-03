@@ -59,3 +59,39 @@ export async function purgeExpiredIdempotencyKeys(now = new Date()): Promise<num
   const r = await prisma.idempotencyKey.deleteMany({ where: { expiresAt: { lt: now } } });
   return r.count;
 }
+
+/**
+ * 선점만 하고 끝내지 못한 멱등키를 풀어 준다.
+ *
+ * `abort()` 는 예외가 났을 때만 실행된다. 프로세스가 강제로 죽으면(SIGKILL, 컨테이너 교체,
+ * OOM) 실행되지 않아 키가 `IN_PROGRESS` 로 **7일** 남는다. 그동안 사업자가 같은 문자를
+ * 재전송해도 전부 중복으로 반려되어, 후원자는 문자 요금만 내고 후원은 만들어지지 않는다.
+ *
+ * 처리에 정상적으로 걸리는 시간(수 초)보다 훨씬 긴 유예를 두고, 그 뒤에도 완료되지 않았고
+ * 자원(resourceId)도 붙지 않은 키만 지운다. 진행 중인 요청을 끊을 위험이 없다.
+ */
+export async function releaseStaleIdempotencyKeys(
+  staleMinutes = 10,
+  now = new Date(),
+): Promise<number> {
+  const cutoff = new Date(now.getTime() - staleMinutes * 60_000);
+  const r = await prisma.idempotencyKey.deleteMany({
+    where: { status: 'IN_PROGRESS', resourceId: null, createdAt: { lt: cutoff } },
+  });
+  return r.count;
+}
+
+
+/**
+ * 오래된 웹훅 원문 로그를 지운다.
+ *
+ * `webhook_log.body_masked` 에는 마스킹을 거쳤어도 문자 원문 성격의 값이 남을 수 있다.
+ * 사고 조사에 필요한 기간만 남기고 정리한다(기본 30일).
+ * 보존 기간은 WEBHOOK_LOG_RETENTION_DAYS 로 조정한다.
+ */
+export async function purgeOldWebhookLogs(now = new Date()): Promise<number> {
+  const days = Math.max(7, Number(process.env.WEBHOOK_LOG_RETENTION_DAYS) || 30);
+  const cutoff = new Date(now.getTime() - days * 86_400_000);
+  const r = await prisma.webhookLog.deleteMany({ where: { createdAt: { lt: cutoff } } });
+  return r.count;
+}

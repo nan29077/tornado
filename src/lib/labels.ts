@@ -13,6 +13,8 @@ import type {
   DonorOnboardingStatus,
   HolidayKind,
   PaymentMethodKind,
+  UserStatus,
+  AdminPermission,
 } from '@/generated/prisma/enums';
 
 export type Tone = 'neutral' | 'brand' | 'success' | 'warning' | 'danger';
@@ -56,6 +58,31 @@ export const deliveryStatusLabel: Record<DeliveryStatus, { text: string; tone: T
   FAILED: { text: '실패', tone: 'danger' },
   SKIPPED: { text: '건너뜀', tone: 'neutral' },
 };
+
+/**
+ * 유튜브 전송 결과 사유를 사람이 읽을 수 있는 문구로 바꾼다.
+ *
+ * 화면에 `QUOTA_EXCEEDED` 나 구글 API 원문 메시지를 그대로 보여 주면 크리에이터는
+ * 무엇을 해야 할지 알 수 없고, 원문에는 내부 설정 정보가 섞이기도 한다.
+ */
+const YOUTUBE_REASON_TEXT: Record<string, string> = {
+  NO_CONNECTION: '채널 미연결',
+  TOKEN_REVOKED: '연결 만료 — 채널 재연결 필요',
+  TOKEN_REFRESH_FAILED: '로그인 갱신 실패 — 잠시 후 자동 재시도',
+  NO_ACTIVE_BROADCAST: '방송 중이 아님',
+  CHAT_DISABLED: '방송의 실시간 채팅이 꺼져 있음',
+  BROADCAST_LOOKUP_FAILED: '유튜브 조회 실패 — 잠시 후 자동 재시도',
+  QUOTA_EXCEEDED: '오늘 전송 한도 초과',
+  SEND_FAILED: '채팅 전송 실패 — 잠시 후 자동 재시도',
+  DISPATCH_ERROR: '전송 처리 오류 — 잠시 후 자동 재시도',
+  STATUS_CHANGED: '후원 상태가 바뀌어 전송하지 않음',
+  NOT_FOUND: '후원 정보를 찾을 수 없음',
+};
+
+export function youtubeDeliveryReasonLabel(code: string | null | undefined): string {
+  if (!code) return '-';
+  return YOUTUBE_REASON_TEXT[code] ?? '전송 실패 — 관리자 확인 필요';
+}
 
 export const moResultLabel: Record<MoProcessResult, { text: string; tone: Tone }> = {
   PENDING: { text: '처리중', tone: 'neutral' },
@@ -151,3 +178,22 @@ export const paymentModeLabel = {
   CONFIRM_LINK: '확인형 (MT 링크 확인 후 결제)',
   DIRECT_TRIGGER: '즉시형 (MO 수신 즉시 결제)',
 } as const;
+
+/**
+ * 계정 상태. `/admin/users` 가 같은 사전을 파일 안에 따로 갖고 있었고, `/admin/admins` 는
+ * enum 원문(`ACTIVE`)을 그대로 화면에 노출했다. 한 곳에서 정의해 두 화면이 함께 쓴다.
+ */
+export const userStatusLabel: Record<UserStatus, { text: string; tone: Tone }> = {
+  ACTIVE: { text: '활성', tone: 'success' },
+  SUSPENDED: { text: '정지', tone: 'warning' },
+  WITHDRAWN: { text: '탈퇴', tone: 'neutral' },
+};
+
+/** 관리자 권한 등급. 감사로그·계정 화면이 `SUPER_ADMIN` 같은 원문을 그대로 보여 주고 있었다. */
+export const adminPermissionLabel: Record<AdminPermission, string> = {
+  SUPER_ADMIN: '최고 관리자',
+  OPERATION: '운영',
+  FINANCE: '재무',
+  SUPPORT: '고객지원',
+  READ_ONLY: '읽기 전용',
+};

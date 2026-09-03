@@ -315,35 +315,43 @@ function GameBoard({
 
   return (
     <div className="flex h-full w-full items-center justify-center px-[80px] pb-[170px] pt-[70px]">
-      {/* 배치 미세 조정. 게임 카드 전체를 함께 옮기고 키운다. */}
+      {/*
+        배치 조정(transform)과 등장·퇴장 애니메이션은 **서로 다른 요소**에 걸어야 한다.
+        한 요소에 함께 걸면 CSS 캐스케이드에서 애니메이션 출처가 인라인 style 보다 우선하고,
+        animation-fill-mode: both 때문에 끝난 뒤에도 마지막 키프레임의 transform 이 유지되어
+        위치·크기 조정이 **영구히 무시된다**. (후원 오버레이는 처음부터 두 겹으로 나뉘어 있다)
+        boardRef 는 실제 화면 위치를 재는 용도이므로 transform 이 걸린 바깥 요소에 둔다.
+      */}
       <div
         ref={boardRef}
-        className={`w-full max-w-[1240px] ${leaving ? 'animate-game-out' : 'animate-game-in'}`}
+        className="w-full max-w-[1240px]"
         style={{ transform: overlayLayoutTransform(layout), transformOrigin: 'center' }}
       >
-        <div className="rounded-[40px] border-[3px] border-white/70 bg-white/95 px-[52px] py-[40px] shadow-[0_30px_90px_rgba(23,22,26,0.34)]">
-          {/* 머리말 — 회오리 마크 + 게임 이름 + 상태 */}
-          <div className="mb-[28px] flex items-center gap-[20px]">
-            <TornadoMark />
-            <div className="min-w-0 flex-1">
-              <p className="text-[20px] font-extrabold tracking-[0.2em] text-brand-600">
-                {meta?.label ?? '게임'}
-              </p>
-              <h1 className="truncate text-[42px] font-black leading-tight tracking-[-0.03em] text-ink-900">
-                {state.title}
-              </h1>
+        <div className={leaving ? 'animate-game-out' : 'animate-game-in'}>
+          <div className="rounded-[40px] border-[3px] border-white/70 bg-white/95 px-[52px] py-[40px] shadow-[0_30px_90px_rgba(23,22,26,0.34)]">
+            {/* 머리말 — 회오리 마크 + 게임 이름 + 상태 */}
+            <div className="mb-[28px] flex items-center gap-[20px]">
+              <TornadoMark />
+              <div className="min-w-0 flex-1">
+                <p className="text-[20px] font-extrabold tracking-[0.2em] text-brand-600">
+                  {meta?.label ?? '게임'}
+                </p>
+                <h1 className="truncate text-[42px] font-black leading-tight tracking-[-0.03em] text-ink-900">
+                  {state.title}
+                </h1>
+              </div>
+              <StatusPill state={state} />
             </div>
-            <StatusPill state={state} />
-          </div>
 
-          <Body state={state} />
+            <Body state={state} />
 
-          {/* 꼬리말 */}
-          <div className="mt-[30px] flex items-end justify-between">
-            <div className="text-[20px] font-bold text-ink-400">
-              {state.prize ? <span className="text-ink-700">보상 · {state.prize}</span> : null}
+            {/* 꼬리말 */}
+            <div className="mt-[30px] flex items-end justify-between">
+              <div className="text-[20px] font-bold text-ink-400">
+                {state.prize ? <span className="text-ink-700">보상 · {state.prize}</span> : null}
+              </div>
+              <span className="text-[18px] font-black tracking-[0.3em] text-ink-300">DONAIDO</span>
             </div>
-            <span className="text-[18px] font-black tracking-[0.3em] text-ink-300">DONAIDO</span>
           </div>
         </div>
       </div>
@@ -497,6 +505,25 @@ function JoinPanel({ state }: { state: GamePublicState }) {
   }, [state.joinUrl]);
 
   if (!state.joinCode) return null;
+
+  /**
+   * 참여를 받는 동안(OPEN)에만 참여 안내를 띄운다.
+   *
+   * `joinUrl` 은 서버가 OPEN 일 때만 채워 준다. 예전에는 `joinCode` 만 보고 패널을 그려서,
+   * 마감된 뒤에도 "휴대폰으로 찍고 참여 / ABC123" 이 방송 화면에 남고 QR 자리는 영원히
+   * "QR 준비 중" 이었다. 시청자는 아직 참여할 수 있다고 오해한다.
+   */
+  if (!state.joinUrl) {
+    if (state.status !== 'CLOSED') return null;
+    return (
+      <div className="flex w-[300px] shrink-0 flex-col items-center justify-center gap-[10px] rounded-[28px] border-[3px] border-dashed border-ink-100 px-[20px] py-[40px]">
+        <p className="text-[26px] font-black text-ink-500">참여 마감</p>
+        <p className="text-center text-[19px] font-bold leading-relaxed text-ink-400">
+          결과 발표를 기다려 주세요
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex w-[300px] shrink-0 flex-col items-center gap-[14px]">
@@ -741,26 +768,44 @@ function LadderBoard({ state }: { state: GamePublicState }) {
     | null;
 
   const starts = result?.starts ?? state.items;
-  const destinations = result?.destinations ?? state.destinations;
   const cols = Math.max(2, starts.length);
+  // 결과 발표 전에는 config 원본이라 개수가 출발점과 다를 수 있다. 칸 수를 세로줄에 맞춘다.
+  const rawDestinations = result?.destinations ?? state.destinations;
+  const destinations = Array.from({ length: cols }, (_, i) => rawDestinations[i] ?? '');
   const rows = result?.rows ?? 12;
   const rungs = result?.rungs ?? [];
 
   const W = 980;
   const H = 360;
-  const gapX = W / (cols - 1 || 1);
+  /**
+   * 세로줄을 좌우 끝에 딱 붙이면 이름표가 카드 밖으로 반쯤 나간다.
+   * 안쪽 여백을 두고, **이름표도 같은 좌표계**로 배치한다.
+   *
+   * 예전에는 세로줄이 `i/(cols-1)`, 이름표가 flex 균등분할(`(i+0.5)/cols`) 이라
+   * 둘이 서로 다른 위치에 놓였고, 방송 화면에서 어느 이름이 어느 줄인지 알 수 없었다.
+   */
+  const PAD_X = 44;
+  const gapX = (W - PAD_X * 2) / (cols - 1);
   const gapY = H / rows;
+  const colX = (i: number) => PAD_X + i * gapX;
+  /** 이름표를 놓을 위치(부모 폭 대비 %). SVG 가 100% 폭으로 늘어나므로 비율이 그대로 맞는다. */
+  const colLeftPct = (i: number) => (colX(i) / W) * 100;
+  const labelWidthPct = Math.min(100 / cols, 100 / (cols - 1)) * 0.92;
 
   return (
     <div className="flex items-center gap-[34px]">
       <div className="min-w-0 flex-1">
-        <div className="mb-[14px] flex justify-between">
+        <div className="relative mb-[14px] h-[32px]">
           {starts.map((s, i) => (
             <span
               key={`s-${i}`}
-              // Tailwind 는 클래스 이름을 정적으로 읽으므로 폭은 인라인 스타일로 준다.
-              style={{ width: `${100 / cols}%` }}
-              className={`truncate text-center text-[24px] font-black ${
+              // Tailwind 는 클래스 이름을 정적으로 읽으므로 위치·폭은 인라인 스타일로 준다.
+              style={{
+                left: `${colLeftPct(i)}%`,
+                width: `${labelWidthPct}%`,
+                transform: 'translateX(-50%)',
+              }}
+              className={`absolute top-0 truncate text-center text-[24px] font-black leading-[32px] ${
                 result?.activeIndex === i ? 'text-brand-700' : 'text-ink-900'
               }`}
             >
@@ -773,9 +818,9 @@ function LadderBoard({ state }: { state: GamePublicState }) {
           {Array.from({ length: cols }).map((_, i) => (
             <line
               key={`c-${i}`}
-              x1={i * gapX}
+              x1={colX(i)}
               y1={0}
-              x2={i * gapX}
+              x2={colX(i)}
               y2={H}
               stroke="#e2e0e6"
               strokeWidth={8}
@@ -785,9 +830,9 @@ function LadderBoard({ state }: { state: GamePublicState }) {
           {rungs.map((r, i) => (
             <line
               key={`r-${i}`}
-              x1={r.col * gapX}
+              x1={colX(r.col)}
               y1={r.row * gapY}
-              x2={(r.col + 1) * gapX}
+              x2={colX(r.col + 1)}
               y2={r.row * gapY}
               stroke="#ffcd4d"
               strokeWidth={8}
@@ -800,18 +845,23 @@ function LadderBoard({ state }: { state: GamePublicState }) {
               rungs={rungs}
               rows={rows}
               cols={cols}
+              padX={PAD_X}
               gapX={gapX}
               gapY={gapY}
             />
           ) : null}
         </svg>
 
-        <div className="mt-[14px] flex justify-between">
+        <div className="relative mt-[14px] h-[30px]">
           {destinations.map((d, i) => (
             <span
               key={`d-${i}`}
-              style={{ width: `${100 / cols}%` }}
-              className="truncate text-center text-[22px] font-bold text-ink-500"
+              style={{
+                left: `${colLeftPct(i)}%`,
+                width: `${labelWidthPct}%`,
+                transform: 'translateX(-50%)',
+              }}
+              className="absolute top-0 truncate text-center text-[22px] font-bold leading-[30px] text-ink-500"
             >
               {d || '-'}
             </span>
@@ -851,6 +901,7 @@ function LadderPath({
   rungs,
   rows,
   cols,
+  padX,
   gapX,
   gapY,
 }: {
@@ -858,23 +909,25 @@ function LadderPath({
   rungs: { row: number; col: number }[];
   rows: number;
   cols: number;
+  padX: number;
   gapX: number;
   gapY: number;
 }) {
-  const points: string[] = [`M ${startCol * gapX} 0`];
+  const x = (col: number) => padX + col * gapX;
+  const points: string[] = [`M ${x(startCol)} 0`];
   let col = startCol;
   for (let row = 0; row < rows; row++) {
     const y = row * gapY;
-    points.push(`L ${col * gapX} ${y}`);
+    points.push(`L ${x(col)} ${y}`);
     if (rungs.some((r) => r.row === row && r.col === col)) {
       col = Math.min(col + 1, cols - 1);
-      points.push(`L ${col * gapX} ${y}`);
+      points.push(`L ${x(col)} ${y}`);
     } else if (rungs.some((r) => r.row === row && r.col === col - 1)) {
       col = Math.max(col - 1, 0);
-      points.push(`L ${col * gapX} ${y}`);
+      points.push(`L ${x(col)} ${y}`);
     }
   }
-  points.push(`L ${col * gapX} ${rows * gapY}`);
+  points.push(`L ${x(col)} ${rows * gapY}`);
 
   return (
     <path

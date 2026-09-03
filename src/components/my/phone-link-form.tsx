@@ -166,7 +166,29 @@ export function PhoneLinkForm({ linkedPhoneMasked }: { linkedPhoneMasked: string
 function UnlinkButton() {
   const [state, action, pending] = React.useActionState(unlinkPhone, initial);
   return (
-    <form action={action} className="contents">
+    <form
+      action={action}
+      className="contents"
+      onSubmit={(e) => {
+        /**
+         * 확인 절차를 둔다.
+         *
+         * 버튼 한 번이면 후원·결제 내역이 화면에서 사라지는데, **자동출금 수단은 해지되지
+         * 않는다.** 그러면 문자후원은 계속 접수되는데 본인은 그 내역을 볼 수도, 해지할 수도
+         * 없는 상태가 된다. 같은 화면의 결제수단 해지·탈퇴에는 이미 확인 절차가 있다.
+         */
+        if (
+          !window.confirm(
+            '휴대폰 번호 연결을 해제하시겠습니까?\n\n' +
+              '· 후원·결제 내역이 마이페이지에서 보이지 않게 됩니다(내역 자체는 삭제되지 않습니다).\n' +
+              '· 등록된 자동출금 수단은 해지되지 않습니다. 문자후원은 계속 접수될 수 있습니다.\n' +
+              '  출금을 멈추려면 먼저 [자동출금 해지]를 진행해 주세요.',
+          )
+        ) {
+          e.preventDefault();
+        }
+      }}
+    >
       <Button type="submit" variant="secondary" size="sm" disabled={pending}>
         {pending ? '해제 중' : '연결 해제'}
       </Button>

@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, EmptyState, Notice, SectionTitle, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminSelect, FilterBar, JsonView, Pager } from '@/components/admin/controls';
 import { ActionButton } from '@/components/admin/action-form';
-import { PAGE_SIZE, parsePage } from '@/components/admin/constants';
+import { PAGE_SIZE, parsePage, clampPageOrRedirect } from '@/components/admin/constants';
 import { resolveRiskDetection } from '@/app/actions/admin/transactions';
 import { prisma } from '@/server/db';
 import { formatWon, formatNumber } from '@/lib/money';
@@ -44,7 +44,7 @@ export default async function AdminRiskPage({
     prisma.riskDetection.count({ where }),
     prisma.riskDetection.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       select: {
@@ -62,6 +62,8 @@ export default async function AdminRiskPage({
   ]);
 
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // 필터를 바꿔 결과가 줄었을 때 URL 의 옛 page 번호 때문에 빈 목록이 뜨는 것을 막는다.
+  clampPageOrRedirect('/admin/risk', { level: level ?? '', type: type ?? '', resolved: sp.resolved ?? '' }, page, lastPage, total);
   const levelCount = (l: RiskLevel) => byLevel.find((b) => b.level === l)?._count._all ?? 0;
 
   return (

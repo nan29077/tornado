@@ -1,11 +1,12 @@
 import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, EmptyState, Notice, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminInput, AdminSelect, FilterBar, JsonView, Pager } from '@/components/admin/controls';
-import { PAGE_SIZE, parsePage } from '@/components/admin/constants';
+import { PAGE_SIZE, parsePage, clampPageOrRedirect } from '@/components/admin/constants';
 import { prisma } from '@/server/db';
 import { formatNumber } from '@/lib/money';
 import { formatKst, kstStartOfDay } from '@/lib/datetime';
 import type { Prisma } from '@/generated/prisma/client';
+import { adminPermissionLabel } from '@/lib/labels';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +39,8 @@ export default async function AdminAuditPage({
     prisma.adminAuditLog.count({ where }),
     prisma.adminAuditLog.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      // 같은 시각 행이 페이지마다 뒤바뀌지 않도록 id 를 보조 정렬키로 둔다.
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       select: {
@@ -47,12 +49,21 @@ export default async function AdminAuditPage({
         admin: { select: { permission: true, user: { select: { email: true, name: true } } } },
       },
     }),
-    prisma.adminAuditLog.findMany({ distinct: ['action'], orderBy: { action: 'asc' }, take: 100, select: { action: true } }),
-    prisma.adminAuditLog.findMany({ distinct: ['targetType'], orderBy: { targetType: 'asc' }, take: 50, select: { targetType: true } }),
+    /**
+     * 종류 목록은 **groupBy 로 집계**한다.
+     *
+     * 예전에는 `distinct + take` 로 잘라 온 배열의 length 를 그대로 "액션 종류" 타일에
+     * 표시했다. 액션이 100종을 넘는 순간 그 타일은 영원히 "100"을 보여 주고, 필터 목록에서도
+     * 뒤쪽 액션이 사라져 **검색할 수 없는 액션 종류**가 생겼다.
+     */
+    prisma.adminAuditLog.groupBy({ by: ['action'], orderBy: { action: 'asc' } }),
+    prisma.adminAuditLog.groupBy({ by: ['targetType'], orderBy: { targetType: 'asc' } }),
     prisma.adminAuditLog.count({ where: { createdAt: { gte: kstStartOfDay() } } }),
   ]);
 
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // 필터를 바꿔 결과가 줄었을 때 URL 의 옛 page 번호 때문에 빈 목록이 뜨는 것을 막는다.
+  clampPageOrRedirect('/admin/audit', { action, targetType, from: sp.from ?? '', to: sp.to ?? '' }, page, lastPage, total);
 
   return (
     <>
@@ -124,7 +135,7 @@ export default async function AdminAuditPage({
                     <Td>
                       {l.admin?.user.email ?? '시스템'}
                       {l.admin ? (
-                        <span className="mt-0.5 block text-[11px] text-ink-400">{l.admin.permission}</span>
+                        <span className="mt-0.5 block text-[11px] text-ink-400">{adminPermissionLabel[l.admin.permission]}</span>
                       ) : null}
                     </Td>
                     <Td>

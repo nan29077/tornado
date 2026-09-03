@@ -10,6 +10,9 @@ import { deliveryStatusLabel } from '@/lib/labels';
 
 export const dynamic = 'force-dynamic';
 
+/** 선택 목록에 담을 크리에이터 수 상한. 넘어가면 검색형 입력으로 바꿔야 한다. */
+const CREATOR_OPTION_LIMIT = 300;
+
 export default async function AdminOverlayPage() {
   const todayStart = kstStartOfDay();
 
@@ -17,6 +20,7 @@ export default async function AdminOverlayPage() {
     prisma.creatorProfile.findMany({
       where: { status: 'APPROVED' },
       orderBy: { displayName: 'asc' },
+      take: CREATOR_OPTION_LIMIT,
       select: {
         id: true, displayName: true, code: true,
         overlaySetting: {

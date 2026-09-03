@@ -170,32 +170,66 @@ export async function confirmPhoneVerification(
   // 연결 시점에 한 번 더 소유권을 검증한다 (발송~확인 사이의 상태 변화 대비).
   const existing = await prisma.donorProfile.findUnique({
     where: { phoneHash: record.ph },
-    select: { id: true, userId: true },
+    select: { id: true, userId: true, previousUserId: true },
   });
   if (existing?.userId && existing.userId !== user.id) {
     return { ok: false, message: '이미 다른 계정에 연결된 번호입니다. 고객센터로 문의해 주세요.' };
   }
 
-  // 기존 연결 해제 + 새 연결을 하나의 트랜잭션으로 처리한다 (부분 실패 방지).
-  await prisma.$transaction([
-    prisma.donorProfile.updateMany({
+  /**
+   * **번호 재사용(통신사 재배정) 대응.**
+   *
+   * 국내는 해지 번호가 일정 기간 뒤 다른 사람에게 재배정된다. 예전 구현은 계정 연결이
+   * 끊긴 프로필(userId = null)을 아무나 인증만 하면 그대로 가져갔다. 그러면 새 사용자의
+   * 마이페이지에 **이전 이용자의 후원·결제·동의 내역이 전부 보이고**, 이전 이용자의 결제에
+   * 환불 요청까지 할 수 있었다.
+   *
+   * 그래서 "이전에 다른 계정에 연결됐던 프로필"은 재사용하지 않는다. 그 프로필은 은퇴
+   * 처리(phoneHash 를 폐기값으로 회전)하고 새 프로필을 만든다. 과거 이력은 이전 프로필에
+   * 그대로 남아 분쟁 대응에 쓸 수 있고, 새 사용자에게는 노출되지 않는다.
+   *
+   * 계정에 연결된 적이 없는 프로필(문자후원만 하던 번호)은 지금 본인확인을 마친 사람이
+   * 그 번호의 현재 사용자이므로 그대로 이어받는다 — 기존 동작을 유지한다.
+   */
+  const recycled = Boolean(existing && !existing.userId && existing.previousUserId && existing.previousUserId !== user.id);
+
+  await prisma.$transaction(async (tx) => {
+    // 이 계정에 연결돼 있던 다른 번호는 연결을 끊는다(계정당 번호 1개).
+    await tx.donorProfile.updateMany({
       where: { userId: user.id, ...(existing ? { NOT: { id: existing.id } } : {}) },
-      data: { userId: null },
-    }),
-    existing
-      ? prisma.donorProfile.update({ where: { id: existing.id }, data: { userId: user.id } })
-      : // 문자후원 이력이 없는 번호도 미리 연결해 두면 이후 후원이 자동으로 이 계정에 표시된다.
-        prisma.donorProfile.create({
-          data: {
-            id: newId(),
-            userId: user.id,
-            phoneHash: record.ph,
-            phoneEnc: record.pe,
-            phoneMasked: record.pm,
-            displayName: user.name ?? null,
-          },
-        }),
-  ]);
+      data: { userId: null, previousUserId: user.id, unlinkedAt: new Date() },
+    });
+
+    if (existing && !recycled) {
+      await tx.donorProfile.update({ where: { id: existing.id }, data: { userId: user.id, unlinkedAt: null } });
+      return;
+    }
+
+    if (existing && recycled) {
+      // 은퇴 처리: phoneHash 는 유니크라 폐기값으로 회전시켜야 새 프로필이 같은 번호를 쓸 수 있다.
+      await tx.donorProfile.update({
+        where: { id: existing.id },
+        data: {
+          phoneHash: `retired:${existing.id}:${record.ph}`.slice(0, 200),
+          retiredAt: new Date(),
+          onboardingStatus: 'WITHDRAWN',
+        },
+      });
+      logger.warn('번호 재사용 감지 — 이전 후원자 프로필을 분리했습니다.', { profileId: existing.id });
+    }
+
+    // 문자후원 이력이 없는 번호도 미리 연결해 두면 이후 후원이 자동으로 이 계정에 표시된다.
+    await tx.donorProfile.create({
+      data: {
+        id: newId(),
+        userId: user.id,
+        phoneHash: record.ph,
+        phoneEnc: record.pe,
+        phoneMasked: record.pm,
+        displayName: user.name ?? null,
+      },
+    });
+  });
 
   logger.info('휴대폰 번호 연결 완료', { userId: user.id });
   revalidatePath('/my');
@@ -212,7 +246,9 @@ export async function unlinkPhone(_prev: PhoneLinkState, _fd: FormData): Promise
 
   const updated = await prisma.donorProfile.updateMany({
     where: { userId: user.id },
-    data: { userId: null },
+    // 누가 마지막으로 쓰던 번호인지 남긴다. 나중에 다른 사람이 같은 번호를 인증하면
+    // 이 값을 보고 프로필을 분리해, 이전 이용자의 이력이 새 사용자에게 넘어가지 않게 한다.
+    data: { userId: null, previousUserId: user.id, unlinkedAt: new Date() },
   });
   if (updated.count === 0) return { ok: false, message: '연결된 휴대폰 번호가 없습니다.' };
 

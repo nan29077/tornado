@@ -296,19 +296,26 @@ export interface MtTemplateMeta {
   editable: boolean;
   /** 오버라이드가 없을 때 편집칸에 채워 넣는 기본 본문 (치환자 형태, 발신 표기 제외) */
   defaultBody: string;
-  /** 이 템플릿에서 쓸 수 있는 치환자 */
-  variables: Array<{ token: string; label: string }>;
+  /** 이 템플릿에서 쓸 수 있는 치환자 (sample 은 관리자 미리보기 전용 예시 값) */
+  variables: ReadonlyArray<{ token: string; label: string; sample: string }>;
 }
 
+/**
+ * 치환자 정의.
+ *
+ * `sample` 은 관리자 화면 미리보기 전용 예시 값이다. 문자는 글자 수가 아니라 바이트로
+ * SMS/LMS 가 갈리므로, 치환자가 실제 값으로 바뀐 뒤의 길이를 보지 않으면 요금이 3~4배가
+ * 되는 문구를 모르고 저장하게 된다. 실제 발송 시 나올 법한 길이로 잡아 둔다.
+ */
 const V = {
-  donor: { token: '{후원자}', label: '후원자 이름' },
-  creator: { token: '{크리에이터}', label: '크리에이터 이름' },
-  amount: { token: '{금액}', label: '후원 금액 (예: 10,000원)' },
-  message: { token: '{메시지}', label: '후원자가 보낸 메시지' },
-  cumulative: { token: '{누적}', label: '누적 후원 금액' },
-  reason: { token: '{사유}', label: '실패·제한 사유' },
-  verifyCode: { token: '{인증번호}', label: '6자리 인증번호' },
-  ttl: { token: '{유효시간}', label: '인증번호 유효시간(분)' },
+  donor: { token: '{후원자}', label: '후원자 이름', sample: '구영' },
+  creator: { token: '{크리에이터}', label: '크리에이터 이름', sample: '토네이도TV' },
+  amount: { token: '{금액}', label: '후원 금액 (예: 10,000원)', sample: '10,000원' },
+  message: { token: '{메시지}', label: '후원자가 보낸 메시지', sample: '오늘 방송 재밌어요' },
+  cumulative: { token: '{누적}', label: '누적 후원 금액', sample: '52,000원' },
+  reason: { token: '{사유}', label: '실패·제한 사유', sample: '잔액 부족' },
+  verifyCode: { token: '{인증번호}', label: '6자리 인증번호', sample: '482913' },
+  ttl: { token: '{유효시간}', label: '인증번호 유효시간(분)', sample: '3' },
 } as const;
 
 export const MT_TEMPLATE_META: Record<MtTemplateCode, MtTemplateMeta> = {

@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, EmptyState, Notice, SectionTitle, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminInput, AdminSelect, FilterBar, Pager } from '@/components/admin/controls';
-import { PAGE_SIZE, parsePage } from '@/components/admin/constants';
+import { PAGE_SIZE, parsePage, clampPageOrRedirect } from '@/components/admin/constants';
 import { prisma } from '@/server/db';
 import { requireAdmin } from '@/server/auth';
 import { formatNumber } from '@/lib/money';
@@ -87,7 +87,7 @@ export default async function AdminInquiriesPage({
     prisma.supportInquiry.count({ where }),
     prisma.supportInquiry.findMany({
       where,
-      orderBy: [{ status: 'asc' }, { lastMessageAt: 'desc' }],
+      orderBy: [{ status: 'asc' }, { lastMessageAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       select: {
@@ -112,6 +112,8 @@ export default async function AdminInquiriesPage({
   const userMap = new Map(users.map((u) => [u.id, u]));
 
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // 필터를 바꿔 결과가 줄었을 때 URL 의 옛 page 번호 때문에 빈 목록이 뜨는 것을 막는다.
+  clampPageOrRedirect('/admin/inquiries', { status: status ?? '', q, category: category ?? '', source: source ?? '' }, page, lastPage, total);
   const count = (s: InquiryStatus) => byStatus.find((b) => b.status === s)?._count._all ?? 0;
 
   return (
@@ -199,7 +201,8 @@ export default async function AdminInquiriesPage({
                 return (
                   <tr key={q.id}>
                     <Td>
-                      <Link href={`/admin/inquiries/${q.id}`} className="font-semibold text-brand-700">
+                      {/* 프리페치로 상세가 렌더되면 읽음 처리가 클릭 없이 일어난다(상세 쪽에서도 막지만 두 겹으로 둔다). */}
+                      <Link href={`/admin/inquiries/${q.id}`} prefetch={false} className="font-semibold text-brand-700">
                         {u ? (u.name ?? u.email ?? '회원') : (q.guestName || '비회원')}
                       </Link>
                       <span className="mt-0.5 block text-[11px] text-ink-400">

@@ -97,6 +97,11 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
             }}
             className="flex flex-wrap items-center gap-1.5"
           >
+            {/*
+              승인/반려는 선택 전체를, 지급완료는 승인 건만 보낸다.
+              예전에는 항상 선택 전체를 보내면서 버튼에는 승인 건수만 표시해,
+              "일괄 지급완료 (3)" 을 눌러도 8건이 전송되고 5건이 오류로 되돌아왔다.
+            */}
             {hidden(selectedIds)}
             <input
               name="memo"
@@ -148,7 +153,24 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
           </a>
 
           {/* 원천징수 신고 완료 + 주민번호 파기 (지급완료 건) */}
-          <form action={fileAction} onSubmit={() => setLastForm('file')} className="inline">
+          <form
+            action={fileAction}
+            onSubmit={(e) => {
+              // 이 툴바에서 **유일하게 복구가 불가능한** 작업이다.
+              // 전체 선택 체크박스로 PAID 건이 한꺼번에 잡히므로 오클릭 피해 범위가 페이지 전체다.
+              if (
+                !window.confirm(
+                  `선택한 ${paidSelected.length}건의 주민등록번호를 영구 파기합니다.\n` +
+                    '원천징수 신고를 마친 뒤에만 실행하세요. 파기하면 되돌릴 수 없고, 재신고가 필요하면 크리에이터에게 다시 받아야 합니다.\n\n계속할까요?',
+                )
+              ) {
+                e.preventDefault();
+                return;
+              }
+              setLastForm('file');
+            }}
+            className="inline"
+          >
             {hidden(paidSelected)}
             <button
               disabled={filePending || paidSelected.length === 0}
@@ -170,7 +192,21 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
       {/* 지급대행 결과 반영 */}
       <details className="rounded-2xl border border-ink-100 bg-white p-3.5">
         <summary className="cursor-pointer text-[12.5px] font-bold text-ink-700">지급대행 결과 반영 (파일 내용 붙여넣기)</summary>
-        <form action={resultAction} onSubmit={() => setLastForm('result')} className="mt-2.5 space-y-2">
+        <form
+          action={resultAction}
+          onSubmit={(e) => {
+            if (
+              !window.confirm(
+                '붙여넣은 결과를 지급완료/지급실패로 반영합니다.\n원장에 분개가 기록되며 되돌릴 수 없습니다.\n\n배치번호가 이번에 내려받은 이체파일의 것인지 다시 확인해 주세요. 계속할까요?',
+              )
+            ) {
+              e.preventDefault();
+              return;
+            }
+            setLastForm('result');
+          }}
+          className="mt-2.5 space-y-2"
+        >
           <p className="text-[11.5px] leading-relaxed text-ink-400">
             각 줄에 <code className="rounded bg-ink-50 px-1">요청ID,SUCCESS|FAIL,사유</code> 형식으로 입력합니다. 지급대행(쿠콘)
             결과 파일을 그대로 붙여넣어 성공/실패를 한 번에 반영할 수 있습니다.
@@ -178,12 +214,14 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
           <div className="flex flex-wrap items-center gap-2">
             <input
               name="batchNo"
+              required
+              pattern="B[A-Za-z0-9]{6,20}"
               placeholder="배치번호 (예: B7K2M9X4QP)"
               className="h-8 w-56 rounded-lg border border-ink-200 px-2 font-mono text-[12px] outline-none focus:border-brand-400"
             />
             <span className="text-[11px] text-ink-400">
-              이체파일 이름에 있는 배치번호를 넣으면 그 배치 건에만 반영됩니다. 지난 파일을 잘못 다시
-              붙여넣어 <strong>정상 지급건이 실패로 되돌아가는 사고</strong>를 막습니다.
+              <strong>필수.</strong> 이체파일을 내려받을 때 안내된 배치번호를 넣으면 그 배치 건에만 반영됩니다.
+              지난 파일을 잘못 다시 붙여넣어 <strong>정상 지급건이 실패로 되돌아가는 사고</strong>를 막습니다.
             </span>
           </div>
           <textarea

@@ -9,6 +9,9 @@ import { formatNumber, formatWon } from '@/lib/money';
 
 export const dynamic = 'force-dynamic';
 
+/** 선택 목록에 담을 크리에이터 수 상한. 넘어가면 검색형 입력으로 바꿔야 한다. */
+const CREATOR_OPTION_LIMIT = 300;
+
 /**
  * TTS 연동 관리 (통합 관리자 전용).
  *
@@ -25,7 +28,11 @@ const VOICES = [
 
 export default async function AdminTtsPage() {
   const creators = await prisma.creatorProfile.findMany({
+    // 승인된 채널만, 상한을 두고 읽는다. 예전에는 미승인·반려·정지 채널까지 전부 불러와
+    // 각각 입력 8개짜리 카드를 렌더해 크리에이터가 늘면 페이지가 열리지 않았다.
+    where: { status: 'APPROVED' },
     orderBy: { displayName: 'asc' },
+    take: CREATOR_OPTION_LIMIT,
     select: {
       id: true,
       displayName: true,

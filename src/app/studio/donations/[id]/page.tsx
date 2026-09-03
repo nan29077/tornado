@@ -21,9 +21,40 @@ export default async function StudioDonationDetailPage({ params }: { params: Pro
   const { creatorId } = await requireCreator();
   const { id } = await params;
 
+  /**
+   * 최상위를 `select` 로 명시한다.
+   *
+   * `include` 는 Donation 의 모든 스칼라를 함께 가져오므로 문자 원문 암호문(`messageRawEnc`)이
+   * 이 화면 렌더러의 손에 들어온다. 화면은 필터링본만 쓰고 "문자 원문은 제공되지 않습니다"라고
+   * 안내하는데, 데이터는 이미 넘어와 있어 유출 한 발짝 전이었다.
+   */
   const donation = await prisma.donation.findFirst({
     where: { id, creatorId },
-    include: {
+    select: {
+      id: true,
+      transactionNo: true,
+      creatorId: true,
+      donorId: true,
+      amount: true,
+      displayName: true,
+      message: true,
+      anonymous: true,
+      channel: true,
+      paymentMode: true,
+      status: true,
+      statusReason: true,
+      mtStatus: true,
+      overlayStatus: true,
+      youtubeStatus: true,
+      isTest: true,
+      receivedAt: true,
+      paidAt: true,
+      broadcastedAt: true,
+      createdAt: true,
+      pgFee: true,
+      platformFee: true,
+      feeVat: true,
+      netAmount: true,
       donor: { select: { id: true, phoneMasked: true, displayName: true } },
       statusLogs: { orderBy: { createdAt: 'asc' } },
       transactions: {

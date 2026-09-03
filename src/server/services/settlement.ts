@@ -1,7 +1,9 @@
 import { prisma, withAdvisoryLock } from '@/server/db';
 import { newId } from '@/lib/id';
 import { encrypt, decrypt, maskResident, normalizeResident } from '@/lib/crypto';
-import { applyRate } from '@/lib/money';
+import { applyRate, formatWon } from '@/lib/money';
+import { env } from '@/lib/env';
+import { calculateWithholding } from '@/lib/withholding';
 import { kstMonthKey } from '@/lib/datetime';
 import { logger } from '@/lib/logger';
 import type { LedgerEntryType } from '@/generated/prisma/enums';
@@ -16,71 +18,20 @@ import type { LedgerEntryType } from '@/generated/prisma/enums';
  *  - 정산 가능 금액 = 원장 합계 - 보류(미정산 요청 중) - 이미 지급
  */
 
-/** 원천징수율 3.3% (사업소득 기준) — 화면 안내·미리보기 표기에만 쓰는 합계 표시율. */
-export const WITHHOLDING_RATE = 0.033;
-
-/** 사업소득 원천징수 소득세율 3% */
-export const INCOME_TAX_RATE = 0.03;
-/** 지방소득세율 = 소득세액의 10% */
-export const LOCAL_TAX_RATE = 0.1;
 /**
- * 소액부징수 기준(소득세법 제86조). 산출된 소득세가 이 금액 미만이면 징수하지 않는다.
- * 사업소득 3% 기준으로 지급액 약 33,333원 미만이 여기 해당한다.
+ * 원천징수 계산은 `src/lib/withholding.ts` 에 있다.
+ * 서버(정산 요청 확정)와 브라우저(요청 금액 입력 중 미리보기)가 **같은 함수**를 써야
+ * 화면에 보이는 실지급액과 실제 기록되는 금액이 어긋나지 않는다.
+ * 기존 import 경로(`@/server/services/settlement`)를 유지하기 위해 여기서 다시 내보낸다.
  */
-export const SMALL_AMOUNT_EXEMPTION = 1_000n;
-
-/** 국고금관리법 제47조 — 10원 미만 단수 절사 */
-function truncateTo10Won(v: bigint): bigint {
-  return (v / 10n) * 10n;
-}
-
-export interface WithholdingBreakdown {
-  /** 소득세 (3%, 10원 미만 절사) */
-  incomeTax: bigint;
-  /** 지방소득세 (소득세의 10%, 10원 미만 절사) */
-  localTax: bigint;
-  /** 원천징수 합계 = 소득세 + 지방소득세 */
-  total: bigint;
-  /** 소액부징수로 전액 미징수된 경우 true */
-  exempt: boolean;
-}
-
-/**
- * 사업소득 원천징수액 계산 (국내 일반 실무 방식).
- *
- * 3.3% 를 한 번에 곱해 절사하면 국세청 지급명세서 검증에서 어긋난다.
- * 실제 신고는 소득세와 지방소득세를 **각각 따로 산출하고 각각 절사**한다.
- *
- *   1) 소득세      = 지급액 × 3%        → 10원 미만 절사
- *   2) 지방소득세  = 소득세 × 10%       → 10원 미만 절사
- *   3) 합계        = 소득세 + 지방소득세
- *   4) 소액부징수  : 소득세가 1,000원 미만이면 소득세·지방소득세 모두 미징수
- *
- * 예) 지급액 333,333원
- *     - 소득세     333,333 × 3% = 9,999.99 → 9,990원
- *     - 지방소득세 9,990 × 10%  = 999      → 990원
- *     - 합계 10,980원  (3.3% 단일 절사 시 10,999원 — 19원 차이)
- *
- * 예) 지급액 33,333원 이하
- *     - 소득세가 1,000원 미만이므로 **소액부징수**, 원천징수 0원
- *     - 즉 33,334원 미만 정산은 전액 지급된다
- *
- * 최종 세액 확정은 세무 자문을 거치는 것을 권장한다.
- */
-export function calculateWithholding(amount: bigint): WithholdingBreakdown {
-  if (amount <= 0n) return { incomeTax: 0n, localTax: 0n, total: 0n, exempt: false };
-
-  const rawIncomeTax = applyRate(amount, INCOME_TAX_RATE);
-  const incomeTax = truncateTo10Won(rawIncomeTax);
-
-  // 소액부징수: 산출 소득세가 1,000원 미만이면 지방소득세까지 함께 미징수한다.
-  if (incomeTax < SMALL_AMOUNT_EXEMPTION) {
-    return { incomeTax: 0n, localTax: 0n, total: 0n, exempt: true };
-  }
-
-  const localTax = truncateTo10Won(applyRate(incomeTax, LOCAL_TAX_RATE));
-  return { incomeTax, localTax, total: incomeTax + localTax, exempt: false };
-}
+export {
+  WITHHOLDING_RATE,
+  INCOME_TAX_RATE,
+  LOCAL_TAX_RATE,
+  SMALL_AMOUNT_EXEMPTION,
+  calculateWithholding,
+} from '@/lib/withholding';
+export type { WithholdingBreakdown } from '@/lib/withholding';
 
 /** 부가가치세율 10% */
 export const VAT_RATE = 0.1;
@@ -477,6 +428,12 @@ export async function createSettlementRequest(
 ) {
   if (amount <= 0n) throw new Error('정산 요청 금액이 올바르지 않습니다.');
 
+  // 이체 1건당 은행 수수료와 확인 공수가 고정으로 드는 만큼 하한을 둔다(0 이면 하한 없음).
+  const minAmount = env.settlement.minRequestAmount;
+  if (minAmount > 0n && amount < minAmount) {
+    throw new Error(`최소 정산 요청 금액은 ${formatWon(minAmount)}입니다.`);
+  }
+
   // 개인(사업소득 3.3% 원천징수) 크리에이터는 신고용 주민등록번호가 반드시 필요하다.
   const resident = input.resident ? normalizeResident(input.resident) : null;
   if (input.resident && !resident) throw new Error('주민등록번호 형식이 올바르지 않습니다.');
@@ -520,7 +477,14 @@ export async function createSettlementRequest(
  * 원장에 남지 않아 잔액이 줄지 않고, 크리에이터가 다시 신청해 **이중 지급**이 된다.
  * 이체파일을 만들 때 이 함수로 걸러낸다.
  */
-export async function assertPayable(requestId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+export async function assertPayable(
+  requestId: string,
+  /**
+   * 같은 크리에이터의 **다른 승인 건**이 이미 잡아 둔 금액.
+   * 여러 건을 한 이체파일에 담을 때, 앞 건이 쓴 금액만큼 잔액에서 빼고 판정해야 한다.
+   */
+  alreadyClaimed: bigint = 0n,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
   const req = await prisma.settlementRequest.findUnique({ where: { id: requestId } });
   if (!req) return { ok: false, reason: '정산 요청을 찾을 수 없습니다.' };
   if (req.status !== 'APPROVED') return { ok: false, reason: '승인(APPROVED) 상태가 아닙니다.' };
@@ -528,11 +492,26 @@ export async function assertPayable(requestId: string): Promise<{ ok: true } | {
   const account = await prisma.settlementAccount.findUnique({ where: { creatorId: req.creatorId } });
   if (!account || !account.verified) return { ok: false, reason: '정산 계좌 인증이 완료되지 않았습니다.' };
 
+  /**
+   * 잔액과 비교할 때 **같은 배치의 앞선 건이 이미 쓴 금액을 반드시 뺀다.**
+   *
+   * 예전에는 요청 1건만 `balance` 와 비교했다. 그래서 같은 크리에이터의 승인 건이
+   * 여러 개면 각각 독립적으로 통과했고, 그 사이에 환불이 생겨 잔액이 줄면
+   * 합계가 잔액을 넘긴 채 이체파일이 만들어졌다. 실제로 돈이 나간 뒤라 되돌릴 수 없다.
+   *
+   * (아직 승인되지 않은 REQUESTED/REVIEWING 건은 지금 지급하지 않으므로 빼지 않는다.
+   *  그것까지 예약하면 정상적인 지급이 막힌다)
+   */
   const summary = await getSettlementSummary(req.creatorId);
-  if (req.amount > summary.balance) {
+  const payable = summary.balance - alreadyClaimed;
+
+  if (req.amount > payable) {
     return {
       ok: false,
-      reason: `정산 가능 잔액 부족 (요청 ${req.amount.toString()}원 / 잔액 ${summary.balance.toString()}원)`,
+      reason:
+        `정산 가능 잔액 부족 (요청 ${req.amount.toString()}원 / 지급 가능 ${payable.toString()}원` +
+        (alreadyClaimed > 0n ? `, 같은 배치의 앞선 건 ${alreadyClaimed.toString()}원 반영` : '') +
+        `)`,
     };
   }
   return { ok: true };
@@ -638,25 +617,44 @@ export async function markPayoutFileIssued(
   const batchNo = `B${newId().slice(-10).toUpperCase()}`;
   if (requestIds.length === 0) return { batchNo, reissued: [] };
 
-  const existing = await prisma.settlementRequest.findMany({
-    where: { id: { in: requestIds }, payoutIssuedAt: { not: null } },
-    select: { id: true },
-  });
-  const reissued = existing.map((r) => r.id);
-
-  await prisma.settlementRequest.updateMany({
-    where: { id: { in: requestIds }, payoutIssuedAt: null },
-    data: { payoutIssuedAt: new Date(), payoutBatchNo: batchNo },
-  });
-  // 재발급 건은 최초 발급 시각을 보존하고 최신 배치번호만 갱신한다.
-  if (reissued.length > 0) {
-    await prisma.settlementRequest.updateMany({
-      where: { id: { in: reissued } },
-      data: { payoutBatchNo: batchNo },
+  /**
+   * 읽기와 쓰기를 **한 트랜잭션 안에서** 처리한다.
+   *
+   * 예전에는 "이미 발급된 건 조회" 와 "발급 표시" 가 분리돼 있었다. 재무 담당 두 명이
+   * 같은 승인 건을 동시에 내려받으면 둘 다 `existing = []` 를 읽어 각자 "재발급 아님"
+   * 판정을 받았고, 같은 내용의 이체파일 두 개가 만들어졌다. 둘 다 올리면 이중이체다.
+   *
+   * 선점은 조건부 갱신(`payoutIssuedAt: null`)의 결과 건수로 판정한다.
+   * 실제로 선점한 쪽만 "최초 발급"이 되고, 나머지는 재발급으로 표시된다.
+   */
+  return prisma.$transaction(async (tx) => {
+    const claimed = await tx.settlementRequest.updateMany({
+      where: { id: { in: requestIds }, payoutIssuedAt: null },
+      data: { payoutIssuedAt: new Date(), payoutBatchNo: batchNo },
     });
-    logger.warn('지급대행 이체파일 재발급', { batchNo, reissued, adminId: adminId ?? null });
-  }
-  return { batchNo, reissued };
+
+    // 선점하지 못한 나머지가 곧 재발급 대상이다.
+    const reissuedRows = await tx.settlementRequest.findMany({
+      where: { id: { in: requestIds }, payoutBatchNo: { not: batchNo } },
+      select: { id: true },
+    });
+    const reissued = reissuedRows.map((r) => r.id);
+
+    // 재발급 건은 최초 발급 시각을 보존하고 최신 배치번호만 갱신한다.
+    if (reissued.length > 0) {
+      await tx.settlementRequest.updateMany({
+        where: { id: { in: reissued } },
+        data: { payoutBatchNo: batchNo },
+      });
+      logger.warn('지급대행 이체파일 재발급', {
+        batchNo,
+        reissued,
+        claimed: claimed.count,
+        adminId: adminId ?? null,
+      });
+    }
+    return { batchNo, reissued };
+  });
 }
 
 /**
@@ -781,8 +779,10 @@ export async function buildPayoutRows(requestIds: string[]): Promise<PayoutRow[]
   if (requestIds.length === 0) return [];
   const reqs = await prisma.settlementRequest.findMany({
     where: { id: { in: requestIds }, status: 'APPROVED' },
+    // 같은 크리에이터의 여러 건이 섞여 있을 때 판정이 순서에 좌우되지 않도록 고정 순서로 읽는다.
+    orderBy: [{ creatorId: 'asc' }, { requestedAt: 'asc' }, { id: 'asc' }],
     select: {
-      id: true, payoutAmount: true,
+      id: true, creatorId: true, amount: true, payoutAmount: true,
       creator: {
         select: {
           displayName: true, code: true,
@@ -795,16 +795,21 @@ export async function buildPayoutRows(requestIds: string[]): Promise<PayoutRow[]
   });
 
   const rows: PayoutRow[] = [];
+  /** 이 배치에서 크리에이터별로 이미 잡은 금액. 뒤 건은 그만큼 줄어든 잔액으로 판정한다. */
+  const claimedByCreator = new Map<string, bigint>();
+
   for (const r of reqs) {
     const acc = r.creator.settlementAccount;
     if (!acc || !acc.verified) continue; // 미인증 계좌는 이체 대상에서 제외
     // 잔액까지 여기서 걸러낸다. 검증은 반드시 **이체 전** 에 끝나야 한다.
     // 이체가 끝난 뒤(markSettlementPaid) 막으면 이미 나간 돈이 원장에 안 남아 이중 지급이 된다.
-    const payable = await assertPayable(r.id);
+    const alreadyClaimed = claimedByCreator.get(r.creatorId) ?? 0n;
+    const payable = await assertPayable(r.id, alreadyClaimed);
     if (!payable.ok) {
       logger.warn('지급대행 이체파일에서 제외', { requestId: r.id, reason: payable.reason });
       continue;
     }
+    claimedByCreator.set(r.creatorId, alreadyClaimed + r.amount);
     rows.push({
       requestId: r.id,
       creatorName: r.creator.displayName,

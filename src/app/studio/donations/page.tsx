@@ -36,11 +36,18 @@ const VIEWS = [
 
 type ViewMode = (typeof VIEWS)[number]['value'];
 
+/**
+ * 기간 필터의 시작 시각.
+ *
+ * 모두 **KST 날짜 경계**로 맞춘다. 예전에는 '오늘'만 KST 자정이고 7일·30일은 현재 시각
+ * 기준 롤링이라, 오전에 "최근 7일"을 열면 7일 전 오전까지만 보였다. 사용자가 기대하는
+ * "지난 7일치 날짜"와 다르고, 두 기준이 한 화면에 섞여 있었다.
+ */
 function periodStart(period: string): Date | null {
   const now = new Date();
   if (period === 'today') return kstStartOfDay(now);
-  if (period === '7d') return new Date(now.getTime() - 7 * 86_400_000);
-  if (period === '30d') return new Date(now.getTime() - 30 * 86_400_000);
+  if (period === '7d') return kstStartOfDay(new Date(now.getTime() - 6 * 86_400_000));
+  if (period === '30d') return kstStartOfDay(new Date(now.getTime() - 29 * 86_400_000));
   return null;
 }
 
@@ -63,14 +70,27 @@ export default async function StudioDonationsPage({
   const gte = periodStart(period);
   if (gte) where.receivedAt = { gte };
   if (status && (STATUS_VALUES as string[]).includes(status)) where.status = status as DonationStatus;
-  if (q) where.transactionNo = { contains: q, mode: 'insensitive' };
+  /**
+   * 거래번호는 `TRD-` 접두사가 붙은 고정 포맷이고 유니크 인덱스가 있다.
+   * 앞뒤 와일드카드(contains) + insensitive 로 찾으면 그 인덱스를 전혀 쓰지 못해
+   * 후원이 쌓일수록 검색이 통째로 느려진다. 앞부분 일치로 바꾼다.
+   */
+  if (q) where.transactionNo = { startsWith: q.toUpperCase() };
 
-  const [total, rows] = await Promise.all([
-    prisma.donation.count({ where }),
+  // 먼저 전체 건수를 알아야 페이지 번호를 범위 안으로 자를 수 있다.
+  const total = await prisma.donation.count({ where });
+  const totalPagesForClamp = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  /**
+   * 범위를 벗어난 페이지로 들어와도 빈 화면에 갇히지 않게 마지막 쪽으로 자른다.
+   * (`?page=99999` 면 "조건에 맞는 내역이 없습니다"가 떠서 필터 문제로 오인했다)
+   */
+  const safePage = Math.min(page, totalPagesForClamp);
+
+  const [rows] = await Promise.all([
     prisma.donation.findMany({
       where,
-      orderBy: { receivedAt: 'desc' },
-      skip: (page - 1) * PAGE_SIZE,
+      orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
+      skip: (safePage - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       select: {
         id: true,
@@ -99,7 +119,7 @@ export default async function StudioDonationsPage({
     <>
       <PageHeader
         title="후원 내역"
-        description={`조건에 해당하는 후원 ${formatNumber(total)}건 (${page}/${totalPages} 페이지)`}
+        description={`조건에 해당하는 후원 ${formatNumber(total)}건 (${safePage}/${totalPages} 페이지)`}
       />
 
       <div className="space-y-4">
@@ -257,13 +277,13 @@ export default async function StudioDonationsPage({
 
         {totalPages > 1 ? (
           <nav className="flex items-center justify-center gap-2">
-            <PageLink href={`/studio/donations${buildQuery(base, { page: page - 1 })}`} disabled={page <= 1}>
+            <PageLink href={`/studio/donations${buildQuery(base, { page: safePage - 1 })}`} disabled={safePage <= 1}>
               이전
             </PageLink>
             <span className="text-[13px] tabular-nums text-ink-500">
-              {page} / {totalPages}
+              {safePage} / {totalPages}
             </span>
-            <PageLink href={`/studio/donations${buildQuery(base, { page: page + 1 })}`} disabled={page >= totalPages}>
+            <PageLink href={`/studio/donations${buildQuery(base, { page: safePage + 1 })}`} disabled={safePage >= totalPages}>
               다음
             </PageLink>
           </nav>

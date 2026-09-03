@@ -6,9 +6,10 @@ import { disconnectYouTubeAction, refreshYouTubeBroadcastAction } from '@/app/ac
 import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { formatChatMessage, getYouTubeAdapter } from '@/server/adapters/youtube';
-import { tokenHash } from '@/lib/crypto';
+import { createYouTubeOAuthState } from '@/server/services/youtube-connection';
+import { getYouTubeQuotaUsage } from '@/server/services/youtube-quota';
 import { formatKst } from '@/lib/datetime';
-import { deliveryStatusLabel } from '@/lib/labels';
+import { deliveryStatusLabel, youtubeDeliveryReasonLabel } from '@/lib/labels';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +33,14 @@ const CALLBACK_MESSAGE: Record<string, { tone: 'success' | 'warning' | 'danger';
   denied: { tone: 'warning', text: '채널 연결 동의가 거부되었습니다.' },
   invalid: { tone: 'danger', text: '인증 응답이 올바르지 않습니다. 다시 시도해 주세요.' },
   state_mismatch: { tone: 'danger', text: '요청 검증에 실패했습니다(state 불일치). 다시 시도해 주세요.' },
+  state_expired: {
+    tone: 'warning',
+    text: '연결 요청이 만료되었거나 이미 사용되었습니다. 이 화면에서 [구글 계정으로 채널 연결]을 다시 눌러 주세요.',
+  },
+  scope_missing: {
+    tone: 'danger',
+    text: '구글 동의 화면에서 "실시간 채팅 관리" 권한이 허용되지 않았습니다. 이 권한이 없으면 후원 메시지를 채팅에 올릴 수 없습니다. 다시 연결하면서 모든 항목에 동의해 주세요.',
+  },
   token_failed: { tone: 'danger', text: '액세스 토큰 발급에 실패했습니다.' },
   channel_failed: { tone: 'danger', text: '채널 정보 조회에 실패했습니다.' },
   error: { tone: 'danger', text: '연결 처리 중 오류가 발생했습니다.' },
@@ -46,7 +55,7 @@ export default async function StudioYouTubePage({
   const sp = await searchParams;
   const callback = CALLBACK_MESSAGE[one(sp.youtube)];
 
-  const [connection, broadcast, deliveries] = await Promise.all([
+  const [connection, broadcast, deliveries, quota] = await Promise.all([
     prisma.youTubeConnection.findUnique({ where: { creatorId } }),
     prisma.youTubeBroadcast.findFirst({ where: { creatorId }, orderBy: { detectedAt: 'desc' } }),
     prisma.youTubeChatDelivery.findMany({
@@ -64,17 +73,21 @@ export default async function StudioYouTubePage({
         donation: { select: { id: true, transactionNo: true, displayName: true } },
       },
     }),
+    // 할당량 저장소가 죽어도 이 화면은 열려야 한다. 조회 실패는 "확인 불가"로 표시한다.
+    getYouTubeQuotaUsage().catch(() => null),
   ]);
 
   let authUrl: string | null = null;
   let adapterMode = 'mock';
-  let adapterError: string | null = null;
+  let adapterUnavailable = false;
   try {
     const adapter = getYouTubeAdapter();
     adapterMode = adapter.info().mode;
-    authUrl = adapter.getAuthUrl(`${creatorId}.${tokenHash(creatorId)}`);
-  } catch (e) {
-    adapterError = (e as Error).message;
+    authUrl = adapter.getAuthUrl(await createYouTubeOAuthState(creatorId));
+  } catch {
+    // 어댑터 예외 원문에는 설정 키 이름·경로가 담긴다. 크리에이터 화면에 그대로 노출하지 않는다.
+    // (관리자 화면 /admin/youtube 에서 설정 상태를 확인한다)
+    adapterUnavailable = true;
   }
 
   const connected = connection?.status === 'CONNECTED';
@@ -96,11 +109,30 @@ export default async function StudioYouTubePage({
       <div className="space-y-5">
         {callback ? <Notice tone={callback.tone}>{callback.text}</Notice> : null}
 
-        {adapterMode === 'mock' ? (
+        {adapterUnavailable ? (
+          <Notice tone="danger" title="유튜브 연동이 아직 준비되지 않았습니다">
+            구글 OAuth 승인 절차가 끝나지 않아 지금은 채널을 연결할 수 없습니다. 통합 관리자가 설정을 마치면 이 화면에서
+            바로 연결할 수 있습니다.
+          </Notice>
+        ) : adapterMode === 'mock' ? (
           <Notice tone="warning" title="현재 모의(mock) 연동 상태입니다">
             실제 구글 계정과 연결되지 않으며 채팅 전송도 실제로 이루어지지 않습니다. API 키와 구글 OAuth 승인은 통합
             관리자가 처리하며, 완료되면 이 화면에서 바로 실제 채널을 연결할 수 있습니다.
-            {adapterError ? <span className="mt-1 block text-danger-500">{adapterError}</span> : null}
+          </Notice>
+        ) : null}
+
+        {connected && quota ? (
+          <Notice
+            tone={quota.remainingMessages <= 0 ? 'danger' : quota.remainingMessages < 20 ? 'warning' : 'neutral'}
+            title={
+              quota.remainingMessages <= 0
+                ? '오늘 유튜브 채팅 전송 한도를 모두 썼습니다'
+                : `오늘 남은 유튜브 채팅 전송: 약 ${quota.remainingMessages.toLocaleString()}건`
+            }
+          >
+            유튜브가 허용하는 하루 전송량에는 상한이 있습니다. 한도를 넘으면 후원 메시지가 라이브 채팅에 올라가지
+            않지만 <strong>결제와 정산은 정상 처리</strong>되고 방송 화면 오버레이도 그대로 표시됩니다. 한도는 태평양시
+            자정(한국시간 오후 4~5시경)에 초기화됩니다.
           </Notice>
         ) : null}
 
@@ -127,8 +159,17 @@ export default async function StudioYouTubePage({
                 <DataRow label="채널 ID" value={<span className="font-mono text-[12px]">{connection.channelId}</span>} />
                 <DataRow label="연결 갱신" value={formatKst(connection.lastCheckedAt)} />
                 <DataRow
-                  label="마지막 오류"
-                  value={connection.lastError ? <span className="text-danger-500">{connection.lastError}</span> : '없음'}
+                  label="연결 상태 점검"
+                  value={
+                    connection.lastError ? (
+                      // 구글 API 응답 원문에는 내부 설정 정보가 섞일 수 있어 그대로 노출하지 않는다.
+                      <span className="text-danger-500">
+                        마지막 시도에서 문제가 있었습니다. [현재 라이브 방송 조회]로 재시도해 보세요.
+                      </span>
+                    ) : (
+                      '정상'
+                    )
+                  }
                 />
               </div>
             ) : (
@@ -226,7 +267,7 @@ export default async function StudioYouTubePage({
                         <Badge tone={tone.tone}>{tone.text}</Badge>
                       </Td>
                       <Td className="tabular-nums">{d.attempts}</Td>
-                      <Td>{d.errorCode ? `${d.errorCode} ${d.errorMessage ?? ''}`.trim() : '-'}</Td>
+                      <Td>{youtubeDeliveryReasonLabel(d.errorCode)}</Td>
                     </tr>
                   );
                 })}

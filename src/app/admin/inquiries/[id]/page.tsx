@@ -13,6 +13,7 @@ import { formatNumber } from '@/lib/money';
 import { SUPPORT_CATEGORIES } from '@/components/public/support-options';
 import { cx } from '@/components/ui';
 import type { InquiryStatus } from '@/generated/prisma/enums';
+import { headers } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +48,19 @@ export default async function AdminInquiryDetailPage({ params }: { params: Promi
   });
   if (!inquiry) notFound();
 
-  await markInquiryRead(inquiry.id);
+  /**
+   * **프리페치 요청에서는 읽음 처리를 하지 않는다.**
+   *
+   * 목록의 `<Link>` 는 화면에 보이는 것만으로 이 페이지를 미리 렌더한다. 그대로 두면
+   * 목록을 스크롤하기만 해도 문의가 "읽음"으로 바뀌고, 상단 "읽지 않은 메시지" 타일이
+   * 아무도 열지 않은 문의까지 0으로 떨어뜨려 미답변 문의를 놓치게 된다.
+   * (정산 화면은 같은 이유로 `<a>` 를 쓰고 주석까지 남겨 두었는데 여기만 빠져 있었다)
+   */
+  const h = await headers();
+  const isPrefetch =
+    h.get('next-router-prefetch') === '1' ||
+    (h.get('purpose') ?? h.get('sec-purpose') ?? '').toLowerCase().includes('prefetch');
+  if (!isPrefetch) await markInquiryRead(inquiry.id);
 
   const user = inquiry.userId
     ? await prisma.user.findUnique({

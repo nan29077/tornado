@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/server/db';
 import { writeAudit } from '@/server/auth';
 import { newId } from '@/lib/id';
+import { revokeYouTubeConnection } from '@/server/services/youtube-connection';
 import type { AdminActionState } from '@/components/admin/state';
 import { run, requiredId, bool, enumValue, int, money } from './shared';
 
@@ -17,21 +18,17 @@ export async function disconnectYouTube(_prev: AdminActionState, fd: FormData): 
     const creatorId = requiredId(fd, 'creatorId', '크리에이터');
     const before = await prisma.youTubeConnection.findUnique({
       where: { creatorId },
-      select: { id: true, status: true, channelTitle: true, expiresAt: true },
+      select: { id: true, status: true, channelTitle: true, expiresAt: true, refreshTokenEnc: true },
     });
     if (!before) throw new Error('연결된 유튜브 채널이 없습니다.');
     if (before.status === 'REVOKED') throw new Error('이미 해제된 연결입니다.');
 
-    await prisma.youTubeConnection.update({
-      where: { creatorId },
-      data: {
-        status: 'REVOKED',
-        // 저장된 토큰 암호문을 폐기해 재사용을 차단한다.
-        accessTokenEnc: '',
-        refreshTokenEnc: '',
-        lastError: '관리자에 의해 연결이 강제 해제되었습니다.',
-        lastCheckedAt: new Date(),
-      },
+    // 구글 쪽 권한까지 회수하고 저장된 토큰 암호문을 폐기한다.
+    // (회수 호출이 실패해도 우리 토큰 폐기는 반드시 수행한다)
+    const { providerRevoked } = await revokeYouTubeConnection({
+      connectionId: before.id,
+      refreshTokenEnc: before.refreshTokenEnc,
+      reason: '관리자에 의해 연결이 강제 해제되었습니다.',
     });
     await writeAudit({
       adminUserId: admin.id,
@@ -39,11 +36,13 @@ export async function disconnectYouTube(_prev: AdminActionState, fd: FormData): 
       targetType: 'YouTubeConnection',
       targetId: before.id,
       before: { status: before.status, channelTitle: before.channelTitle },
-      after: { status: 'REVOKED', tokensPurged: true },
+      after: { status: 'REVOKED', tokensPurged: true, providerRevoked },
     });
     revalidatePath('/admin/youtube');
     revalidatePath(`/admin/creators/${creatorId}`);
-    return '유튜브 연결을 해제하고 저장된 토큰을 폐기했습니다. 크리에이터가 다시 연결해야 합니다.';
+    return providerRevoked
+      ? '유튜브 연결을 해제하고 구글 권한 회수와 토큰 폐기를 완료했습니다. 크리에이터가 다시 연결해야 합니다.'
+      : '유튜브 연결을 해제하고 저장된 토큰을 폐기했습니다. 구글 쪽 권한 회수는 실패했으니 필요하면 크리에이터가 구글 보안 설정에서 직접 해제해야 합니다.';
   });
 }
 

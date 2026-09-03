@@ -398,7 +398,16 @@ function LayoutSlider({
             max={max}
             step={1}
             value={value}
-            onChange={(e) => onChange(Number(e.target.value))}
+            onChange={(e) => {
+              /**
+               * 숫자 칸을 비우면 `e.target.value` 가 빈 문자열이라 `Number('')` 은 0 이 된다.
+               * 위치 값이 0 으로 튀면서 오버레이가 화면 구석으로 순간이동했다.
+               * 숫자로 읽히지 않는 입력은 무시하고, 읽히면 허용 범위로 자른다.
+               */
+              const next = Number(e.target.value);
+              if (e.target.value === '' || !Number.isFinite(next)) return;
+              onChange(Math.min(max, Math.max(min, Math.round(next))));
+            }}
             className="h-7 w-16 rounded-md border border-ink-200 bg-white px-1.5 text-right text-[12px] tabular-nums"
           />
           <span className="text-ink-400">%</span>

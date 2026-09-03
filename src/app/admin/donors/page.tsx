@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, EmptyState, Notice, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminInput, AdminSelect, FilterBar, Pager } from '@/components/admin/controls';
 import { ActionButton, ActionForm } from '@/components/admin/action-form';
-import { PAGE_SIZE, parsePage, PAID_DONATION_STATUSES } from '@/components/admin/constants';
+import { PAGE_SIZE, parsePage, PAID_DONATION_STATUSES, clampPageOrRedirect } from '@/components/admin/constants';
 import { bankLabel } from '@/components/admin/mask';
 import { unlockDonor, setDonorBlock, updateDonorLimitsByAdmin } from '@/app/actions/admin/accounts';
 import { prisma } from '@/server/db';
@@ -11,6 +11,7 @@ import { formatWon, formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
 import type { Prisma } from '@/generated/prisma/client';
 import { donorOnboardingStatusLabel } from '@/lib/labels';
+import { phoneHash } from '@/lib/crypto';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,8 +30,24 @@ export default async function AdminDonorsPage({
     : '') as StateFilter;
 
   const now = new Date();
+  /**
+   * 검색 입력이 **전화번호 형태이면 해시로 정확 조회**한다.
+   *
+   * `phoneMasked` 는 `010-****-5678` 형태라, 고객센터에 들어온 번호(`010-9876-5432`)를
+   * 그대로 넣으면 0건이 나왔다. 뒤 4자리만 따로 입력해야 찾을 수 있다는 걸 아는 사람만
+   * 쓸 수 있는 검색이었다. 번호를 넣으면 번호로 찾히게 한다.
+   * (원문은 저장하지 않으므로 HMAC 해시로 대조한다)
+   */
+  const digits = q.replace(/[^0-9]/g, '');
+  const searchByPhone = /^01[0-9]{8,9}$/.test(digits);
   const where: Prisma.DonorProfileWhereInput = {
-    ...(q ? { phoneMasked: { contains: q } } : {}),
+    // 번호 재사용으로 분리된(은퇴) 프로필은 기본 목록에서 감춘다.
+    retiredAt: null,
+    ...(q
+      ? searchByPhone
+        ? { phoneHash: phoneHash(digits) }
+        : { phoneMasked: { contains: q } }
+      : {}),
     ...(state === 'LOCKED' ? { lockedUntil: { gt: now } } : {}),
     ...(state === 'BLOCKED' ? { blockedAt: { not: null } } : {}),
     ...(state === 'REGISTERED' ? { registeredAt: { not: null } } : {}),
@@ -41,7 +58,8 @@ export default async function AdminDonorsPage({
     prisma.donorProfile.count({ where }),
     prisma.donorProfile.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      // 보조 정렬키로 페이지 간 중복·누락을 막는다.
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       select: {
@@ -74,6 +92,8 @@ export default async function AdminDonorsPage({
   const totalMap = new Map(totals.map((t) => [t.donorId ?? '', t]));
 
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // 필터를 바꿔 결과가 줄었을 때 URL 의 옛 page 번호 때문에 빈 목록이 뜨는 것을 막는다.
+  clampPageOrRedirect('/admin/donors', { q, state }, page, lastPage, total);
 
   return (
     <>
@@ -90,8 +110,8 @@ export default async function AdminDonorsPage({
       </div>
 
       <FilterBar action="/admin/donors" resetHref="/admin/donors">
-        <AdminField label="연락처 검색 (마스킹 기준)" className="w-56">
-          <AdminInput name="q" defaultValue={q} placeholder="010-****-1234" />
+        <AdminField label="연락처 검색" className="w-60">
+          <AdminInput name="q" defaultValue={q} placeholder="010-9876-5432 또는 010-****-5432" />
         </AdminField>
         <AdminField label="상태" className="w-44">
           <AdminSelect name="state" defaultValue={state}>

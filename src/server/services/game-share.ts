@@ -1,10 +1,12 @@
 import { prisma } from '@/server/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { decrypt, encrypt } from '@/lib/crypto';
 import { getYouTubeAdapter } from '@/server/adapters/youtube';
 import { findActiveRound } from '@/server/services/game-state';
-import { reserveYouTubeQuota } from '@/server/services/broadcast-dispatch';
+import { reserveYouTubeQuota, releaseYouTubeQuota } from '@/server/services/youtube-quota';
+import { ensureYouTubeAccessToken, resolveActiveBroadcast } from '@/server/services/youtube-connection';
+import { getPublicBaseUrl } from '@/server/public-base-url';
+import { consumeRateLimit } from '@/server/rate-limit';
 import { usesEntries } from '@/lib/game-catalog';
 
 /**
@@ -34,9 +36,21 @@ const REASON_TEXT: Record<string, string> = {
   TOKEN_REFRESH_FAILED: '유튜브 연결이 만료됐습니다. [유튜브 연동]에서 다시 연결해 주세요.',
   BROADCAST_LOOKUP_FAILED: '유튜브 라이브 방송 정보를 가져오지 못했습니다. 잠시 뒤 다시 시도해 주세요.',
   NO_ACTIVE_BROADCAST: '진행 중인 유튜브 라이브 방송을 찾지 못했습니다. 방송을 시작한 뒤 눌러 주세요.',
+  CHAT_DISABLED: '이 방송은 실시간 채팅이 꺼져 있습니다. 유튜브에서 채팅을 켜 주세요.',
   QUOTA_EXCEEDED: '오늘 쓸 수 있는 유튜브 전송 한도를 모두 썼습니다. 내일 다시 시도해 주세요.',
+  TOO_OFTEN: '참여 링크는 잠시 뒤에 다시 올릴 수 있습니다. (도배 방지)',
   SEND_FAILED: '유튜브 채팅에 올리지 못했습니다. 잠시 뒤 다시 시도해 주세요.',
 };
+
+/**
+ * 같은 크리에이터가 이 버튼을 연타하지 못하게 막는다.
+ *
+ * 이 전송은 후원 알림과 **같은 일일 예산**을 쓴다. 제한이 없으면 크리에이터 한 명이
+ * 버튼을 수백 번 눌러 그날 예산을 전부 소진시키고, 그때부터 모든 채널의 후원 채팅이
+ * 실패한다(결제는 정상 완료되므로 후원자만 손해를 본다).
+ */
+const SHARE_LIMIT_COUNT = 3;
+const SHARE_LIMIT_WINDOW_SEC = 300;
 
 function fail(reason: string): GameShareResult {
   return { ok: false, message: REASON_TEXT[reason] ?? REASON_TEXT.SEND_FAILED };
@@ -56,58 +70,42 @@ export async function shareGameLinkToChat(creatorId: string): Promise<GameShareR
   const entryByLink = round.game.entryMode !== 'DONATION' && usesEntries(round.game.type);
   if (!entryByLink) return fail('NO_JOIN_URL');
 
-  const joinUrl = `${env.baseUrl}/play/${round.joinCode}`;
+  const limited = await consumeRateLimit('yt-share', creatorId, SHARE_LIMIT_COUNT, SHARE_LIMIT_WINDOW_SEC, {
+    failClosed: true,
+  });
+  if (!limited.ok) return fail('TOO_OFTEN');
+
+  // 터널·사내망 미리보기에서 localhost 주소가 채팅에 올라가면 아무도 열 수 없다.
+  // 후원 페이지 공유 URL 과 같은 기준(요청 호스트 반영)을 쓴다.
+  const baseUrl = await getPublicBaseUrl().catch(() => env.baseUrl);
+  const joinUrl = `${baseUrl}/play/${round.joinCode}`;
   const text = buildGameShareText(round.game.title, joinUrl, round.joinCode);
 
   const conn = await prisma.youTubeConnection.findUnique({ where: { creatorId } });
-  // EXPIRED 는 "이전 갱신이 한 번 실패했다"는 뜻일 뿐 영구 실패가 아니다.
-  if (!conn || (conn.status !== 'CONNECTED' && conn.status !== 'EXPIRED')) return fail('NO_CONNECTION');
-
   const adapter = getYouTubeAdapter();
 
-  let accessToken = decrypt(conn.accessTokenEnc);
-  if (conn.status === 'EXPIRED' || conn.expiresAt.getTime() < Date.now() + 60_000) {
-    const refreshed = await adapter.refresh(decrypt(conn.refreshTokenEnc));
-    if (!refreshed.ok || !refreshed.data) {
-      await prisma.youTubeConnection.update({
-        where: { id: conn.id },
-        data: { status: 'EXPIRED', lastError: refreshed.message ?? 'refresh 실패' },
-      });
-      return fail('TOKEN_REFRESH_FAILED');
-    }
-    accessToken = refreshed.data.accessToken;
-    await prisma.youTubeConnection.update({
-      where: { id: conn.id },
-      data: {
-        accessTokenEnc: encrypt(refreshed.data.accessToken),
-        expiresAt: refreshed.data.expiresAt,
-        status: 'CONNECTED',
-        lastError: null,
-      },
-    });
+  const token = await ensureYouTubeAccessToken(conn, adapter);
+  if (!token.ok) {
+    return fail(token.reason === 'NO_CONNECTION' ? 'NO_CONNECTION' : 'TOKEN_REFRESH_FAILED');
   }
 
-  const live = await adapter.findActiveBroadcast(accessToken);
-  if (!live.ok) {
-    logger.warn('게임 참여 링크 — 라이브 방송 조회 실패', {
-      creatorId,
-      code: live.code ?? null,
-      message: live.message ?? null,
-    });
-    return fail('BROADCAST_LOOKUP_FAILED');
-  }
-  if (!live.data || !live.data.liveChatId) return fail('NO_ACTIVE_BROADCAST');
+  const live = await resolveActiveBroadcast(creatorId, token.accessToken, adapter);
+  if (!live.ok) return fail(live.reason);
 
-  if (!(await reserveYouTubeQuota(env.youtube.insertQuotaCost))) {
+  const quota = { cost: env.youtube.insertQuotaCost, creatorId, purpose: 'share' as const };
+  if (!(await reserveYouTubeQuota(quota))) {
     logger.warn('게임 참여 링크 — 유튜브 할당량 초과', { creatorId });
     return fail('QUOTA_EXCEEDED');
   }
 
-  const res = await adapter.insertChatMessage(accessToken, live.data.liveChatId, text);
+  const res = await adapter.insertChatMessage(token.accessToken, live.broadcast.liveChatId!, text);
   if (!res.ok) {
+    // 보내지 못한 만큼은 예산을 되돌린다.
+    await releaseYouTubeQuota(quota);
     logger.warn('게임 참여 링크 — 채팅 전송 실패', { creatorId, code: res.code ?? null });
     return fail('SEND_FAILED');
   }
 
-  return { ok: true, message: '유튜브 라이브 채팅에 참여 링크를 올렸습니다.' };
+  const mockNote = adapter.info().mode === 'mock' ? ' (mock 어댑터라 실제 채팅에는 올라가지 않습니다)' : '';
+  return { ok: true, message: `유튜브 라이브 채팅에 참여 링크를 올렸습니다.${mockNote}` };
 }

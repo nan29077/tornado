@@ -18,7 +18,9 @@ export default async function MyBlocksPage() {
   const [links, blockedByCreators] = await Promise.all([
     prisma.donorCreatorLink.findMany({
       where: { donorId },
+      // 여러 채널을 후원한 사용자는 목록이 계속 길어진다. 상한을 둔다.
       orderBy: [{ donorBlockedAt: { sort: 'desc', nulls: 'last' } }, { lastDonatedAt: 'desc' }],
+      take: 200,
       select: {
         id: true,
         donorBlockedAt: true,
@@ -29,7 +31,7 @@ export default async function MyBlocksPage() {
         creator: { select: { displayName: true, code: true, status: true } },
       },
     }),
-    prisma.blockedDonor.findMany({ where: { donorId }, select: { creatorId: true } }),
+    prisma.blockedDonor.findMany({ where: { donorId }, select: { creatorId: true }, take: 500 }),
   ]);
   const creatorBlocked = new Set(blockedByCreators.map((b) => b.creatorId));
 

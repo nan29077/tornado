@@ -2,7 +2,7 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle, EmptyState, Notice, SectionTitle, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminInput, AdminSelect, FilterBar, Pager } from '@/components/admin/controls';
 import { ActionButton, ActionForm, SelectActionForm } from '@/components/admin/action-form';
-import { PAGE_SIZE, parsePage } from '@/components/admin/constants';
+import { PAGE_SIZE, parsePage, clampPageOrRedirect } from '@/components/admin/constants';
 import { updateReportStatus, createBannedWord, deleteBannedWord } from '@/app/actions/admin/policy';
 import { prisma } from '@/server/db';
 import { formatNumber } from '@/lib/money';
@@ -42,7 +42,7 @@ export default async function AdminModerationPage({
     prisma.report.count({ where }),
     prisma.report.findMany({
       where,
-      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       select: {
@@ -70,6 +70,8 @@ export default async function AdminModerationPage({
   const reporterById = new Map(reporters.map((u) => [u.id, u]));
 
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // 필터를 바꿔 결과가 줄었을 때 URL 의 옛 page 번호 때문에 빈 목록이 뜨는 것을 막는다.
+  clampPageOrRedirect('/admin/moderation', { status: status ?? '' }, page, lastPage, total);
   const countOf = (s: ReportStatus) => byStatus.find((b) => b.status === s)?._count._all ?? 0;
 
   return (
@@ -196,6 +198,7 @@ export default async function AdminModerationPage({
                       </Td>
                       <Td>
                         <SelectActionForm
+                        ariaLabel="신고 처리 상태 변경"
                           action={updateReportStatus}
                           values={{ reportId: r.id }}
                           name="status"

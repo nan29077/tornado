@@ -24,5 +24,5 @@ export async function GET(req: Request, ctx: { params: Promise<{ creatorId: stri
   if (!access.ok) return new Response('unauthorized', { status: 401 });
 
   // 후원 알림 스트림과 같은 상한을 공유한다. 토큰으로 붙은 방송용과 스튜디오 미리보기를 구분해 센다.
-  return gameStateStream(creatorId, 'public', preview ? 'preview' : 'broadcast');
+  return gameStateStream(req, creatorId, 'public', preview ? 'preview' : 'broadcast');
 }

@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, EmptyState, Notice, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminInput, AdminSelect, CreatorOptions, FilterBar, Pager } from '@/components/admin/controls';
 import { shortId } from '@/components/admin/mask';
-import { PAGE_SIZE, parsePage } from '@/components/admin/constants';
+import { PAGE_SIZE, parsePage, clampPageOrRedirect } from '@/components/admin/constants';
 import { prisma } from '@/server/db';
 import { formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
@@ -12,6 +12,9 @@ import type { Prisma } from '@/generated/prisma/client';
 import type { MoProcessResult } from '@/generated/prisma/enums';
 
 export const dynamic = 'force-dynamic';
+
+/** 선택 목록에 담을 크리에이터 수 상한. 넘어가면 검색형 입력으로 바꿔야 한다. */
+const CREATOR_OPTION_LIMIT = 300;
 
 const RESULTS: MoProcessResult[] = [
   'PENDING', 'ROUTED', 'UNKNOWN_ROUTE', 'DUPLICATE', 'UNREGISTERED_DONOR', 'BLOCKED', 'ERROR',
@@ -50,7 +53,7 @@ export default async function AdminMoMessagesPage({
     prisma.moInboundMessage.count({ where }),
     prisma.moInboundMessage.findMany({
       where,
-      orderBy: { receivedAt: 'desc' },
+      orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       select: {
@@ -62,10 +65,19 @@ export default async function AdminMoMessagesPage({
       },
     }),
     prisma.moInboundMessage.groupBy({ by: ['result'], _count: { _all: true } }),
-    prisma.creatorProfile.findMany({ orderBy: { displayName: 'asc' }, select: { id: true, displayName: true, code: true } }),
+    // 필터 옵션은 승인 크리에이터만, 상한을 두고 읽는다.
+    // (반려·정지 채널까지 전부 옵션으로 렌더할 이유가 없다)
+    prisma.creatorProfile.findMany({
+      where: { status: 'APPROVED' },
+      orderBy: { displayName: 'asc' },
+      select: { id: true, displayName: true, code: true },
+      take: CREATOR_OPTION_LIMIT,
+    }),
   ]);
 
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // 필터를 바꿔 결과가 줄었을 때 URL 의 옛 page 번호 때문에 빈 목록이 뜨는 것을 막는다.
+  clampPageOrRedirect('/admin/mo-messages', { result: result ?? '', creatorId: creatorId ?? '', number: receivedNumber, from: sp.from ?? '', to: sp.to ?? '' }, page, lastPage, total);
   const countOf = (r: MoProcessResult) => grouped.find((g) => g.result === r)?._count._all ?? 0;
 
   return (

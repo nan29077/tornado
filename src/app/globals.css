@@ -45,8 +45,21 @@
   --color-danger-500: #e5484d;
   --color-danger-50: #fdecec;
 
-  --font-sans: var(--font-pretendard), "Pretendard", -apple-system, BlinkMacSystemFont,
-    "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  /*
+   * 본문 글꼴.
+   *
+   * `--font-pretendard` 는 **어디에서도 정의하지 않는다.** next/font 나 @font-face 로 실제
+   * 파일을 실어야만 생기는 값인데, 이 저장소에는 폰트 파일이 없다. 정의되지 않은 변수를
+   * 맨 앞에 두면 "Pretendard 를 쓰고 있다"는 착각만 남고 실제로는 늘 폴백이 쓰인다.
+   * 자체 호스팅 폰트를 넣기 전까지는 폴백 체인을 그대로 정직하게 둔다.
+   *
+   * 주의 — Windows + OBS 브라우저 소스에서는 대개 Malgun Gothic 이 선택되고,
+   * 이 글꼴에는 900 웨이트가 없어 font-black 이 합성 볼드로 그려진다. 방송 화면의 굵은
+   * 글자가 스튜디오에서 본 것보다 얇다면 원인은 이것이다. 해결하려면 Pretendard(또는
+   * 동급 가변 글꼴)를 self-host 하고 아래 목록 맨 앞에 추가해야 한다.
+   */
+  --font-sans: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont,
+    "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
 
   --radius-card: 22px;
 

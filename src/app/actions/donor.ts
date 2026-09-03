@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { prisma } from '@/server/db';
+import { logger } from '@/lib/logger';
 import { getSessionUser, destroySession } from '@/server/auth';
 import { revokePaymentMethod } from '@/server/services/donor-registration';
 import { requestRefund } from '@/server/services/refund';
@@ -54,7 +55,9 @@ export async function revokeAutoWithdrawal(
     return revoked
       ? { ok: true, message: '자동출금 동의가 해지되었습니다. 등록된 결제수단이 폐기되었습니다.' }
       : { ok: false, message: '해지할 활성 결제수단이 없습니다.' };
-  } catch {
+  } catch (e) {
+    // 실패를 조용히 삼키면 "탈퇴했는데 자동출금이 살아 있는" 상태를 아무도 모른다.
+    logger.error('자동출금 수단 폐기 실패', { message: (e as Error).message });
     return { ok: false, message: '해지 처리 중 오류가 발생했습니다. 고객센터로 문의해 주세요.' };
   }
 }
@@ -106,6 +109,25 @@ export async function updateDonorLimits(
   const effectiveDaily = daily ?? policy.donorDailyLimit;
   const effectiveMonthly = monthly ?? policy.donorMonthlyLimit;
   if (effectiveDaily > effectiveMonthly) {
+    /**
+     * 무엇을 고쳐야 하는지 알려 준다.
+     *
+     * 월간만 낮추고 일일을 비워 두면 기본 정책값(높은 값)이 적용돼 이 조건에 걸리는데,
+     * 예전 문구는 "일일 한도는 월간 한도보다 클 수 없습니다" 뿐이라 일일을 건드린 적 없는
+     * 사용자는 원인을 알 수 없었다.
+     */
+    if (daily === null) {
+      return {
+        ok: false,
+        message: `일일 한도를 비워 두면 기본 정책(${policy.donorDailyLimit.toString()}원)이 적용되어 월간 한도(${effectiveMonthly.toString()}원)를 넘습니다. 일일 한도도 함께 낮춰 주세요.`,
+      };
+    }
+    if (monthly === null) {
+      return {
+        ok: false,
+        message: `월간 한도를 비워 두면 기본 정책(${policy.donorMonthlyLimit.toString()}원)이 적용됩니다. 일일 한도를 그보다 낮게 설정해 주세요.`,
+      };
+    }
     return { ok: false, message: '일일 한도는 월간 한도보다 클 수 없습니다.' };
   }
 
@@ -220,7 +242,8 @@ export async function requestDonationRefund(
     revalidatePath('/my');
     return { ok: true, message: '환불 요청이 접수되었습니다. 검토 후 결과를 안내드립니다.' };
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : '환불 요청에 실패했습니다.' };
+    // Prisma·복호화 오류 원문이 그대로 후원자 화면에 렌더되지 않도록 정제한다.
+    return { ok: false, message: donorFacingError(e, '환불 요청에 실패했습니다.') };
   }
 }
 
@@ -250,6 +273,25 @@ export async function setMarketingConsent(
     where: { userId: user.id },
     select: { phoneHash: true },
   });
+
+  /**
+   * 같은 값이면 기록하지 않는다.
+   *
+   * 토글을 빠르게 두 번 누르면(hidden 값이 서버 렌더 시점으로 고정되어 있어) 같은 값의
+   * 동의 이력이 계속 쌓인다. 이력 목록은 상한 100건이라, 그렇게 쌓인 중복이 정작 확인해야 할
+   * 필수 동의 이력을 밀어낸다.
+   */
+  const latest = await prisma.consentRecord.findFirst({
+    where: { userId: user.id, type: 'MARKETING' },
+    orderBy: { createdAt: 'desc' },
+    select: { agreed: true },
+  });
+  if (latest && latest.agreed === agree) {
+    return {
+      ok: true,
+      message: agree ? '이미 마케팅 정보 수신에 동의된 상태입니다.' : '이미 마케팅 정보 수신이 철회된 상태입니다.',
+    };
+  }
 
   await prisma.consentRecord.create({
     data: {
@@ -355,4 +397,24 @@ export async function withdrawAccount(_prev: DonorActionState, formData: FormDat
 
   await destroySession();
   redirect('/?withdrawn=1');
+}
+
+
+/**
+ * 후원자 화면에 보여도 되는 오류 문구로 정제한다.
+ *
+ * 서비스가 의도적으로 던진 한국어 안내는 그대로 보여 주고, 그 밖의 내부 오류
+ * (Prisma 호출 실패, 복호화 오류 등)는 원문을 감춘다. 원문에는 테이블·컬럼 이름이나
+ * 설정 값이 섞여 나온다.
+ */
+function donorFacingError(e: unknown, fallback: string): string {
+  const message = e instanceof Error ? e.message : '';
+  if (!message) return fallback;
+  const internal =
+    /prisma|invocation|ECONN|ETIMEDOUT|Unique constraint|Invalid `|Cannot read|decrypt|Unsupported/i.test(message);
+  if (internal) {
+    logger.error('후원자 액션 내부 오류', { message });
+    return fallback;
+  }
+  return message;
 }

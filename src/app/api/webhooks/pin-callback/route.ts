@@ -2,11 +2,11 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
 import { env, isLocal } from '@/lib/env';
-import { safeEqual } from '@/lib/crypto';
+import { safeEqual, verifySignature } from '@/lib/crypto';
 import { logger, scrub } from '@/lib/logger';
 import { completePinAuthorization, failPinAuthorization } from '@/server/services/pin-authorization';
 import { isMockPaymentAllowed } from '@/server/mock-guard';
-import { clientIpFromRequest } from '@/server/rate-limit';
+import { clientIpFromRequest, consumeRateLimit, ipMatchesAllowlist } from '@/server/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,21 +44,58 @@ function str(v: unknown): string | null {
 }
 
 /**
- * 콜백 인증.
+ * 콜백 인증. **MO 웹훅과 같은 수준(서명 + IP + 재생 방어)으로 맞춘다.**
  *
- * TODO(계약 후): 결제사 규격의 서명(해시) 검증으로 교체한다.
- *                지금은 공유 비밀(X-Pin-Secret) 대조만 수행하는 mock 단계다.
+ * 공유 비밀 하나만 대조하면, 그 비밀이 한 번 유출됐을 때 누구나
+ * `{donationId, resultCode:"0000"}` 만 보내 **후원자가 PIN 을 입력하지 않은 채 출금**을
+ * 강제할 수 있다. 본문 서명이 없으니 본문을 마음대로 바꿔도 통과했고, 타임스탬프도 없어
+ * 한 번 캡처한 요청을 그대로 재전송할 수 있었다.
  *
- * PAYMENT_PIN_CALLBACK_SECRET 이 비어 있으면 로컬에서만 통과시킨다.
- * 운영/스테이징에서 비밀이 없으면 어떤 콜백도 받지 않는다(fail-closed).
+ * 검증 순서
+ *  1) IP 허용목록 (PAYMENT_PIN_ALLOWED_IPS). 운영에서 비어 있으면 기동 자체가 막힌다.
+ *  2) 서명: `X-Pin-Timestamp` + 본문에 대한 HMAC(`X-Pin-Signature`). 있으면 이것만 인정한다.
+ *  3) 서명 헤더가 없으면 기존 공유 비밀(`X-Pin-Secret`)로 물러선다(결제사 규격 확정 전 호환).
  */
-function verifyCallback(headerSecret: string | null): { ok: boolean; reason?: string } {
+function verifyCallback(
+  headers: Record<string, string>,
+  rawBody: string,
+  ip: string | undefined,
+): { ok: boolean; reason?: string } {
   const expected = env.payment.pinCallbackSecret;
   if (!expected) {
     if (isLocal) return { ok: true };
     return { ok: false, reason: 'PAYMENT_PIN_CALLBACK_SECRET 미설정' };
   }
-  if (!headerSecret) return { ok: false, reason: 'X-Pin-Secret 헤더 없음' };
+
+  // (1) 발신 IP 허용목록. 목록이 비어 있으면 로컬에서만 통과시킨다(fail-closed).
+  const allowed = env.payment.pinAllowedIps;
+  if (allowed.length === 0) {
+    if (!isLocal) return { ok: false, reason: 'PAYMENT_PIN_ALLOWED_IPS 미설정' };
+  } else if (!ipMatchesAllowlist(ip, allowed)) {
+    return { ok: false, reason: '허용되지 않은 발신 IP' };
+  }
+
+  // (2) 타임스탬프 + 본문 서명
+  const signature = headers['x-pin-signature'] ?? null;
+  const timestamp = headers['x-pin-timestamp'] ?? null;
+  if (signature) {
+    if (!timestamp) return { ok: false, reason: 'X-Pin-Timestamp 헤더 없음' };
+    const ts = Number(timestamp);
+    if (!Number.isFinite(ts)) return { ok: false, reason: '타임스탬프 형식 오류' };
+    // 초 단위·밀리초 단위 모두 허용한다.
+    const tsMs = ts > 1e12 ? ts : ts * 1000;
+    const skewSec = Math.abs(Date.now() - tsMs) / 1000;
+    if (skewSec > env.payment.pinCallbackToleranceSec) {
+      return { ok: false, reason: '타임스탬프 허용 오차 초과(재생 요청 의심)' };
+    }
+    return verifySignature(`${timestamp}.${rawBody}`, signature, expected)
+      ? { ok: true }
+      : { ok: false, reason: '본문 서명 불일치' };
+  }
+
+  // (3) 구 방식(공유 비밀만) — 결제사 서명 규격이 확정되면 제거한다.
+  const headerSecret = headers['x-pin-secret'] ?? null;
+  if (!headerSecret) return { ok: false, reason: 'X-Pin-Signature 또는 X-Pin-Secret 헤더 없음' };
   return safeEqual(expected, headerSecret) ? { ok: true } : { ok: false, reason: '공유 비밀 불일치' };
 }
 
@@ -102,7 +139,7 @@ export async function POST(req: Request) {
   // 허용목록 검사를 그대로 통과한다(2중 방어가 시크릿 하나로 줄어든다).
   const ip = clientIpFromRequest(req) ?? undefined;
 
-  const verified = verifyCallback(headerMap['x-pin-secret'] ?? null);
+  const verified = verifyCallback(headerMap, raw, ip);
 
   let parsed: PinCallbackBody = {};
   try {
@@ -144,9 +181,27 @@ export async function POST(req: Request) {
       message: 'sessionId 또는 donationId 가 필요합니다.',
     });
   }
+  /**
+   * `donationId` 단독 통지는 **mock 환경에서만** 받는다.
+   *
+   * 실연동에서는 결제사가 발급한 세션 식별자가 반드시 함께 온다. donationId 만으로 승인을
+   * 진행할 수 있게 두면, 비밀이 유출됐을 때 후원 ID 하나만 알아도 출금을 강제할 수 있다.
+   */
+  if (!sessionId && !isMockPaymentAllowed()) {
+    return finish(400, 'sessionId 없음(실연동)', {
+      ok: false,
+      message: 'sessionId 가 필요합니다.',
+    });
+  }
 
   const resultCode = str(parsed.resultCode);
   const resultMessage = str(parsed.resultMessage);
+
+  // 인증을 통과한 뒤에도 같은 발신지에서 쏟아지는 요청은 잘라낸다.
+  const limited = await consumeRateLimit('pin-callback', ip ?? 'unknown', 600, 60);
+  if (!limited.ok) {
+    return finish(429, '속도 제한', { ok: false, message: '요청이 너무 많습니다.' });
+  }
 
   try {
     // 결제사가 실패를 통지한 건은 절대 승인 단계로 넘기지 않는다.

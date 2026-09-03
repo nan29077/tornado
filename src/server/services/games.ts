@@ -13,6 +13,7 @@ import {
   isGameType,
   needsNickname,
   normalizeConfig,
+  normalizeKeyword,
   usesChoices,
   usesDonationTotal,
   usesEntries,
@@ -229,37 +230,45 @@ export async function startRound(creatorId: string, gameId: string) {
 
   const game = await requireGame(creatorId, gameId);
 
-  const active = await findActiveRound(creatorId);
-  if (active) {
-    await prisma.gameRound.update({
-      where: { id: active.id },
-      data: { status: 'ENDED', endedAt: new Date() },
-    });
-  }
-
-  const last = await prisma.gameRound.findFirst({
-    where: { gameId },
-    orderBy: { seq: 'desc' },
-    select: { seq: true },
-  });
-
   const now = new Date();
   const closesAt =
     usesEntries(game.type) && game.autoCloseSec > 0
       ? new Date(now.getTime() + game.autoCloseSec * 1000)
       : null;
+  const joinCode = await nextJoinCode();
 
-  const round = await prisma.gameRound.create({
-    data: {
-      id: newId(),
-      gameId,
-      creatorId,
-      seq: (last?.seq ?? 0) + 1,
-      status: 'OPEN',
-      joinCode: await nextJoinCode(),
-      openedAt: now,
-      closesAt,
-    },
+  /**
+   * "화면에 뜬 회차는 하나"를 트랜잭션 안에서 보장한다.
+   *
+   * 예전에는 조회 → 종료 → 생성이 트랜잭션 밖이라, 스튜디오 창과 팝아웃 컨트롤에서 거의
+   * 동시에 [방송에 시작]을 누르면 둘 다 "활성 회차 없음"을 보고 각각 OPEN 회차를 만들었다.
+   * 그러면 하나는 화면에 보이지 않은 채 참여 코드로 참여를 계속 받는다.
+   */
+  const round = await prisma.$transaction(async (tx) => {
+    // 활성 회차를 먼저 모두 내린다. updateMany 라 동시에 들어와도 한쪽만 실제로 바꾼다.
+    await tx.gameRound.updateMany({
+      where: { creatorId, status: { in: ['OPEN', 'CLOSED', 'RESULT'] } },
+      data: { status: 'ENDED', endedAt: now },
+    });
+
+    const last = await tx.gameRound.findFirst({
+      where: { gameId },
+      orderBy: { seq: 'desc' },
+      select: { seq: true },
+    });
+
+    return tx.gameRound.create({
+      data: {
+        id: newId(),
+        gameId,
+        creatorId,
+        seq: (last?.seq ?? 0) + 1,
+        status: 'OPEN',
+        joinCode,
+        openedAt: now,
+        closesAt,
+      },
+    });
   });
 
   await publish(creatorId);
@@ -356,20 +365,35 @@ export async function revealRound(creatorId: string, roundId: string) {
     fail('결과를 발표할 수 있는 게임이 아닙니다.');
   }
 
+  /**
+   * 상태를 조건부로 선점한 뒤에만 결과를 쓴다.
+   *
+   * 예전에는 상태를 읽고 계산한 뒤 무조건 update 했다. [결과 발표]를 빠르게 두 번 누르면
+   * 두 요청이 각각 다른 추첨 결과를 계산해 나중 것이 이겼고, 방송 화면에는 순간적으로
+   * 다른 당첨자가 스쳐 지나갔다.
+   */
+  const claimed = await prisma.gameRound.updateMany({
+    where: { id: roundId, status: { in: ['OPEN', 'CLOSED'] } },
+    data: {
+      status: 'RESULT',
+      result: result as object,
+      revealedAt: new Date(),
+      closedAt: round.closedAt ?? new Date(),
+      closesAt: null,
+      revealCount: { increment: 1 },
+    },
+  });
+  if (claimed.count === 0) fail('이미 결과가 발표되었습니다. 화면을 새로 고쳐 주세요.');
+
   await prisma.$transaction([
     prisma.gameWinner.deleteMany({ where: { roundId } }),
-    prisma.gameRound.update({
-      where: { id: roundId },
-      data: {
-        status: 'RESULT',
-        result: result as object,
-        revealedAt: new Date(),
-        closedAt: round.closedAt ?? new Date(),
-        closesAt: null,
-      },
-    }),
     ...winnerRows(round, winnersOf(type, result, config)),
   ]);
+
+  // 재발표는 조작 시비의 핵심이므로 반드시 흔적을 남긴다.
+  if (round.revealCount > 0) {
+    logger.warn('게임 결과 재발표', { creatorId, roundId, attempt: round.revealCount + 1 });
+  }
 
   await publish(creatorId);
   return result;
@@ -383,15 +407,28 @@ export async function undoReveal(creatorId: string, roundId: string) {
   const round = await requireRound(creatorId, roundId);
   if (round.status !== 'RESULT') fail('발표된 결과가 없습니다.');
 
+  /**
+   * 실행취소는 **발표 직후 잠깐만** 열어 둔다.
+   *
+   * 무제한으로 열어 두면 "발표 → 취소 → 재발표"를 원하는 결과가 나올 때까지 반복할 수 있고,
+   * 그건 추첨이 아니다. 잘못 눌렀을 때 되돌리는 용도로만 남긴다.
+   */
+  const revealedAt = round.revealedAt?.getTime() ?? 0;
+  if (!revealedAt || Date.now() - revealedAt > UNDO_WINDOW_SEC * 1000) {
+    fail(`결과 발표 후 ${UNDO_WINDOW_SEC}초가 지나 되돌릴 수 없습니다. 새 회차를 시작해 주세요.`);
+  }
+
   const backTo = usesItems(round.game.type) || usesDonationTotal(round.game.type) ? 'OPEN' : 'CLOSED';
   await prisma.$transaction([
     prisma.gameWinner.deleteMany({ where: { roundId } }),
     prisma.gameRound.update({
       where: { id: roundId },
       // Json 컬럼을 SQL NULL 로 되돌리려면 Prisma.DbNull 을 써야 한다(null 은 JSON null 이 된다).
+      // revealCount 는 되돌리지 않는다. 몇 번 발표했는지가 기록으로 남아야 한다.
       data: { status: backTo, result: Prisma.DbNull, revealedAt: null },
     }),
   ]);
+  logger.warn('게임 결과 발표 취소', { creatorId, roundId, revealCount: round.revealCount });
   await publish(creatorId);
 }
 
@@ -451,10 +488,17 @@ export async function autoCloseIfDue(creatorId: string): Promise<boolean> {
     select: { id: true },
   });
   if (!round) return false;
-  await prisma.gameRound.update({
-    where: { id: round.id },
+  /**
+   * 조건부 갱신으로 **한 번만** 마감한다.
+   *
+   * 마감 시각이 지나는 순간 그 크리에이터에 붙어 있는 모든 SSE 연결이 같은 틱에서
+   * 이 함수를 부른다. 무조건 update 하면 연결 수만큼 갱신과 상태 발행이 반복된다.
+   */
+  const closed = await prisma.gameRound.updateMany({
+    where: { id: round.id, status: 'OPEN' },
     data: { status: 'CLOSED', closedAt: new Date(), closesAt: null },
   });
+  if (closed.count === 0) return false;
   await publish(creatorId);
   return true;
 }
@@ -485,8 +529,16 @@ export interface JoinInput {
   name: string;
   /** 선택지 index · 숫자 · 키워드 */
   entry: string;
-  /** 같은 회차 중복 참여를 막는 기기 지문 (IP + UA 해시) */
+  /**
+   * 브라우저가 보관하는 참여자 식별값. 같은 브라우저의 중복 제출을 막는다.
+   * **이 값만으로는 부족하다.** 클라이언트가 만든 값이라 지우거나 바꾸면 그만이다.
+   */
   deviceKey: string;
+  /**
+   * 서버가 아는 발신자 지문(IP + User-Agent). 클라이언트가 조작할 수 없다.
+   * 이 값으로 **회차당 참여 횟수 상한**을 건다.
+   */
+  clientFingerprint?: string | null;
   /** 로그인한 후원자라면 후원자 ID */
   donorId?: string | null;
 }
@@ -494,9 +546,18 @@ export interface JoinInput {
 export interface JoinResult {
   ok: true;
   participantCount: number;
-  /** 정답 여부를 알려 주는 게임(퀴즈·키워드)에서만 채운다 */
-  correct?: boolean;
 }
+
+/**
+ * 같은 네트워크 지문(IP + UA)에서 한 회차에 허용하는 참여 수.
+ *
+ * 1로 두면 회사·학교·이동통신망 NAT 뒤의 시청자들이 서로를 막는다.
+ * 너무 크면 조작을 막지 못한다. 가족·사무실 정도는 통과하고 대량 투입은 막는 값으로 잡는다.
+ */
+const MAX_JOIN_PER_NETWORK = Math.max(1, Number(process.env.GAME_JOIN_MAX_PER_NETWORK) || 5);
+
+/** 결과 발표를 되돌릴 수 있는 시간(초). 이 시간이 지나면 재추첨을 막는다. */
+const UNDO_WINDOW_SEC = Math.max(10, Number(process.env.GAME_UNDO_WINDOW_SEC) || 120);
 
 /**
  * 시청자 참여.
@@ -525,6 +586,28 @@ export async function joinByCode(joinCode: string, input: JoinInput): Promise<Jo
   const entry = normalizeEntry(type, config, input.entry);
   const displayName = await safeDisplayName(round.creatorId, type, input.name);
 
+  /**
+   * 중복 참여 차단은 **두 겹**이다.
+   *
+   *  1) `entryKey` 유니크 — 로그인 후원자는 계정 기준(기기를 바꿔도 1회),
+   *     비로그인은 브라우저 기준. 같은 브라우저의 재제출을 막는다.
+   *  2) `netHash` 상한 — 서버가 아는 IP + User-Agent 지문으로 **회차당 N회**까지만 허용한다.
+   *
+   * 왜 지문을 유니크 키로 쓰지 않는가: 이동통신망 NAT 뒤에서는 서로 다른 시청자 수백 명이
+   * 같은 IP 를 쓴다. 지문을 유니크로 걸면 그 사람들이 서로를 막아 정상 참여가 불가능해진다.
+   * 반대로 브라우저 값만 쓰면 localStorage 를 지우거나 curl 로 얼마든지 표를 늘릴 수 있다.
+   * "브라우저 단위 유니크 + 네트워크 단위 상한" 이 두 실패를 모두 피한다.
+   */
+  const netHash = input.clientFingerprint ? sha256(input.clientFingerprint) : null;
+  if (netHash) {
+    const fromSameNetwork = await prisma.gameParticipant.count({
+      where: { roundId: round.id, netHash },
+    });
+    if (fromSameNetwork >= MAX_JOIN_PER_NETWORK) {
+      fail('같은 네트워크에서 참여할 수 있는 횟수를 넘었습니다.');
+    }
+  }
+
   const entryKey = input.donorId ? `donor:${input.donorId}` : `dev:${sha256(input.deviceKey)}`;
 
   try {
@@ -539,6 +622,7 @@ export async function joinByCode(joinCode: string, input: JoinInput): Promise<Jo
         entry,
         source: 'LINK',
         entryKey,
+        netHash,
       },
     });
   } catch (e) {
@@ -551,11 +635,13 @@ export async function joinByCode(joinCode: string, input: JoinInput): Promise<Jo
   const participantCount = await prisma.gameParticipant.count({ where: { roundId: round.id } });
   publishGameStateThrottled(round.creatorId, () => buildStudioStateForRound(round.id));
 
-  return {
-    ok: true,
-    participantCount,
-    correct: correctFor(type, config, entry),
-  };
+  /**
+   * 정답 여부는 **응답에 담지 않는다.**
+   *
+   * 담으면 참여 API 자체가 정답 오라클이 된다. 4지선다 퀴즈는 세 번이면 정답이 확정되고,
+   * 키워드는 후보를 무제한으로 찔러 볼 수 있다. 정답은 크리에이터가 발표할 때 공개된다.
+   */
+  return { ok: true, participantCount };
 }
 
 /**
@@ -587,7 +673,8 @@ function normalizeEntry(type: string, config: Record<string, unknown>, raw: stri
   if (type === 'KEYWORD') {
     if (!value) fail('키워드를 입력해 주세요.');
     // 대소문자·공백 차이로 정답이 갈리지 않게 정규화해 저장한다.
-    return value.toLowerCase().replace(/\s+/g, '').slice(0, 40);
+    // 저장·집계·판정·발표가 모두 같은 함수를 쓴다(lib/game-catalog.ts).
+    return normalizeKeyword(value);
   }
 
   if (type === 'NUMBER_GUESS') {
@@ -602,12 +689,6 @@ function normalizeEntry(type: string, config: Record<string, unknown>, raw: stri
   return null; // RANKING 은 이름만 받는다
 }
 
-function correctFor(type: string, config: Record<string, unknown>, entry: string | null): boolean | undefined {
-  if (entry == null) return undefined;
-  if (type === 'QUIZ') return Number(entry) === Number(config.answerIndex);
-  if (type === 'KEYWORD') return entry === String(config.keyword ?? '').trim().toLowerCase().replace(/\s+/g, '');
-  return undefined;
-}
 
 /**
  * 방송에 띄울 표시명을 만든다.
@@ -664,7 +745,17 @@ export async function joinFromDonation(donationId: string): Promise<void> {
     // 무엇을 골랐는지 알 수 없기 때문이다. 이름만으로 참여하는 게임에서만 동작한다.
     if (usesChoices(game.type) || usesFreeEntry(game.type)) return;
 
-    const entryKey = donation.donorId ? `donor:${donation.donorId}` : `donation:${donation.id}`;
+    /**
+     * 후원 자동 참여도 **회차당 1표**로 맞춘다.
+     *
+     * 예전에는 후원자 계정이 없는 건에 `donation:{id}` 를 써서, 같은 사람이 세 번 후원하면
+     * 표가 세 장이 됐다. 로그인 후원자는 한 장이었으니 같은 규칙이 사람에 따라 다르게
+     * 적용된 셈이다. 후원자 프로필이 없으면 표시명 기준으로라도 한 사람은 한 표로 묶는다.
+     * (금액 가중 추첨이 필요하면 게임 설정으로 따로 열어야 할 기능이지, 우연히 생기면 안 된다)
+     */
+    const entryKey = donation.donorId
+      ? `donor:${donation.donorId}`
+      : `dname:${sha256(`${round.id}:${donation.displayName}`)}`;
 
     await prisma.gameParticipant.create({
       data: {

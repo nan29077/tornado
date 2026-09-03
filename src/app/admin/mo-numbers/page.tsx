@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle, EmptyState, Notice, SectionTitle, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminInput, AdminSelect, FilterBar } from '@/components/admin/controls';
-import { ActionButton, ActionForm, SelectActionForm } from '@/components/admin/action-form';
+import { ActionButton, ActionForm, DatalistActionForm, SelectActionForm } from '@/components/admin/action-form';
 import { createMoNumber, assignMoNumber, changeMoNumberStatus } from '@/app/actions/admin/transactions';
 import { prisma } from '@/server/db';
 import { formatWon, formatNumber } from '@/lib/money';
@@ -12,6 +12,9 @@ import type { Prisma } from '@/generated/prisma/client';
 import type { MoNumberStatus } from '@/generated/prisma/enums';
 
 export const dynamic = 'force-dynamic';
+
+/** 선택 목록에 담을 크리에이터 수 상한. 넘어가면 검색형 입력으로 바꿔야 한다. */
+const CREATOR_OPTION_LIMIT = 300;
 
 const STATUSES: MoNumberStatus[] = ['AVAILABLE', 'RESERVED', 'ASSIGNED', 'RECLAIMED', 'DISABLED'];
 
@@ -46,8 +49,22 @@ export default async function AdminMoNumbersPage({
       where: { status: 'APPROVED' },
       orderBy: { displayName: 'asc' },
       select: { id: true, displayName: true, code: true },
+      // 배정 <select> 가 행마다 렌더된다. 상한이 없으면 크리에이터 수 x 행 수만큼
+      // <option> 이 생겨(수백 명이면 수만~수십만 개) 페이지가 사실상 열리지 않는다.
+      // 절단 여부를 알아야 경고를 띄울 수 있으므로 한 건 더 가져온다.
+      take: CREATOR_OPTION_LIMIT + 1,
     }),
   ]);
+
+  /**
+   * 배정 선택지. 예전에는 이 목록을 행마다 `<select>` 로 그렸다.
+   * 200행 x 300명이면 `<option>` 이 6만 개가 되어 화면이 사실상 열리지 않았다.
+   * 이제 `<datalist>` 를 화면에 한 번만 두고 각 행이 그것을 참조한다.
+   */
+  const creatorFilterTruncated = approvedCreators.length > CREATOR_OPTION_LIMIT;
+  const creatorOptions = approvedCreators
+    .slice(0, CREATOR_OPTION_LIMIT)
+    .map((c) => ({ value: c.id, label: `${c.displayName} (${c.code})` }));
 
   const countOf = (s: MoNumberStatus) => grouped.find((g) => g.status === s)?._count._all ?? 0;
   const assignedCost = grouped.find((g) => g.status === 'ASSIGNED')?._sum.monthlyCost ?? 0n;
@@ -132,6 +149,22 @@ export default async function AdminMoNumbersPage({
 
       <SectionTitle title="번호 목록" description="최대 200건까지 표시합니다." />
 
+      {/* 배정 선택지는 화면에 한 번만 둔다. 각 행의 입력칸이 list 속성으로 이것을 가리킨다. */}
+      <datalist id="mo-assign-creators">
+        {creatorOptions.map((o) => (
+          <option key={o.value} value={o.label} />
+        ))}
+      </datalist>
+
+      {creatorFilterTruncated ? (
+        <div className="mb-3">
+          <Notice tone="warning" title={`배정 목록에 이름순 ${CREATOR_OPTION_LIMIT}명까지만 담깁니다`}>
+            승인된 크리에이터가 {CREATOR_OPTION_LIMIT}명을 넘습니다. 목록에 없는 크리에이터에게 번호를 배정하려면
+            크리에이터 상세 화면에서 배정해 주세요.
+          </Notice>
+        </div>
+      ) : null}
+
       {numbers.length === 0 ? (
         <EmptyState title="등록된 MO 번호가 없습니다" description="왼쪽 등록 폼으로 재고를 먼저 추가하세요." />
       ) : (
@@ -177,14 +210,13 @@ export default async function AdminMoNumbersPage({
                   {n.status === 'ASSIGNED' || n.status === 'DISABLED' ? (
                     <span className="text-[12px] text-ink-300">-</span>
                   ) : (
-                    <SelectActionForm
+                    <DatalistActionForm
                       action={assignMoNumber}
                       values={{ id: n.id }}
                       name="creatorId"
-                      options={[
-                        { value: '', label: '크리에이터 선택' },
-                        ...approvedCreators.map((c) => ({ value: c.id, label: `${c.displayName} (${c.code})` })),
-                      ]}
+                      listId="mo-assign-creators"
+                      options={creatorOptions}
+                      placeholder="크리에이터 검색"
                       submitLabel="배정"
                       confirm="선택한 크리에이터에게 이 수신번호를 배정합니다."
                     />

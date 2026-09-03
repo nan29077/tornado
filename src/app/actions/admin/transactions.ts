@@ -7,7 +7,7 @@ import { newId } from '@/lib/id';
 import { requestRefund, approveRefund, rejectRefund, retryRefundRecovery } from '@/server/services/refund';
 import { reconcileUnknownPayment } from '@/server/services/payment-reconcile';
 import type { AdminActionState } from '@/components/admin/state';
-import { run, text, optText, money, enumValue, requiredId } from './shared';
+import { run, text, optText, money, enumValue, requiredId, assertFinanceAdmin, assertOperationAdmin } from './shared';
 
 /**
  * MO 번호 재고 / 환불 / 이상거래 처리 액션.
@@ -71,6 +71,8 @@ export async function createMoNumber(_prev: AdminActionState, fd: FormData): Pro
 
 export async function assignMoNumber(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
+    // MO 번호 배정은 문자후원 라우팅 그 자체다. 잘못 건드리면 후원이 통째로 끊긴다.
+    assertOperationAdmin(admin, 'MO 번호 배정');
     const id = requiredId(fd, 'id', 'MO 번호');
     if (!optText(fd, 'creatorId')) throw new Error('배정할 크리에이터를 선택해 주세요.');
     const creatorId = requiredId(fd, 'creatorId', '크리에이터');
@@ -107,18 +109,37 @@ export async function assignMoNumber(_prev: AdminActionState, fd: FormData): Pro
 
 export async function changeMoNumberStatus(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
+    assertOperationAdmin(admin, 'MO 번호 상태 변경');
     const id = requiredId(fd, 'id', 'MO 번호');
     const status = enumValue(fd, 'status', ['AVAILABLE', 'RESERVED', 'RECLAIMED', 'DISABLED'] as const, '상태');
 
-    const before = await prisma.creatorMoNumber.findUnique({ where: { id } });
+    const before = await prisma.creatorMoNumber.findUnique({
+      where: { id },
+      include: { creator: { select: { displayName: true } } },
+    });
     if (!before) throw new Error('MO 번호를 찾을 수 없습니다.');
 
+    /**
+     * 배정된 번호를 회수·사용중지하면 **그 크리에이터의 문자후원 라우팅이 끊긴다.**
+     * 조용히 처리하지 않고 명시적으로 막는다. 회수(RECLAIMED)로 배정을 먼저 푼 뒤
+     * 사용중지하도록 두 단계로 강제한다.
+     */
+    if (status === 'DISABLED' && before.creatorId) {
+      throw new Error(
+        `이 번호는 ${before.creator?.displayName ?? '크리에이터'} 님에게 배정되어 있습니다. ` +
+          '먼저 [회수]로 배정을 해제한 뒤 사용중지해 주세요. (지금 중지하면 그 채널의 문자후원이 즉시 끊깁니다)',
+      );
+    }
+
+    /**
+     * 배정 상태가 아닌 값으로 바꿀 때는 **반드시 creatorId 를 함께 비운다.**
+     * 예전에는 AVAILABLE·RESERVED 전이에서 status 만 바꿔, "재고인데 크리에이터가 붙어 있는"
+     * 모순 상태가 만들어질 수 있었다(라우팅은 살아 있고 배정 화면에는 재고로 보임).
+     */
     const data =
-      status === 'RECLAIMED'
+      status === 'RECLAIMED' || status === 'DISABLED'
         ? { status, creatorId: null, releasedAt: new Date() }
-        : status === 'DISABLED'
-          ? { status, creatorId: null, releasedAt: new Date() }
-          : { status };
+        : { status, creatorId: null, releasedAt: before.creatorId ? new Date() : before.releasedAt };
 
     await prisma.creatorMoNumber.update({ where: { id }, data });
     await writeAudit({
@@ -183,7 +204,7 @@ export async function reconcilePaymentAction(_prev: AdminActionState, fd: FormDa
 
 export async function approveRefundAction(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
-    if (admin.adminPermission === 'SUPPORT') throw new Error('환불 승인은 재무/운영 권한에서만 가능합니다.');
+    assertFinanceAdmin(admin, '환불 승인');
     const refundId = requiredId(fd, 'refundId', '환불 요청');
 
     const before = await prisma.refund.findUnique({
@@ -209,6 +230,9 @@ export async function approveRefundAction(_prev: AdminActionState, fd: FormData)
 
 export async function rejectRefundAction(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
+    // 환불 승인·재시도·직접환불과 같은 문턱을 적용한다.
+    // 거절만 열려 있으면 고객지원이 후원자의 환불 요청을 임의로 반려할 수 있다.
+    assertFinanceAdmin(admin, '환불 처리');
     const refundId = requiredId(fd, 'refundId', '환불 요청');
     const memo = optText(fd, 'memo');
     if (!memo || memo.length < 2) throw new Error('거절 사유를 2자 이상 입력해 주세요.');
@@ -234,7 +258,7 @@ export async function rejectRefundAction(_prev: AdminActionState, fd: FormData):
 /** PG 취소 API 오류로 재시도 대기(PENDING_RECOVERY) 에 머문 환불을 다시 시도한다. */
 export async function retryRefundRecoveryAction(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
-    if (admin.adminPermission === 'SUPPORT') throw new Error('환불 재시도는 재무/운영 권한에서만 가능합니다.');
+    assertFinanceAdmin(admin, '환불 재시도');
     const refundId = requiredId(fd, 'refundId', '환불 요청');
 
     const before = await prisma.refund.findUnique({
@@ -261,7 +285,7 @@ export async function retryRefundRecoveryAction(_prev: AdminActionState, fd: For
 /** 관리자 직접 환불: 요청 생성 후 즉시 승인한다. */
 export async function createAdminRefund(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
-    if (admin.adminPermission === 'SUPPORT') throw new Error('직접 환불은 재무/운영 권한에서만 가능합니다.');
+    assertFinanceAdmin(admin, '직접 환불');
     const keyword = text(fd, 'transactionNo');
     const reason = text(fd, 'reason');
     if (!keyword) throw new Error('거래번호를 입력해 주세요.');

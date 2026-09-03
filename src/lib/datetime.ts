@@ -16,6 +16,26 @@ export function kstDateKey(date = new Date()): string {
   return `${k.getUTCFullYear()}-${String(k.getUTCMonth() + 1).padStart(2, '0')}-${String(k.getUTCDate()).padStart(2, '0')}`;
 }
 
+/**
+ * 태평양시(America/Los_Angeles) 기준 YYYY-MM-DD.
+ *
+ * 구글 API 의 일일 할당량은 **태평양시 자정**에 리셋된다. 이를 KST 기준으로 세면
+ * 태평양시 하루 안에 우리 카운터만 한 번 더 초기화되어 상한의 최대 두 배를 허용하고,
+ * 실제로는 구글이 먼저 403 을 던진다. 서머타임 전환이 있으므로 고정 오프셋으로
+ * 계산하면 안 되고 반드시 타임존 데이터를 쓴다.
+ */
+const PT_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Los_Angeles',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+export function ptDateKey(date = new Date()): string {
+  // en-CA 로케일의 날짜 포맷은 YYYY-MM-DD 다.
+  return PT_FORMATTER.format(date);
+}
+
 /** KST 기준 YYYY-MM */
 export function kstMonthKey(date = new Date()): string {
   const k = toKst(date);

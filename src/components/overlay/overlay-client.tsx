@@ -106,6 +106,23 @@ const OUT_MS = 360; // globals.css 의 .animate-tornado-out 길이와 맞춘다
 const MAX_BACKOFF_MS = 30000;
 
 /**
+ * 대기열에 쌓아 둘 수 있는 최대 알림 수.
+ *
+ * 상한이 없으면 후원이 몰릴 때 마지막 알림이 몇 분 뒤에 재생된다. 후원자는 이미 방송을
+ * 떠난 뒤다. 오래된 것부터 버리는 대신, 넘칠 때는 **표시 시간을 줄여 빠르게 소화**한다.
+ */
+const MAX_QUEUE = 12;
+/** 대기열이 밀렸을 때 적용하는 짧은 표시 시간. */
+const RUSH_DURATION_MS = 2600;
+
+/** 서로 다른 기기·환경에서 TTS 종료 신호가 오지 않을 때를 대비한 상한. */
+function ttsGuardMs(text: string): number {
+  // 한국어 TTS 는 대략 초당 6~8자. 넉넉히 잡아도 문장 길이의 함수여야 한다.
+  const estimated = 2000 + Math.ceil((text?.length ?? 0) / 5) * 1000;
+  return Math.min(15000, Math.max(3000, estimated));
+}
+
+/**
  * SSE 연결 상태.
  *
  * 방송 화면에는 절대 표시하지 않는다(디버그 배지와 스튜디오 미리보기 전용).
@@ -283,8 +300,9 @@ export function OverlayClient({
             clearTimeout(guard);
             resolve(ok);
           };
-          // 재생이 끝나지 않는 경우를 대비한 안전장치
-          const guard = setTimeout(() => finish(true), 60000);
+          // 재생이 끝나지 않는 경우를 대비한 안전장치.
+          // 60초로 두면 알림 한 건이 대기열을 1분간 막는다. 문장 길이에 맞춘 상한을 쓴다.
+          const guard = setTimeout(() => finish(true), ttsGuardMs(tts.text));
           audio.onended = () => finish(true);
           audio.onerror = () => finish(false);
           audio.play().catch(() => finish(false));
@@ -299,8 +317,16 @@ export function OverlayClient({
 
         try {
           const synth = window.speechSynthesis;
-          const utter = new SpeechSynthesisUtterance(tts.text);
           const voices = synth.getVoices();
+          /**
+           * **설치된 음성이 하나도 없으면 즉시 끝낸다.**
+           *
+           * OBS·PRISM 의 브라우저 소스(CEF)에는 `speechSynthesis` 객체는 있지만 음성이
+           * 하나도 없다. 그 상태로 speak() 를 부르면 onend 가 영영 오지 않아 안전장치
+           * 시간만큼 대기열이 멈춘다. 방송에서는 "알림이 안 뜬다"로 보인다.
+           */
+          if (voices.length === 0) return resolve();
+          const utter = new SpeechSynthesisUtterance(tts.text);
           // 저장된 목소리 이름으로 찾되, 한국어(ko) 음성만 허용한다.
           // 이름이 없거나 한국어가 아니면 설치된 첫 번째 한국어 음성으로 폴백한다.
           const isKo = (v: SpeechSynthesisVoice) => v.lang?.toLowerCase().startsWith('ko');
@@ -325,9 +351,15 @@ export function OverlayClient({
             resolve();
           };
           // onend 가 오지 않는 브라우저를 대비한 안전장치
-          const guard = setTimeout(finish, 60000);
+          const guard = setTimeout(finish, ttsGuardMs(tts.text));
           utter.onend = finish;
           utter.onerror = finish;
+          // 말하기가 실제로 시작되지 않으면(음성 없음·정책 차단) 짧게 확인하고 넘어간다.
+          const startCheck = setTimeout(() => {
+            if (!synth.speaking && !synth.pending) finish();
+          }, 1200);
+          const clearStartCheck = () => clearTimeout(startCheck);
+          utter.onstart = clearStartCheck;
           synth.speak(utter);
         } catch {
           resolve();
@@ -360,7 +392,10 @@ export function OverlayClient({
       // 효과음은 효과 애니메이션과 같은 시점에 시작한다. 실패해도 알림 재생에 영향을 주지 않는다.
       if (next.soundEnabled !== false) playEffectSound(effectOf(next), next.soundVolume ?? 80);
 
-      const duration = Math.max(1500, Number(next.durationMs) || defaultDurationMs);
+      // 대기열이 밀려 있으면 표시 시간을 줄여 빠르게 소화한다.
+      // 후원자가 방송을 떠난 뒤에 알림이 뜨는 것보다, 조금 짧게라도 제때 뜨는 편이 낫다.
+      const base = Math.max(1500, Number(next.durationMs) || defaultDurationMs);
+      const duration = queue.current.length >= 3 ? Math.min(base, RUSH_DURATION_MS) : base;
       const shown = new Promise<void>((r) => setTimeout(r, duration));
 
       // 표시 시간과 TTS 재생 시간 중 긴 쪽을 기준으로 다음 항목으로 넘어간다.
@@ -479,7 +514,13 @@ export function OverlayClient({
           const payload = JSON.parse(message.data) as OverlayPayload;
           if (!payload?.eventId || seen.current.has(payload.eventId)) return;
           seen.current.add(payload.eventId);
-          if (seen.current.size > 500) seen.current = new Set();
+          // 통째로 비우면 그 직후 보충 조회로 되돌아온 예전 이벤트를 다시 재생하게 된다.
+          // 오래된 것부터 하나씩 버린다(Set 은 삽입 순서를 유지한다).
+          while (seen.current.size > 500) {
+            const oldest = seen.current.values().next().value;
+            if (oldest === undefined) break;
+            seen.current.delete(oldest);
+          }
 
           // 오버레이 표시를 끈 상태에서 보낸 이벤트(테스트 등)는 방송 화면에 띄우지 않는다.
           // 스튜디오 미리보기는 설정 확인이 목적이므로 그대로 재생한다.
@@ -493,6 +534,12 @@ export function OverlayClient({
           }
 
           queue.current.push(payload);
+          // 상한을 넘으면 가장 오래된 것부터 버린다. 무한히 쌓이면 몇 분 뒤에야 재생된다.
+          if (queue.current.length > MAX_QUEUE) {
+            const dropped = queue.current.length - MAX_QUEUE;
+            queue.current.splice(0, dropped);
+            console.log(`[overlay] 대기열이 가득 차 오래된 알림 ${dropped}건을 건너뜁니다.`);
+          }
           setQueueLen(queue.current.length);
           playNextRef.current();
         } catch (e) {

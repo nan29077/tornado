@@ -135,6 +135,8 @@ export function InlineActionForm({
   disabledReason?: string;
 }) {
   const [state, formAction, pending] = React.useActionState(action, initial);
+  const formRef = React.useRef<HTMLFormElement>(null);
+  const confirm = useConfirmSubmit(formRef, state, pending);
 
   if (disabled) {
     return <span className="text-[12px] text-ink-300">{disabledReason ?? '처리 불가'}</span>;
@@ -142,18 +144,39 @@ export function InlineActionForm({
 
   return (
     <form
+      ref={formRef}
       action={formAction}
       onSubmit={(e) => {
-        if (confirmMessage && !window.confirm(confirmMessage)) e.preventDefault();
+        // 브라우저 기본 confirm 대신 프로젝트 전용 다이얼로그를 쓴다.
+        // 금칙어 삭제·후원자 차단처럼 되돌리기 어려운 동작이 전부 이 경로를 지나는데,
+        // 여기만 기본 confirm 이라 디자인도 다르고 브라우저가 억제하면 그냥 실행됐다.
+        if (confirmMessage) confirm.onSubmit(e);
       }}
     >
       {Object.entries(fields).map(([k, v]) => (
         <input key={k} type="hidden" name={k} value={v} />
       ))}
+
+      {confirmMessage ? (
+        <ConfirmDialog
+          phase={confirm.phase}
+          title={`${submitLabel}할까요?`}
+          description={confirmMessage}
+          confirmLabel="확인"
+          busyLabel={pendingLabel}
+          variant={variant === 'danger' ? 'danger' : 'primary'}
+          doneOk={state.ok}
+          doneTitle={state.ok ? '완료되었습니다' : '처리하지 못했습니다'}
+          doneDescription={state.message}
+          onConfirm={confirm.confirm}
+          onClose={confirm.close}
+        />
+      ) : null}
+
       <Button type="submit" variant={variant} size="sm" disabled={pending}>
         {pending ? pendingLabel : submitLabel}
       </Button>
-      {state.message ? (
+      {state.message && !confirmMessage ? (
         <span className={cx('mt-1 block text-[11.5px] leading-snug', state.ok ? 'text-success-500' : 'text-danger-500')}>
           {state.message}
         </span>

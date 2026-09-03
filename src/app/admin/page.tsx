@@ -1,3 +1,4 @@
+import * as React from 'react';
 import Link from 'next/link';
 import { Activity, CircleAlert, Flag, Wallet } from 'lucide-react';
 import { PageHeader } from '@/components/layout/console-shell';
@@ -7,7 +8,8 @@ import { BannerStrip } from '@/components/public/banner-strip';
 import { PAID_DONATION_STATUSES } from '@/components/admin/constants';
 import { prisma } from '@/server/db';
 import { formatWon, formatNumber } from '@/lib/money';
-import { formatKst, kstStartOfDay, kstStartOfMonth } from '@/lib/datetime';
+import { formatKst, kstDateKey, kstStartOfDay, kstStartOfMonth } from '@/lib/datetime';
+import { getSessionUser } from '@/server/auth';
 import { donationStatusLabel } from '@/lib/labels';
 
 export const dynamic = 'force-dynamic';
@@ -15,6 +17,8 @@ export const dynamic = 'force-dynamic';
 export default async function AdminDashboardPage() {
   const todayStart = kstStartOfDay();
   const monthStart = kstStartOfMonth();
+  const session = await getSessionUser().catch(() => null);
+  const canSeeInquiries = session?.adminPermission === 'SUPER_ADMIN';
 
   const [
     todayPaid,
@@ -77,6 +81,109 @@ export default async function AdminDashboardPage() {
   const pendingTotal =
     unregistered + limitBlocked + youtubeFailed + openRisks + settlementPending._count._all + openReports + openInquiries;
 
+  /** 오늘 기준 타일에서 이동할 때 같은 날짜 조건을 그대로 넘긴다. */
+  const todayParam = `from=${kstDateKey(todayStart)}&to=${kstDateKey(todayStart)}`;
+
+  const needsAttention = (
+    <section>
+      <SectionTitle title="확인이 필요한 건" description="숫자를 누르면 같은 조건의 관리 화면으로 이동합니다." />
+      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+        <Link href={`/admin/mo-messages?result=UNREGISTERED_DONOR&${todayParam}`}>
+          <StatTile
+            label="오늘 미등록 응답"
+            value={formatNumber(unregistered)}
+            sub="계좌 미등록 후원자에게 안내 발송"
+            tone={unregistered > 0 ? 'warning' : 'neutral'}
+          />
+        </Link>
+        {/* 값은 donation.status='LIMIT_BLOCKED' 기준이므로 수신 문자 화면이 아니라 한도·이상거래 화면으로 보낸다. */}
+        <Link href="/admin/risk">
+          <StatTile
+            label="오늘 한도 차단"
+            value={formatNumber(limitBlocked)}
+            sub="한도·속도 제한에 걸린 후원"
+            tone={limitBlocked > 0 ? 'warning' : 'neutral'}
+          />
+        </Link>
+        <Link href="/admin/youtube">
+          <StatTile
+            label="오늘 유튜브 전송 실패"
+            value={formatNumber(youtubeFailed)}
+            sub="결제 결과와는 무관"
+            tone={youtubeFailed > 0 ? 'danger' : 'neutral'}
+          />
+        </Link>
+        <Link href="/admin/risk?resolved=NO">
+          <StatTile
+            label="미해결 이상거래"
+            value={formatNumber(openRisks)}
+            sub="해결 처리 필요"
+            tone={openRisks > 0 ? 'danger' : 'neutral'}
+          />
+        </Link>
+        <Link href="/admin/settlements">
+          <StatTile
+            label="정산 요청 대기"
+            value={formatNumber(settlementPending._count._all)}
+            sub={formatWon(settlementPending._sum.amount ?? 0n)}
+            tone={settlementPending._count._all > 0 ? 'warning' : 'neutral'}
+          />
+        </Link>
+        <Link href="/admin/moderation">
+          <StatTile
+            label="미해결 신고"
+            value={formatNumber(openReports)}
+            sub="접수·검토중 합계"
+            tone={openReports > 0 ? 'warning' : 'neutral'}
+          />
+        </Link>
+        {/* 문의 관리는 최고관리자 전용 화면이다. 다른 등급에게 타일만 보여 주면 눌렀을 때 권한 거부가 뜬다. */}
+        {canSeeInquiries ? (
+          <Link href="/admin/inquiries?status=OPEN">
+            <StatTile
+              label="답변 대기 문의"
+              value={formatNumber(openInquiries)}
+              sub="1:1 문의 답변 대기"
+              tone={openInquiries > 0 ? 'warning' : 'neutral'}
+            />
+          </Link>
+        ) : null}
+        <Link href="/admin/refunds">
+          <StatTile label="환불 관리" value="바로가기" sub="요청 승인·거절 처리" />
+        </Link>
+        <Link href="/admin/creators">
+          <StatTile label="크리에이터 심사" value="바로가기" sub="대기 건 확인" />
+        </Link>
+      </div>
+    </section>
+  );
+
+  const paymentSummary = (
+    <section>
+      <SectionTitle title="후원·결제" description="금액은 결제가 승인된 건만 집계합니다. 환불 완료 건은 제외됩니다." />
+      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+        <StatTile
+          label="오늘 결제 완료"
+          value={formatNumber(todayPaid._count._all)}
+          sub={formatWon(todayPaid._sum.amount ?? 0n)}
+          tone="brand"
+        />
+        <StatTile
+          label="이번 달 결제 완료"
+          value={formatNumber(monthPaid._count._all)}
+          sub={formatWon(monthPaid._sum.amount ?? 0n)}
+        />
+        <StatTile label="오늘 문자 접수" value={formatNumber(todayReceived)} sub="결제 이전 단계 포함" />
+        <StatTile
+          label="오늘 결제 성공률"
+          value={successRate === null ? '-' : `${successRate}%`}
+          sub={`요청 ${formatNumber(txTotal)}건 중 승인 ${formatNumber(txApproved)}건`}
+          tone={successRate !== null && successRate < 90 ? 'warning' : 'success'}
+        />
+      </div>
+    </section>
+  );
+
   return (
     <>
       <PageHeader
@@ -88,201 +195,14 @@ export default async function AdminDashboardPage() {
         <SafetyBanner />
         <BannerStrip position="CONSOLE_TOP" />
 
-        {pendingTotal > 0 ? (
-          <>
-        <section>
-          <SectionTitle title="확인이 필요한 건" description="숫자를 누르면 해당 관리 화면으로 이동합니다." />
-          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-            <Link href="/admin/mo-messages?result=UNREGISTERED_DONOR">
-              <StatTile
-                label="오늘 미등록 응답"
-                value={formatNumber(unregistered)}
-                sub="계좌 미등록 후원자에게 안내 발송"
-                tone={unregistered > 0 ? 'warning' : 'neutral'}
-              />
-            </Link>
-            <Link href="/admin/risk">
-              <StatTile
-                label="오늘 한도 차단"
-                value={formatNumber(limitBlocked)}
-                sub="한도·속도 제한에 걸린 후원"
-                tone={limitBlocked > 0 ? 'warning' : 'neutral'}
-              />
-            </Link>
-            <Link href="/admin/youtube">
-              <StatTile
-                label="오늘 유튜브 전송 실패"
-                value={formatNumber(youtubeFailed)}
-                sub="결제 결과와는 무관"
-                tone={youtubeFailed > 0 ? 'danger' : 'neutral'}
-              />
-            </Link>
-            <Link href="/admin/risk?resolved=NO">
-              <StatTile
-                label="미해결 이상거래"
-                value={formatNumber(openRisks)}
-                sub="해결 처리 필요"
-                tone={openRisks > 0 ? 'danger' : 'neutral'}
-              />
-            </Link>
-            <Link href="/admin/settlements">
-              <StatTile
-                label="정산 요청 대기"
-                value={formatNumber(settlementPending._count._all)}
-                sub={formatWon(settlementPending._sum.amount ?? 0n)}
-                tone={settlementPending._count._all > 0 ? 'warning' : 'neutral'}
-              />
-            </Link>
-            <Link href="/admin/moderation">
-              <StatTile
-                label="미해결 신고"
-                value={formatNumber(openReports)}
-                sub="접수·검토중 합계"
-                tone={openReports > 0 ? 'warning' : 'neutral'}
-              />
-            </Link>
-            <Link href="/admin/inquiries?status=OPEN">
-              <StatTile
-                label="답변 대기 문의"
-                value={formatNumber(openInquiries)}
-                sub="1:1 문의 답변 대기"
-                tone={openInquiries > 0 ? 'warning' : 'neutral'}
-              />
-            </Link>
-            <Link href="/admin/refunds">
-              <StatTile label="환불 관리" value="바로가기" sub="요청 승인·거절 처리" />
-            </Link>
-            <Link href="/admin/creators">
-              <StatTile label="크리에이터 심사" value="바로가기" sub="대기 건 확인" />
-            </Link>
-          </div>
-        </section>
-        <section>
-          <SectionTitle title="후원·결제" description="금액은 결제가 승인된 건만 집계합니다. 환불 완료 건은 제외됩니다." />
-          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-            <StatTile
-              label="오늘 결제 완료"
-              value={formatNumber(todayPaid._count._all)}
-              sub={formatWon(todayPaid._sum.amount ?? 0n)}
-              tone="brand"
-            />
-            <StatTile
-              label="이번 달 결제 완료"
-              value={formatNumber(monthPaid._count._all)}
-              sub={formatWon(monthPaid._sum.amount ?? 0n)}
-            />
-            <StatTile
-              label="오늘 문자 접수"
-              value={formatNumber(todayReceived)}
-              sub="결제 이전 단계 포함"
-            />
-            <StatTile
-              label="오늘 결제 성공률"
-              value={successRate === null ? '-' : `${successRate}%`}
-              sub={`요청 ${formatNumber(txTotal)}건 중 승인 ${formatNumber(txApproved)}건`}
-              tone={successRate !== null && successRate < 90 ? 'warning' : 'success'}
-            />
-          </div>
-        </section>
-          </>
-        ) : (
-          <>
-        <section>
-          <SectionTitle title="후원·결제" description="금액은 결제가 승인된 건만 집계합니다. 환불 완료 건은 제외됩니다." />
-          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-            <StatTile
-              label="오늘 결제 완료"
-              value={formatNumber(todayPaid._count._all)}
-              sub={formatWon(todayPaid._sum.amount ?? 0n)}
-              tone="brand"
-            />
-            <StatTile
-              label="이번 달 결제 완료"
-              value={formatNumber(monthPaid._count._all)}
-              sub={formatWon(monthPaid._sum.amount ?? 0n)}
-            />
-            <StatTile
-              label="오늘 문자 접수"
-              value={formatNumber(todayReceived)}
-              sub="결제 이전 단계 포함"
-            />
-            <StatTile
-              label="오늘 결제 성공률"
-              value={successRate === null ? '-' : `${successRate}%`}
-              sub={`요청 ${formatNumber(txTotal)}건 중 승인 ${formatNumber(txApproved)}건`}
-              tone={successRate !== null && successRate < 90 ? 'warning' : 'success'}
-            />
-          </div>
-        </section>
-        <section>
-          <SectionTitle title="확인이 필요한 건" description="숫자를 누르면 해당 관리 화면으로 이동합니다." />
-          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-            <Link href="/admin/mo-messages?result=UNREGISTERED_DONOR">
-              <StatTile
-                label="오늘 미등록 응답"
-                value={formatNumber(unregistered)}
-                sub="계좌 미등록 후원자에게 안내 발송"
-                tone={unregistered > 0 ? 'warning' : 'neutral'}
-              />
-            </Link>
-            <Link href="/admin/mo-messages?result=BLOCKED">
-              <StatTile
-                label="오늘 한도 차단"
-                value={formatNumber(limitBlocked)}
-                sub="한도·속도 제한에 걸린 후원"
-                tone={limitBlocked > 0 ? 'warning' : 'neutral'}
-              />
-            </Link>
-            <Link href="/admin/youtube">
-              <StatTile
-                label="오늘 유튜브 전송 실패"
-                value={formatNumber(youtubeFailed)}
-                sub="결제 결과와는 무관"
-                tone={youtubeFailed > 0 ? 'danger' : 'neutral'}
-              />
-            </Link>
-            <Link href="/admin/risk?resolved=NO">
-              <StatTile
-                label="미해결 이상거래"
-                value={formatNumber(openRisks)}
-                sub="해결 처리 필요"
-                tone={openRisks > 0 ? 'danger' : 'neutral'}
-              />
-            </Link>
-            <Link href="/admin/settlements">
-              <StatTile
-                label="정산 요청 대기"
-                value={formatNumber(settlementPending._count._all)}
-                sub={formatWon(settlementPending._sum.amount ?? 0n)}
-                tone={settlementPending._count._all > 0 ? 'warning' : 'neutral'}
-              />
-            </Link>
-            <Link href="/admin/moderation">
-              <StatTile
-                label="미해결 신고"
-                value={formatNumber(openReports)}
-                sub="접수·검토중 합계"
-                tone={openReports > 0 ? 'warning' : 'neutral'}
-              />
-            </Link>
-            <Link href="/admin/inquiries?status=OPEN">
-              <StatTile
-                label="답변 대기 문의"
-                value={formatNumber(openInquiries)}
-                sub="1:1 문의 답변 대기"
-                tone={openInquiries > 0 ? 'warning' : 'neutral'}
-              />
-            </Link>
-            <Link href="/admin/refunds">
-              <StatTile label="환불 관리" value="바로가기" sub="요청 승인·거절 처리" />
-            </Link>
-            <Link href="/admin/creators">
-              <StatTile label="크리에이터 심사" value="바로가기" sub="대기 건 확인" />
-            </Link>
-          </div>
-        </section>
-          </>
-        )}
+        {/*
+          "확인이 필요한 건" 과 "후원·결제" 두 섹션은 대기 건 유무에 따라 **순서만** 바뀐다.
+          예전에는 두 벌을 통째로 복제해 두어 (1) 약 95줄이 중복이었고 (2) 복제본이 서로
+          어긋나 같은 타일이 서로 다른 화면으로 이동했다. 한 벌만 두고 순서를 바꾼다.
+        */}
+        {(pendingTotal > 0 ? [needsAttention, paymentSummary] : [paymentSummary, needsAttention]).map((node, i) => (
+          <React.Fragment key={i}>{node}</React.Fragment>
+        ))}
 
         <section>
           <SectionTitle title="최근 후원 10건" />

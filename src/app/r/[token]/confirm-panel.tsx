@@ -70,7 +70,8 @@ export function ConfirmPanel({
     startTransition(async () => {
       // 닉네임 입력값이 있으면 먼저 저장
       if (donorId && nickname.trim()) {
-        const res = await updateDonorNicknameAction(donorId, nickname.trim(), snsPlatform || undefined);
+        // donorId 를 서버로 보내지 않는다. 서버가 보안링크 토큰으로 대상을 정한다.
+        const res = await updateDonorNicknameAction(token, nickname.trim(), snsPlatform || undefined);
         if (!res.ok) {
           setNicknameError(res.message ?? '닉네임 저장에 실패했습니다.');
           submitted.current = false;

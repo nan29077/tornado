@@ -12,6 +12,14 @@ export interface KvStore {
   get(key: string): Promise<string | null>;
   set(key: string, value: string, ttlSec?: number): Promise<void>;
   incr(key: string, ttlSec?: number): Promise<number>;
+  /**
+   * 원자적 가감산. 반환값은 연산 후의 값이다.
+   *
+   * `get` 뒤에 `set` 하는 방식(read-modify-write)은 동시 요청에서 서로의 증가분을
+   * 덮어써 상한이 무력화된다. 유튜브 일일 할당량처럼 "여러 요청이 같은 카운터를 나눠 쓰는"
+   * 값은 반드시 이 연산을 써야 한다. 실패 시 되돌리려면 음수 delta 로 다시 호출한다.
+   */
+  incrBy(key: string, delta: number, ttlSec?: number): Promise<number>;
   del(key: string): Promise<void>;
   /** 원자적 선점. 이미 존재하면 false */
   setnx(key: string, value: string, ttlSec: number): Promise<boolean>;
@@ -54,6 +62,16 @@ class MemoryStore implements KvStore {
     return cur;
   }
 
+  async incrBy(key: string, delta: number, ttlSec?: number) {
+    const cur = Number((await this.get(key)) ?? 0) + delta;
+    const existing = this.alive(key);
+    this.map.set(key, {
+      v: String(cur),
+      exp: existing?.exp || (ttlSec ? Date.now() + ttlSec * 1000 : 0),
+    });
+    return cur;
+  }
+
   async del(key: string) {
     this.map.delete(key);
   }
@@ -77,6 +95,19 @@ if v == 1 then
   if ttl and ttl > 0 then
     redis.call('EXPIRE', KEYS[1], ttl)
   end
+end
+return v
+`;
+
+/**
+ * INCRBY 후 TTL 이 없을 때만(=최초 생성 또는 만료 직후) EXPIRE 를 건다.
+ * 되돌리기(음수 delta)로 호출될 때 TTL 이 연장되지 않도록 TTL 유무를 먼저 확인한다.
+ */
+const INCRBY_WITH_TTL_SCRIPT = `
+local v = redis.call('INCRBY', KEYS[1], ARGV[1])
+local ttl = tonumber(ARGV[2])
+if ttl and ttl > 0 and redis.call('TTL', KEYS[1]) < 0 then
+  redis.call('EXPIRE', KEYS[1], ttl)
 end
 return v
 `;
@@ -130,6 +161,16 @@ class RedisStore implements KvStore {
       return Number(n);
     } catch (e) {
       return this.degrade(e).incr(key, ttlSec);
+    }
+  }
+
+  async incrBy(key: string, delta: number, ttlSec?: number) {
+    if (this.fallback) return this.fallback.incrBy(key, delta, ttlSec);
+    try {
+      const n = await this.client.eval(INCRBY_WITH_TTL_SCRIPT, 1, key, String(delta), String(ttlSec ?? 0));
+      return Number(n);
+    } catch (e) {
+      return this.degrade(e).incrBy(key, delta, ttlSec);
     }
   }
 

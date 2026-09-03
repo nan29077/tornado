@@ -8,7 +8,7 @@ import type { MoInbound } from '@/server/adapters/mo';
 import { getMtAdapter, decideMessageType } from '@/server/adapters/mt';
 import { getPaymentAdapter, MockPaymentTimeout } from '@/server/adapters/payment';
 import { filterContent, splitKeyword, type BannedWordRule } from './content-filter';
-import { checkLimits, commitCounters, rollbackCounters, registerFailure, clearFailures, resolvePolicy } from './limits';
+import { checkLimits, rollbackVelocity, commitCounters, rollbackCounters, registerFailure, clearFailures, resolvePolicy } from './limits';
 import { acquireIdempotency } from './idempotency';
 import { hasDirectTriggerWrittenApproval } from './financial-approval';
 import { issueSecureLink, LINK_TTL_SEC } from './secure-link';
@@ -1039,7 +1039,21 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
       },
     });
     if (inq?.ok && inq.data?.status === 'APPROVED') {
-      approved = { providerTid: inq.data.providerTid ?? txn.orderNo, approvedAt: new Date() };
+      // 조회 결과에 금액이 있으면 반드시 대조한다.
+      // 주문번호 오매칭이나 결제사 오류로 다른 금액이 승인됐는데 그대로 확정하면
+      // 원장·정산이 실제 출금액과 어긋난 채 append-only 로 굳어 되돌릴 수 없다.
+      const inquiredAmount = inq.data.amount;
+      if (inquiredAmount != null && BigInt(inquiredAmount) !== donation.amount) {
+        logger.error('거래결과조회 금액 불일치 — 수동 확인 필요', {
+          donationId,
+          orderNo: txn.orderNo,
+          expected: donation.amount.toString(),
+          inquired: String(inquiredAmount),
+        });
+        failure = { code: 'UNKNOWN', message: '결제 금액이 일치하지 않습니다. 관리자 확인이 필요합니다.' };
+      } else {
+        approved = { providerTid: inq.data.providerTid ?? txn.orderNo, approvedAt: new Date() };
+      }
     } else if (inq?.ok && inq.data?.status === 'FAILED') {
       failure = { code: 'TIMEOUT_FAILED', message: '결제가 완료되지 않았습니다.' };
     } else {
@@ -1085,9 +1099,18 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
       data: { status: 'FAILED', resultCode: failure?.code ?? null, resultMessage: failure?.message ?? null },
     });
     await setStatus(donationId, 'PAYMENT_FAILED', failure?.message ?? '결제 실패');
-    // 결제 판정 트랜잭션에서 잡아둔 집계 예약을 되돌린다(실패한 건은 한도를 쓰지 않는다).
-    await rollbackCounters(donor.id, donation.creatorId, donation.amount, reservedAt);
+    /**
+     * 결제 판정 트랜잭션에서 잡아둔 집계 예약을 되돌린다(실패한 건은 한도를 쓰지 않는다).
+     *
+     * 기준 시각은 **예약한 시점**(거래 생성 시각)이어야 한다. 지금 시각으로 되돌리면
+     * 자정을 넘겨 재시도된 건이 어제 집계는 부풀린 채 오늘 집계를 깎는다.
+     * (수동 대사 경로 payment-reconcile.ts 도 txn.requestedAt 을 쓴다)
+     */
+    await rollbackCounters(donor.id, donation.creatorId, donation.amount, txn.requestedAt ?? reservedAt);
     const policy = await resolvePolicy(donation.creatorId, donation.donorId);
+    // DB 집계만 되돌리고 Redis 속도 카운터를 남기면, 실패한 건이 계속 1건으로 세어져
+    // 정상 후원자가 속도 제한·쿨다운에 걸린다.
+    await rollbackVelocity(donor.id, policy, txn.requestedAt ?? reservedAt);
     const locked = await registerFailure(donorId, policy.failureLockThreshold);
     await sendMtForDonor(donorId, tpl.tplDonationFailed(donation.creator.displayName, failure?.message), donationId, donation.creatorId);
     logger.warn('결제 실패', { donationId, phone, locked, code: failure?.code });
@@ -1100,11 +1123,21 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
   // "후원은 성공인데 원장에는 없는" 상태가 되고, 앞쪽 조기 return 가드가
   // 재시도를 '이미 완료'로 되돌려 보내 크리에이터가 그 금액을 영영 못 받는다.
   const fees = await calculateFees(donation.creatorId, donation.amount);
-  await prisma.$transaction(async (tx) => {
-    await tx.paymentTransaction.update({
-      where: { id: txn.id },
+  const committed = await prisma.$transaction(async (tx) => {
+    /**
+     * **조건부 갱신으로 선점한 뒤에만** 원장에 기록한다.
+     *
+     * 부분 유니크 인덱스(`payment_transaction_approved_uniq`)는 "같은 후원에 APPROVED 행이
+     * 두 개"를 막는다. 그런데 여기서는 행 하나를 두 번 UPDATE 하는 것이라 인덱스가 발동하지
+     * 않는다. 그 결과 같은 거래가 동시에 두 번 승인 처리되면 3분개와 누적 금액이 두 번 들어가고,
+     * 원장은 append-only 라 되돌릴 수 없다.
+     * (PIN 완료 처리와 정체 건 복구 배치가 겹칠 때 실제로 도달 가능한 경로다)
+     */
+    const claimed = await tx.paymentTransaction.updateMany({
+      where: { id: txn.id, status: { not: 'APPROVED' } },
       data: { status: 'APPROVED', providerTid: approved!.providerTid, approvedAt: approved!.approvedAt },
     });
+    if (claimed.count === 0) return false;
     await tx.donation.update({
       where: { id: donationId },
       data: {
@@ -1145,7 +1178,18 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
       },
       tx,
     );
+    return true;
   });
+
+  if (!committed) {
+    // 다른 요청이 먼저 승인 처리를 끝냈다. 이쪽에서는 아무것도 더 하지 않는다.
+    logger.warn('승인 처리가 이미 완료되어 중복 기록을 건너뜁니다.', { donationId, transactionId: txn.id });
+    return {
+      ok: true,
+      status: 'SETTLEMENT_PENDING',
+      message: '후원이 완료되었습니다.',
+    };
+  }
 
   // 집계는 결제 판정 트랜잭션에서 이미 반영(예약)했다. 여기서 다시 더하면 두 번 세어진다.
   await clearFailures(donorId);
@@ -1214,6 +1258,65 @@ export async function reconcileStuckPendingPayments(now = new Date()): Promise<n
       logger.error('PENDING_PAYMENT 고착 건 재시도 실패', { donationId: d.id, message: (e as Error).message });
     }
   }
+  return count;
+}
+
+/**
+ * 처리 도중 프로세스가 죽어 `PENDING` 으로 남은 수신 문자를 복구한다.
+ *
+ * 예외로 끝난 행은 위 catch 가 ERROR 로 표시하지만, 강제 종료(SIGKILL·컨테이너 교체)에는
+ * 그 catch 가 실행되지 않는다. 그러면 행은 PENDING 인 채 남고 `retryable` 조건
+ * (`result === 'ERROR' && !donation`)에 걸리지 않아 **사업자 재전송이 전부 DUPLICATE 로
+ * 반려된다.** 후원자는 문자 요금을 냈는데 후원은 만들어지지 않고, 관리자 화면에도
+ * "처리중"으로만 보인다.
+ *
+ * 후원이 만들어지지 않은 오래된 PENDING 행만 ERROR 로 승격해 재전송을 허용한다.
+ */
+export async function recoverStuckMoMessages(now = new Date(), staleMinutes = 5): Promise<number> {
+  const cutoff = new Date(now.getTime() - staleMinutes * 60_000);
+  const r = await prisma.moInboundMessage.updateMany({
+    where: { result: 'PENDING', donation: null, receivedAt: { lt: cutoff } },
+    data: {
+      result: 'ERROR',
+      resultDetail: '처리 중 중단된 것으로 판단해 재처리 대상으로 표시했습니다(정리 배치).',
+      processedAt: now,
+    },
+  });
+  if (r.count > 0) logger.warn('중단된 수신 문자 복구', { count: r.count });
+  return r.count;
+}
+
+/**
+ * 결제는 끝났는데 방송 송출이 시작되지 않은 건을 다시 송출한다.
+ *
+ * 승인 직후(상태 SETTLEMENT_PENDING) 프로세스가 죽으면 `dispatchBroadcast` 가 호출되지
+ * 않는다. 그런데 재시도가 들어와도 `executePayment` 는 "이미 결제가 완료된 거래"로
+ * 조기 return 하므로 송출은 영영 일어나지 않고, 오버레이·유튜브 상태가 PENDING 에
+ * 고착된다. 관리자 화면 어디에도 이 건을 잡아내는 지표가 없었다.
+ */
+export async function redispatchMissedBroadcasts(now = new Date(), staleMinutes = 5): Promise<number> {
+  const cutoff = new Date(now.getTime() - staleMinutes * 60_000);
+  const stuck = await prisma.donation.findMany({
+    where: {
+      status: 'SETTLEMENT_PENDING',
+      overlayStatus: 'PENDING',
+      paidAt: { not: null, lt: cutoff },
+      isTest: false,
+    },
+    select: { id: true },
+    take: 100,
+  });
+
+  let count = 0;
+  for (const d of stuck) {
+    try {
+      await dispatchBroadcast(d.id);
+      count += 1;
+    } catch (e) {
+      logger.error('송출 누락 건 재시도 실패 (결제는 정상)', { donationId: d.id, message: (e as Error).message });
+    }
+  }
+  if (count > 0) logger.warn('송출 누락 건 재송출', { count });
   return count;
 }
 

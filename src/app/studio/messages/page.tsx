@@ -1,3 +1,4 @@
+import type * as React from 'react';
 import Link from 'next/link';
 import { Badge, Card, EmptyState, Notice, Table, Td, Th } from '@/components/ui';
 import { PageHeader } from '@/components/layout/console-shell';
@@ -60,11 +61,23 @@ export default async function StudioMessagesPage({
 
   const where: Prisma.MoInboundMessageWhereInput = { creatorId, ...tabWhere(tab) };
 
+  /**
+   * 페이지네이션을 붙인다.
+   *
+   * 예전에는 최근 50건만 보여 주고 다음 페이지로 가는 수단이 아예 없었다.
+   * 어제 온 문자를 확인할 방법이 없어, 같은 성격의 후원 내역 화면(페이저 있음)과
+   * 기능 수준도 어긋났다.
+   */
+  const rawPage = Number(one(sp.page));
+  const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1;
+
   const [total, rows, blockedRows, moNumbers, creator] = await Promise.all([
     prisma.moInboundMessage.count({ where }),
     prisma.moInboundMessage.findMany({
       where,
-      orderBy: { receivedAt: 'desc' },
+      // 보조 정렬키가 없으면 웹훅으로 대량 동시 수신될 때 페이지 간 중복·누락이 생긴다.
+      orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
+      skip: (page - 1) * TAKE,
       take: TAKE,
       select: {
         id: true,
@@ -80,7 +93,9 @@ export default async function StudioMessagesPage({
         },
       },
     }),
-    prisma.blockedDonor.findMany({ where: { creatorId }, select: { donorId: true } }),
+    // 차단 목록 전체를 읽을 필요가 없다. 화면에 그릴 50건과 겹치는지만 알면 된다.
+    // (차단 후원자가 수천 명이면 매 요청마다 전량을 읽게 된다)
+    prisma.blockedDonor.findMany({ where: { creatorId }, select: { donorId: true }, take: 2000 }),
     prisma.creatorMoNumber.findMany({
       where: { creatorId },
       orderBy: [{ status: 'asc' }, { assignedAt: 'desc' }],
@@ -89,6 +104,9 @@ export default async function StudioMessagesPage({
     prisma.creatorProfile.findUnique({ where: { id: creatorId }, select: { displayName: true, donationAmount: true } }),
   ]);
 
+  const totalPages = Math.max(1, Math.ceil(total / TAKE));
+  // 범위를 벗어난 페이지로 들어와도 빈 화면에 갇히지 않게 표시용 값은 잘라 둔다.
+  const safePage = Math.min(page, totalPages);
   const blockedSet = new Set(blockedRows.map((b) => b.donorId));
 
   const numbers: MoNumberView[] = moNumbers.map((m) => ({
@@ -119,7 +137,7 @@ export default async function StudioMessagesPage({
     <>
       <PageHeader
         title="문자 관리"
-        description={`수신된 문자 ${formatNumber(total)}건 중 최근 ${formatNumber(Math.min(total, TAKE))}건을 표시합니다.`}
+        description={`수신된 문자 ${formatNumber(total)}건 · ${formatNumber(totalPages)}쪽 중 ${formatNumber(safePage)}쪽`}
       />
 
       <div className="space-y-4">
@@ -220,7 +238,39 @@ export default async function StudioMessagesPage({
             </tbody>
           </Table>
         )}
+
+        {totalPages > 1 ? (
+          <nav className="flex items-center justify-center gap-2" aria-label="문자 목록 페이지 이동">
+            <PageLink href={`/studio/messages?tab=${tab}&page=${safePage - 1}`} disabled={safePage <= 1}>
+              이전
+            </PageLink>
+            <span className="text-[13px] tabular-nums text-ink-500">
+              {safePage} / {totalPages}
+            </span>
+            <PageLink href={`/studio/messages?tab=${tab}&page=${safePage + 1}`} disabled={safePage >= totalPages}>
+              다음
+            </PageLink>
+          </nav>
+        ) : null}
       </div>
     </>
+  );
+}
+
+function PageLink({ href, disabled, children }: { href: string; disabled: boolean; children: React.ReactNode }) {
+  if (disabled) {
+    return (
+      <span className="inline-flex h-9 items-center rounded-lg border border-ink-100 px-3 text-[13px] font-semibold text-ink-300">
+        {children}
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={href}
+      className="inline-flex h-9 items-center rounded-lg border border-ink-200 px-3 text-[13px] font-semibold text-ink-700 hover:bg-ink-50"
+    >
+      {children}
+    </Link>
   );
 }

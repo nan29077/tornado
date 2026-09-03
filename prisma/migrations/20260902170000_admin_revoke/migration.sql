@@ -1,0 +1,12 @@
+-- 관리자 자격 회수(revoke) 지원.
+--
+-- 배경
+--   기존 관리자 화면에는 권한 "변경" 만 있어서, 조직을 떠난 사람을 처리할 수 있는
+--   가장 낮은 단계가 READ_ONLY 였다. READ_ONLY 도 후원자 연락처·결제 이력·정산 내역을
+--   전부 열람한다. 자격 자체를 거둘 수단이 필요하다.
+--
+-- 왜 행을 지우지 않는가
+--   admin_audit_log.admin_id 가 admin_profile.id 를 참조한다. 프로필 행을 지우면
+--   "누가 무엇을 했는지" 기록이 함께 끊긴다. 자격은 회수하되 기록은 남긴다.
+--   실제 접근 차단은 user.role 을 일반 회원(DONOR)으로 되돌리는 것으로 이루어진다.
+ALTER TABLE "admin_profile" ADD COLUMN IF NOT EXISTS "revoked_at" TIMESTAMPTZ(3);

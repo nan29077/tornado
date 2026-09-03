@@ -3,6 +3,7 @@
 import { headers } from 'next/headers';
 import { z } from 'zod';
 import { prisma } from '@/server/db';
+import { env, isLocal } from '@/lib/env';
 import { kv } from '@/server/redis';
 import { newId } from '@/lib/id';
 import { getSessionUser } from '@/server/auth';
@@ -162,7 +163,8 @@ export async function submitSupportRequest(
       jar.set(INQUIRY_GUEST_COOKIE, issuedGuestToken, {
         httpOnly: true,
         sameSite: 'lax',
-        secure: process.env.APP_BASE_URL?.startsWith('https') ?? false,
+        // 세션 쿠키와 같은 기준으로 판단한다.
+        secure: !isLocal && env.baseUrl.startsWith('https'),
         maxAge: 60 * 60 * 24 * 365,
         path: '/',
       });

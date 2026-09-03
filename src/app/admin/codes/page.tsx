@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, EmptyState, Notice, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminInput, AdminSelect, FilterBar, Pager } from '@/components/admin/controls';
 import { ActionButton } from '@/components/admin/action-form';
-import { PAGE_SIZE, parsePage } from '@/components/admin/constants';
+import { PAGE_SIZE, parsePage, clampPageOrRedirect } from '@/components/admin/constants';
 import { reissueCreatorCode } from '@/app/actions/admin/accounts';
 import { prisma } from '@/server/db';
 import { formatNumber } from '@/lib/money';
@@ -40,7 +40,7 @@ export default async function AdminCodesPage({
     prisma.creatorCode.count({ where }),
     prisma.creatorCode.findMany({
       where,
-      orderBy: { issuedAt: 'desc' },
+      orderBy: [{ issuedAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       select: {
@@ -53,6 +53,8 @@ export default async function AdminCodesPage({
   ]);
 
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // 필터를 바꿔 결과가 줄었을 때 URL 의 옛 page 번호 때문에 빈 목록이 뜨는 것을 막는다.
+  clampPageOrRedirect('/admin/codes', { q, state }, page, lastPage, total);
 
   return (
     <>

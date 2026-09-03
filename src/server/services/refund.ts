@@ -80,6 +80,16 @@ export async function approveRefund(refundId: string, adminUserId?: string) {
   if (refund.status !== 'REQUESTED') {
     throw new Error('요청 상태의 환불만 승인할 수 있습니다. 목록을 새로고침해 현재 상태를 확인해 주세요.');
   }
+  /**
+   * 승인된 결제 거래 확인은 **선점보다 먼저** 한다.
+   *
+   * 예전에는 REQUESTED → APPROVED 로 선점한 뒤에 거래를 찾고, 없으면 throw 했다.
+   * 그러면 환불은 APPROVED 로 남는데 승인(REQUESTED 만 허용)·거절(REQUESTED 만 선점)·
+   * 재시도(PENDING_RECOVERY 만 허용) 어느 액션으로도 빠져나올 수 없어 영구 고착됐다.
+   */
+  const txn = refund.donation.transactions.find((t) => t.status === 'APPROVED');
+  if (!txn) throw new Error('승인된 결제 거래가 없습니다.');
+
   const claimed = await prisma.refund.updateMany({
     where: { id: refundId, status: 'REQUESTED' },
     data: { status: 'APPROVED' },
@@ -87,9 +97,6 @@ export async function approveRefund(refundId: string, adminUserId?: string) {
   if (claimed.count === 0) {
     throw new Error('이미 다른 처리가 진행 중인 환불입니다. 잠시 후 상태를 다시 확인해 주세요.');
   }
-
-  const txn = refund.donation.transactions.find((t) => t.status === 'APPROVED');
-  if (!txn) throw new Error('승인된 결제 거래가 없습니다.');
 
   const adapter = getPaymentAdapter();
   const res = await callCancel(adapter, refund, txn, refundId);
@@ -136,22 +143,63 @@ async function callCancel(
   }
 }
 
+/**
+ * 결제사 조회로 "이미 취소된 거래"인지 확인한다.
+ * 조회 자체가 실패하면 단정하지 않고 false 를 돌려준다(실패 확정 경로로 간다).
+ */
+async function confirmAlreadyCanceled(orderNo: string): Promise<boolean> {
+  try {
+    const adapter = getPaymentAdapter();
+    const inq = await adapter.inquire(orderNo);
+    return Boolean(inq.ok && inq.data?.status === 'CANCELED');
+  } catch {
+    return false;
+  }
+}
+
 /** cancel() 응답(성공/실패 확정)을 받아 환불을 마무리한다. */
 async function finishRefundCancel(
   refund: RefundWithDonation,
   txn: RefundTxn,
-  res: Awaited<ReturnType<PaymentAdapter['cancel']>>,
+  resInput: Awaited<ReturnType<PaymentAdapter['cancel']>>,
   adminUserId?: string,
 ) {
+  let res = resInput;
   const refundId = refund.id;
 
   if (!res.ok) {
+    /**
+     * 실패로 단정하기 전에 **한 번 더 조회한다.**
+     *
+     * 취소 재시도(정리 배치)가 이미 취소된 거래에 들어가면 결제사는 "이미 취소됨"을
+     * 오류로 회신한다. 그걸 그대로 실패로 확정하면 **실제로는 환불된 건이 FAILED 로 남아**
+     * 후원자에게는 돈이 돌아갔는데 우리 원장에는 반대분개가 없는 상태가 된다.
+     */
+    const confirmed = await confirmAlreadyCanceled(txn.orderNo);
+    if (confirmed) {
+      logger.warn('취소 응답은 실패였지만 조회 결과 이미 취소됨 — 환불 완료로 확정', {
+        refundId,
+        orderNo: txn.orderNo,
+        code: res.code ?? null,
+      });
+      res = { ok: true, data: { canceledAt: new Date() } } as typeof res;
+    }
+  }
+
+  if (!res.ok) {
     // 선점(APPROVED)했다가 PG 취소에 실패한 건은 FAILED 로 확정한다.
-    // 관리자 화면에서 재시도(신규 환불 요청)로 이어갈 수 있도록 사유를 남긴다.
     await prisma.refund.update({
       where: { id: refundId },
       data: { status: 'FAILED', resultCode: res.code ?? null, resultMessage: res.message ?? null },
     });
+    /**
+     * **후원 상태도 되돌린다.**
+     *
+     * 되돌리지 않으면 후원이 `REFUND_REQUESTED` 에 갇힌다. `requestRefund` 의 허용 상태
+     * 목록에 그 상태가 없으므로 재환불 요청조차 불가능해지고, 화면에는 "처리 완료"라는
+     * 회색 문구만 남아 관리자는 잠긴 사실조차 알 수 없었다.
+     */
+    await restoreDonationStatusAfterRefundFailure(refund.donationId, refundId);
     throw new Error(res.message ?? '환불 처리에 실패했습니다.');
   }
 
@@ -260,6 +308,41 @@ export async function retryAllPendingRefundRecoveries(): Promise<number> {
     }
   }
   return count;
+}
+
+/**
+ * 환불이 확정 실패했을 때 후원 상태를 요청 직전으로 되돌린다.
+ *
+ * 되돌리지 않으면 후원이 `REFUND_REQUESTED` 에 갇혀 재환불 요청이 불가능해진다.
+ * 상태 로그가 없는 예전 건은 정산 대기로 둔다(거절 경로와 같은 규칙).
+ */
+async function restoreDonationStatusAfterRefundFailure(donationId: string, refundId: string) {
+  const transition = await prisma.donationStatusLog.findFirst({
+    where: { donationId, toStatus: 'REFUND_REQUESTED' },
+    orderBy: { createdAt: 'desc' },
+    select: { fromStatus: true },
+  });
+  const back = transition?.fromStatus ?? 'SETTLEMENT_PENDING';
+  await prisma.donation
+    .updateMany({
+      where: { id: donationId, status: 'REFUND_REQUESTED' },
+      data: { status: back as never, statusReason: '환불 처리 실패 — 재요청 가능' },
+    })
+    .catch((e) => {
+      logger.error('환불 실패 후 후원 상태 복원 실패', { donationId, refundId, message: (e as Error).message });
+    });
+  await prisma.donationStatusLog
+    .create({
+      data: {
+        id: newId(),
+        donationId,
+        fromStatus: 'REFUND_REQUESTED',
+        toStatus: back,
+        reason: '환불 처리 실패로 상태 복원',
+        actor: 'system',
+      },
+    })
+    .catch(() => undefined);
 }
 
 export async function rejectRefund(refundId: string, adminUserId?: string, memo?: string) {

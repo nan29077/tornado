@@ -31,8 +31,16 @@ export default async function MyConsentsPage() {
     ? await prisma.donorProfile.findUnique({ where: { id: donorId }, select: { phoneHash: true } })
     : null;
 
-  const or: Array<{ userId: string } | { phoneHash: string }> = [{ userId: user.id }];
-  if (donor?.phoneHash) or.push({ phoneHash: donor.phoneHash });
+  /**
+   * 번호로 조회할 때는 **계정이 붙지 않은 기록만** 가져온다.
+   *
+   * 예전에는 `phoneHash` 만 맞으면 다른 계정(userId)으로 기록된 동의 이력까지 끌어왔다.
+   * 통신사 번호 재배정이나 연결 해제 후 다른 사람이 같은 번호를 인증하면, 그 사람 화면에
+   * 이전 이용자의 동의 이력이 그대로 보였다.
+   * (문자만으로 동의한 이력은 userId 가 없으므로 이 조건으로도 정상적으로 표시된다)
+   */
+  const or: Array<{ userId: string } | { phoneHash: string; userId: null }> = [{ userId: user.id }];
+  if (donor?.phoneHash) or.push({ phoneHash: donor.phoneHash, userId: null });
 
   const records = await prisma.consentRecord.findMany({
     where: { OR: or },

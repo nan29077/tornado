@@ -26,7 +26,11 @@ export default async function StudioSettingsProfilePage() {
 
   return (
     <>
-      <PageHeader title="설정" description="채널 프로필과 계정 정보를 관리합니다. 후원샵 꾸미기는 후원 설정 > 후원페이지 탭에 있습니다." />
+      {/* 좌측 메뉴 이름("프로필 설정")과 제목이 달라 다른 화면으로 넘어온 줄 알기 쉬웠다. 맞춘다. */}
+      <PageHeader
+        title="프로필 설정"
+        description="채널 프로필과 계정 정보를 관리합니다. 후원샵 꾸미기는 후원 설정 > 후원페이지 탭에 있습니다."
+      />
 
       <div className="space-y-5">
         <section>

@@ -2,6 +2,7 @@ import { prisma } from '@/server/db';
 import { env } from '@/lib/env';
 import {
   SECRET_CONFIG_KEYS,
+  normalizeKeyword,
   usesChoices,
   usesDonationTotal,
   usesEntries,
@@ -144,6 +145,49 @@ export async function buildStudioState(creatorId: string): Promise<GameStudioSta
   return buildStudioStateForRound(round.id);
 }
 
+// ---------------------------------------------------------------------------
+// 스트림용 공유 스냅샷
+// ---------------------------------------------------------------------------
+
+/**
+ * 한 크리에이터에게 붙은 SSE 연결이 여러 개여도 DB 조회는 한 번만 한다.
+ *
+ * 크리에이터가 스튜디오를 열어 두면 미리보기 iframe·컨트롤·방송용 브라우저 소스까지
+ * 대여섯 개의 스트림이 동시에 붙고, 각각 2초마다 상태를 다시 만든다. `buildStudioState` 는
+ * 회차가 떠 있으면 7~8개의 쿼리를 돌리므로 **크리에이터 한 명이 유휴 상태에서 20 qps 이상**을
+ * 쓰게 된다. 같은 틱의 요청을 하나로 묶고 아주 짧게 캐시해 그 배수를 없앤다.
+ *
+ * 실시간성은 손해 보지 않는다. 화면 갱신의 주 경로는 이벤트 버스이고, 이 폴링은
+ * 다른 경로(웹훅·결제 콜백)에서 생긴 변화를 따라잡기 위한 보조 수단이다.
+ */
+const SNAPSHOT_TTL_MS = 1500;
+const snapshotCache = new Map<string, { at: number; value: GameStudioState | null }>();
+const snapshotInflight = new Map<string, Promise<GameStudioState | null>>();
+
+export async function buildStudioStateShared(creatorId: string): Promise<GameStudioState | null> {
+  const hit = snapshotCache.get(creatorId);
+  if (hit && Date.now() - hit.at < SNAPSHOT_TTL_MS) return hit.value;
+
+  const running = snapshotInflight.get(creatorId);
+  if (running) return running;
+
+  const p = buildStudioState(creatorId)
+    .then((value) => {
+      snapshotCache.set(creatorId, { at: Date.now(), value });
+      return value;
+    })
+    .finally(() => {
+      snapshotInflight.delete(creatorId);
+    });
+  snapshotInflight.set(creatorId, p);
+  return p;
+}
+
+/** 상태를 바꾼 직후 호출한다. 다음 폴링이 새 값을 읽는다. */
+export function invalidateStudioStateCache(creatorId: string) {
+  snapshotCache.delete(creatorId);
+}
+
 export async function buildStudioStateForRound(roundId: string): Promise<GameStudioState | null> {
   const round = await prisma.gameRound.findUnique({ where: { id: roundId }, include: { game: true } });
   if (!round) return null;
@@ -182,8 +226,8 @@ export async function buildStudioStateForRound(roundId: string): Promise<GameStu
     }
 
     if (type === 'KEYWORD') {
-      // 참여 시점에 소문자로 정규화해 저장하므로 그대로 비교한다.
-      const keyword = String(config.keyword ?? '').trim().toLowerCase();
+      // 저장·집계·판정·발표가 모두 같은 정규화 함수를 쓴다(lib/game-catalog.ts).
+      const keyword = normalizeKeyword(String(config.keyword ?? ''));
       correctCount = keyword ? await prisma.gameParticipant.count({ where: { roundId: round.id, entry: keyword } }) : 0;
     }
 
@@ -330,6 +374,6 @@ function joinUrlFor(entryMode: string, type: string, joinCode: string, status: R
 function correctOf(type: string, config: Record<string, unknown>, entry: string | null): boolean | undefined {
   if (entry == null) return undefined;
   if (type === 'QUIZ') return Number(entry) === Number(config.answerIndex);
-  if (type === 'KEYWORD') return entry === String(config.keyword ?? '').trim().toLowerCase();
+  if (type === 'KEYWORD') return entry === normalizeKeyword(String(config.keyword ?? ''));
   return undefined;
 }

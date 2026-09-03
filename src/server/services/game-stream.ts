@@ -6,7 +6,7 @@ import {
   type OverlayConnectionKind,
 } from '@/server/services/overlay-connections';
 import { autoCloseIfDue } from '@/server/services/games';
-import { buildStudioState, toPublicState, type GameStudioState } from '@/server/services/game-state';
+import { buildStudioStateShared, toPublicState, type GameStudioState } from '@/server/services/game-state';
 import { clampOverlayLayout } from '@/lib/overlay-layout';
 
 /**
@@ -28,6 +28,7 @@ import { clampOverlayLayout } from '@/lib/overlay-layout';
 export type GameStreamView = 'public' | 'studio';
 
 export function gameStateStream(
+  req: Request,
   creatorId: string,
   view: GameStreamView,
   kind: OverlayConnectionKind = 'preview',
@@ -79,6 +80,11 @@ export function gameStateStream(
       // 방송용 상한(6)은 후원 소스 + 게임 소스가 동시에 붙는 것을 전제로 잡아 둔 값이다.
       unregister = registerOverlayConnection(creatorId, teardown, kind, 'game');
 
+      // 후원 알림 스트림과 동일하게 요청 취소 신호에도 반드시 정리한다.
+      // ReadableStream.cancel() 만 믿으면, OBS 강제 종료나 프록시 리셋처럼 cancel 이
+      // 호출되지 않는 경우에 폴링 타이머와 연결 슬롯이 영구히 남는다.
+      req.signal.addEventListener('abort', teardown);
+
       write('ready', { creatorId, at: new Date().toISOString() });
 
       let broadcastEnabled = kind !== 'broadcast';
@@ -94,7 +100,7 @@ export function gameStateStream(
         if (closed) return;
         try {
           const [state, setting] = await Promise.all([
-            buildStudioState(creatorId),
+            buildStudioStateShared(creatorId),
             prisma.overlaySetting.findUnique({
               where: { creatorId },
               select: { gameEnabled: true, gameOffsetX: true, gameOffsetY: true, gameScalePct: true },

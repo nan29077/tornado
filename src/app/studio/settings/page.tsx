@@ -104,7 +104,12 @@ export default async function StudioSettingsPage({
 
       <nav
         aria-label="후원 설정 메뉴"
-        className="mb-5 grid grid-cols-5 overflow-hidden rounded-2xl border border-ink-100 bg-white p-1 shadow-[0_8px_24px_rgba(23,22,26,0.05)]"
+        /**
+         * 탭이 5개다. 360px 폭 휴대폰에서 5칸 그리드로 나누면 한 칸이 60px 남짓이라
+         * "후원페이지" 같은 이름이 두 줄로 접히거나 잘렸다. 좁은 화면에서는 가로 스크롤로
+         * 두어 글자가 온전히 보이게 하고, sm 이상에서만 5칸으로 나눠 담는다.
+         */
+        className="mb-5 flex snap-x snap-mandatory gap-1 overflow-x-auto rounded-2xl border border-ink-100 bg-white p-1 shadow-[0_8px_24px_rgba(23,22,26,0.05)] [scrollbar-width:none] sm:grid sm:grid-cols-5 sm:gap-0 sm:overflow-hidden"
       >
         {SETTINGS_TABS.map((tab) => (
           <Link
@@ -112,7 +117,7 @@ export default async function StudioSettingsPage({
             href={`/studio/settings?tab=${tab.key}`}
             aria-current={activeTab === tab.key ? 'page' : undefined}
             className={cx(
-              'flex min-h-11 items-center justify-center rounded-xl px-1 text-center text-[12px] font-bold transition-colors sm:px-3 sm:text-[13px]',
+              'flex min-h-11 shrink-0 snap-start items-center justify-center rounded-xl whitespace-nowrap px-3 text-center text-[12px] font-bold transition-colors sm:shrink sm:px-3 sm:text-[13px]',
               activeTab === tab.key ? 'bg-brand-400 text-ink-900 shadow-sm' : 'text-ink-400 hover:bg-ink-50 hover:text-ink-800',
             )}
           >

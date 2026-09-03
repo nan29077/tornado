@@ -1,6 +1,7 @@
 'use server';
 
 import { cookies } from 'next/headers';
+import { consumeIpRateLimit } from '@/server/rate-limit';
 import { prisma } from '@/server/db';
 import { kv } from '@/server/redis';
 import { newId } from '@/lib/id';
@@ -91,6 +92,21 @@ export async function startWebPinDonation(_prev: WebPinState, formData: FormData
 
   const ph = phoneHash(phone);
   const masked = maskPhone(phone);
+
+  /**
+   * 이 흐름은 로그인도 인증번호도 없이 **전화번호 문자열만 받아** 그 번호로 결제 요청 문자를
+   * 보낸다. 번호 단위 제한만 있으면 공격자가 번호를 바꿔 가며 광범위하게 발송할 수 있고,
+   * 피해자에게는 공격자가 정한 금액·문구의 "PIN 을 입력하세요" 문자가 도착한다.
+   * **발신 측(IP) 제한을 함께 건다.**
+   */
+  const ipLimit = await consumeIpRateLimit('web-pin-start', 10, PIN_SEND_WINDOW_SEC, { failClosed: true });
+  if (!ipLimit.ok) {
+    return {
+      ok: false,
+      step: 'phone',
+      message: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.',
+    };
+  }
 
   const sent = await kv.incr(pinSendKey(ph), PIN_SEND_WINDOW_SEC);
   if (sent > PIN_SEND_MAX) {

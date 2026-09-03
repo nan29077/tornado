@@ -15,6 +15,14 @@ function dateValue(d: Date | null): string {
   return d ? kstDateKey(d) : '';
 }
 
+/**
+ * 종료일 입력칸에 되돌려 줄 값.
+ * 저장은 '그날 24시'(= 다음 날 0시)로 하므로, 화면에는 하루를 빼서 사람이 입력한 날짜를 보여 준다.
+ */
+function endDateValue(d: Date | null): string {
+  return d ? kstDateKey(new Date(d.getTime() - 1)) : '';
+}
+
 export default async function AdminBannersPage() {
   const banners = await prisma.banner.findMany({
     orderBy: [{ position: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'desc' }],
@@ -144,7 +152,7 @@ export default async function AdminBannersPage() {
                         <AdminInput type="date" name="startsAt" defaultValue={dateValue(b.startsAt)} />
                       </AdminField>
                       <AdminField label="노출 종료일">
-                        <AdminInput type="date" name="endsAt" defaultValue={dateValue(b.endsAt)} />
+                        <AdminInput type="date" name="endsAt" defaultValue={endDateValue(b.endsAt)} />
                       </AdminField>
                     </div>
                     <label className="flex items-center gap-2 text-[13px] text-ink-700">

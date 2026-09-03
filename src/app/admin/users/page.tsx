@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, EmptyState, Notice, SectionTitle, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminInput, AdminSelect, FilterBar, Pager } from '@/components/admin/controls';
 import { SelectActionForm } from '@/components/admin/action-form';
-import { PAGE_SIZE, parsePage } from '@/components/admin/constants';
+import { PAGE_SIZE, parsePage, clampPageOrRedirect } from '@/components/admin/constants';
 import { issueTemporaryPasswordAction, updateUserStatus } from '@/app/actions/admin/accounts';
 import { TempPasswordButton } from '@/components/admin/temp-password-button';
 import { prisma } from '@/server/db';
@@ -12,16 +12,11 @@ import { formatKst } from '@/lib/datetime';
 import type { Prisma } from '@/generated/prisma/client';
 import type { UserRole, UserStatus } from '@/generated/prisma/enums';
 import { ProfileAvatar } from '@/components/profile/generated-avatar';
+import { userStatusLabel, adminPermissionLabel } from '@/lib/labels';
 
 export const dynamic = 'force-dynamic';
 
 const roleLabel: Record<UserRole, string> = { DONOR: '후원자', CREATOR: '크리에이터', ADMIN: '관리자' };
-const statusLabel: Record<UserStatus, { text: string; tone: 'success' | 'warning' | 'neutral' }> = {
-  ACTIVE: { text: '활성', tone: 'success' },
-  SUSPENDED: { text: '정지', tone: 'warning' },
-  WITHDRAWN: { text: '탈퇴', tone: 'neutral' },
-};
-
 export default async function AdminUsersPage({
   searchParams,
 }: {
@@ -32,9 +27,12 @@ export default async function AdminUsersPage({
   const page = parsePage(sp.page);
   const q = (sp.q ?? '').trim();
   const role = sp.role && sp.role in roleLabel ? (sp.role as UserRole) : undefined;
-  const status = sp.status && sp.status in statusLabel ? (sp.status as UserStatus) : undefined;
+  const status = sp.status && sp.status in userStatusLabel ? (sp.status as UserStatus) : undefined;
 
   const where: Prisma.UserWhereInput = {
+    // 소프트 삭제(탈퇴 처리)된 계정은 목록·통계에서 제외한다.
+    // 예전에는 필터도 표시도 없어 삭제된 계정이 "활성"처럼 보이고 상태 변경 버튼까지 열려 있었다.
+    deletedAt: null,
     ...(role ? { role } : {}),
     ...(status ? { status } : {}),
     ...(q
@@ -51,7 +49,9 @@ export default async function AdminUsersPage({
     prisma.user.count({ where }),
     prisma.user.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      // 보조 정렬키가 없으면 같은 초에 만들어진 행들의 순서가 페이지마다 달라져
+      // 목록에서 중복·누락이 생긴다(시드·일괄 생성에서 실제로 발생한다).
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       select: {
@@ -62,7 +62,9 @@ export default async function AdminUsersPage({
         adminProfile: { select: { permission: true } },
       },
     }),
-    prisma.user.groupBy({ by: ['status'], _count: { _all: true } }),
+    // 타일도 화면의 필터를 따라야 한다. 예전에는 where 없이 전체를 세어,
+    // "정지" 필터를 걸었는데 타일에는 전체 회원 수가 그대로 남아 두 숫자가 서로 어긋났다.
+    prisma.user.groupBy({ by: ['status'], where, _count: { _all: true } }),
     // 이메일 발송 연동 전이라 재설정 링크 원문은 서버 로그에만 남는다.
     // 여기서는 "요청이 실제로 접수됐는지" 만 확인할 수 있게 최근 요청을 보여 준다.
     prisma.passwordResetToken.findMany({
@@ -79,6 +81,8 @@ export default async function AdminUsersPage({
   ]);
 
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // 필터를 바꿔 결과가 줄었을 때 URL 의 옛 page 번호 때문에 빈 목록이 뜨는 것을 막는다.
+  clampPageOrRedirect('/admin/users', { q, role: role ?? '', status: status ?? '' }, page, lastPage, total);
   const count = (s: UserStatus) => byStatus.find((b) => b.status === s)?._count._all ?? 0;
 
   return (
@@ -89,7 +93,11 @@ export default async function AdminUsersPage({
       />
 
       <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-        <StatTile label="전체 회원" value={formatNumber(byStatus.reduce((a, b) => a + b._count._all, 0))} />
+        <StatTile
+          label="전체 회원"
+          value={formatNumber(byStatus.reduce((a, b) => a + b._count._all, 0))}
+          sub="현재 조건 기준"
+        />
         <StatTile label="활성" value={formatNumber(count('ACTIVE'))} tone="success" />
         <StatTile label="정지" value={formatNumber(count('SUSPENDED'))} tone="warning" />
         <StatTile label="탈퇴" value={formatNumber(count('WITHDRAWN'))} />
@@ -112,9 +120,9 @@ export default async function AdminUsersPage({
         <AdminField label="상태" className="w-36">
           <AdminSelect name="status" defaultValue={status ?? ''}>
             <option value="">전체</option>
-            {(Object.keys(statusLabel) as UserStatus[]).map((s) => (
+            {(Object.keys(userStatusLabel) as UserStatus[]).map((s) => (
               <option key={s} value={s}>
-                {statusLabel[s].text}
+                {userStatusLabel[s].text}
               </option>
             ))}
           </AdminSelect>
@@ -181,17 +189,18 @@ export default async function AdminUsersPage({
                     <Td>
                       <Badge tone={u.role === 'ADMIN' ? 'brand' : 'neutral'}>{roleLabel[u.role]}</Badge>
                       {u.adminProfile ? (
-                        <span className="mt-0.5 block text-[11px] text-ink-400">{u.adminProfile.permission}</span>
+                        <span className="mt-0.5 block text-[11px] text-ink-400">{adminPermissionLabel[u.adminProfile.permission]}</span>
                       ) : null}
                     </Td>
                     <Td>{u.phoneMasked ?? '-'}</Td>
                     <Td>
-                      <Badge tone={statusLabel[u.status].tone}>{statusLabel[u.status].text}</Badge>
+                      <Badge tone={userStatusLabel[u.status].tone}>{userStatusLabel[u.status].text}</Badge>
                     </Td>
                     <Td className="whitespace-nowrap">{formatKst(u.lastLoginAt, false)}</Td>
                     <Td className="whitespace-nowrap">{formatKst(u.createdAt, false)}</Td>
                     <Td>
                       <SelectActionForm
+                        ariaLabel="계정 상태 변경"
                         action={updateUserStatus}
                         values={{ userId: u.id }}
                         name="status"

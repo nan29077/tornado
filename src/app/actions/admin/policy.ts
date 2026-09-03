@@ -58,6 +58,22 @@ export async function saveLimitPolicy(_prev: AdminActionState, fd: FormData): Pr
       const before = await prisma.donationLimitPolicy.findUnique({ where: { id } });
       if (!before) throw new Error('한도 정책을 찾을 수 없습니다.');
 
+      /**
+       * "활성 전역 정책은 1개" 규칙은 **수정 경로에도** 적용해야 한다.
+       *
+       * 예전에는 신규 생성 분기에만 있어서, 비활성 전역 정책을 수정하며 활성으로 바꾸면
+       * 활성 전역 정책이 둘이 됐다. limits.ts 는 시행일 순으로 하나만 집으므로
+       * 어느 한도가 적용되는지 비결정적이 되고, 결제 한도는 이상거래 방어선이라 영향이 크다.
+       */
+      if (before.scope === 'GLOBAL' && active) {
+        const otherActive = await prisma.donationLimitPolicy.count({
+          where: { scope: 'GLOBAL', active: true, id: { not: id } },
+        });
+        if (otherActive > 0) {
+          throw new Error('활성 전역 정책이 이미 있습니다. 기존 정책을 먼저 비활성화해 주세요.');
+        }
+      }
+
       await prisma.donationLimitPolicy.update({ where: { id }, data: { ...values, active, effectiveFrom } });
       await writeAudit({
         adminUserId: admin.id,
@@ -127,6 +143,15 @@ export async function toggleLimitPolicy(_prev: AdminActionState, fd: FormData): 
     if (!before) throw new Error('한도 정책을 찾을 수 없습니다.');
 
     const active = !before.active;
+    // 활성화하는 경우에만 검사한다(비활성화는 언제나 안전하다).
+    if (active && before.scope === 'GLOBAL') {
+      const otherActive = await prisma.donationLimitPolicy.count({
+        where: { scope: 'GLOBAL', active: true, id: { not: id } },
+      });
+      if (otherActive > 0) {
+        throw new Error('활성 전역 정책이 이미 있습니다. 기존 정책을 먼저 비활성화한 뒤 활성화해 주세요.');
+      }
+    }
     await prisma.donationLimitPolicy.update({
       where: { id },
       data: { active, effectiveTo: active ? null : new Date() },
@@ -148,6 +173,11 @@ export async function toggleLimitPolicy(_prev: AdminActionState, fd: FormData): 
 
 export async function createTermsVersion(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
+    // 약관은 법적 효력이 있는 문서다. 새 버전을 발행하면 기존 버전이 비활성화된다.
+    // 정산·수수료보다 낮은 문턱으로 열어 둘 이유가 없다.
+    if (admin.adminPermission !== 'SUPER_ADMIN') {
+      throw new Error('약관 버전 발행은 최고관리자만 할 수 있습니다.');
+    }
     const type = enumValue(
       fd,
       'type',

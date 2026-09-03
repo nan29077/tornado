@@ -19,11 +19,33 @@ const REPORT_STATUS: Record<ReportStatus, { text: string; tone: 'neutral' | 'bra
 export default async function StudioReportsPage() {
   const { creatorId } = await requireCreator();
 
-  const reports = await prisma.report.findMany({
-    where: { creatorId },
-    orderBy: { createdAt: 'desc' },
-    take: 100,
-  });
+  /**
+   * `select` 를 명시한다.
+   *
+   * 스키마 주석이 "reporterUserId 는 크리에이터 화면에 절대 노출하지 않는다"고 못 박아 두었고
+   * 화면 안내도 "신고자 정보는 표시되지 않습니다"라고 하는데, 예전에는 select 없이 조회해
+   * 신고자 식별자가 렌더러 손에 들어와 있었다. 유출 한 발짝 전이었다.
+   */
+  const [reports, statusGroups] = await Promise.all([
+    prisma.report.findMany({
+      where: { creatorId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 100,
+      select: {
+        id: true,
+        category: true,
+        content: true,
+        status: true,
+        donationId: true,
+        createdAt: true,
+        handledAt: true,
+      },
+    }),
+    // 통계는 **전체 기준**으로 집계한다.
+    // 예전에는 최근 100건 배열을 filter().length 로 세어, 신고가 100건을 넘는 순간
+    // "접수 N건"이 실제보다 작게 표시됐다.
+    prisma.report.groupBy({ by: ['status'], where: { creatorId }, _count: { _all: true } }),
+  ]);
 
   const donationIds = reports.map((r) => r.donationId).filter((v): v is string => Boolean(v));
   const donations = donationIds.length
@@ -34,16 +56,21 @@ export default async function StudioReportsPage() {
     : [];
   const donationMap = new Map(donations.map((d) => [d.id, d.transactionNo]));
 
+  const countOf = (s: ReportStatus) => statusGroups.find((g) => g.status === s)?._count._all ?? 0;
   const counts = {
-    OPEN: reports.filter((r) => r.status === 'OPEN').length,
-    REVIEWING: reports.filter((r) => r.status === 'REVIEWING').length,
-    RESOLVED: reports.filter((r) => r.status === 'RESOLVED').length,
-    DISMISSED: reports.filter((r) => r.status === 'DISMISSED').length,
+    OPEN: countOf('OPEN'),
+    REVIEWING: countOf('REVIEWING'),
+    RESOLVED: countOf('RESOLVED'),
+    DISMISSED: countOf('DISMISSED'),
   };
+  const totalReports = statusGroups.reduce((a, g) => a + g._count._all, 0);
 
   return (
     <>
-      <PageHeader title="신고 내역" description="내 채널과 관련해 접수된 신고입니다. 최근 100건을 표시합니다." />
+      <PageHeader
+        title="신고 내역"
+        description={`내 채널과 관련해 접수된 신고 ${formatNumber(totalReports)}건 중 최근 ${formatNumber(Math.min(totalReports, 100))}건을 표시합니다. 위 통계는 전체 기준입니다.`}
+      />
 
       <div className="space-y-5">
         <Notice tone="neutral" title="신고는 통합 관리자가 처리합니다">

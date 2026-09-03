@@ -375,20 +375,53 @@ export async function rollbackCounters(
   }
 }
 
+/**
+ * 결제 실패 시 속도 카운터를 되돌린다.
+ *
+ * DB 집계(rollbackCounters)는 되돌리면서 Redis 카운터만 남으면, 결제가 실패한 건이
+ * 계속 "후원 1건"으로 세어져 정상 후원자가 속도 제한과 쿨다운에 걸린다.
+ * 실패해도 되돌아가지 않던 비대칭을 없앤다. (되돌리기 실패는 무시한다 — TTL 로 자연 소멸한다)
+ */
+export async function rollbackVelocity(donorId: string, policy: EffectivePolicy, at: Date = new Date()) {
+  const velocityKey = `velocity:${donorId}:${Math.floor(at.getTime() / (policy.velocityWindowSec * 1000))}`;
+  await kv.incrBy(velocityKey, -1, policy.velocityWindowSec).catch(() => 0);
+  await kv.incrBy(`streak:${donorId}`, -1, policy.cooldownSec).catch(() => 0);
+}
+
 export async function registerFailure(donorId: string, threshold: number) {
   const donor = await prisma.donorProfile.update({
     where: { id: donorId },
     data: { failCount: { increment: 1 } },
   });
   if (donor.failCount >= threshold) {
+    /**
+     * 잠금 기간을 **1년에서 정책값(기본 24시간)으로** 줄인다.
+     *
+     * 은행 점검이나 일시적 잔액부족 3회로 1년 잠금이 걸리는데, 해제 경로는 관리자 수동 처리
+     * 하나뿐이었다. 정상 후원자가 스스로 풀 방법이 없어 사실상 계정이 죽는다.
+     * 반복 실패에 대한 방어는 유지하되 시간이 지나면 스스로 풀리게 하고, 정말 위험한 계정은
+     * 관리자가 [이용 제한](blockedAt)으로 따로 막는다.
+     */
+    const lockSec = Math.max(600, Number(process.env.DONOR_FAIL_LOCK_SEC) || 24 * 3600);
     await prisma.donorProfile.update({
       where: { id: donorId },
-      // 관리자 해제 전까지 잠금 (충분히 먼 미래)
-      data: { lockedUntil: new Date(Date.now() + 365 * 86_400_000) },
+      data: { lockedUntil: new Date(Date.now() + lockSec * 1000) },
     });
     return true;
   }
   return false;
+}
+
+/**
+ * 잠금 시간이 지난 후원자의 실패 카운터를 초기화한다.
+ * 카운터가 남아 있으면 잠금이 풀린 직후 한 번만 실패해도 다시 잠긴다.
+ */
+export async function clearExpiredFailureLocks(now = new Date()): Promise<number> {
+  const r = await prisma.donorProfile.updateMany({
+    where: { lockedUntil: { not: null, lt: now }, failCount: { gt: 0 } },
+    data: { lockedUntil: null, failCount: 0 },
+  });
+  return r.count;
 }
 
 export async function clearFailures(donorId: string) {

@@ -417,7 +417,15 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
           <SectionTitle title="테스트 후원 실행" description="설정한 화면을 실제 방송 전에 확인해 보세요." />
           <Card>
             <div className="mb-3 space-y-2.5">
-              <Notice tone="brand">테스트 후원은 실제 결제와 정산에 반영되지 않습니다.</Notice>
+              <Notice tone="brand" title="테스트 후원은 결제·정산에 반영되지 않습니다">
+                다만 <strong>방송용 브라우저 소스가 연결돼 있으면 실제 방송 화면에도 그대로 표시됩니다.</strong>{' '}
+                시청자에게 보이지 않게 확인하려면 방송을 시작하기 전이나 오버레이 소스를 잠시 숨긴 상태에서 눌러 주세요.
+                {liveConnections > 0 ? (
+                  <span className="mt-1 block font-bold text-danger-500">
+                    지금 방송용 소스 {liveConnections}개가 연결돼 있습니다. 방송 중이라면 시청자에게도 보입니다.
+                  </span>
+                ) : null}
+              </Notice>
               {setting && !setting.enabled ? (
                 <Notice tone="warning" title="후원 알림이 방송 화면에 보이지 않는 상태입니다">
                   위 [방송 화면] 미리보기에는 재생되지만, OBS·PRISM 에는 아무것도 표시되지 않습니다. [알림 꾸미기]에서

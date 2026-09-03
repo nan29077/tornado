@@ -31,6 +31,46 @@ export const dynamic = 'force-dynamic';
 /** 한 크리에이터가 1분에 요청할 수 있는 합성 횟수. 재생 실패 재시도까지 감안한 값이다. */
 const RATE_MAX_PER_MIN = 60;
 
+/** 오버레이 이벤트 기록에서 문장을 복원할 수 있는 시간. 인메모리 허가와 같은 값으로 둔다. */
+const DB_GRANT_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * 합성해도 되는 문장을 찾는다.
+ *
+ * 1차는 인메모리 허가다. 그런데 그 허가는 **이벤트를 발행했거나 Redis 로 전달받은 인스턴스**
+ * 에만 있다. 다중 인스턴스에서 Redis 전파가 실패하면 오버레이는 DB 보충 조회로 이벤트를
+ * 받지만 그 인스턴스에는 허가가 없어 404 가 되고, 브라우저 음성으로 되돌아간다.
+ * OBS 의 브라우저 소스에는 한국어 음성이 없으므로 결과는 **무음**이다.
+ *
+ * 2차로 `overlay_event.payload` 에서 문장을 읽는다. 이 값은 서버가 만들어 저장한 것이므로
+ * 요청자가 문장을 정하는 문제(임의 문장 유료 합성)는 생기지 않는다.
+ */
+async function resolveTtsGrant(eventId: string, creatorId: string) {
+  const memory = findOverlayTtsGrant(eventId, creatorId);
+  if (memory) return memory;
+
+  const event = await prisma.overlayEvent.findUnique({
+    where: { id: eventId },
+    select: { creatorId: true, payload: true, createdAt: true },
+  });
+  if (!event || event.creatorId !== creatorId) return null;
+  if (Date.now() - event.createdAt.getTime() > DB_GRANT_TTL_MS) return null;
+
+  const payload = (event.payload ?? {}) as { tts?: { enabled?: boolean; text?: string; voice?: string; speed?: number; pitch?: number; volume?: number } };
+  const tts = payload.tts;
+  if (!tts?.enabled || !tts.text) return null;
+
+  return {
+    creatorId,
+    text: tts.text,
+    voice: tts.voice ?? '',
+    speed: Number(tts.speed ?? 1),
+    pitch: Number(tts.pitch ?? 1),
+    volume: Number(tts.volume ?? 1),
+    expiresAt: event.createdAt.getTime() + DB_GRANT_TTL_MS,
+  };
+}
+
 export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const creatorId = sp.get('creatorId') ?? '';
@@ -53,8 +93,8 @@ export async function GET(req: Request) {
     return new Response('too many requests', { status: 429 });
   }
 
-  // 서버가 기억해 둔 문장만 합성한다. 모르는 이벤트면 클라이언트가 브라우저 음성으로 되돌아간다.
-  const grant = findOverlayTtsGrant(eventId, creatorId);
+  // 서버가 발행한 문장만 합성한다. 모르는 이벤트면 클라이언트가 브라우저 음성으로 되돌아간다.
+  const grant = await resolveTtsGrant(eventId, creatorId);
   if (!grant) {
     return new Response('unknown event', { status: 404 });
   }

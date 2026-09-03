@@ -12,13 +12,14 @@ export const dynamic = 'force-dynamic';
 /**
  * 시청자 참여 API.
  *
- * 인증이 없는 공개 경로다. 남용은 세 겹으로 막는다.
- *  1) IP 속도 제한 — 한 회선에서 쏟아지는 요청을 잘라낸다
- *  2) 회차 단위 유니크 제약 — 같은 기기(브라우저)는 한 번만 참여한다
- *  3) 정답·확률은 애초에 응답에 넣지 않는다
+ * 인증이 없는 공개 경로다. 남용은 네 겹으로 막는다.
+ *  1) IP + 회차 속도 제한 — 한 회선에서 쏟아지는 요청을 잘라낸다
+ *  2) 회차 단위 유니크 제약 — 같은 브라우저는 한 번만 참여한다
+ *  3) 네트워크 지문(IP + UA) 단위 회차 참여 상한 — 브라우저 값을 지워도 무한 증식이 안 된다
+ *  4) 정답 여부를 응답에 넣지 않는다 — 참여 API 가 정답 오라클이 되지 않게 한다
  *
- * 기기 식별은 브라우저가 만든 값을 쓴다. IP 로 묶으면 이동통신망 NAT 때문에
- * 서로 다른 시청자가 같은 사람으로 취급되어 정상 참여가 막힌다.
+ * 지문을 유니크 키로 쓰지는 않는다. 이동통신망 NAT 뒤에서는 서로 다른 시청자가
+ * 같은 IP 를 쓰기 때문에 정상 참여가 막힌다. 유니크는 브라우저, 상한은 네트워크로 나눈다.
  */
 
 function badRequest(message: string, status = 400) {
@@ -65,13 +66,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
   const { code } = await ctx.params;
 
   const ip = clientIpFromRequest(req);
-  // 한 회선에서 분당 30건. 정상 시청자는 회차당 1건만 보낸다.
-  const limited = await consumeRateLimit('game-join', ip, 30, 60);
+  const userAgent = req.headers.get('user-agent') ?? '';
+  // 회차별로 나눠 센다. IP 단독으로 세면 방송에 QR 을 띄운 순간 같은 엣지·NAT 를 지나온
+  // 정상 시청자들이 서로의 몫을 소진해 대량으로 429 를 맞는다.
+  const limited = await consumeRateLimit(`game-join:${code.toUpperCase()}`, ip, 30, 60);
   if (!limited.ok) return badRequest('참여 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.', 429);
 
   const body = await req.json().catch(() => ({}));
   const clientId = String(body.clientId ?? '');
   if (!CLIENT_ID.test(clientId)) return badRequest('참여 정보를 확인할 수 없습니다. 새로고침 후 다시 시도해 주세요.');
+
+  // 서버가 아는 값으로만 만든 지문. 클라이언트가 조작할 수 없다.
+  const clientFingerprint = ip ? `${ip}|${userAgent.slice(0, 200)}` : null;
 
   // 로그인한 후원자는 계정 기준으로 중복을 막는다(기기를 바꿔도 1회).
   let donorId: string | null = null;
@@ -90,6 +96,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
       name: String(body.name ?? ''),
       entry: String(body.entry ?? ''),
       deviceKey: clientId,
+      clientFingerprint,
       donorId,
     });
     return NextResponse.json(result);

@@ -170,11 +170,14 @@ export function Field({
   label,
   hint,
   required,
+  error,
   children,
 }: {
   label: string;
   hint?: string;
   required?: boolean;
+  /** 입력값이 잘못됐을 때의 안내. 있으면 hint 대신 이쪽이 보인다. */
+  error?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -184,7 +187,13 @@ export function Field({
         {required ? <span className="text-accent-500">*</span> : null}
       </span>
       {children}
-      {hint ? <span className="mt-1.5 block text-[12px] leading-relaxed text-ink-400">{hint}</span> : null}
+      {error ? (
+        <span role="alert" className="mt-1.5 block text-[12px] leading-relaxed font-semibold text-danger-500">
+          {error}
+        </span>
+      ) : hint ? (
+        <span className="mt-1.5 block text-[12px] leading-relaxed text-ink-400">{hint}</span>
+      ) : null}
     </label>
   );
 }

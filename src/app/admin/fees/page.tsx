@@ -11,6 +11,9 @@ import { formatKst, kstDateKey } from '@/lib/datetime';
 
 export const dynamic = 'force-dynamic';
 
+/** 선택 목록에 담을 크리에이터 수 상한. 넘어가면 검색형 입력으로 바꿔야 한다. */
+const CREATOR_OPTION_LIMIT = 300;
+
 function ratePercent(value: string): string {
   const n = Number(value);
   if (!Number.isFinite(n)) return value;
@@ -33,6 +36,7 @@ export default async function AdminFeesPage() {
       where: { status: 'APPROVED' },
       orderBy: { displayName: 'asc' },
       select: { id: true, displayName: true, code: true },
+      take: CREATOR_OPTION_LIMIT,
     }),
   ]);
 

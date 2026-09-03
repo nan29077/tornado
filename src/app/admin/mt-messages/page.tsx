@@ -2,7 +2,7 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle, EmptyState, Notice, SectionTitle, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminInput, AdminSelect, FilterBar, Pager } from '@/components/admin/controls';
 import { maskLinkTokens, shortId } from '@/components/admin/mask';
-import { PAGE_SIZE, parsePage } from '@/components/admin/constants';
+import { PAGE_SIZE, parsePage, clampPageOrRedirect } from '@/components/admin/constants';
 import { prisma } from '@/server/db';
 import { readMockOutbox } from '@/server/adapters/mt';
 import { env } from '@/lib/env';
@@ -17,26 +17,42 @@ export const dynamic = 'force-dynamic';
 
 const STATUSES: DeliveryStatus[] = ['PENDING', 'SENT', 'FAILED', 'SKIPPED'];
 
+/** yyyy-mm-dd 를 KST 자정으로 읽는다. 잘못된 값은 필터 없음으로 취급한다. */
+function parseDate(raw?: string): Date | undefined {
+  if (!raw) return undefined;
+  const d = new Date(`${raw}T00:00:00+09:00`);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
 export default async function AdminMtMessagesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; template?: string; page?: string }>;
+  searchParams: Promise<{ status?: string; template?: string; from?: string; to?: string; page?: string }>;
 }) {
   const sp = await searchParams;
   const page = parsePage(sp.page);
   const status = STATUSES.includes(sp.status as DeliveryStatus) ? (sp.status as DeliveryStatus) : undefined;
   const template = (sp.template ?? '').trim();
+  /**
+   * 기간 필터. MT 이력은 하루에도 수천 건이 쌓여 상태·템플릿만으로는
+   * "어제 오후에 나간 그 문자" 를 찾을 수 없었다. MO 관리 화면과 같은 방식으로 맞춘다.
+   * 종료일은 그날을 **포함**해야 하므로 다음날 0시 미만으로 본다.
+   */
+  const from = parseDate(sp.from);
+  const toRaw = parseDate(sp.to);
+  const to = toRaw ? new Date(toRaw.getTime() + 86_400_000) : undefined;
 
   const where: Prisma.MtOutboundMessageWhereInput = {
     ...(status ? { status } : {}),
     ...(template ? { templateCode: { contains: template, mode: 'insensitive' as const } } : {}),
+    ...(from || to ? { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lt: to } : {}) } } : {}),
   };
 
   const [total, messages, grouped] = await Promise.all([
     prisma.mtOutboundMessage.count({ where }),
     prisma.mtOutboundMessage.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       select: {
@@ -51,6 +67,14 @@ export default async function AdminMtMessagesPage({
 
   const outbox = env.mt.provider === 'mock' || env.safety.safeMode ? readMockOutbox(30) : [];
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // 필터를 바꿔 결과가 줄었을 때 URL 의 옛 page 번호 때문에 빈 목록이 뜨는 것을 막는다.
+  clampPageOrRedirect(
+    '/admin/mt-messages',
+    { status: status ?? '', template, from: sp.from ?? '', to: sp.to ?? '' },
+    page,
+    lastPage,
+    total,
+  );
   const countOf = (s: DeliveryStatus) => grouped.find((g) => g.status === s)?._count._all ?? 0;
 
   return (
@@ -80,6 +104,12 @@ export default async function AdminMtMessagesPage({
         </AdminField>
         <AdminField label="템플릿 코드" className="w-48">
           <AdminInput name="template" defaultValue={template} placeholder="예: CONFIRM" />
+        </AdminField>
+        <AdminField label="시작일 (KST)" className="w-40">
+          <AdminInput type="date" name="from" defaultValue={sp.from ?? ''} />
+        </AdminField>
+        <AdminField label="종료일 (KST)" className="w-40">
+          <AdminInput type="date" name="to" defaultValue={sp.to ?? ''} />
         </AdminField>
       </FilterBar>
 
@@ -132,7 +162,7 @@ export default async function AdminMtMessagesPage({
           </Table>
           <Pager
             basePath="/admin/mt-messages"
-            params={{ status: status ?? '', template }}
+            params={{ status: status ?? '', template, from: sp.from ?? '', to: sp.to ?? '' }}
             page={page}
             lastPage={lastPage}
             total={total}

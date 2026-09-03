@@ -35,6 +35,21 @@ export async function GET(req: Request) {
     return new Response('지급대행 이체파일은 재무(FINANCE) 또는 최고관리자만 내려받을 수 있습니다.', { status: 403 });
   }
 
+  /**
+   * 이 GET 은 발급 이력을 남기는 **상태 변경**을 동반한다(내려받은 순간 배치가 확정된다).
+   * 세션 쿠키가 SameSite=Lax 라 최상위 내비게이션에는 쿠키가 실리므로, 외부 페이지의 링크나
+   * 프리페치로 호출되면 응답을 못 읽어도 배치 번호가 갱신되고 감사로그에 유령 기록이 남는다.
+   * 브라우저가 붙이는 Sec-Fetch-* 로 교차 사이트 요청과 프리페치를 걸러낸다.
+   */
+  const fetchSite = req.headers.get('sec-fetch-site');
+  if (fetchSite && fetchSite !== 'same-origin' && fetchSite !== 'none') {
+    return new Response('외부 사이트에서 직접 호출할 수 없습니다.', { status: 403 });
+  }
+  const purpose = req.headers.get('sec-purpose') ?? req.headers.get('purpose');
+  if (purpose && purpose.toLowerCase().includes('prefetch')) {
+    return new Response('프리페치로는 발급할 수 없습니다.', { status: 403 });
+  }
+
   const url = new URL(req.url);
   const ids = (url.searchParams.get('ids') ?? '')
     .split(',')

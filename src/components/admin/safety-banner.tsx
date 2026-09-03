@@ -81,8 +81,14 @@ export function SafetyBanner() {
 
       {!env.safety.allowDirectTrigger ? (
         <Notice tone="neutral" title="즉시형(DIRECT_TRIGGER) 결제 비활성">
-          금융사 서면승인이 등록되지 않아 즉시형 결제를 활성화할 수 없습니다. 모든 후원은 확인형(MT 링크 확인 후 결제)
-          으로만 처리됩니다.
+          {/*
+            원인을 단정하지 않는다. 이 배너가 보는 값은 환경 설정(ALLOW_DIRECT_TRIGGER) 하나뿐이고
+            서면승인 등록 여부는 확인하지 않는다. 예전 문구는 "서면승인이 등록되지 않아"라고 단정해
+            승인이 이미 있는 상황에서도 운영자를 엉뚱한 곳으로 보냈다.
+          */}
+          환경 설정(ALLOW_DIRECT_TRIGGER)이 꺼져 있어 즉시형 결제를 사용할 수 없습니다. 즉시형은 금융사 서면승인
+          등록과 이 설정이 <strong>둘 다</strong> 갖춰져야 열립니다. 지금은 모든 후원이 확인형(문자 링크 확인 후
+          결제)으로만 처리됩니다.
         </Notice>
       ) : null}
 

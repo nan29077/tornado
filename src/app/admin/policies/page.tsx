@@ -11,6 +11,9 @@ import { formatKst, kstDateKey } from '@/lib/datetime';
 
 export const dynamic = 'force-dynamic';
 
+/** 선택 목록에 담을 크리에이터 수 상한. 넘어가면 검색형 입력으로 바꿔야 한다. */
+const CREATOR_OPTION_LIMIT = 300;
+
 interface LimitValues {
   defaultAmount: string;
   minAmount: string;
@@ -118,6 +121,7 @@ export default async function AdminPoliciesPage() {
       where: { status: 'APPROVED' },
       orderBy: { displayName: 'asc' },
       select: { id: true, displayName: true, code: true },
+      take: CREATOR_OPTION_LIMIT,
     }),
   ]);
 

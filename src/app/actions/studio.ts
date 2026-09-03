@@ -4,7 +4,7 @@ import { logger } from '@/lib/logger';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { prisma } from '@/server/db';
-import { requireCreator } from '@/server/auth';
+import { requireCreator, writeAudit } from '@/server/auth';
 import { newId } from '@/lib/id';
 import { env } from '@/lib/env';
 import { accountTail4, decrypt, encrypt, generateToken, isValidResident, maskName, maskSecret, normalizeResident, tokenHash } from '@/lib/crypto';
@@ -12,12 +12,20 @@ import { sendTestOverlay } from '@/server/services/broadcast-dispatch';
 import { OVERLAY_EFFECTS } from '@/server/services/overlay-tiers';
 import { resolvePolicy } from '@/server/services/limits';
 import { createSettlementRequest } from '@/server/services/settlement';
-import { notifySuperAdmins } from '@/server/services/notifications';
+import { notifySuperAdmins, notifyUser } from '@/server/services/notifications';
 import { formatWon } from '@/lib/money';
 import { loadBannedWords } from '@/server/services/donation-flow';
 import { THANKS_MT_MAX_LENGTH, THANKS_MT_VARIABLES } from '@/server/services/mt-templates';
 import { bannedNeedle, filterContent } from '@/server/services/content-filter';
 import { getYouTubeAdapter } from '@/server/adapters/youtube';
+import {
+  ensureYouTubeAccessToken,
+  resolveActiveBroadcast,
+  upsertBroadcastRow,
+  invalidateBroadcastCache,
+  revokeYouTubeConnection,
+} from '@/server/services/youtube-connection';
+import { getPublicBaseUrl } from '@/server/public-base-url';
 import { bankName } from '@/components/studio/banks';
 
 /**
@@ -124,6 +132,9 @@ export async function blockDonorAction(
 
     revalidatePath('/studio/moderation');
     revalidatePath('/studio/donations');
+    // 동적 경로는 목록 경로 무효화로 갱신되지 않는다. 상세 화면의 차단 버튼이
+    // 누른 뒤에도 그대로 남아 있던 원인이다.
+    revalidatePath('/studio/donations/[id]', 'page');
     revalidatePath('/studio/messages');
     return { ok: true, message: '해당 후원자를 차단했습니다. 이후 문자는 후원으로 접수되지 않습니다.' };
   });
@@ -141,6 +152,8 @@ export async function unblockDonorAction(
     if (deleted.count === 0) return { ok: false, message: '차단 목록에 없는 후원자입니다.' };
 
     revalidatePath('/studio/moderation');
+    revalidatePath('/studio/donations');
+    revalidatePath('/studio/donations/[id]', 'page');
     return { ok: true, message: '차단을 해제했습니다.' };
   });
 }
@@ -190,14 +203,25 @@ export async function disconnectYouTubeAction(
   _formData: FormData,
 ): Promise<StudioActionState> {
   return withCreator(async (creatorId) => {
-    const updated = await prisma.youTubeConnection.updateMany({
-      where: { creatorId },
-      data: { status: 'REVOKED', lastError: null, lastCheckedAt: new Date() },
+    const conn = await prisma.youTubeConnection.findUnique({ where: { creatorId } });
+    if (!conn) return { ok: false, message: '연결된 유튜브 채널이 없습니다.' };
+
+    // 상태만 REVOKED 로 바꾸면 구글 계정에는 권한이 그대로 남고 우리 DB 에도 복호화 가능한
+    // 토큰이 남는다. 안내 문구("더 이상 사용되지 않습니다")와 실제 동작을 일치시킨다.
+    const { providerRevoked } = await revokeYouTubeConnection({
+      connectionId: conn.id,
+      refreshTokenEnc: conn.refreshTokenEnc,
+      reason: '크리에이터 연결 해제',
     });
-    if (updated.count === 0) return { ok: false, message: '연결된 유튜브 채널이 없습니다.' };
+
     revalidatePath('/studio/youtube');
     revalidatePath('/studio');
-    return { ok: true, message: '유튜브 채널 연결을 해제했습니다. 저장된 토큰은 더 이상 사용되지 않습니다.' };
+    return {
+      ok: true,
+      message: providerRevoked
+        ? '유튜브 채널 연결을 해제했습니다. 구글 쪽 권한도 회수했고 저장된 토큰은 폐기했습니다.'
+        : '유튜브 채널 연결을 해제하고 저장된 토큰을 폐기했습니다. 구글 계정의 앱 권한은 구글 보안 설정에서 직접 해제해 주세요.',
+    };
   });
 }
 
@@ -216,42 +240,32 @@ export async function refreshYouTubeBroadcastAction(
     }
 
     const adapter = getYouTubeAdapter();
-    let accessToken = decrypt(conn.accessTokenEnc);
 
-    // EXPIRED 상태면 만료 시각과 무관하게 갱신을 한 번 더 시도한다.
-    if (conn.status === 'EXPIRED' || conn.expiresAt.getTime() < Date.now() + 60_000) {
-      const refreshed = await adapter.refresh(decrypt(conn.refreshTokenEnc));
-      if (!refreshed.ok || !refreshed.data) {
-        await prisma.youTubeConnection.update({
-          where: { id: conn.id },
-          data: { status: 'EXPIRED', lastError: refreshed.message ?? '토큰 갱신 실패' },
-        });
-        revalidatePath('/studio/youtube');
-        return {
-          ok: false,
-          message:
-            '액세스 토큰 갱신에 실패했습니다. 잠시 후 [라이브 방송 조회]로 다시 시도해 보시고, 계속 실패하면 채널을 다시 연결해 주세요.',
-        };
-      }
-      accessToken = refreshed.data.accessToken;
-      await prisma.youTubeConnection.update({
-        where: { id: conn.id },
-        data: {
-          accessTokenEnc: encrypt(refreshed.data.accessToken),
-          expiresAt: refreshed.data.expiresAt,
-          status: 'CONNECTED',
-          lastError: null,
-        },
-      });
+    // 갱신 로직은 services/youtube-connection.ts 한 곳에만 둔다.
+    // 예전에는 이 화면·후원 송출·게임 공유 세 곳에 복제되어 있어, 동시에 호출되면
+    // 서로의 액세스 토큰을 무효화했다.
+    const token = await ensureYouTubeAccessToken(conn, adapter);
+    if (!token.ok) {
+      revalidatePath('/studio/youtube');
+      return {
+        ok: false,
+        message: token.permanent
+          ? '유튜브 연결 권한이 해제되었습니다. 채널을 다시 연결해 주세요.'
+          : '액세스 토큰 갱신에 실패했습니다. 잠시 후 다시 시도해 보시고, 계속 실패하면 채널을 다시 연결해 주세요.',
+      };
     }
 
-    const live = await adapter.findActiveBroadcast(accessToken);
+    // 사용자가 직접 누른 조회다. 캐시를 비우고 실제로 다시 확인한다.
+    await invalidateBroadcastCache(creatorId);
+    const live = await resolveActiveBroadcast(creatorId, token.accessToken, adapter);
     if (!live.ok) {
-      await prisma.youTubeConnection.update({
-        where: { id: conn.id },
-        data: { lastError: live.message ?? '라이브 방송 조회 실패', lastCheckedAt: new Date() },
-      });
       revalidatePath('/studio/youtube');
+      if (live.reason === 'NO_ACTIVE_BROADCAST') {
+        return { ok: true, message: '현재 진행 중인 라이브 방송이 없습니다.' };
+      }
+      if (live.reason === 'CHAT_DISABLED') {
+        return { ok: false, message: '라이브 방송은 찾았지만 실시간 채팅이 꺼져 있습니다. 유튜브에서 채팅을 켜 주세요.' };
+      }
       return { ok: false, message: `라이브 방송 조회에 실패했습니다. ${live.message ?? ''}`.trim() };
     }
 
@@ -259,37 +273,12 @@ export async function refreshYouTubeBroadcastAction(
       where: { id: conn.id },
       data: { lastCheckedAt: new Date(), lastError: null },
     });
-
-    if (!live.data) {
-      revalidatePath('/studio/youtube');
-      return { ok: true, message: '현재 진행 중인 라이브 방송이 없습니다.' };
-    }
-
-    await prisma.youTubeBroadcast.upsert({
-      where: { creatorId_broadcastId: { creatorId, broadcastId: live.data.broadcastId } },
-      create: {
-        id: newId(),
-        creatorId,
-        broadcastId: live.data.broadcastId,
-        liveChatId: live.data.liveChatId,
-        title: live.data.title,
-        lifeCycle: live.data.lifeCycleStatus,
-        chatEnabled: live.data.chatEnabled,
-        startedAt: live.data.startedAt ?? null,
-      },
-      update: {
-        liveChatId: live.data.liveChatId,
-        title: live.data.title,
-        lifeCycle: live.data.lifeCycleStatus,
-        chatEnabled: live.data.chatEnabled,
-        detectedAt: new Date(),
-      },
-    });
+    await upsertBroadcastRow(creatorId, live.broadcast);
 
     revalidatePath('/studio/youtube');
     return {
       ok: true,
-      message: `라이브 방송을 확인했습니다. 방송 ID ${live.data.broadcastId}${live.data.liveChatId ? '' : ' (라이브 채팅 ID 없음)'}`,
+      message: `라이브 방송을 확인했습니다. 방송 ID ${live.broadcast.broadcastId}`,
     };
   });
 }
@@ -372,13 +361,22 @@ export async function regenerateOverlayTokenAction(
       update: data,
     });
 
+    /**
+     * 주소는 **요청 호스트 기준**으로 만든다.
+     *
+     * 예전에는 `env.baseUrl` 을 그대로 썼다. 터널(trycloudflare)이나 사내망 IP 로 접속해
+     * 발급하면 `http://localhost:3025/...` 가 나와서 다른 PC 의 OBS 에서는 아예 열리지 않았다.
+     * 후원 페이지 공유 URL 은 이미 요청 호스트를 반영하고 있어 기준도 서로 달랐다.
+     */
+    const baseUrl = await getPublicBaseUrl().catch(() => env.baseUrl);
+
     revalidatePath('/studio/overlay');
     return {
       ok: true,
       message: '새 브라우저 소스 URL을 발급했습니다. 기존 URL은 즉시 무효화되었습니다.',
-      secret: `${env.baseUrl}/overlay/${creatorId}?token=${token}`,
-      secretLabel: '브라우저 소스 URL',
-      secretHint: '이 값은 지금 한 번만 표시됩니다. 화면을 벗어나면 다시 확인할 수 없습니다.',
+      secret: `${baseUrl}/overlay/${creatorId}?token=${token}`,
+      secretLabel: '브라우저 소스 URL (후원 알림)',
+      secretHint: `이 값은 지금 한 번만 표시됩니다. 게임 오버레이는 같은 토큰으로 ${baseUrl}/overlay/${creatorId}/game?token=... 주소를 쓰면 됩니다.`,
     };
   });
 }
@@ -976,7 +974,7 @@ export async function saveSettlementAccountAction(
   _prev: StudioActionState,
   formData: FormData,
 ): Promise<StudioActionState> {
-  return withCreator(async (creatorId) => {
+  return withCreator(async (creatorId, userId) => {
     const parsed = z
       .object({
         bankCode: z.string().min(2).max(4),
@@ -1007,17 +1005,52 @@ export async function saveSettlementAccountAction(
       verifiedAt: null,
     };
 
+    const before = await prisma.settlementAccount.findUnique({
+      where: { creatorId },
+      select: { bankCode: true, bankName: true, accountTail4: true, holderMasked: true, verified: true },
+    });
+
     await prisma.settlementAccount.upsert({
       where: { creatorId },
       create: { id: newId(), creatorId, ...data },
       update: data,
     });
 
+    /**
+     * 돈이 나가는 계좌가 바뀌었다는 사실은 **반드시 흔적을 남긴다.**
+     *
+     * `SettlementAccount` 는 이력 테이블 없이 그 자리에서 덮어쓰는 구조라, 기록하지 않으면
+     * "언제 어떤 계좌에서 무엇으로 바뀌었는지"가 어디에도 남지 않는다. 같은 테이블을 만지는
+     * 관리자 경로에는 감사로그가 있는데 정작 당사자 경로에는 없었다.
+     * 저장하는 값은 마스킹된 것만이다(은행코드 · 끝 4자리 · 예금주 마스킹).
+     */
+    await writeAudit({
+      action: 'SETTLEMENT_ACCOUNT_UPDATE_BY_CREATOR',
+      targetType: 'SettlementAccount',
+      targetId: creatorId,
+      before: before ?? null,
+      after: {
+        bankCode: data.bankCode,
+        bankName: data.bankName,
+        accountTail4: data.accountTail4,
+        holderMasked: data.holderMasked,
+        verified: false,
+      },
+    }).catch(() => undefined);
+
+    // 계정 탈취로 계좌가 바뀌는 상황을 본인이 알아챌 수 있도록 알림을 남긴다.
+    await notifyUser({
+      userId,
+      title: '정산 계좌가 변경되었습니다',
+      body: `${data.bankName} ****${data.accountTail4} (예금주 ${data.holderMasked}) 로 변경되었습니다. 본인이 하지 않았다면 즉시 비밀번호를 바꾸고 고객센터로 문의해 주세요.`,
+      linkUrl: '/studio/settlement?tab=account',
+    }).catch(() => undefined);
+
     revalidatePath('/studio/settlement/account');
     revalidatePath('/studio/settlement');
     return {
       ok: true,
-      message: '정산 계좌를 저장했습니다. 예금주 실명확인은 통합 관리자 승인 후 완료됩니다.',
+      message: '정산 계좌를 저장했습니다. 예금주 실명확인은 통합 관리자 승인 후 완료됩니다. 변경 사실은 알림으로도 안내됩니다.',
     };
   });
 }

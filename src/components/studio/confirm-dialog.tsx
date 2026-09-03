@@ -60,6 +60,7 @@ export function ConfirmDialog({
   const open = phase !== 'closed';
   const busy = phase === 'busy';
   const done = phase === 'done';
+  const panelRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
     if (!open) return;
@@ -69,6 +70,48 @@ export function ConfirmDialog({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, busy, onClose]);
+
+  /**
+   * 포커스를 다이얼로그 안으로 옮기고, Tab 이 밖으로 새지 않게 가둔다.
+   *
+   * `aria-modal="true"` 만 붙어 있고 포커스가 배경에 남아 있으면, 키보드·스크린리더
+   * 사용자에게는 모달이 모달로 동작하지 않는다(뒤 화면의 버튼을 그대로 누를 수 있다).
+   * 닫을 때는 열기 전 포커스로 되돌린다.
+   */
+  React.useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    const focusables = () =>
+      Array.from(
+        panel?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((el) => el.offsetParent !== null);
+
+    focusables()[0]?.focus();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const items = focusables();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && (active === first || !panel?.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true);
+      previous?.focus?.();
+    };
+  }, [open]);
 
   // 열려 있는 동안 배경 스크롤을 막는다.
   React.useEffect(() => {
@@ -103,7 +146,10 @@ export function ConfirmDialog({
         className="absolute inset-0 cursor-default bg-ink-900/55 backdrop-blur-[2px]"
       />
 
-      <div className="animate-banner-in relative w-full max-w-[420px] overflow-hidden rounded-[22px] bg-white shadow-[0_28px_70px_rgba(23,22,26,0.32)]">
+      <div
+        ref={panelRef}
+        className="animate-banner-in relative w-full max-w-[420px] overflow-hidden rounded-[22px] bg-white shadow-[0_28px_70px_rgba(23,22,26,0.32)]"
+      >
         {!busy ? (
           <button
             type="button"

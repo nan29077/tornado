@@ -14,6 +14,15 @@ import { formatWon, formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
 import { creatorStatusLabel, donationStatusLabel, paymentModeLabel, moNumberStatusLabel } from '@/lib/labels';
 import { AdminField, AdminInput } from '@/components/admin/controls';
+import { bankLabel, shortId } from '@/components/admin/mask';
+import { hasDirectTriggerWrittenApproval } from '@/server/services/financial-approval';
+
+/** 소수 요율(0.018)을 사람이 읽는 퍼센트(1.8%)로 바꾼다. */
+function percentText(rate: unknown): string {
+  const n = Number(rate);
+  if (!Number.isFinite(n)) return '-';
+  return `${(n * 100).toFixed(2).replace(/\.?0+$/, '')}%`;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -57,7 +66,13 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
     prisma.donation.aggregate({ where: { creatorId: id }, _count: { _all: true }, _sum: { amount: true } }),
   ]);
 
-  const directBlocked = !env.safety.allowDirectTrigger;
+  /**
+   * 즉시형 결제를 **열 수 있는 조건은 두 가지**다 — 환경 플래그 + 금융사 서면승인 등록.
+   * 화면이 플래그만 보고 옵션을 열어 두면, 선택은 되는데 저장은 서버에서 거절되어
+   * 운영자는 왜 선택지가 열려 있었는지 알 수 없다. 서버 액션과 같은 조건을 쓴다.
+   */
+  const writtenApproval = await hasDirectTriggerWrittenApproval().catch(() => false);
+  const directBlocked = !env.safety.allowDirectTrigger || !writtenApproval;
 
   return (
     <>
@@ -93,7 +108,8 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
               />
               <DataRow label="담당자" value={`${creator.user.name ?? '-'} / ${creator.user.email ?? '-'}`} />
               <DataRow label="연락처" value={creator.user.phoneMasked ?? '-'} />
-              <DataRow label="사업자번호" value={creator.businessNo ?? '미등록'} />
+              {/* 개인사업자에게 사업자등록번호는 사실상 개인 식별자다. 마스킹해 표시한다. */}
+              <DataRow label="사업자번호" value={creator.businessNo ? shortId(creator.businessNo) : '미등록'} />
               <DataRow label="1건 후원금" value={formatWon(creator.donationAmount)} />
               <DataRow label="허용 범위" value={`${formatWon(creator.minAmount)} ~ ${formatWon(creator.maxAmount)}`} />
               <DataRow label="신청일" value={formatKst(creator.createdAt)} />
@@ -120,6 +136,7 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
             </div>
             <div className="mt-3">
               <SelectActionForm
+                        ariaLabel="크리에이터 심사 상태 변경"
                 action={updateCreatorStatus}
                 values={{ creatorId: creator.id }}
                 name="status"
@@ -143,6 +160,7 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
             </p>
             <div className="mt-3">
               <SelectActionForm
+                        ariaLabel="크리에이터 심사 상태 변경"
                 action={updateCreatorPaymentMode}
                 values={{ creatorId: creator.id }}
                 name="paymentMode"
@@ -163,8 +181,11 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
             {directBlocked ? (
               <div className="mt-3">
                 <Notice tone="danger" title="즉시형 결제 선택 불가">
-                  금융사 서면승인이 등록되지 않아 즉시형 결제를 활성화할 수 없습니다. 서면승인 등록 후
-                  ALLOW_DIRECT_TRIGGER 를 켜야 선택할 수 있습니다.
+                  {!writtenApproval && !env.safety.allowDirectTrigger
+                    ? '금융사 서면승인이 등록되지 않았고 ALLOW_DIRECT_TRIGGER 도 꺼져 있습니다. 둘 다 갖춰야 선택할 수 있습니다.'
+                    : !writtenApproval
+                      ? '금융사 서면승인이 등록되지 않았습니다. 서면승인을 등록해야 선택할 수 있습니다.'
+                      : 'ALLOW_DIRECT_TRIGGER 가 꺼져 있습니다. 환경 설정을 켜야 선택할 수 있습니다.'}
                 </Notice>
               </div>
             ) : null}
@@ -173,8 +194,19 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
               <CardTitle>수수료 정책</CardTitle>
               <div className="mt-2">
                 <DataRow label="적용 범위" value={feePolicy ? feePolicy.scope : '기본값(정책 미등록)'} />
-                <DataRow label="결제 수수료" value={feePolicy ? `${feePolicy.pgFeeRate.toString()} + ${formatWon(feePolicy.pgFixedFee)}` : '0.018'} />
-                <DataRow label="플랫폼 수수료" value={feePolicy ? feePolicy.platformFeeRate.toString() : '0.15'} />
+                {/* 요율을 소수 원문(0.018)으로 보여 주면 1.8% 인지 0.018% 인지 즉시 알 수 없다. */}
+                <DataRow
+                  label="결제 수수료"
+                  value={
+                    feePolicy
+                      ? `${percentText(feePolicy.pgFeeRate)} + ${formatWon(feePolicy.pgFixedFee)}`
+                      : `${percentText(0.018)} (기본값)`
+                  }
+                />
+                <DataRow
+                  label="플랫폼 수수료"
+                  value={feePolicy ? percentText(feePolicy.platformFeeRate) : `${percentText(0.15)} (기본값)`}
+                />
                 <DataRow
                   label="부가세"
                   value={
@@ -293,7 +325,8 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
                 <>
                   <DataRow
                     label="계좌"
-                    value={`${creator.settlementAccount.bankName} ****${creator.settlementAccount.accountTail4}`}
+                    // 마스킹 규칙을 직접 조립하지 않고 공용 헬퍼를 쓴다(두 벌로 갈라지면 한쪽만 고쳐진다).
+                    value={bankLabel(creator.settlementAccount.bankName, creator.settlementAccount.accountTail4)}
                   />
                   <DataRow label="예금주" value={creator.settlementAccount.holderMasked} />
                   <DataRow

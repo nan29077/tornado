@@ -185,6 +185,12 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
   const [previewGameId, setPreviewGameId] = React.useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = React.useState<GameRow | null>(null);
   const [removePhase, setRemovePhase] = React.useState<ConfirmPhase>('closed');
+  /**
+   * 게임 오버레이 끄기 확인.
+   * 같은 화면이 자체 ConfirmDialog 를 쓰는데 여기만 브라우저 기본 confirm 이었다.
+   * 팝아웃 컨트롤 창(460x820)에서는 특히 어색하고, 브라우저가 확인창을 억제하면 그냥 실행된다.
+   */
+  const [overlayOffPhase, setOverlayOffPhase] = React.useState<ConfirmPhase>('closed');
 
   const toastTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -357,13 +363,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
     [load, showToast, fail, gameEnabled, overlayConfigured],
   );
 
-  const toggleGameOverlay = React.useCallback(async () => {
-    if (!overlayConfigured || settingBusy) return;
-    const next = !gameEnabled;
-    if (!next && state && !window.confirm('게임 오버레이를 끄면 진행 중인 게임도 화면에서 내려갑니다. 계속할까요?')) {
-      return;
-    }
-
+  const applyGameOverlay = React.useCallback(async (next: boolean) => {
     setSettingBusy(true);
     setProblem(null);
     try {
@@ -386,7 +386,18 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
     } finally {
       setSettingBusy(false);
     }
-  }, [overlayConfigured, settingBusy, gameEnabled, state, fail, showToast, load]);
+  }, [fail, showToast, load]);
+
+  /** 스위치 클릭. 끄는 경우에만(진행 중인 게임이 있으면) 확인 다이얼로그를 띄운다. */
+  const toggleGameOverlay = React.useCallback(() => {
+    if (!overlayConfigured || settingBusy) return;
+    const next = !gameEnabled;
+    if (!next && state) {
+      setOverlayOffPhase('ask');
+      return;
+    }
+    void applyGameOverlay(next);
+  }, [overlayConfigured, settingBusy, gameEnabled, state, applyGameOverlay]);
 
   // ------------------------------------------------------- 주 동작 결정
   const primary = React.useMemo(() => {
@@ -438,14 +449,14 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
       if (el?.isContentEditable) return;
       if (el?.getAttribute('role') === 'button') return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (form || removePhase !== 'closed') return;
+      if (form || removePhase !== 'closed' || overlayOffPhase !== 'closed') return;
 
       if (e.key === 'Escape') {
         setQrOpen(false);
         return;
       }
       if (!state) return;
-      if (e.key === ' ' || e.key === 'Enter') {
+      if (e.key === 'Enter') {
         e.preventDefault();
         void runPrimary();
         return;
@@ -458,7 +469,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [state, runPrimary, control, form, removePhase]);
+  }, [state, runPrimary, control, form, removePhase, overlayOffPhase]);
 
   // --------------------------------------------------------------- 저장
   const saveForm = async () => {
@@ -575,7 +586,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
               aria-checked={gameEnabled}
               aria-label="게임 오버레이 사용"
               disabled={!overlayConfigured || settingBusy}
-              onClick={() => void toggleGameOverlay()}
+              onClick={() => toggleGameOverlay()}
               className={cx(
                 'relative h-8 w-14 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-45',
                 gameEnabled ? 'bg-brand-400' : 'bg-ink-200',
@@ -981,6 +992,21 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
       ) : null}
 
       <ConfirmDialog
+        phase={overlayOffPhase}
+        title="게임 오버레이를 끌까요?"
+        description="진행 중인 게임도 방송 화면에서 함께 내려갑니다. 다시 켜면 목록에서 새로 시작할 수 있습니다."
+        confirmLabel="끄기"
+        variant="danger"
+        doneOk
+        doneTitle="게임 오버레이를 껐습니다"
+        onConfirm={() => {
+          setOverlayOffPhase('busy');
+          void applyGameOverlay(false).finally(() => setOverlayOffPhase('closed'));
+        }}
+        onClose={() => setOverlayOffPhase('closed')}
+      />
+
+      <ConfirmDialog
         phase={removePhase}
         title={`"${removeTarget?.title ?? ''}" 게임을 삭제할까요?`}
         description="목록에서 사라집니다. 참여자·당첨자 기록은 [지난 게임 결과]에 그대로 남습니다."
@@ -1230,7 +1256,7 @@ function ControlPanel({
 
       {!compact ? (
         <p className="mt-3 text-[11.5px] leading-relaxed text-ink-400">
-          단축키 — <b className="text-ink-700">Space</b> 또는 <b className="text-ink-700">Enter</b> 는 위의 큰 버튼,{' '}
+          단축키 — <b className="text-ink-700">Enter</b> 는 위의 큰 버튼,{' '}
           <b className="text-ink-700">Backspace</b> 는 마감·발표 취소입니다. 입력 칸이나 버튼에 커서가 있을 때,
           게임을 만들거나 고치는 중일 때는 동작하지 않습니다.
           진행 버튼에는 확인창을 두지 않았습니다. 잘못 눌러도 위의 [마감 취소] · [발표 취소]로 되돌릴 수 있습니다.

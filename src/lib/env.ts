@@ -82,6 +82,17 @@ export const env = {
   redisUrl: str('REDIS_URL'),
   allowInMemoryFallback: bool('ALLOW_INMEMORY_FALLBACK', true),
 
+  /**
+   * 앞단에 놓인 **신뢰 프록시 단수**.
+   *
+   * X-Forwarded-For 는 "클라이언트, 프록시1, 프록시2" 순으로 쌓인다. 우리가 믿을 수 있는 것은
+   * 우리 프록시가 붙인 값뿐이므로, 뒤에서 N번째(=신뢰 프록시 단수만큼 건너뛴 값)를 클라이언트로 본다.
+   *  - ALB 단독            → 1 (기본값)
+   *  - CloudFront + ALB    → 2
+   * 값이 틀리면 MO 허용목록이 전건 실패하거나(너무 큼), 클라이언트가 IP 를 위조할 수 있다(너무 작음).
+   */
+  trustedProxyHops: Math.max(1, num('TRUSTED_PROXY_HOPS', 1)),
+
   crypto: {
     provider: str('CRYPTO_PROVIDER', 'local') as 'local' | 'aws-kms',
     masterKey: str('CRYPTO_MASTER_KEY'),
@@ -89,6 +100,16 @@ export const env = {
     sessionSecret: requiredSecret('SESSION_SECRET', 'dev-only-session-secret'),
     awsRegion: str('AWS_REGION', 'ap-northeast-2'),
     kmsKeyId: str('AWS_KMS_KEY_ID'),
+    /**
+     * KMS 계약 전 임시 운영을 명시적으로 허용하는 스위치.
+     *
+     * KMS provider 는 아직 구현되지 않았다(crypto-provider.ts). 그런데 운영 점검은
+     * aws-kms 를 요구하므로, 이 스위치가 없으면 APP_ENV=prod 로는 기동 자체가 불가능하고
+     * 담당자는 APP_ENV=staging 으로 우회하게 된다. 그러면 운영 점검 전체가 건너뛰어져
+     * (허용 IP·웹훅 시크릿·https·S3·SAFE_MODE 검사까지 전부) 훨씬 위험해진다.
+     * "위험을 알고 켠다"를 한 줄로 남기게 해서 그 우회를 막는다.
+     */
+    allowLocalInProd: bool('ALLOW_LOCAL_CRYPTO_IN_PROD', false),
   },
 
   payment: {
@@ -125,6 +146,20 @@ export const env = {
       .split(',')
       .map((v) => v.trim().toUpperCase())
       .filter(Boolean),
+    /**
+     * PIN 완료 콜백을 받을 결제사 IP 허용목록 (콤마 구분).
+     *
+     * 공유 비밀 하나만으로는 부족하다. 비밀이 한 번 유출되면 누구나
+     * `{donationId, resultCode:"0000"}` 만 보내 후원자가 PIN 을 입력하지 않은 채
+     * 출금을 강제할 수 있다. MO 웹훅과 같은 수준(서명 + IP)으로 맞춘다.
+     * 운영에서 비어 있으면 기동을 중단한다.
+     */
+    pinAllowedIps: str('PAYMENT_PIN_ALLOWED_IPS')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+    /** PIN 콜백 서명(타임스탬프 + 본문 HMAC)의 허용 시각 오차(초). 재생 공격 방어. */
+    pinCallbackToleranceSec: num('PAYMENT_PIN_CALLBACK_TOLERANCE_SEC', 300),
   },
 
   mo: {
@@ -160,6 +195,37 @@ export const env = {
     apiKey: str('YOUTUBE_API_KEY'),
     dailyQuota: num('YOUTUBE_DAILY_QUOTA', 10000),
     insertQuotaCost: num('YOUTUBE_INSERT_QUOTA_COST', 50),
+    /**
+     * 라이브 방송 조회(liveBroadcasts.list) 1회 비용.
+     * 후원 1건마다 조회가 일어나므로 계상하지 않으면 실제 소비가 항상 카운터보다 크다.
+     */
+    listQuotaCost: num('YOUTUBE_LIST_QUOTA_COST', 1),
+    /**
+     * 크리에이터 1명이 하루에 쓸 수 있는 상한. 0 이면 개별 상한 없음(전체 상한만 적용).
+     * 전체 예산을 한 채널이 독점해 다른 채널의 채팅이 전부 막히는 상황을 막는 안전판이다.
+     */
+    creatorDailyQuota: num('YOUTUBE_CREATOR_DAILY_QUOTA', 0),
+    /**
+     * 게임 참여 링크 공유가 하루에 쓸 수 있는 하위 예산.
+     * 후원 알림은 시청자 돈이 걸린 기능이므로, 공유 버튼 연타가 그 예산을 잠식하지 못하게
+     * 별도 상한을 둔다(전체 예산 안에서 소비한다).
+     */
+    shareDailyQuota: num('YOUTUBE_SHARE_DAILY_QUOTA', 1000),
+    /** 라이브 방송 조회 결과 재사용 시간(초). 후원이 몰릴 때 list 호출과 지연을 줄인다. */
+    broadcastCacheSec: num('YOUTUBE_BROADCAST_CACHE_SEC', 90),
+  },
+
+  settlement: {
+    /**
+     * 최소 정산 요청 금액.
+     *
+     * 이체 1건마다 은행 수수료와 관리자 확인 공수가 고정으로 든다. 하한이 없으면
+     * 100원짜리 요청이 들어와도 같은 비용이 나가고, 원천징수 소액부징수 구간(33,334원 미만)과
+     * 겹쳐 "요청은 됐는데 실제로는 손해" 인 건이 쌓인다.
+     * 기본값은 0(하한 없음)이다. 하한은 사업 정책이라 코드가 임의로 정할 수 없고,
+     * 기존 동작을 조용히 바꾸지 않기 위해서다. 운영에서 정한 값을 환경변수로 넣어 켠다.
+     */
+    minRequestAmount: BigInt(num('SETTLEMENT_MIN_REQUEST_AMOUNT', 0)),
   },
 
   /** 소셜 간편 로그인 (카카오 / 네이버). 키가 없으면 준비 중 상태로 표시된다. */
@@ -244,10 +310,24 @@ export const isLocal = env.appEnv === 'local';
 export function assertProductionSafety(): string[] {
   const problems: string[] = [];
   if (!isProd) return problems;
-  if (env.crypto.provider !== 'aws-kms') problems.push('운영에서는 CRYPTO_PROVIDER=aws-kms 여야 합니다.');
+  if (env.crypto.provider !== 'aws-kms' && !env.crypto.allowLocalInProd) {
+    problems.push(
+      '운영에서는 CRYPTO_PROVIDER=aws-kms 여야 합니다. ' +
+        '(KMS 계약 전이라면 위험을 인지한 상태에서 ALLOW_LOCAL_CRYPTO_IN_PROD=true 로 명시하십시오. ' +
+        'APP_ENV 를 낮춰 우회하면 운영 점검 전체가 건너뛰어져 훨씬 위험합니다)',
+    );
+  }
   // KMS 키 ID 가 없으면 provider 주입이 실패해 암호화가 전건 예외가 된다.
   if (env.crypto.provider === 'aws-kms' && !env.crypto.kmsKeyId) {
     problems.push('CRYPTO_PROVIDER=aws-kms 인데 AWS_KMS_KEY_ID 가 비어 있습니다.');
+  }
+  // local provider 로 운영한다면 마스터키만이 유일한 방어선이다. 약한 값이면 기동을 막는다.
+  if (env.crypto.provider === 'local') {
+    const raw = env.crypto.masterKey;
+    if (!raw) problems.push('CRYPTO_MASTER_KEY 가 비어 있습니다.');
+    else if (Buffer.from(raw, 'base64').length < 32) {
+      problems.push('CRYPTO_MASTER_KEY 가 너무 약합니다. base64 로 인코딩한 32바이트 난수를 사용하십시오.');
+    }
   }
   if (env.crypto.sessionSecret.startsWith('dev-only')) problems.push('SESSION_SECRET 이 기본값입니다.');
   if (env.crypto.phoneHashSecret.startsWith('dev-only')) problems.push('PHONE_HASH_SECRET 이 기본값입니다.');
@@ -257,6 +337,22 @@ export function assertProductionSafety(): string[] {
   // 비어 있으면 PIN 완료 콜백이 전건 거절되어 결제가 영원히 완료되지 않는다.
   if (!env.payment.pinCallbackSecret) problems.push('PAYMENT_PIN_CALLBACK_SECRET 이 비어 있습니다.');
   if (env.payment.provider === 'mock') problems.push('PAYMENT_PROVIDER 가 mock 입니다.');
+  // SAFE_MODE 는 기본값이 true 다. 실키를 모두 넣고 이 값만 빠뜨리면 결제 어댑터가
+  // mock 으로 대체되어(adapters/payment/index.ts) "돈은 안 나갔는데 승인 성공"이 되고,
+  // 정산 원장에 3분개까지 쌓인다. 경고가 아니라 기동 중단으로 막는다.
+  if (env.safety.safeMode) problems.push('운영에서는 SAFE_MODE=false 여야 합니다. (mock 어댑터로 대체되어 가짜 승인이 기록됩니다)');
+  // 아래 두 provider 도 기본값이 mock 이다. 빠뜨리면 "전송 성공"으로 기록되지만
+  // 실제로는 유튜브 채팅에도, 후원자 휴대폰에도 아무것도 나가지 않는다.
+  if (env.youtube.provider === 'mock') problems.push('YOUTUBE_PROVIDER 가 mock 입니다.');
+  if (env.mt.provider === 'mock') problems.push('MT_PROVIDER 가 mock 입니다.');
+  if (env.mo.provider === 'mock') problems.push('MO_PROVIDER 가 mock 입니다.');
+  // 기본값에 MOCK/OK/SUCCESS 가 들어 있어, 그대로 두면 결제사가 무엇을 보내든 성공 처리된다.
+  if (env.payment.pinSuccessCodes.some((c) => c === 'MOCK')) {
+    problems.push('PAYMENT_PIN_SUCCESS_CODES 에 기본값 MOCK 이 남아 있습니다. 결제사 규격 코드로 교체해 주세요.');
+  }
+  if (env.payment.pinAllowedIps.length === 0) {
+    problems.push('PAYMENT_PIN_ALLOWED_IPS 가 비어 있습니다. (PIN 완료 콜백이 IP 제한 없이 열립니다)');
+  }
   if (!env.baseUrl.startsWith('https://')) problems.push('운영에서는 APP_BASE_URL 이 https 여야 합니다.');
   // 로컬 디스크 저장은 다중 인스턴스에서 이미지가 안 보이고 재배포 때 사라진다.
   if ((process.env.STORAGE_DRIVER ?? 'local').toLowerCase() !== 's3') {
@@ -292,6 +388,12 @@ export function bootWarnings(): string[] {
   // provider=local 인데 마스터키가 없으면 개인정보 암호화가 호출 시점에 예외가 된다.
   if (env.crypto.provider === 'local' && !env.crypto.masterKey) {
     warnings.push('CRYPTO_MASTER_KEY 가 비어 있습니다. 개인정보 암호화가 호출 시점에 실패합니다.');
+  }
+  if (isProd && env.crypto.provider === 'local' && env.crypto.allowLocalInProd) {
+    warnings.push(
+      'ALLOW_LOCAL_CRYPTO_IN_PROD=true 로 운영 중입니다. 개인정보가 KMS 가 아닌 로컬 마스터키로 ' +
+        '암호화됩니다. KMS 계약 후 반드시 CRYPTO_PROVIDER=aws-kms 로 전환하십시오.',
+    );
   }
   return warnings;
 }

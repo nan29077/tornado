@@ -1,4 +1,5 @@
 import { Database, Server, Signal, TriangleAlert } from 'lucide-react';
+import { logger } from '@/lib/logger';
 import { PageHeader } from '@/components/layout/console-shell';
 import { Card, CardTitle, SectionTitle, StatTile, Table, Th, Td, Badge, EmptyState, Notice, DataRow } from '@/components/ui';
 import { SafetyBanner } from '@/components/admin/safety-banner';
@@ -19,7 +20,9 @@ async function checkDatabase(): Promise<{ ok: boolean; detail: string; latencyMs
     await prisma.$queryRaw`SELECT 1`;
     return { ok: true, detail: '정상', latencyMs: Date.now() - t0 };
   } catch (e) {
-    return { ok: false, detail: (e as Error).message, latencyMs: Date.now() - t0 };
+    // 예외 원문에는 호스트·포트·DB명·사용자명이 섞여 나온다. 화면에는 분류만 남긴다.
+    logger.error('시스템 상태 점검 실패(DB)', { message: (e as Error).message });
+    return { ok: false, detail: '연결 실패 (자세한 내용은 서버 로그를 확인해 주세요)', latencyMs: Date.now() - t0 };
   }
 }
 
@@ -32,15 +35,26 @@ async function checkCache(): Promise<{ ok: boolean; detail: string; latencyMs: n
       ? { ok: true, detail: '정상', latencyMs: Date.now() - t0 }
       : { ok: false, detail: '읽기/쓰기 결과 불일치', latencyMs: Date.now() - t0 };
   } catch (e) {
-    return { ok: false, detail: (e as Error).message, latencyMs: Date.now() - t0 };
+    // 예외 원문에는 호스트·포트·DB명·사용자명이 섞여 나온다. 화면에는 분류만 남긴다.
+    logger.error('시스템 상태 점검 실패(캐시)', { message: (e as Error).message });
+    return { ok: false, detail: '연결 실패 (자세한 내용은 서버 로그를 확인해 주세요)', latencyMs: Date.now() - t0 };
   }
 }
 
 export default async function AdminSystemPage() {
+  /**
+   * **이 화면은 장애 중에도 반드시 열려야 한다.**
+   *
+   * 예전에는 할당량 조회와 목록 조회 네 개가 무방비였다. 운영 권장값인
+   * `ALLOW_INMEMORY_FALLBACK=false` 에서는 Redis 장애가 그대로 예외로 올라오고,
+   * DB 장애면 목록 조회가 던진다. 그러면 `checkDatabase()`/`checkCache()` 가 "오류" 타일을
+   * 정성껏 그려도 페이지 전체가 500 이 되어 **장애를 진단할 수단이 장애 때 사라졌다.**
+   * 모든 부가 조회를 개별적으로 감싸고, 실패하면 "조회 실패"로 표시한다.
+   */
   const [db, cache, quota, webhooks, moErrors, paymentErrors] = await Promise.all([
     checkDatabase(),
     checkCache(),
-    getYouTubeQuotaUsage(),
+    getYouTubeQuotaUsage().catch(() => null),
     prisma.webhookLog.findMany({
       orderBy: { createdAt: 'desc' },
       take: 30,
@@ -48,13 +62,13 @@ export default async function AdminSystemPage() {
         id: true, source: true, endpoint: true, method: true, signatureOk: true,
         statusCode: true, latencyMs: true, ip: true, responseNote: true, createdAt: true,
       },
-    }),
+    }).catch(() => []),
     prisma.moInboundMessage.findMany({
       where: { result: { in: ['ERROR', 'UNKNOWN_ROUTE'] } },
       orderBy: { receivedAt: 'desc' },
       take: 10,
       select: { id: true, receivedNumber: true, result: true, resultDetail: true, receivedAt: true },
-    }),
+    }).catch(() => []),
     prisma.paymentAttempt.findMany({
       where: { errorCode: { not: null } },
       orderBy: { createdAt: 'desc' },
@@ -63,7 +77,7 @@ export default async function AdminSystemPage() {
         id: true, operation: true, errorCode: true, errorMessage: true, latencyMs: true, createdAt: true,
         transaction: { select: { orderNo: true, status: true } },
       },
-    }),
+    }).catch(() => []),
   ]);
 
   const providers: Array<{ label: string; mode: string }> = [
@@ -100,9 +114,13 @@ export default async function AdminSystemPage() {
           />
           <StatTile
             label="유튜브 할당량"
-            value={`${formatNumber(quota.used)} / ${formatNumber(quota.total)}`}
-            sub={`전송 1건당 ${formatNumber(quota.insertCost)} · 잔여 약 ${formatNumber(quota.remainingMessages)}건`}
-            tone={quota.used / Math.max(1, quota.total) > 0.8 ? 'warning' : 'neutral'}
+            value={quota ? `${formatNumber(quota.used)} / ${formatNumber(quota.total)}` : '확인 불가'}
+            sub={
+              quota
+                ? `전송 1건당 ${formatNumber(quota.insertCost)} · 잔여 약 ${formatNumber(quota.remainingMessages)}건 · 태평양시 자정 초기화`
+                : '카운터 저장소(Redis)에 연결하지 못했습니다.'
+            }
+            tone={!quota ? 'danger' : quota.used / Math.max(1, quota.total) > 0.8 ? 'warning' : 'neutral'}
           />
           <StatTile
             label="Webhook 서명 실패"

@@ -8,7 +8,7 @@ import {
 import { Badge, Card, EmptyState, LinkButton } from '@/components/ui';
 import { PageHeader } from '@/components/layout/console-shell';
 import { BannerStrip } from '@/components/public/banner-strip';
-import { PAID_STATUSES } from '@/components/studio/shared';
+import { DISPLAY_PAID_STATUSES } from '@/components/studio/shared';
 import { OnboardingChecklist } from '@/components/studio/onboarding-checklist';
 import { DonationCardGrid } from '@/components/studio/donation-cards';
 import { requireCreator } from '@/server/auth';
@@ -44,14 +44,29 @@ export default async function StudioDashboardPage() {
     recent,
   ] = await Promise.all([
     prisma.donation.aggregate({
-      where: { creatorId, receivedAt: { gte: todayStart }, status: { in: PAID_STATUSES } },
+      /**
+       * 금액 집계 기준은 **결제 승인 시각(paidAt)** 이다.
+       *
+       * 예전에는 문자 수신 시각(receivedAt)으로 셌다. 확인형(PIN) 결제는 수신과 승인 사이에
+       * 몇 분이 걸려서, 자정 직전 수신 → 자정 직후 승인 건이 대시보드에서는 전날로,
+       * 정산 화면(paidAt 기준)에서는 당일로 잡혀 두 화면 숫자가 상시 어긋났다.
+       */
+      where: { creatorId, paidAt: { gte: todayStart }, status: { in: DISPLAY_PAID_STATUSES } },
       _sum: { amount: true },
     }),
     prisma.moInboundMessage.count({ where: { creatorId, receivedAt: { gte: todayStart } } }),
     prisma.donation.count({
-      where: { creatorId, receivedAt: { gte: todayStart }, status: { in: PAID_STATUSES } },
+      /**
+       * 금액 집계 기준은 **결제 승인 시각(paidAt)** 이다.
+       *
+       * 예전에는 문자 수신 시각(receivedAt)으로 셌다. 확인형(PIN) 결제는 수신과 승인 사이에
+       * 몇 분이 걸려서, 자정 직전 수신 → 자정 직후 승인 건이 대시보드에서는 전날로,
+       * 정산 화면(paidAt 기준)에서는 당일로 잡혀 두 화면 숫자가 상시 어긋났다.
+       */
+      where: { creatorId, paidAt: { gte: todayStart }, status: { in: DISPLAY_PAID_STATUSES } },
     }),
     prisma.donation.count({
+      // 실패는 승인 시각이 없으므로 수신 시각 기준을 유지한다(집계 성격이 다르다).
       where: { creatorId, receivedAt: { gte: todayStart }, status: 'PAYMENT_FAILED' },
     }),
     prisma.settlementLedger.aggregate({

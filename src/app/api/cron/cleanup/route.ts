@@ -5,10 +5,21 @@ import { logger } from '@/lib/logger';
 import { kv } from '@/server/redis';
 import { expireStalePinSessions, recoverStalePinCompletions } from '@/server/services/pin-authorization';
 import { expireStaleConfirmations, recoverStaleConfirmedDonations } from '@/server/services/donation-confirm';
-import { purgeExpiredIdempotencyKeys } from '@/server/services/idempotency';
+import {
+  purgeExpiredIdempotencyKeys,
+  releaseStaleIdempotencyKeys,
+  purgeOldWebhookLogs,
+} from '@/server/services/idempotency';
 import { purgeExpiredResetTokens } from '@/server/services/password-reset';
 import { retryAllPendingRefundRecoveries } from '@/server/services/refund';
-import { reconcileStuckPendingPayments } from '@/server/services/donation-flow';
+import {
+  reconcileStuckPendingPayments,
+  recoverStuckMoMessages,
+  redispatchMissedBroadcasts,
+} from '@/server/services/donation-flow';
+import { retryFailedYouTubeDeliveries } from '@/server/services/broadcast-dispatch';
+import { retryFailedBillKeyRevocations } from '@/server/services/donor-registration';
+import { clearExpiredFailureLocks } from '@/server/services/limits';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,6 +45,14 @@ export const dynamic = 'force-dynamic';
  *                                       환불을 다시 시도한다.
  *  8) reconcileStuckPendingPayments   — 집계 예약 이후 크래시해 PENDING_PAYMENT 에 멈춘 후원을
  *                                       재시도한다.
+ *  9) releaseStaleIdempotencyKeys     — 선점만 하고 끝내지 못한 멱등키를 풀어 준다. 이게 없으면
+ *                                       강제 종료 한 번에 그 문자가 7일간 재전송조차 막힌다.
+ * 10) recoverStuckMoMessages          — 처리 중 중단돼 PENDING 으로 남은 수신 문자를 재처리 대상으로
+ *                                       표시한다(사업자 재전송이 DUPLICATE 로 반려되는 것을 푼다).
+ * 11) redispatchMissedBroadcasts      — 결제는 끝났는데 송출이 시작되지 않은 건을 다시 송출한다.
+ * 12) retryFailedYouTubeDeliveries    — 일시적 사유로 실패한 유튜브 채팅 전송을 다시 시도한다.
+ * 13) clearExpiredFailureLocks        — 잠금 시간이 지난 후원자의 실패 카운터를 초기화한다.
+ * 14) purgeOldWebhookLogs            — 보존 기간이 지난 웹훅 원문 로그를 지운다.
  *
  * 원칙
  *  - 인증은 fail-closed. 비밀이 없으면 로컬에서만 통과한다.
@@ -100,6 +119,13 @@ export async function GET(req: Request) {
     const confirmedPayments = await step('확인 링크 소비 후 결제 미실행 복구', () => recoverStaleConfirmedDonations());
     const refundRecoveries = await step('환불 취소 재시도', () => retryAllPendingRefundRecoveries());
     const stuckPayments = await step('PENDING_PAYMENT 고착 건 재시도', () => reconcileStuckPendingPayments());
+    const staleIdempotency = await step('중단된 멱등키 해제', () => releaseStaleIdempotencyKeys());
+    const stuckMoMessages = await step('중단된 수신 문자 복구', () => recoverStuckMoMessages());
+    const missedBroadcasts = await step('송출 누락 건 재송출', () => redispatchMissedBroadcasts());
+    const youtubeRetries = await step('유튜브 전송 재시도', () => retryFailedYouTubeDeliveries());
+    const failureLocks = await step('만료된 실패 잠금 해제', () => clearExpiredFailureLocks());
+    const webhookLogs = await step('오래된 웹훅 로그 정리', () => purgeOldWebhookLogs());
+    const billKeyRevokes = await step('사업자 빌키 해지 재시도', () => retryFailedBillKeyRevocations());
 
     const steps = {
       pinSessions,
@@ -110,6 +136,13 @@ export async function GET(req: Request) {
       confirmedPayments,
       refundRecoveries,
       stuckPayments,
+      staleIdempotency,
+      stuckMoMessages,
+      missedBroadcasts,
+      youtubeRetries,
+      failureLocks,
+      webhookLogs,
+      billKeyRevokes,
     };
     const allOk = Object.values(steps).every((s) => s.ok);
     return NextResponse.json({

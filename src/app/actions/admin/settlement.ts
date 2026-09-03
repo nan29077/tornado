@@ -13,7 +13,7 @@ import {
 import { notifyUser } from '@/server/services/notifications';
 import { formatWon } from '@/lib/money';
 import type { AdminActionState } from '@/components/admin/state';
-import { run, text, optText, money, rate, enumValue, requiredId, optDate } from './shared';
+import { run, text, optText, money, rate, enumValue, requiredId, optDate, assertFinanceAdmin } from './shared';
 
 /**
  * 정산 요청 처리 / 수수료 정책 관리 / 지급대행(쿠콘) 운영.
@@ -36,7 +36,7 @@ export async function updateSettlementRequestStatus(
   fd: FormData,
 ): Promise<AdminActionState> {
   return run(async (admin) => {
-    if (admin.adminPermission === 'SUPPORT') throw new Error('정산 처리는 재무/운영 권한에서만 가능합니다.');
+    assertFinanceAdmin(admin, '정산 처리');
     const requestId = requiredId(fd, 'requestId', '정산 요청');
     const status = enumValue(fd, 'status', ['REVIEWING', 'APPROVED', 'PAID', 'PAYOUT_FAILED', 'REJECTED'] as const, '정산 상태');
     const memo = optText(fd, 'memo');
@@ -110,7 +110,7 @@ export async function bulkUpdateSettlementAction(
   fd: FormData,
 ): Promise<AdminActionState> {
   return run(async (admin) => {
-    if (admin.adminPermission === 'SUPPORT') throw new Error('정산 처리는 재무/운영 권한에서만 가능합니다.');
+    assertFinanceAdmin(admin, '정산 처리');
     const action = enumValue(fd, 'bulkAction', ['APPROVE', 'REJECT', 'PAY'] as const, '일괄 작업');
     const memo = optText(fd, 'memo');
     const ids = fd.getAll('requestId').map((v) => String(v)).filter(Boolean);
@@ -190,11 +190,24 @@ export async function applyPayoutResultsAction(
   fd: FormData,
 ): Promise<AdminActionState> {
   return run(async (admin) => {
-    if (admin.adminPermission === 'SUPPORT') throw new Error('정산 처리는 재무/운영 권한에서만 가능합니다.');
+    assertFinanceAdmin(admin, '정산 처리');
     const raw = text(fd, 'results');
     if (!raw) throw new Error('결과 내용을 붙여넣어 주세요.');
-    // 이체파일 배치번호. 입력하면 해당 배치로 나간 건에만 결과를 반영한다.
+    /**
+     * 이체파일 배치번호. **필수**다.
+     *
+     * 예전에는 비워 두면 검사 자체를 건너뛰었다. 그래서 지난 배치의 결과 파일을 실수로
+     * 다시 붙여넣으면, 2차 배치로 정상 지급된 건이 1차 결과(FAIL)로 되돌아가 원장이
+     * 환입되고 잔액이 되살아났다. 실제로는 나간 돈인데 재신청·재지급 경로가 열린다.
+     * 화면 안내가 "이 사고를 막습니다"라고 적혀 있으니 실제로 막아야 한다.
+     */
     const batchNo = text(fd, 'batchNo').trim().toUpperCase();
+    if (!batchNo) {
+      throw new Error('이체파일 배치번호를 입력해 주세요. (지난 결과 파일을 잘못 반영하는 사고를 막습니다)');
+    }
+    if (!/^B[A-Z0-9]{6,20}$/.test(batchNo)) {
+      throw new Error('배치번호 형식이 올바르지 않습니다. 이체파일을 내려받을 때 안내된 값(B로 시작)을 그대로 입력해 주세요.');
+    }
 
     const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     let ok = 0;
@@ -226,7 +239,7 @@ export async function applyPayoutResultsAction(
           errors.push(`${id.slice(-6)}: 이체파일이 발급된 적 없는 건`);
           continue;
         }
-        if (batchNo && req.payoutBatchNo !== batchNo) {
+        if (req.payoutBatchNo !== batchNo) {
           errors.push(`${id.slice(-6)}: 배치번호 불일치(${req.payoutBatchNo ?? '없음'})`);
           continue;
         }
@@ -272,7 +285,7 @@ export async function fileWithholdingAction(
   fd: FormData,
 ): Promise<AdminActionState> {
   return run(async (admin) => {
-    if (admin.adminPermission === 'SUPPORT') throw new Error('정산 처리는 재무/운영 권한에서만 가능합니다.');
+    assertFinanceAdmin(admin, '정산 처리');
     const ids = fd.getAll('requestId').map((v) => String(v)).filter(Boolean);
     const single = optText(fd, 'requestIdSingle');
     if (single) ids.push(single);
@@ -305,7 +318,7 @@ export async function fileWithholdingAction(
 
 export async function createFeePolicy(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
-    if (admin.adminPermission === 'SUPPORT') throw new Error('수수료 정책 변경은 재무/운영 권한에서만 가능합니다.');
+    assertFinanceAdmin(admin, '수수료 정책 변경');
     const scope = enumValue(fd, 'scope', ['GLOBAL', 'CREATOR'] as const, '적용 범위');
     const creatorId = scope === 'CREATOR' ? requiredId(fd, 'creatorId', '크리에이터') : null;
     const pgFeeRate = rate(fd, 'pgFeeRate', '결제');
@@ -370,7 +383,7 @@ export async function createFeePolicy(_prev: AdminActionState, fd: FormData): Pr
 
 export async function deactivateFeePolicy(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
-    if (admin.adminPermission === 'SUPPORT') throw new Error('수수료 정책 변경은 재무/운영 권한에서만 가능합니다.');
+    assertFinanceAdmin(admin, '수수료 정책 변경');
     const id = requiredId(fd, 'id', '수수료 정책');
     const before = await prisma.feePolicy.findUnique({ where: { id } });
     if (!before) throw new Error('수수료 정책을 찾을 수 없습니다.');

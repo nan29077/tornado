@@ -8,9 +8,38 @@ const SENSITIVE_KEYS = [
   'billKey', 'billkey', 'cardNo', 'account', 'accountNo', 'accountNumber',
   'token', 'accessToken', 'refreshToken', 'password',
   'authorization', 'signature', 'secret', 'apiKey', 'licenseKey',
+  /**
+   * MO 사업자 payload 의 실제 키 이름들.
+   *
+   * 예전 목록에는 이 중 어느 것도 걸리지 않아, 웹훅 로그(`webhook_log.body_masked`)에
+   * **문자 원문과 050 수신번호가 사실상 평문으로** 남았다. 값 기준 마스킹도 국내 휴대폰
+   * 형식만 잡아서 050·02·1588·+82 표기를 전부 통과시켰다.
+   */
+  'msg', 'smsmsg', 'text', 'content', 'body',
+  'callee', 'caller', 'recvno', 'sendno', 'svcno', 'calledno', 'callingno',
+  'resident', 'ssn', 'holder', 'holdername',
 ];
 
-const PHONE_RE = /(01[016789])[-\s]?(\d{3,4})[-\s]?(\d{4})/g;
+/**
+ * 전화번호 패턴.
+ *
+ * 휴대폰(010 계열)만이 아니라 **050 안심번호·지역번호·국제 표기**까지 덮는다.
+ * 앞뒤에 숫자가 더 붙어 있으면 매칭하지 않는다 — 금액·주문번호 같은 긴 숫자열을
+ * 전화번호로 오인해 로그를 망가뜨리면 사고 조사가 더 어려워진다.
+ * (대표번호 1588-0000 류는 개인정보가 아니고, 8자리 숫자와 구분이 어려워 대상에서 뺀다)
+ * 이 서비스의 MO 수신번호는 050 계열이고, 그 번호는 어느 크리에이터에게 가는 문자인지를
+ * 그대로 드러낸다.
+ */
+const PHONE_PATTERNS: RegExp[] = [
+  // +82 10 1234 5678 / 821012345678
+  /(?<![0-9])(?:\+?82[-\s.]?)(1[016789])[-\s.]?(\d{3,4})[-\s.]?(\d{4})(?![0-9])/g,
+  // 010-1234-5678 / 01012345678 / 010.1234.5678
+  /(?<![0-9])(01[016789])[-\s.]?(\d{3,4})[-\s.]?(\d{4})(?![0-9])/g,
+  // 050 안심번호 (0504-1234-5678 포함)
+  /(?<![0-9])(050\d?)[-\s.]?(\d{3,4})[-\s.]?(\d{4})(?![0-9])/g,
+  // 지역번호 (02-1234-5678, 031-123-4567 …)
+  /(?<![0-9])(0(?:2|[3-6][1-5]))[-\s.]?(\d{3,4})[-\s.]?(\d{4})(?![0-9])/g,
+];
 
 /**
  * URL 은 통째로 가린다.
@@ -23,7 +52,16 @@ const URL_RE = /(https?:\/\/[^\s/]+)\/\S*/gi;
 
 /** 문자열에서 개인정보·자격증명 흔적을 지운다. 로그 메시지와 meta 양쪽에 쓴다. */
 export function scrubText(input: string): string {
-  return input.replace(URL_RE, '$1/[링크 감춤]').replace(PHONE_RE, '$1-****-$3');
+  let out = input.replace(URL_RE, '$1/[링크 감춤]');
+  for (const re of PHONE_PATTERNS) {
+    // 마지막 4자리만 남긴다. 대표번호(4+4)는 그룹이 두 개뿐이라 별도로 처리한다.
+    out = out.replace(re, (...args) => {
+      const groups = args.slice(1, -2).filter((g): g is string => typeof g === 'string');
+      if (groups.length >= 3) return `${groups[0]}-****-${groups[2]}`;
+      return '****';
+    });
+  }
+  return out;
 }
 
 export function scrub(value: unknown, depth = 0): unknown {

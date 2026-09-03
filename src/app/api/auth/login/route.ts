@@ -4,6 +4,7 @@ import { prisma } from '@/server/db';
 import { kv } from '@/server/redis';
 import { createSession, verifyPassword } from '@/server/auth';
 import { isSameOrigin } from '@/server/request-guard';
+import { clientIpFromRequest, consumeRateLimit } from '@/server/rate-limit';
 
 export const runtime = 'nodejs';
 
@@ -55,15 +56,32 @@ export async function POST(req: Request) {
   // 브루트포스 방어: 계정 단위 + 발신 IP 단위(계정을 바꿔가며 시도하는 크리덴셜 스터핑 차단)
   // IP 를 알 수 없으면(프록시 없이 직접 접근) 모든 클라이언트가 한 버킷을 공유해 서로를 잠그므로
   // 계정 단위 제한만 적용한다.
-  const key = `login:${parsed.data.email.toLowerCase()}`;
-  const ip = clientIp(req);
-  const [tries, ipTries] = await Promise.all([kv.incr(key, 600), ip ? kv.incr(`login:ip:${ip}`, 600) : Promise.resolve(0)]);
-  if (tries > 10 || ipTries > 50) {
+  const ip = clientIpFromRequest(req);
+  /**
+   * 카운터 저장소 장애 시 **막는 쪽**으로 처리한다(fail-closed).
+   * 예전에는 kv.incr 를 직접 불러 Redis 장애가 그대로 500 이 됐고, 다른 입구(가입·재설정)는
+   * 반대로 제한이 통째로 열렸다. 같은 장애에서 정반대로 동작하던 것을 공통 유틸로 통일한다.
+   */
+  const [accountLimit, ipLimit] = await Promise.all([
+    consumeRateLimit('login', parsed.data.email.toLowerCase(), 10, 600, { failClosed: true }),
+    consumeRateLimit('login-ip', ip, 50, 600, { failClosed: true }),
+  ]);
+  if (!accountLimit.ok || !ipLimit.ok) {
     return fail('ratelimit', '로그인 시도가 많습니다. 잠시 후 다시 시도해 주세요.', 429);
   }
 
   const user = await prisma.user.findUnique({ where: { email: parsed.data.email.toLowerCase() } });
-  if (!user || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
+  /**
+   * 계정이 없어도 **비밀번호 비교를 똑같이 수행**한다.
+   *
+   * verifyPassword 는 hash 가 없으면 bcrypt 를 건너뛰고 즉시 false 를 돌려준다. 그러면
+   * 존재하지 않는 이메일은 응답이 눈에 띄게 빨라져, 문구가 같아도 **응답 시간만으로
+   * 가입 여부를 판별**할 수 있었다. 더미 해시로 같은 비용을 치른다.
+   */
+  const passwordOk = user?.passwordHash
+    ? await verifyPassword(parsed.data.password, user.passwordHash)
+    : await burnPasswordCompare(parsed.data.password);
+  if (!user || !passwordOk) {
     return fail('invalid', '이메일 또는 비밀번호가 올바르지 않습니다.', 401);
   }
   if (user.status !== 'ACTIVE') {
@@ -71,7 +89,7 @@ export async function POST(req: Request) {
   }
 
   await createSession(user.id);
-  await kv.del(key);
+  await kv.del(`rl:login:${parsed.data.email.toLowerCase()}`).catch(() => undefined);
 
   const home = user.role === 'ADMIN' ? '/admin' : user.role === 'CREATOR' ? '/studio' : '/my';
   const redirect = nextPath ?? home;
@@ -87,12 +105,12 @@ function safeNextPath(value: FormDataEntryValue | null | undefined): string | nu
   return value.length > 512 ? null : value;
 }
 
-/** 신뢰 프록시가 붙인 마지막 홉의 주소만 사용한다. 헤더가 없으면 null. */
-function clientIp(req: Request): string | null {
-  const xff = req.headers.get('x-forwarded-for');
-  if (xff) {
-    const hops = xff.split(',').map((s) => s.trim()).filter(Boolean);
-    return hops[hops.length - 1] ?? null;
-  }
-  return req.headers.get('x-real-ip') ?? req.headers.get('cf-connecting-ip');
+/**
+ * 계정이 없을 때도 같은 시간을 쓰기 위한 더미 비교.
+ * 결과는 항상 false 다. (bcrypt cost 10 짜리 고정 해시)
+ */
+const DUMMY_HASH = '$2b$10$CwTycUXWue0Thq9StjUM0uJ8.7HqTQ0ZLrqf3M1z2ZQd9C0nHhs5W';
+async function burnPasswordCompare(plain: string): Promise<boolean> {
+  await verifyPassword(plain, DUMMY_HASH).catch(() => false);
+  return false;
 }
