@@ -10,6 +10,14 @@ export interface MtSendRequest {
   to: string;
   text: string;
   templateCode?: string;
+  /**
+   * 장문(LMS/MMS) 제목.
+   *
+   * 단문에는 제목이 없다. 장문은 **제목이 단말 목록에 표시**되고, 인포뱅크 설치본에 따라
+   * 빈 제목을 거부한다. 거부되면 큐에 쌓이기만 하고 발송되지 않는다(조용한 실패).
+   * 넘기지 않으면 어댑터가 발신 주체 표기로 채운다.
+   */
+  subject?: string;
   /** 90byte 초과 시 자동으로 LMS 로 전환 */
   forceType?: 'SMS' | 'LMS';
 }

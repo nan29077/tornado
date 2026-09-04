@@ -51,3 +51,10 @@ export {
   EMMA_LAST_POLL_KEY,
 } from './mo-poller';
 export { queueEmmaMt, queueEmmaMms } from './mt-sender';
+export {
+  readEmmaMtQueueHealth,
+  checkEmmaMtQueueBacklog,
+  MT_QUEUE_STUCK_MINUTES,
+  type EmmaQueueHealth,
+  type EmmaQueueStat,
+} from './queue-health';

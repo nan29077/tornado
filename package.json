@@ -12,6 +12,7 @@
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
     "mo:reissue": "tsx scripts/reissue-legacy-mo.ts",
+    "emma:poll": "node tools/emma-poller.mjs",
     "db:reset": "node tools/db-reset.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node tools/test.mjs",

@@ -81,7 +81,13 @@ async function sendMt(input: {
   });
 
   try {
-    const res = await adapter.send({ to: normalizePhone(input.phone), text: template.text, templateCode: template.code });
+    const res = await adapter.send({
+      to: normalizePhone(input.phone),
+      text: template.text,
+      templateCode: template.code,
+      // 장문으로 나갈 때만 쓰인다. 단문 어댑터는 무시한다.
+      subject: tpl.mtSubjectFor(template.code),
+    });
     await prisma.mtOutboundMessage.update({
       where: { id: row.id },
       data: {
@@ -1470,6 +1476,7 @@ export async function retryFailedMtMessages(now = new Date(), maxAttempts = 3): 
         to: normalizePhone(phone),
         text: row.bodyMasked,
         templateCode: row.templateCode ?? undefined,
+        subject: row.templateCode ? tpl.mtSubjectFor(row.templateCode) : undefined,
       });
       await prisma.mtOutboundMessage.update({
         where: { id: row.id },

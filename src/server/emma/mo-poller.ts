@@ -73,6 +73,16 @@ const MAX_HANDLER_DEFERRALS = 60;
 /** 실패 카운터 보존 기간(초). 오래된 카운터는 알아서 사라진다. */
 const FAILURE_TTL_SEC = 7 * 24 * 60 * 60;
 
+/**
+ * 장문(MMS MO) 조각이 다 모이기를 기다리는 상한(초).
+ *
+ * 통신망 사정으로 조각 하나가 늦거나 끝내 오지 않을 수 있다. 영원히 기다리면 그 후원 문자는
+ * 처리되지 않고, 무한정 처리하지 않으면 후원자는 문자 요금만 내고 아무 일도 일어나지 않는다.
+ * 3분을 기다린 뒤에는 **있는 조각만으로 처리하고 경고를 남긴다.** 앞부분이라도 방송에 나가는 편이
+ * 통째로 유실되는 것보다 낫다.
+ */
+const MMS_ASSEMBLY_TIMEOUT_SEC = 180;
+
 /** 마지막 폴링 성공 시각을 남기는 키. 폴링 정지를 감지하는 유일한 지표다(E-8). */
 export const EMMA_LAST_POLL_KEY = 'emma:lastPollAt';
 
@@ -140,6 +150,125 @@ async function setStatus(suffix: string, moKey: string, status: string): Promise
   assertSafeSuffix(suffix);
   const q = getEmmaQuerier();
   await q.execute(`UPDATE em_mo_log_${suffix} SET msg_status = $1 WHERE mo_key = $2`, [status, moKey]);
+}
+
+/**
+ * 같은 묶음(ems_id)의 조각을 모두 읽는다. 상태와 무관하게 읽는다 —
+ * 아직 신규('3')인 조각도, 우리가 방금 선점('2')한 조각도 함께 봐야 조립이 된다.
+ */
+async function fetchFragments(suffix: string, emsId: number): Promise<EmmaMoRow[]> {
+  assertSafeSuffix(suffix);
+  const q = getEmmaQuerier();
+  return q.query<EmmaMoRow>(
+    `SELECT ${MO_COLUMNS}
+       FROM em_mo_log_${suffix}
+      WHERE ems_id = $1
+      ORDER BY ems_seq ASC NULLS LAST`,
+    [emsId],
+  );
+}
+
+/** 이 행이 여러 조각으로 나뉜 장문의 일부인가. */
+function isMultipart(row: EmmaMoRow): boolean {
+  return Number(row.ems_total ?? 0) > 1 && row.ems_id !== null && row.ems_id !== undefined;
+}
+
+interface AssemblyResult {
+  /** 조립해 처리할 준비가 됐는가 */
+  ready: boolean;
+  /** 조립된 메시지 (ready 일 때만) */
+  message?: EmmaMoMessage;
+  /** 이 묶음에 속한 모든 조각의 mo_key. 처리 후 함께 완료 처리한다. */
+  memberKeys: string[];
+  /** 로그·폴링 결과에 남길 설명 */
+  detail: string;
+}
+
+/**
+ * 장문 조각을 이어 붙인다.
+ *
+ * 왜 필요한가
+ * -----------
+ * EMMA 는 긴 수신 문자를 여러 행으로 나눠 넣는다(ems_id 로 묶고 ems_seq 로 순서를 매긴다).
+ * 조각을 각각 독립 메시지로 처리하면 **첫 조각만 후원이 되고 나머지는 버려진다.**
+ * 후원자가 길게 쓴 응원 메시지가 앞부분만 방송에 나간다.
+ *
+ * 멱등성
+ * ------
+ * 어느 조각이 먼저 선점되든 **항상 같은 mo_key(가장 앞 조각의 것)** 로 도메인에 넘긴다.
+ * 그래서 조립이 두 번 일어나도 `mo_inbound_message.provider_message_id` UNIQUE 가 걸려
+ * 후원은 한 번만 생성된다.
+ */
+async function assembleFragments(
+  suffix: string,
+  row: EmmaMoRow,
+  now: number,
+): Promise<AssemblyResult> {
+  const emsId = Number(row.ems_id);
+  const total = Number(row.ems_total ?? 0);
+  const fragments = await fetchFragments(suffix, emsId);
+
+  if (fragments.length === 0) {
+    // 있을 수 없는 상황이지만, 방어적으로 지금 행만이라도 처리한다.
+    return { ready: true, message: toMoMessage(row), memberKeys: [row.mo_key], detail: 'MMS_SINGLE' };
+  }
+
+  const ordered = [...fragments].sort((a, b) => Number(a.ems_seq ?? 0) - Number(b.ems_seq ?? 0));
+  const memberKeys = ordered.map((f) => f.mo_key);
+  const complete = ordered.length >= total;
+
+  if (!complete) {
+    /**
+     * 아직 다 오지 않았다. 가장 먼저 들어온 조각을 기준으로 기다린 시간을 잰다.
+     * (date_mo_recv = EMMA 가 행을 넣은 시각)
+     */
+    const firstSeenAt = ordered
+      .map((f) => parseEmmaTimestamp(f.date_mo_recv)?.getTime() ?? now)
+      .reduce((a, b) => Math.min(a, b), now);
+    const waitedSec = Math.max(0, Math.floor((now - firstSeenAt) / 1000));
+
+    if (waitedSec < MMS_ASSEMBLY_TIMEOUT_SEC) {
+      return {
+        ready: false,
+        memberKeys,
+        detail: `MMS_WAITING ${ordered.length}/${total} (${waitedSec}초 대기)`,
+      };
+    }
+
+    logger.warn('EMMA MMS 조각 일부가 끝내 오지 않아 있는 것만으로 처리합니다', {
+      emsId,
+      arrived: ordered.length,
+      total,
+      waitedSec,
+    });
+  }
+
+  // 조각 본문을 순서대로 이어 붙인다. 머리(seq 가 가장 작은 조각)를 대표 행으로 삼는다.
+  const head = ordered[0]!;
+  const content = ordered.map((f) => f.content ?? '').join('');
+
+  const message: EmmaMoMessage = {
+    ...toMoMessage(head),
+    content,
+    parts: { emsId, total, used: ordered.length },
+  };
+
+  return {
+    ready: true,
+    message,
+    memberKeys,
+    detail: complete ? `MMS_ASSEMBLED ${ordered.length}/${total}` : `MMS_PARTIAL ${ordered.length}/${total}`,
+  };
+}
+
+/**
+ * 여러 행의 상태를 한 번에 바꾼다. 장문 조각을 함께 완료 처리할 때 쓴다.
+ * 한 건이 실패해도 나머지는 계속 시도한다 — 일부만 '2' 로 남아도 staleSec 뒤 복구된다.
+ */
+async function setStatuses(suffix: string, moKeys: string[], status: string): Promise<void> {
+  for (const key of moKeys) {
+    await setStatus(suffix, key, status).catch(() => undefined);
+  }
 }
 
 /** EMMA 의 service_type 을 메시지 종류로 옮긴다. '4'=SMS MO, '5'=MMS MO */
@@ -241,24 +370,73 @@ export async function pollEmmaMo(handler: EmmaMoHandler): Promise<EmmaPollResult
         continue;
       }
 
-      const message = toMoMessage(row);
+      const single = toMoMessage(row);
 
       // 대표번호가 설정과 다르면 남의 번호가 섞여 들어온 것이다. 처리하지 않고 남겨 둔다.
       // (한 EMMA 에 여러 서비스의 번호가 물린 구성에서 서로의 후원을 가로채는 사고를 막는다)
-      if (expectedBase && message.baseNumber !== expectedBase) {
+      if (expectedBase && single.baseNumber !== expectedBase) {
         await setStatus(suffix, moKey, EMMA_MO_STATUS.NEW).catch(() => undefined);
         result.skipped++;
         result.details.push({
           moKey,
           outcome: 'skipped',
-          detail: `대표번호 불일치 (수신 ${message.baseNumber || '없음'} / 설정 ${expectedBase})`,
+          detail: `대표번호 불일치 (수신 ${single.baseNumber || '없음'} / 설정 ${expectedBase})`,
         });
         logger.warn('EMMA MO 대표번호 불일치 — 처리하지 않음', {
           moKey,
-          received: message.baseNumber,
+          received: single.baseNumber,
           expected: expectedBase,
         });
         continue;
+      }
+
+      /**
+       * 장문(MMS MO) 조각 조립.
+       *
+       * EMMA 는 긴 수신 문자를 여러 행으로 나눠 넣는다. 조각을 각각 처리하면 첫 조각만
+       * 후원이 되고 나머지는 버려진다. 여기서 같은 묶음(ems_id)을 모아 하나로 만든다.
+       */
+      let message = single;
+      let memberKeys: string[] = [moKey];
+      let assemblyDetail: string | undefined;
+
+      if (isMultipart(row)) {
+        let assembly: AssemblyResult;
+        try {
+          assembly = await assembleFragments(suffix, row, Date.now());
+        } catch (e) {
+          // 조립 조회가 실패하면 이 행만 되돌려 다음 폴링에서 다시 본다.
+          await setStatus(suffix, moKey, EMMA_MO_STATUS.NEW).catch(() => undefined);
+          result.failed++;
+          result.details.push({ moKey, outcome: 'failed', detail: `조각 조회 실패: ${(e as Error).message}` });
+          continue;
+        }
+
+        if (assembly.memberKeys.length > 0) memberKeys = assembly.memberKeys;
+
+        if (!assembly.ready) {
+          // 아직 조각이 다 오지 않았다. 다음 폴링에서 다시 본다.
+          const deferrals = await bumpAttempt(moKey, 'defer');
+          if (deferrals > MAX_HANDLER_DEFERRALS) {
+            await setStatuses(suffix, memberKeys, EMMA_MO_STATUS.DONE);
+            await clearAttempts(moKey);
+            result.abandoned++;
+            result.details.push({ moKey, outcome: 'abandoned', detail: `${assembly.detail} — 재시도 포기` });
+            logger.error('EMMA MMS 조각 대기 상한 초과 — 재시도를 포기했습니다. 수동 확인이 필요합니다.', {
+              moKey,
+              deferrals,
+              detail: assembly.detail,
+            });
+            continue;
+          }
+          await setStatus(suffix, moKey, EMMA_MO_STATUS.NEW);
+          result.deferred++;
+          result.details.push({ moKey, outcome: 'deferred', detail: assembly.detail });
+          continue;
+        }
+
+        message = assembly.message!;
+        assemblyDetail = assembly.detail;
       }
 
       try {
@@ -293,10 +471,21 @@ export async function pollEmmaMo(handler: EmmaMoHandler): Promise<EmmaPollResult
           continue;
         }
 
-        await setStatus(suffix, moKey, EMMA_MO_STATUS.DONE);
+        // 장문이면 이어 붙인 조각을 모두 함께 완료 처리한다.
+        // 하나라도 남기면 다음 폴링이 그 조각을 새 메시지로 보고 다시 처리하려 든다.
+        await setStatuses(suffix, memberKeys, EMMA_MO_STATUS.DONE);
         await clearAttempts(moKey);
         result.handed++;
-        result.details.push({ moKey, outcome: 'handed', detail: handled.detail });
+        // 조립 결과(MMS_ASSEMBLED / MMS_PARTIAL)를 그대로 남겨 둔다.
+        // 조각이 빠진 채 처리된 건은 나중에 사람이 구분할 수 있어야 한다.
+        const partsNote =
+          assemblyDetail ??
+          (message.parts ? `조각 ${message.parts.used}/${message.parts.total}` : undefined);
+        result.details.push({
+          moKey,
+          outcome: 'handed',
+          detail: partsNote ? `${handled.detail ?? ''} (${partsNote})`.trim() : handled.detail,
+        });
       } catch (e) {
         // 도메인 처리에서 예외가 났다. 신규로 되돌려 다음 폴링에서 다시 시도한다.
         // (되돌리기 자체가 실패하면 '2' 로 남지만, staleSec 이 지나면 복구 대상이 된다)
@@ -306,7 +495,7 @@ export async function pollEmmaMo(handler: EmmaMoHandler): Promise<EmmaPollResult
         if (failures > MAX_HANDLER_FAILURES) {
           // 무엇을 해도 실패하는 행(독약 메시지). 계속 되돌리면 배치 앞자리를 영원히 차지해
           // 뒤에 쌓인 정상 후원까지 막는다. 완료로 내리고 사람이 볼 수 있게 남긴다.
-          await setStatus(suffix, moKey, EMMA_MO_STATUS.DONE).catch(() => undefined);
+          await setStatuses(suffix, memberKeys, EMMA_MO_STATUS.DONE);
           await clearAttempts(moKey);
           result.abandoned++;
           result.details.push({ moKey, outcome: 'abandoned', detail: `${failures}회 실패 — 재시도 포기: ${message2}` });

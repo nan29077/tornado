@@ -89,6 +89,12 @@ export interface FakeMoInput {
   /** date_mo_recv 를 과거로 밀어 '중단된 건 복구' 경로를 만든다. */
   receivedAgoSec?: number;
   suffix?: string;
+  /** 장문(MMS MO) 조각 묶음 번호. 같은 값이면 한 메시지의 조각들이다. */
+  emsId?: number;
+  /** 전체 조각 수 */
+  emsTotal?: number;
+  /** 이 조각의 순서 (1부터) */
+  emsSeq?: number;
 }
 
 /** EMMA 가 넣은 것과 같은 모양의 수신 행을 만든다. */
@@ -102,8 +108,10 @@ export async function insertFakeMo(input: FakeMoInput): Promise<string> {
   await prisma.$executeRawUnsafe(
     `INSERT INTO em_mo_log_${suffix}
        (mo_key, service_type, mo_recipient, emo_recipient, mo_originator, mo_callback,
-        msg_status, content, date_mo, date_mo_recv, carrier, emma_id)
-     VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, NOW() - MAKE_INTERVAL(secs => $9), 10001, ' ')`,
+        msg_status, content, date_mo, date_mo_recv, carrier, emma_id,
+        ems_id, ems_total, ems_seq)
+     VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, NOW() - MAKE_INTERVAL(secs => $9), 10001, ' ',
+             $10, $11, $12)`,
     moKey,
     input.serviceType ?? '4',
     input.moRecipient,
@@ -113,6 +121,9 @@ export async function insertFakeMo(input: FakeMoInput): Promise<string> {
     input.content ?? '응원합니다',
     dateMo,
     agoSec,
+    input.emsId ?? null,
+    input.emsTotal ?? null,
+    input.emsSeq ?? null,
   );
   return moKey;
 }

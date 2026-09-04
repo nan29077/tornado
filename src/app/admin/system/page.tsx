@@ -10,7 +10,7 @@ import { env } from '@/lib/env';
 import { formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
 import { getYouTubeQuotaUsage } from '@/server/services/broadcast-dispatch';
-import { readEmmaPollHealth } from '@/server/emma';
+import { readEmmaPollHealth, readEmmaMtQueueHealth, MT_QUEUE_STUCK_MINUTES } from '@/server/emma';
 import { moResultLabel } from '@/lib/labels';
 import { requireAdminPage } from '@/server/admin-guard';
 
@@ -57,7 +57,7 @@ export default async function AdminSystemPage() {
    * 정성껏 그려도 페이지 전체가 500 이 되어 **장애를 진단할 수단이 장애 때 사라졌다.**
    * 모든 부가 조회를 개별적으로 감싸고, 실패하면 "조회 실패"로 표시한다.
    */
-  const [db, cache, quota, webhooks, moErrors, paymentErrors, emmaPoll] = await Promise.all([
+  const [db, cache, quota, webhooks, moErrors, paymentErrors, emmaPoll, emmaQueue] = await Promise.all([
     checkDatabase(),
     checkCache(),
     getYouTubeQuotaUsage().catch(() => null),
@@ -91,9 +91,16 @@ export default async function AdminSystemPage() {
      * 스케줄러 주기는 1분이므로, 5분 넘게 흔적이 없으면 멈춘 것으로 본다.
      */
     readEmmaPollHealth().catch(() => ({ at: null, ageSec: null, stalled: true })),
+    /**
+     * 발송 큐 적체(H-2).
+     * 폴링 정지가 "문자가 들어와도 후원이 안 되는" 문제라면, 이쪽은 "후원은 됐는데 문자가
+     * 안 나가는" 문제다. 우리 DB 에는 전건 성공으로 남아 화면 어디에도 오류가 뜨지 않는다.
+     */
+    readEmmaMtQueueHealth(env.emma.enabled).catch(() => null),
   ]);
 
   const emmaStalled = env.emma.enabled && emmaPoll.stalled;
+  const mtQueueStuck = emmaQueue?.stuck ?? 0;
 
   const providers: Array<{ label: string; mode: string }> = [
     { label: '결제(PG)', mode: env.payment.provider },
@@ -173,6 +180,26 @@ export default async function AdminSystemPage() {
                       {emmaPoll.at
                         ? `마지막 폴링 ${formatKst(emmaPoll.at)} (${formatNumber(emmaPoll.ageSec ?? 0)}초 전)`
                         : '기록 없음 — 폴링 배치(/api/cron/emma-mo)가 한 번도 성공하지 않았습니다.'}
+                    </span>
+                  </span>
+                )
+              }
+            />
+            <DataRow
+              label="EMMA MT 발송 큐"
+              value={
+                !env.emma.enabled || !emmaQueue?.checked ? (
+                  <Badge tone="neutral">사용 안 함</Badge>
+                ) : (
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <Badge tone={mtQueueStuck > 0 ? 'danger' : 'success'}>
+                      {mtQueueStuck > 0 ? '적체' : '정상'}
+                    </Badge>
+                    <span className="text-[12px] text-ink-400">
+                      {mtQueueStuck > 0
+                        ? `${formatNumber(mtQueueStuck)}건이 ${MT_QUEUE_STUCK_MINUTES}분 넘게 발송되지 않았습니다. ` +
+                          'EMMA 설정(emma.cf)의 mtsender · mtreceiver · smtcollector · mmtcollector · mtdistributor 가 모두 1 인지 확인하세요.'
+                        : `대기 ${formatNumber(emmaQueue.sms.pending + emmaQueue.mms.pending)}건 (단문 ${formatNumber(emmaQueue.sms.pending)} · 장문 ${formatNumber(emmaQueue.mms.pending)})`}
                     </span>
                   </span>
                 )

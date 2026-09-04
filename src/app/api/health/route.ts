@@ -3,7 +3,7 @@ import { prisma } from '@/server/db';
 import { kv } from '@/server/redis';
 import { env, assertProductionSafety, bootWarnings } from '@/lib/env';
 import { getSessionUser } from '@/server/auth';
-import { readEmmaLastPollAt } from '@/server/emma';
+import { readEmmaLastPollAt, readEmmaMtQueueHealth } from '@/server/emma';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,6 +41,14 @@ export async function GET() {
   const lastPoll = env.emma.enabled ? await readEmmaLastPollAt().catch(() => null) : null;
   const emmaPollAt = lastPoll ? lastPoll.toISOString() : null;
 
+  /**
+   * 발송 큐 적체(H-2).
+   *
+   * 폴링 정지가 "문자가 들어와도 후원이 안 되는" 문제라면, 큐 적체는 "후원은 됐는데 문자가
+   * 안 나가는" 문제다. 둘 다 화면에 오류가 뜨지 않아 헬스체크로 끌어올린다.
+   */
+  const emmaQueue = await readEmmaMtQueueHealth(env.emma.enabled).catch(() => null);
+
   return NextResponse.json(
     {
       ok: healthy,
@@ -59,6 +67,7 @@ export async function GET() {
       // 기동을 막지는 않지만 특정 기능이 멈추는 설정(EMMA 장문 미지원, 헥토 PIN mock 등).
       configWarnings: bootWarnings(),
       emmaLastPollAt: emmaPollAt,
+      emmaMtQueueStuck: emmaQueue?.stuck ?? 0,
       at: new Date().toISOString(),
     },
     { status: healthy ? 200 : 503 },

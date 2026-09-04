@@ -110,6 +110,18 @@ export interface EmmaMoMessage {
   receivedAt: Date;
   /** 원본 행. 진단·감사에만 쓴다. */
   raw: EmmaMoRow;
+  /**
+   * 장문(MMS MO)이 여러 조각으로 나뉘어 온 경우의 조립 정보.
+   * 단문이거나 조각이 하나면 undefined 다.
+   */
+  parts?: {
+    /** EMMA 가 같은 메시지의 조각에 붙이는 묶음 번호 */
+    emsId: number;
+    /** 전체 조각 수 */
+    total: number;
+    /** 실제로 이어 붙인 조각 수. total 보다 작으면 일부가 끝내 오지 않은 것이다. */
+    used: number;
+  };
 }
 
 /**

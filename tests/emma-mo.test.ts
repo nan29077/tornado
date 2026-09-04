@@ -22,6 +22,8 @@ import {
 } from '@/server/services/mo-number-issue';
 import { resetDb, seedBasics, seedRegisteredDonor, type Fixture } from './helpers';
 import { createEmmaTables, clearEmmaTables, insertFakeMo, readMoStatus, readMtQueue } from './emma-helpers';
+import { readEmmaMtQueueHealth, checkEmmaMtQueueBacklog } from '@/server/emma';
+import { mtSubjectFor, MT_SUBJECT_MAX_LENGTH, MT_TEMPLATE } from '@/server/services/mt-templates';
 
 /**
  * EMMA(인포뱅크 온프레미스 에이전트) 문자 수신 연동.
@@ -536,5 +538,224 @@ describe('서브번호 발급 · 회수', () => {
   it('승인되지 않은 크리에이터에게는 발급하지 않는다', async () => {
     await prisma.creatorProfile.update({ where: { id: fx.creatorId }, data: { status: 'PENDING' } });
     await expect(issueMoNumberForCreator(fx.creatorId)).rejects.toThrow('승인된 크리에이터');
+  });
+});
+
+// ───────────────────── 장문(MMS MO) 분할 수신 ─────────────────────
+
+describe('장문 수신은 조각을 이어 붙여 한 건으로 처리한다', () => {
+  beforeAll(async () => {
+    await createEmmaTables();
+  });
+
+  beforeEach(async () => {
+    await resetDb();
+    await clearEmmaTables();
+    fx = await seedBasics({ paymentMode: 'DIRECT_TRIGGER' });
+  });
+
+  /** 같은 묶음(ems_id)의 조각 하나를 넣는다. */
+  async function insertPart(emsId: number, seq: number, total: number, content: string, agoSec = 0) {
+    return insertFakeMo({
+      moRecipient: BASE,
+      emoRecipient: '5678',
+      from: fx.donorPhone,
+      serviceType: '5', // MMS MO
+      content,
+      emsId,
+      emsTotal: total,
+      emsSeq: seq,
+      receivedAgoSec: agoSec,
+    });
+  }
+
+  /**
+   * 이것이 이 기능의 핵심이다. 조각을 각각 독립 메시지로 처리하면 **첫 조각만 후원이 되고
+   * 나머지는 버려진다.** 후원자가 길게 쓴 응원 메시지가 앞부분만 방송에 나간다.
+   */
+  it('조각이 다 오면 순서대로 이어 붙여 후원 한 건을 만든다', async () => {
+    await assignBaseNumber('5678', fx.creatorId);
+    await seedRegisteredDonor(fx.donorPhone);
+
+    // 일부러 순서를 섞어 넣는다. ems_seq 로 정렬되어야 한다.
+    const k2 = await insertPart(701, 2, 3, '오늘 방송 ');
+    const k1 = await insertPart(701, 1, 3, '형 ');
+    const k3 = await insertPart(701, 3, 3, '너무 재밌었어요');
+
+    const result = await runEmmaMoPolling();
+
+    expect(result.handed).toBe(1);
+    expect(result.failed).toBe(0);
+
+    const donations = await prisma.donation.findMany();
+    expect(donations).toHaveLength(1);
+    expect(donations[0].message).toContain('형 오늘 방송 너무 재밌었어요');
+
+    // 조각 세 개가 모두 완료 처리되어야 다음 폴링이 다시 집어가지 않는다.
+    expect(await readMoStatus(k1)).toBe('9');
+    expect(await readMoStatus(k2)).toBe('9');
+    expect(await readMoStatus(k3)).toBe('9');
+  });
+
+  it('조각이 덜 왔으면 처리하지 않고 다음 폴링으로 미룬다', async () => {
+    await assignBaseNumber('5678', fx.creatorId);
+    await seedRegisteredDonor(fx.donorPhone);
+
+    await insertPart(702, 1, 3, '앞부분만 ');
+
+    const result = await runEmmaMoPolling();
+
+    expect(result.handed).toBe(0);
+    expect(result.deferred).toBe(1);
+    expect(await prisma.donation.count()).toBe(0);
+    // 신규 상태로 되돌아가야 다음 폴링에서 다시 본다.
+    expect(result.details[0].detail).toContain('MMS_WAITING');
+  });
+
+  it('미뤄 둔 조각이 나중에 도착하면 그때 한 건으로 처리된다', async () => {
+    await assignBaseNumber('5678', fx.creatorId);
+    await seedRegisteredDonor(fx.donorPhone);
+
+    await insertPart(703, 1, 2, '첫 조각 ');
+    expect((await runEmmaMoPolling()).deferred).toBe(1);
+    expect(await prisma.donation.count()).toBe(0);
+
+    await insertPart(703, 2, 2, '둘째 조각');
+    const second = await runEmmaMoPolling();
+
+    expect(second.handed).toBe(1);
+    const donations = await prisma.donation.findMany();
+    expect(donations).toHaveLength(1);
+    expect(donations[0].message).toContain('첫 조각 둘째 조각');
+  });
+
+  /**
+   * 조각 하나가 끝내 오지 않을 수 있다. 영원히 기다리면 후원자는 문자 요금만 내고
+   * 아무 일도 일어나지 않는다. 앞부분이라도 방송에 나가는 편이 통째로 유실되는 것보다 낫다.
+   */
+  it('조각이 끝내 오지 않으면 대기 시간이 지난 뒤 있는 것만으로 처리한다', async () => {
+    await assignBaseNumber('5678', fx.creatorId);
+    await seedRegisteredDonor(fx.donorPhone);
+
+    // 4분 전에 들어온 조각 (조립 대기 상한 3분을 넘겼다)
+    await insertPart(704, 1, 3, '앞부분만 왔어요', 240);
+
+    const result = await runEmmaMoPolling();
+
+    expect(result.handed).toBe(1);
+    const donations = await prisma.donation.findMany();
+    expect(donations).toHaveLength(1);
+    expect(donations[0].message).toContain('앞부분만 왔어요');
+    expect(result.details[0].detail).toContain('MMS_PARTIAL');
+  });
+
+  it('같은 장문을 여러 번 폴링해도 후원은 한 번만 만들어진다', async () => {
+    await assignBaseNumber('5678', fx.creatorId);
+    await seedRegisteredDonor(fx.donorPhone);
+
+    await insertPart(705, 1, 2, '가나 ');
+    await insertPart(705, 2, 2, '다라');
+
+    await runEmmaMoPolling();
+    await runEmmaMoPolling();
+
+    expect(await prisma.donation.count()).toBe(1);
+  });
+
+  it('조각이 하나뿐인 장문(ems_total=1)은 그대로 처리된다', async () => {
+    await assignBaseNumber('5678', fx.creatorId);
+    await seedRegisteredDonor(fx.donorPhone);
+
+    await insertFakeMo({
+      moRecipient: BASE,
+      emoRecipient: '5678',
+      from: fx.donorPhone,
+      serviceType: '5',
+      content: '한 조각짜리 장문',
+      emsId: 706,
+      emsTotal: 1,
+      emsSeq: 1,
+    });
+
+    const result = await runEmmaMoPolling();
+    expect(result.handed).toBe(1);
+    expect(await prisma.donation.count()).toBe(1);
+  });
+});
+
+// ───────────────────── MT 발송 큐 적체 감시 ─────────────────────
+
+describe('MT 발송 큐 적체 감시', () => {
+  beforeAll(async () => {
+    await createEmmaTables();
+  });
+
+  beforeEach(async () => {
+    await resetDb();
+    await clearEmmaTables();
+  });
+
+  it('큐가 비어 있으면 적체가 0 이다', async () => {
+    const health = await readEmmaMtQueueHealth(true);
+    expect(health.checked).toBe(true);
+    expect(health.stuck).toBe(0);
+    expect(await checkEmmaMtQueueBacklog(true)).toBe(0);
+  });
+
+  it('방금 넣은 문자는 적체로 보지 않는다', async () => {
+    await queueEmmaMt({ to: '01012345678', callback: BASE, content: '방금 넣은 문자' });
+
+    const health = await readEmmaMtQueueHealth(true);
+    expect(health.sms.pending).toBe(1);
+    expect(health.stuck).toBe(0);
+  });
+
+  /**
+   * 이것이 감시의 목적이다. EMMA 발송 서비스가 꺼져 있으면 문자가 큐에 쌓이기만 하는데
+   * 우리 기록에는 "발송 성공"으로 남아 아무도 알아채지 못한다.
+   */
+  it('오래 발송되지 않은 문자는 적체로 잡아낸다', async () => {
+    await queueEmmaMt({ to: '01012345678', callback: BASE, content: '안 나가는 문자' });
+    // EMMA 가 집어가지 않은 채 20분이 지난 상황
+    await prisma.$executeRawUnsafe(
+      `UPDATE em_smt_tran SET date_client_req = NOW() - INTERVAL '20 minutes'`,
+    );
+
+    const health = await readEmmaMtQueueHealth(true);
+    expect(health.sms.stuck).toBe(1);
+    expect(health.stuck).toBe(1);
+    expect(health.sms.oldestAt).not.toBeNull();
+
+    expect(await checkEmmaMtQueueBacklog(true)).toBe(1);
+  });
+
+  it('EMMA 를 쓰지 않으면 조회하지 않는다', async () => {
+    const health = await readEmmaMtQueueHealth(false);
+    expect(health.checked).toBe(false);
+    expect(health.stuck).toBe(0);
+  });
+});
+
+// ───────────────────── 장문 제목 ─────────────────────
+
+describe('장문 제목', () => {
+  /**
+   * 장문은 제목이 단말 목록에 표시되고, 설치본에 따라 빈 제목을 거부한다.
+   * 거부되면 큐에 쌓이기만 하고 발송되지 않는데 우리 기록은 "성공"으로 남는다.
+   */
+  it('템플릿별 제목이 만들어지고 발신 표기가 앞에 붙는다', () => {
+    const subject = mtSubjectFor(MT_TEMPLATE.PIN_REQUEST);
+    expect(subject.startsWith('[도네이도]')).toBe(true);
+    expect(subject).toContain('PIN');
+  });
+
+  it('제목은 EMMA 컬럼 한계(40자)를 넘지 않는다', () => {
+    for (const code of Object.values(MT_TEMPLATE)) {
+      expect(mtSubjectFor(code).length).toBeLessThanOrEqual(MT_SUBJECT_MAX_LENGTH);
+    }
+  });
+
+  it('알 수 없는 코드에도 빈 제목을 돌려주지 않는다', () => {
+    expect(mtSubjectFor('NO_SUCH_TEMPLATE')).toBe('[도네이도]');
   });
 });

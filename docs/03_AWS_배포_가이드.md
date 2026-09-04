@@ -143,3 +143,57 @@ KMS 전환 시 `@aws-sdk/client-kms` 를 설치하고 부팅 시점에 `setCrypt
 | 유튜브 할당량 사용률 | 80% 초과 | 전송 상한 조정 / 증설 신청 |
 | MT 발송 실패율 | 5% 초과 | 사업자 장애 확인 |
 | 정산 원장 트리거 예외 | 1건 이상 | 원장 변경 시도 — 즉시 감사 |
+
+---
+
+## EMMA MO 수신 폴링 (필수)
+
+EMMA 는 웹훅을 보내지 않는다. 자기 DB 테이블에 수신 문자를 넣어 두기만 하고, **우리가 주기적으로
+읽어 가야** 후원이 만들어진다. 읽어 가는 주기가 곧 후원자가 결제 문자를 받기까지의 지연이다.
+
+`GET /api/cron/emma-mo` 가 그 입구다. **이 주소를 부르는 쪽이 없으면 EMMA 를 켜도 문자가 한 통도
+처리되지 않는다.** 화면에 오류도 뜨지 않으므로(조용한 실패) 배포 시 반드시 확인한다.
+
+### AWS (권장) — EventBridge Scheduler
+
+```
+대상   : HTTPS  GET  https://<도메인>/api/cron/emma-mo
+헤더   : Authorization: Bearer ${CRON_SECRET}
+주기   : rate(10 seconds)
+재시도 : 0 (다음 주기에 어차피 다시 부른다)
+```
+
+EventBridge Scheduler 의 최소 주기가 1분인 리전·요금제라면, 1분 주기로 걸고 **Lambda 안에서
+10초 간격으로 6번** 호출하는 방식으로 맞춘다. 또는 아래 상주 폴러를 ECS 사이드카로 띄운다.
+
+### 단일 서버 · 개발 PC — 상주 폴러
+
+```
+npm run emma:poll
+```
+
+Windows 에서는 `도구_문자수신폴러.bat` 을 더블클릭한다. **이 창을 닫으면 문자 수신이 멈춘다.**
+
+| 환경변수 | 기본값 | 설명 |
+|---|---|---|
+| `APP_BASE_URL` | `http://127.0.0.1:3025` | 호출할 앱 주소 |
+| `CRON_SECRET` | — | 운영에서는 필수. 없으면 앱이 401 로 거절한다 |
+| `EMMA_POLL_INTERVAL_MS` | `10000` | 폴링 주기(밀리초) |
+
+폴러는 겹쳐 돌지 않고(이전 호출이 끝난 뒤 대기 시작), 실패해도 종료되지 않는다(간격을 늘려
+계속 재시도). 두 방식을 동시에 띄워도 앱 쪽 잠금과 `provider_message_id` UNIQUE 가 있어
+중복 후원은 생기지 않는다.
+
+### 배포 후 확인
+
+1. `/admin/system` → **EMMA MO 폴링** 이 `정상` 인지 (몇 초 전 기록이 보여야 한다)
+2. `/admin/system` → **EMMA MT 발송 큐** 가 `정상` 인지 (`적체` 면 EMMA 발송 서비스가 꺼진 것)
+3. `/api/health` 의 `emmaLastPollAt` 이 갱신되는지, `emmaMtQueueStuck` 이 0 인지
+
+2번이 `적체` 로 뜨면 EMMA 설정(`emma.cf`)에서 아래가 모두 `1` 인지 확인한다. 하나라도 0 이면
+문자가 큐에 쌓이기만 하고 발송되지 않는데, 우리 기록에는 "성공"으로 남는다.
+
+```
+process.use.mtsender / mtreceiver / smtcollector / mmtcollector / mtdistributor = 1
+```
+

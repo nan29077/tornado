@@ -476,6 +476,23 @@ export const MT_TEMPLATE_META: Record<MtTemplateCode, MtTemplateMeta> = {
   },
 };
 
+/**
+ * 장문(LMS/MMS) 제목.
+ *
+ * 단문에는 제목이 없지만 장문은 **제목이 단말 목록에 표시**된다. 인포뱅크 설치본에 따라
+ * 빈 제목을 거부해 큐에 쌓이기만 하는 경우가 있어(조용한 실패) 반드시 채워 보낸다.
+ *
+ * 제목은 잠금화면에도 뜨므로 금액·후원자 이름 같은 개별 정보는 넣지 않는다.
+ * 템플릿 라벨만 쓰고, EMMA 의 subject 컬럼 한계(varchar 40)에 맞춰 자른다.
+ */
+export const MT_SUBJECT_MAX_LENGTH = 40;
+
+export function mtSubjectFor(code: string): string {
+  const label = MT_TEMPLATE_META[code as MtTemplateCode]?.label;
+  const text = label ? `${SENDER_TAG} ${label}` : SENDER_TAG;
+  return text.slice(0, MT_SUBJECT_MAX_LENGTH);
+}
+
 /** 관리 화면 카드 순서. */
 export const MT_TEMPLATE_CODES = Object.keys(MT_TEMPLATE_META) as MtTemplateCode[];
 

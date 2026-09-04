@@ -141,12 +141,30 @@ export async function moTableExists(suffix: string): Promise<boolean> {
 }
 
 /**
+ * 테이블 존재 여부 캐시.
+ *
+ * MO 폴링은 10초마다 돌고 한 번에 두 달치 테이블을 확인한다. 캐시가 없으면
+ * `information_schema` 조회가 하루 17,000번 일어난다. 이 뷰는 일반 테이블보다 무겁다.
+ *
+ * TTL 을 둘로 나눈 이유
+ *  - 있음(60초): 한 번 생긴 테이블이 사라질 일은 없다. 길게 잡아도 안전하다.
+ *  - 없음(10초): 달이 바뀌면 그 달 첫 수신과 함께 테이블이 새로 생긴다. 없음을 오래 붙들면
+ *    그만큼 첫 문자 처리가 늦어진다. 폴링 주기와 같은 값으로 짧게 잡는다.
+ */
+const tableExistsCache = new Map<string, { exists: boolean; until: number }>();
+const EXISTS_TTL_MS = 60_000;
+const MISSING_TTL_MS = 10_000;
+
+/**
  * EMMA 테이블 존재 여부.
  *
  * 어느 서비스(SMS MO / SMS MT / MMS MT)를 켰는지에 따라 있는 테이블이 다르다.
  * 없는 테이블을 조회하면 예외가 나 배치 전체가 죽으므로, 먼저 확인하고 조용히 건너뛴다.
  */
 export async function emmaTableExists(tableName: string): Promise<boolean> {
+  const cached = tableExistsCache.get(tableName);
+  if (cached && cached.until > Date.now()) return cached.exists;
+
   const q = getEmmaQuerier();
   try {
     const rows = await q.query<{ exists: boolean }>(
@@ -156,11 +174,23 @@ export async function emmaTableExists(tableName: string): Promise<boolean> {
        ) AS exists`,
       [tableName],
     );
-    return Boolean(rows[0]?.exists);
+    const exists = Boolean(rows[0]?.exists);
+    tableExistsCache.set(tableName, {
+      exists,
+      until: Date.now() + (exists ? EXISTS_TTL_MS : MISSING_TTL_MS),
+    });
+    return exists;
   } catch (e) {
+    // 조회 자체가 실패한 것은 캐시하지 않는다. 일시적 장애를 60초간 "없음"으로 굳히면
+    // 그동안 수신이 통째로 멈춘다.
     logger.warn('EMMA 테이블 존재 확인 실패', { tableName, message: (e as Error).message });
     return false;
   }
+}
+
+/** 테스트·설치 직후처럼 테이블이 방금 생긴 상황에서 캐시를 즉시 버린다. */
+export function clearEmmaTableExistsCache(): void {
+  tableExistsCache.clear();
 }
 
 /**

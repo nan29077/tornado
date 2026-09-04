@@ -77,6 +77,11 @@ export const emmaMtAdapter: MtAdapter = {
           to: req.to,
           callback: env.mt.senderNumber,
           content: req.text,
+          /**
+           * 제목은 비워 보내지 않는다. 설치본에 따라 빈 제목을 거부하면 큐에 쌓이기만 하고
+           * 발송되지 않는데, 우리 쪽 기록은 "적재 성공"으로 남아 아무도 알아채지 못한다.
+           */
+          subject: req.subject?.trim() || '[도네이도]',
         });
         logger.info('EMMA MT: 장문(LMS) 을 MMS 큐로 적재했습니다', {
           bytes: Buffer.byteLength(req.text, 'utf8'),

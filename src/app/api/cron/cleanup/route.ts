@@ -19,6 +19,7 @@ import {
   retryFailedMtMessages,
 } from '@/server/services/donation-flow';
 import { retryFailedYouTubeDeliveries } from '@/server/services/broadcast-dispatch';
+import { checkEmmaMtQueueBacklog } from '@/server/emma';
 import { retryFailedBillKeyRevocations } from '@/server/services/donor-registration';
 import { clearExpiredFailureLocks } from '@/server/services/limits';
 
@@ -130,6 +131,14 @@ export async function GET(req: Request) {
     const failureLocks = await step('만료된 실패 잠금 해제', () => clearExpiredFailureLocks());
     const webhookLogs = await step('오래된 웹훅 로그 정리', () => purgeOldWebhookLogs());
     const billKeyRevokes = await step('사업자 빌키 해지 재시도', () => retryFailedBillKeyRevocations());
+    /**
+     * EMMA 발송 큐 적체 감시.
+     *
+     * 다른 단계와 달리 **무언가를 고치지 않고 세기만 한다.** 큐에 쌓인 문자를 우리가 대신
+     * 보낼 수는 없기 때문이다(발송은 EMMA 데몬의 몫). 대신 조용히 지나가지 않도록
+     * ERROR 로그를 남기고 건수를 응답에 실어 관리자 화면·헬스체크가 보게 한다.
+     */
+    const mtQueueStuck = await step('EMMA 발송 큐 적체 확인', () => checkEmmaMtQueueBacklog(env.emma.enabled));
 
     const steps = {
       pinSessions,
@@ -148,6 +157,7 @@ export async function GET(req: Request) {
       failureLocks,
       webhookLogs,
       billKeyRevokes,
+      mtQueueStuck,
     };
     const allOk = Object.values(steps).every((s) => s.ok);
     return NextResponse.json({
