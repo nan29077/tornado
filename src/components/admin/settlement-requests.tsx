@@ -120,7 +120,7 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
               name="bulkAction"
               value="REJECT"
               disabled={bulkPending || selectedIds.length === 0}
-              className="h-8 rounded-lg border border-danger-500 px-3 text-[12px] font-bold text-danger-500 disabled:opacity-50"
+              className="h-8 rounded-lg border border-danger-500 px-3 text-[12px] font-bold text-danger-600 disabled:opacity-50"
             >
               일괄 반려
             </button>
@@ -183,7 +183,7 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
         </div>
 
         {anyMsg ? (
-          <p className={cx('mt-2 text-[12px]', anyOk ? 'text-success-500' : 'text-danger-500')}>
+          <p className={cx('mt-2 text-[12px]', anyOk ? 'text-success-600' : 'text-danger-600')}>
             {anyMsg}
           </p>
         ) : null}
@@ -310,12 +310,12 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
               <Td>
                 <Badge tone={r.statusTone}>{r.statusText}</Badge>
                 {r.failReason ? (
-                  <span className="mt-0.5 block max-w-[140px] break-words text-[11px] text-danger-500">{r.failReason}</span>
+                  <span className="mt-0.5 block max-w-[140px] break-words text-[11px] text-danger-600">{r.failReason}</span>
                 ) : null}
                 {r.adminMemo ? (
                   <span className="mt-0.5 block max-w-[140px] break-words text-[11px] text-ink-400">{r.adminMemo}</span>
                 ) : null}
-                {r.paidAt ? <span className="mt-0.5 block text-[11px] text-success-500">지급 {r.paidAt}</span> : null}
+                {r.paidAt ? <span className="mt-0.5 block text-[11px] text-success-600">지급 {r.paidAt}</span> : null}
               </Td>
             </tr>
           ))}

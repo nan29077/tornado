@@ -341,7 +341,7 @@ export default async function AdminSettlementsPage({
                       </Link>
                     </Td>
                     <Td>{ledgerEntryLabel[l.entryType]}</Td>
-                    <Td className={`text-right tabular-nums ${l.amount < 0n ? 'text-danger-500' : 'text-success-500'}`}>
+                    <Td className={`text-right tabular-nums ${l.amount < 0n ? 'text-danger-600' : 'text-success-600'}`}>
                       {formatWon(l.amount)}
                     </Td>
                     <Td className="max-w-[200px] break-words">{l.memo ?? '-'}</Td>

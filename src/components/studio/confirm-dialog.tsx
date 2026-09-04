@@ -165,8 +165,8 @@ export function ConfirmDialog({
           <span
             className={cx(
               'mx-auto grid h-14 w-14 place-items-center rounded-2xl border',
-              headTone === 'success' && 'border-success-500/25 bg-success-500/10 text-success-500',
-              headTone === 'danger' && 'border-danger-500/25 bg-danger-500/10 text-danger-500',
+              headTone === 'success' && 'border-success-500/25 bg-success-500/10 text-success-600',
+              headTone === 'danger' && 'border-danger-500/25 bg-danger-500/10 text-danger-600',
               headTone === 'brand' && 'border-brand-200 bg-brand-50 text-brand-700',
             )}
           >

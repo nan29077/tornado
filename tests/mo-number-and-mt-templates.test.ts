@@ -78,9 +78,18 @@ describe('구 체계 번호는 다시 발급될 때 1688 체계로 교체된다'
     expect(issued.phoneNumber.startsWith(BASE)).toBe(true);
     expect(issued.phoneNumber).toHaveLength(BASE.length + 4);
 
-    // 옛 번호는 회수되어야 한다. 남겨 두면 그 번호로 온 문자가 계속 결제로 이어진다.
+    /**
+     * 옛 번호는 **사용중지(DISABLED)** 여야 한다. 남겨 두면 그 번호로 온 문자가 계속
+     * 결제로 이어진다.
+     *
+     * 예전에는 회수(RECLAIMED)로만 내렸다. 그러면 배정만 풀린 채 재고 목록에 남아
+     *  - 관리자 MO 번호 화면과 시뮬레이터 선택지에 0505 가 계속 보이고
+     *  - 관리자가 그 번호를 다시 배정할 수 있는데, 배정해도 문자가 오지 않아
+     *    후원이 통째로 끊긴 채널이 만들어졌다.
+     * 구 체계 번호는 다시 쓸 일이 없으므로 재고에서 완전히 내린다.
+     */
     const legacy = await prisma.creatorMoNumber.findUnique({ where: { id: legacyId } });
-    expect(legacy?.status).toBe('RECLAIMED');
+    expect(legacy?.status).toBe('DISABLED');
     expect(legacy?.creatorId).toBeNull();
     expect(legacy?.releasedAt).not.toBeNull();
 

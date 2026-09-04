@@ -81,7 +81,7 @@ export function MockRegisterForm({
     <div className="space-y-3">
       <div className="rounded-2xl border-2 border-warning-500/50 bg-warning-50 px-4 py-4">
         <div className="flex items-start gap-2">
-          <AlertTriangle size={20} strokeWidth={1.7} className="mt-0.5 shrink-0 text-warning-500" />
+          <AlertTriangle size={20} strokeWidth={1.7} className="mt-0.5 shrink-0 text-warning-600" />
           <div>
             <p className="text-[15px] font-extrabold text-ink-900">
               테스트용 모의 결제창입니다. 실제 계좌 인증과 출금이 발생하지 않습니다.

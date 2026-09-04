@@ -11,7 +11,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
-    "mo:reissue": "tsx scripts/reissue-legacy-mo.ts",
+    "mo:reissue": "node tools/mo-reissue.mjs",
     "emma:poll": "node tools/emma-poller.mjs",
     "db:reset": "node tools/db-reset.mjs",
     "typecheck": "tsc --noEmit",
@@ -20,7 +20,8 @@
     "test:e2e": "node e2e/run-all.mjs",
     "check:db": "node tools/check-db.mjs",
     "check:emma": "node tools/emma-check.mjs",
-    "preview": "node tools/preview.mjs"
+    "preview": "node tools/preview.mjs",
+    "mo:reissue:raw": "tsx scripts/reissue-legacy-mo.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1115.0",

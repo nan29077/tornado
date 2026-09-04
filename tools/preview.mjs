@@ -230,6 +230,15 @@ async function main() {
     DB_POOL_MAX: '2',
     DB_CONNECT_TIMEOUT_MS: '10000',
     ALLOW_INMEMORY_FALLBACK: 'true',
+    /**
+     * "내 컴퓨터에서 도는 미리보기" 표시.
+     *
+     * 미리보기는 개발 서버가 아니라 프로덕션 빌드로 뜬다(위 MODE 설명 참고).
+     * next.config.ts 가 NODE_ENV 만 보고 판단하면, 터널 주소로 접속했을 때 필요한
+     * 서버 액션 출처 예외가 정작 여기서 꺼진다. 그러면 [테스트 후원 보내기] 같은 동작이
+     * 아무 문구 없이 거부된다. **빌드와 실행 양쪽**에 이 표시를 넣어야 한다.
+     */
+    TORNADO_LOCAL_PREVIEW: '1',
   };
   Object.assign(process.env, previewEnv);
 
@@ -250,8 +259,16 @@ async function main() {
       log('[3/4] 화면 빌드 (처음에는 1~3분 걸립니다)');
       await run(process.execPath, [nextBin, 'build'], { ...previewEnv, NODE_ENV: 'production' });
     } else {
-      log('[3/4] 이전 빌드 결과를 재사용합니다');
+      const builtAt = new Date(fs.statSync(path.join(process.cwd(), '.next', 'BUILD_ID')).mtimeMs);
+      log(`[3/4] 이전 빌드 결과를 재사용합니다 (빌드 시각 ${builtAt.toLocaleString('ko-KR')})`);
     }
+    /**
+     * 프로덕션 빌드로 뜨므로 **코드를 고쳐도 화면에 바로 반영되지 않는다.**
+     * 고친 뒤에는 이 창을 닫고 다시 실행해야 한다(그때 자동으로 다시 빌드한다).
+     * 이걸 모르면 "고쳤는데 그대로다" 로 한참을 헤맨다.
+     */
+    log('      코드를 고쳤다면 이 창을 닫고 다시 실행해야 반영됩니다.');
+    log('      (고칠 때마다 즉시 반영하려면 도구_수정즉시반영.bat 을 쓰세요)');
     log(`[4/4] 서버 시작 (http://localhost:${APP_PORT})`);
     child = spawn(process.execPath, [nextBin, 'start', '-p', String(APP_PORT)], {
       stdio: 'inherit',

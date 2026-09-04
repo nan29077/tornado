@@ -81,9 +81,9 @@ export default async function AdminMtTemplatesPage() {
         <p className="mt-1 text-[12px] leading-relaxed text-ink-400">{meta.description}</p>
 
         <div className="mt-3 rounded-xl border border-ink-100 bg-ink-50 p-3">
-          <p className="text-[11px] font-semibold text-ink-500">사용 가능한 치환자</p>
+          <p className="text-[11px] font-semibold text-ink-500">자동으로 채워지는 항목</p>
           {meta.variables.length === 0 ? (
-            <p className="mt-1 text-[12px] text-ink-400">이 문자에는 치환자가 없습니다.</p>
+            <p className="mt-1 text-[12px] text-ink-400">이 문자에는 자동으로 채워지는 항목이 없습니다.</p>
           ) : (
             <ul className="mt-1.5 space-y-0.5">
               {meta.variables.map((v) => (
@@ -163,7 +163,7 @@ export default async function AdminMtTemplatesPage() {
 
       <SectionTitle
         title="등록·결제 흐름 문자 (최고관리자 전용)"
-        description="본문에 1회용 보안링크가 들어갑니다. 안내 문장은 고칠 수 있지만 {보안링크} 치환자를 빼면 저장되지 않습니다. 링크가 빠지면 후원자가 등록·결제를 끝낼 방법이 없어집니다."
+        description="본문에 1회용 보안링크가 들어갑니다. 안내 문장은 고칠 수 있지만 {보안링크} 항목을 빼면 저장되지 않습니다. 링크가 빠지면 후원자가 등록·결제를 끝낼 방법이 없어집니다."
       />
       {isSuperAdmin ? null : (
         <div className="mt-3">
@@ -177,7 +177,7 @@ export default async function AdminMtTemplatesPage() {
       <section className="mt-8">
         <SectionTitle
           title="안내 문자"
-          description={`치환자는 대괄호가 아니라 중괄호({ }) 로 씁니다. 본문은 ${MT_TEMPLATE_BODY_MAX_LENGTH}자까지 입력할 수 있습니다.`}
+          description={`자동으로 채워지는 항목은 대괄호가 아니라 중괄호({ }) 로 씁니다. 본문은 ${MT_TEMPLATE_BODY_MAX_LENGTH}자까지 입력할 수 있습니다.`}
         />
         <div className="mt-3">
           <Notice tone="neutral">

@@ -18,7 +18,7 @@ export function WithdrawForm() {
   return (
     <Card className="border-danger-500/25">
       <div className="flex gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-danger-50 text-danger-500">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-danger-50 text-danger-600">
           <AlertTriangle size={18} strokeWidth={1.7} />
         </span>
         <div className="min-w-0 flex-1">
@@ -35,7 +35,7 @@ export function WithdrawForm() {
           ) : (
             <form action={formAction} className="mt-3 space-y-2.5">
               <p className="text-[12.5px] font-semibold text-ink-700">
-                확인을 위해 <span className="font-mono text-danger-500">탈퇴합니다</span> 를 입력해 주세요.
+                확인을 위해 <span className="font-mono text-danger-600">탈퇴합니다</span> 를 입력해 주세요.
               </p>
               <Input name="confirm" placeholder="탈퇴합니다" autoComplete="off" required />
               {state.message ? <Notice tone="danger">{state.message}</Notice> : null}

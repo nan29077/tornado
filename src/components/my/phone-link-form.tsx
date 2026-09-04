@@ -55,7 +55,7 @@ export function PhoneLinkForm({ linkedPhoneMasked }: { linkedPhoneMasked: string
       <Card>
         <div className="flex items-start justify-between gap-3">
           <div className="flex gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-success-50 text-success-500">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-success-50 text-success-600">
               <ShieldCheck size={18} strokeWidth={1.7} />
             </span>
             <div>

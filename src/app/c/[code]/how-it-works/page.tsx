@@ -77,7 +77,7 @@ export default async function CreatorHowItWorksPage({ params }: { params: Promis
 
       <section className="mt-6 rounded-[2rem] border border-warm-300/70 bg-gradient-to-br from-white to-warm-100 p-6 shadow-card">
         <p className="flex items-center gap-1.5 text-[14px] font-black tracking-[-0.02em] text-ink-900">
-          <CircleAlert size={16} strokeWidth={1.7} className="text-warning-500" />
+          <CircleAlert size={16} strokeWidth={1.7} className="text-warning-600" />
           꼭 알아두세요
         </p>
         <ul className="mt-2.5 space-y-1.5 text-[12.5px] leading-relaxed text-ink-500">

@@ -252,7 +252,7 @@ export default async function AdminDonorsPage({
                             />
                           ) : (
                             <details>
-                              <summary className="cursor-pointer text-[12px] text-danger-500">이용 제한</summary>
+                              <summary className="cursor-pointer text-[12px] text-danger-600">이용 제한</summary>
                               <div className="mt-1.5 w-48">
                                 <ActionForm
                                   action={setDonorBlock}

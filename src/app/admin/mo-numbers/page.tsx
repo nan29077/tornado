@@ -207,7 +207,7 @@ export default async function AdminMoNumbersPage({
                   {legacyAssigned.map((n) => (
                     <li key={n.id} className="flex flex-wrap items-baseline justify-between gap-2 text-[12px]">
                       <span className="font-semibold text-ink-700">{n.creator?.displayName ?? '(이름 없음)'}</span>
-                      <span className="font-mono text-[11.5px] text-danger-500">{formatMoNumber(n.phoneNumber)}</span>
+                      <span className="font-mono text-[11.5px] text-danger-600">{formatMoNumber(n.phoneNumber)}</span>
                     </li>
                   ))}
                 </ul>

@@ -47,7 +47,7 @@ export default async function MockYouTubeConsentPage({ searchParams }: { searchP
         <div className="space-y-3">
           <div className="rounded-2xl border-2 border-warning-500/50 bg-warning-50 px-4 py-4">
             <div className="flex items-start gap-2">
-              <AlertTriangle size={20} strokeWidth={1.7} className="mt-0.5 shrink-0 text-warning-500" />
+              <AlertTriangle size={20} strokeWidth={1.7} className="mt-0.5 shrink-0 text-warning-600" />
               <div>
                 <p className="text-[15px] font-extrabold text-ink-900">
                   테스트용 모의 동의 화면입니다. 실제 구글 계정과 연결되지 않습니다.

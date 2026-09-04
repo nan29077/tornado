@@ -62,7 +62,7 @@ export function SafetyBanner() {
           return (
             <div key={r.key} className="rounded-lg border border-ink-100 px-2.5 py-2">
               <p className="text-[11px] text-ink-400">{r.label}</p>
-              <p className={`mt-0.5 text-[12px] font-bold ${isMock ? 'text-warning-500' : 'text-success-500'}`}>
+              <p className={`mt-0.5 text-[12px] font-bold ${isMock ? 'text-warning-600' : 'text-success-600'}`}>
                 {isMock ? 'mock' : mode}
               </p>
             </div>

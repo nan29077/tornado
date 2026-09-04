@@ -84,7 +84,7 @@ function InvalidLink({ reason }: { reason: 'NOT_FOUND' | 'EXPIRED' | 'USED' }) {
   if (reason === 'EXPIRED') {
     return (
       <Card>
-        <div className="flex items-center gap-2 text-warning-500">
+        <div className="flex items-center gap-2 text-warning-600">
           <Hourglass size={20} strokeWidth={1.7} />
           <p className="text-[16px] font-extrabold text-ink-900">확인 시간이 지났습니다</p>
         </div>
@@ -121,7 +121,7 @@ function InvalidLink({ reason }: { reason: 'NOT_FOUND' | 'EXPIRED' | 'USED' }) {
 
   return (
     <Card>
-      <div className="flex items-center gap-2 text-danger-500">
+      <div className="flex items-center gap-2 text-danger-600">
         <CircleX size={20} strokeWidth={1.7} />
         <p className="text-[16px] font-extrabold text-ink-900">유효하지 않은 링크입니다</p>
       </div>
@@ -281,7 +281,7 @@ async function RegisterScreen({ token }: { token: string }) {
 
       <Card>
         <div className="mb-2 flex items-center gap-2">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-warning-50 text-warning-500">
+          <span className="grid h-8 w-8 place-items-center rounded-lg bg-warning-50 text-warning-600">
             <AlertTriangle size={17} strokeWidth={1.7} />
           </span>
           <CardTitle>취소·환불과 이용 제한</CardTitle>
@@ -292,7 +292,7 @@ async function RegisterScreen({ token }: { token: string }) {
           <li>환불은 출금된 계좌로 처리되며, 처리까지 영업일 기준 시간이 소요될 수 있습니다.</li>
           <li>결제 실패가 반복되면 이용이 일시 잠금되며, 관리자 확인 후 해제됩니다.</li>
           <li className="flex gap-2">
-            <Ban size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-danger-500" />
+            <Ban size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-danger-600" />
             <span>만 19세 미만은 이용할 수 없습니다. 본인 명의 계좌로만 등록해 주세요.</span>
           </li>
         </ul>

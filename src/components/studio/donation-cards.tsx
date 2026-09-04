@@ -105,7 +105,7 @@ export function DonationCard({ item }: { item: DonationCardItem }) {
           <DeliveryChip label="오버레이" status={item.delivery.overlay} />
           <DeliveryChip label="MT" status={item.delivery.mt} />
           {refund ? (
-            <span className="inline-flex items-center gap-1 rounded-md bg-danger-50 px-2 py-0.5 text-[11px] font-semibold text-danger-500">
+            <span className="inline-flex items-center gap-1 rounded-md bg-danger-50 px-2 py-0.5 text-[11px] font-semibold text-danger-600">
               <Undo2 size={12} strokeWidth={1.8} />
               환불 {refund.text}
             </span>
@@ -122,9 +122,9 @@ export function DonationCard({ item }: { item: DonationCardItem }) {
 function DeliveryChip({ label, status }: { label: string; status: DeliveryStatus }) {
   const s = deliveryStatusLabel[status];
   const tone =
-    s.tone === 'success' ? 'text-success-500'
-    : s.tone === 'danger' ? 'text-danger-500'
-    : s.tone === 'warning' ? 'text-warning-500'
+    s.tone === 'success' ? 'text-success-600'
+    : s.tone === 'danger' ? 'text-danger-600'
+    : s.tone === 'warning' ? 'text-warning-600'
     : 'text-ink-400';
   return (
     <span className="inline-flex items-center gap-1 rounded-md bg-ink-50 px-2 py-0.5 text-[11px] font-semibold text-ink-500">

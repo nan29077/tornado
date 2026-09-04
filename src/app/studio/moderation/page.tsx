@@ -257,7 +257,7 @@ export default async function StudioModerationPage() {
                     <Td className="whitespace-nowrap tabular-nums">{formatKst(d.receivedAt, false)}</Td>
                     <Td>{d.displayName}</Td>
                     <Td className="max-w-[280px] break-words text-ink-500">{d.message}</Td>
-                    <Td className="max-w-[220px] break-words text-[12px] text-danger-500">{d.statusReason ?? '-'}</Td>
+                    <Td className="max-w-[220px] break-words text-[12px] text-danger-600">{d.statusReason ?? '-'}</Td>
                   </tr>
                 ))}
               </tbody>

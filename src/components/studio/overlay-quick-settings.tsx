@@ -73,7 +73,7 @@ interface EffectOption {
 
 const EFFECTS: EffectOption[] = [
   { value: 'DEFAULT', label: '기본', desc: '하트 + 별 혼합', Icon: Shapes, tint: 'bg-brand-50 text-brand-700' },
-  { value: 'HEART', label: '하트', desc: '하트가 떠오름', Icon: Heart, tint: 'bg-danger-50 text-danger-500' },
+  { value: 'HEART', label: '하트', desc: '하트가 떠오름', Icon: Heart, tint: 'bg-danger-50 text-danger-600' },
   { value: 'STAR', label: '별', desc: '별이 떠오름', Icon: Star, tint: 'bg-brand-50 text-brand-600' },
   { value: 'COIN', label: '코인', desc: '동전이 떠오름', Icon: Coins, tint: 'bg-brand-50 text-brand-700' },
   { value: 'FIREWORK', label: '폭죽', desc: '폭죽이 터짐', Icon: Sparkles, tint: 'bg-warning-50 text-accent-600' },

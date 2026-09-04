@@ -15,7 +15,7 @@ export function SupportForm({ defaultTransactionNo }: { defaultTransactionNo?: s
     return (
       <Card>
         <div className="flex items-start gap-3">
-          <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-success-50 text-success-500">
+          <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-success-50 text-success-600">
             <CheckCircle2 size={18} strokeWidth={1.7} />
           </span>
           <div className="min-w-0">

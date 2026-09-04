@@ -96,38 +96,38 @@ export function MtTemplateEditor({
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={isLms ? 'warning' : 'success'}>{isLms ? 'LMS (장문)' : 'SMS (단문)'}</Badge>
         <span className="text-[11px] tabular-nums text-ink-400">
-          치환 후 {bytes}바이트 · 단문 기준 {SMS_BYTE_LIMIT}바이트 · {body.length}/{maxLength}자
+          자동 입력 항목까지 채운 길이 {bytes}바이트 · 단문 한도 {SMS_BYTE_LIMIT}바이트 · {body.length}/{maxLength}자
         </span>
       </div>
 
       {isLms ? (
         <p className="text-[11px] leading-relaxed text-warning-600">
-          치환값이 들어가면 단문 한도를 넘어 장문(LMS)으로 발송됩니다. 건당 요금이 올라가니 의도한 것인지 확인해
-          주세요. 금액·닉네임이 길어지면 실제 문자는 이 미리보기보다 더 길어질 수 있습니다.
+          자동 입력 항목에 실제 값이 채워지면 단문 한도를 넘어 장문(LMS)으로 발송됩니다. 건당 요금이 올라가니 의도한
+          것인지 확인해 주세요. 금액·닉네임이 길어지면 실제 문자는 이 미리보기보다 더 길어질 수 있습니다.
         </p>
       ) : null}
 
       {overLength ? (
-        <p className="text-[11px] font-semibold text-danger-500">본문이 최대 길이를 넘었습니다.</p>
+        <p className="text-[11px] font-semibold text-danger-600">본문이 최대 길이를 넘었습니다.</p>
       ) : null}
 
       {unknownTokens.length > 0 ? (
-        <p className="text-[11px] font-semibold leading-relaxed text-danger-500">
-          모르는 치환자 {unknownTokens.join(', ')} 가 있습니다. 이대로 저장하면 값으로 바뀌지 않고 글자 그대로
+        <p className="text-[11px] font-semibold leading-relaxed text-danger-600">
+          {unknownTokens.join(', ')} 는 없는 항목입니다. 이대로 저장하면 값으로 채워지지 않고 글자 그대로
           발송됩니다.
         </p>
       ) : null}
 
       {bracketTokens.length > 0 ? (
-        <p className="text-[11px] font-semibold leading-relaxed text-danger-500">
-          {bracketTokens.join(', ')} 는 대괄호라 치환되지 않습니다. 중괄호(
+        <p className="text-[11px] font-semibold leading-relaxed text-danger-600">
+          {bracketTokens.join(', ')} 는 대괄호라 값으로 채워지지 않습니다. 중괄호(
           {'{ }'})로 바꿔 주세요.
         </p>
       ) : null}
 
       <div className="rounded-xl border border-ink-100 bg-white p-3">
         <p className="text-[11px] font-semibold text-ink-500">실제 발송 미리보기 (예시 값)</p>
-        <p className="mt-1.5 text-[12.5px] leading-relaxed whitespace-pre-wrap text-ink-800">{preview}</p>
+        <p className="mt-1.5 text-[12.5px] leading-relaxed whitespace-pre-wrap text-ink-700">{preview}</p>
       </div>
     </>
   );

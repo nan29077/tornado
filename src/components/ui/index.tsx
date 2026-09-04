@@ -103,9 +103,10 @@ const toneClass: Record<Tone, string> = {
   neutral: 'bg-ink-100 text-ink-500',
   // 밝은 꿀색 배경 위에는 진한 브랜드색 글자만 쓴다 (대비 확보)
   brand: 'bg-brand-100 text-brand-800',
-  success: 'bg-success-50 text-[#0b7d59]',
-  warning: 'bg-warning-50 text-warning-500',
-  danger: 'bg-danger-50 text-danger-500',
+  // 예전에는 팔레트에 흰 배경용 진한 초록이 없어 색값을 직접 박아 두었다. 이제 토큰이 있다.
+  success: 'bg-success-50 text-success-600',
+  warning: 'bg-warning-50 text-warning-600',
+  danger: 'bg-danger-50 text-danger-600',
 };
 
 export function Badge({
@@ -140,7 +141,15 @@ export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInp
   );
 }
 
-export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+/**
+ * React.ComponentProps<'textarea'> 를 쓰는 이유
+ * ---------------------------------------------
+ * TextareaHTMLAttributes 에는 ref 가 없어 <Textarea ref={...}> 가 타입 오류였다.
+ * 감사 문자 편집기처럼 "버튼을 눌러 커서 자리에 글자를 넣는" 화면은 ref 로 커서
+ * 위치(selectionStart)를 읽어야 만들 수 있다. React 19 에서 ref 는 일반 prop 이므로
+ * ComponentProps 로 바꾸면 그대로 전달된다.
+ */
+export function Textarea({ className, ...props }: React.ComponentProps<'textarea'>) {
   return (
     <textarea
       className={cx(
@@ -188,7 +197,7 @@ export function Field({
       </span>
       {children}
       {error ? (
-        <span role="alert" className="mt-1.5 block text-[12px] leading-relaxed font-semibold text-danger-500">
+        <span role="alert" className="mt-1.5 block text-[12px] leading-relaxed font-semibold text-danger-600">
           {error}
         </span>
       ) : hint ? (
@@ -234,9 +243,9 @@ export function StatTile({
 }) {
   const valueTone =
     tone === 'brand' ? 'text-brand-700'
-    : tone === 'success' ? 'text-success-500'
-    : tone === 'danger' ? 'text-danger-500'
-    : tone === 'warning' ? 'text-warning-500'
+    : tone === 'success' ? 'text-success-600'
+    : tone === 'danger' ? 'text-danger-600'
+    : tone === 'warning' ? 'text-warning-600'
     : 'text-ink-900';
   return (
     <div className="card min-h-[112px] p-4 transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-lift)] sm:p-5">

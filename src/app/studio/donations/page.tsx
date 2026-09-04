@@ -175,7 +175,7 @@ export default async function StudioDonationsPage({
                   aria-current={active ? 'page' : undefined}
                   className={cx(
                     'inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-[12.5px] font-bold transition-colors',
-                    active ? 'bg-brand-400 text-ink-900 shadow-sm' : 'text-ink-400 hover:bg-ink-50 hover:text-ink-800',
+                    active ? 'bg-brand-400 text-ink-900 shadow-sm' : 'text-ink-400 hover:bg-ink-50 hover:text-ink-700',
                   )}
                 >
                   <Icon size={15} strokeWidth={1.7} />

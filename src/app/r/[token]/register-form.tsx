@@ -111,7 +111,7 @@ export function RegisterForm({
           />
         </div>
         {nameError ? (
-          <p className="mt-1.5 text-[12px] font-semibold text-danger-500">{nameError}</p>
+          <p className="mt-1.5 text-[12px] font-semibold text-danger-600">{nameError}</p>
         ) : (
           <p className="mt-1.5 text-[12px] text-ink-400">
             {DONOR_NAME_MAX}자 이내. 비워두면 번호 끝 4자리(

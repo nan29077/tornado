@@ -194,7 +194,7 @@ export default async function AdminRefundsPage({
                         {donationStatusLabel[r.donation.status].text}
                       </Badge>
                       {r.donation.settledAt ? (
-                        <span className="mt-0.5 block text-[11px] text-warning-500">
+                        <span className="mt-0.5 block text-[11px] text-warning-600">
                           지급 완료분 · 다음 정산 차감
                         </span>
                       ) : null}

@@ -214,7 +214,7 @@ export function WebDonationPanel({
                     />
                     <span className="text-[14px] font-bold text-ink-700">원</span>
                     {!amountValid && customAmount ? (
-                      <span className="text-[12px] font-semibold text-danger-500">
+                      <span className="text-[12px] font-semibold text-danger-600">
                         {formatWon(min)} ~ {formatWon(max)} 사이로 입력해 주세요.
                       </span>
                     ) : null}

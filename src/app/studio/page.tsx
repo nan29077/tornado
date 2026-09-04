@@ -181,7 +181,7 @@ export default async function StudioDashboardPage() {
 
         {/* mock 안내: 큰 박스 대신 한 줄 띠 */}
         <p className="flex items-start gap-2 rounded-xl border border-warning-500/25 bg-warning-50 px-3.5 py-2.5 text-[12px] leading-relaxed text-ink-700">
-          <Info size={15} strokeWidth={1.8} className="mt-0.5 shrink-0 text-warning-500" />
+          <Info size={15} strokeWidth={1.8} className="mt-0.5 shrink-0 text-warning-600" />
           <span>
             현재 mock 모드입니다. 결제·문자·유튜브 전송이 모두 모의 처리되며, 화면의 성공 표시는 실제 금융 거래나 실제
             유튜브 전송이 아닙니다.
@@ -233,7 +233,7 @@ export default async function StudioDashboardPage() {
                   className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-ink-50"
                 >
                   <span className="flex min-w-0 items-center gap-2.5">
-                    <span className={l.ok ? 'text-success-500' : 'text-warning-500'}>
+                    <span className={l.ok ? 'text-success-600' : 'text-warning-600'}>
                       {l.ok ? <CircleCheck size={16} strokeWidth={1.8} /> : <CircleAlert size={16} strokeWidth={1.8} />}
                     </span>
                     <span className="min-w-0">
@@ -331,7 +331,7 @@ function Metric({
         {value}
       </p>
       {sub ? (
-        <p className={subTone === 'danger' ? 'mt-0.5 text-[11.5px] text-danger-500' : 'mt-0.5 text-[11.5px] text-ink-400'}>
+        <p className={subTone === 'danger' ? 'mt-0.5 text-[11.5px] text-danger-600' : 'mt-0.5 text-[11.5px] text-ink-400'}>
           {sub}
         </p>
       ) : null}

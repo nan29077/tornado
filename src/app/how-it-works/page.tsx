@@ -246,8 +246,8 @@ function Line({
   tone: 'neutral' | 'warning' | 'danger';
 }) {
   const badge =
-    tone === 'danger' ? 'bg-danger-50 text-danger-500'
-    : tone === 'warning' ? 'bg-warning-50 text-warning-500'
+    tone === 'danger' ? 'bg-danger-50 text-danger-600'
+    : tone === 'warning' ? 'bg-warning-50 text-warning-600'
     : 'bg-ink-50 text-brand-700';
   return (
     <div className="flex gap-3">

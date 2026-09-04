@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { Camera, Music2, Radio, ThumbsUp, Video } from 'lucide-react';
-import { Badge, Card, CardTitle, DataRow, Field, Input, Notice, SectionTitle, Textarea, cx } from '@/components/ui';
+import { Badge, Card, DataRow, Field, Input, Notice, SectionTitle, Textarea, cx } from '@/components/ui';
 import { DEFAULT_BANNERS, defaultBannerFor } from '@/lib/banners';
 import { PageHeader } from '@/components/layout/console-shell';
 import { ActionForm } from '@/components/studio/action-form';
@@ -25,9 +25,8 @@ import { SNS_PLATFORMS, type SnsPlatform } from '@/lib/sns-platforms';
 import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { resolvePolicy } from '@/server/services/limits';
-import { env } from '@/lib/env';
 import { formatWon } from '@/lib/money';
-import { moNumberStatusLabel, paymentModeLabel } from '@/lib/labels';
+import { moNumberStatusLabel } from '@/lib/labels';
 import { getPublicBaseUrl } from '@/server/public-base-url';
 
 export const dynamic = 'force-dynamic';
@@ -97,11 +96,23 @@ function snsLiveOf(
 const SETTINGS_TABS = [
   { key: 'amount', label: '후원금' },
   { key: 'thanks', label: '감사문자' },
-  { key: 'sns', label: 'SNS·라이브' },
-  { key: 'payment', label: '결제 모드' },
   { key: 'number', label: '문자번호' },
   { key: 'page', label: '후원페이지' },
 ] as const;
+
+/**
+ * 없어진 탭으로 들어온 주소를 대신 받아 준다.
+ *
+ * - sns     → SNS·라이브 설정을 후원페이지 탭에 합쳤다.
+ * - payment → 결제 모드는 전부 읽기 전용이라 크리에이터가 할 수 있는 일이 없어 뺐다.
+ *
+ * 이 표가 없으면 즐겨찾기나 예전 링크로 들어온 크리에이터가 아무 설명 없이 첫 탭으로
+ * 떨어져 "설정이 사라졌다"고 오해한다.
+ */
+const LEGACY_TABS: Record<string, SettingsTab> = {
+  sns: 'page',
+  payment: 'number',
+};
 
 /** 감사 문자 미리보기 예시값. 실제 발송과 같은 템플릿 함수에 넣어 결과를 보여준다. */
 const THANKS_PREVIEW = {
@@ -122,8 +133,8 @@ export default async function StudioSettingsPage({
   const { creatorId } = await requireCreator();
   const requestedTab = (await searchParams).tab;
   const activeTab: SettingsTab = SETTINGS_TABS.some((tab) => tab.key === requestedTab)
-    ? requestedTab as SettingsTab
-    : 'amount';
+    ? (requestedTab as SettingsTab)
+    : (LEGACY_TABS[requestedTab ?? ''] ?? 'amount');
 
   const [creator, moNumbers, policy] = await Promise.all([
     prisma.creatorProfile.findUnique({
@@ -136,7 +147,6 @@ export default async function StudioSettingsPage({
         donationAmount: true,
         minAmount: true,
         maxAmount: true,
-        paymentMode: true,
         thanksMtMessage: true,
         bannerUrl: true,
         liveOn: true,
@@ -162,7 +172,6 @@ export default async function StudioSettingsPage({
 
   if (!creator) notFound();
 
-  const effectiveMode = creator.paymentMode ?? 'CONFIRM_LINK';
   // 설정 가능 범위 = 관리자 지정 범위 ∩ 한도 정책 범위
   const effMin = creator.minAmount > policy.minAmount ? creator.minAmount : policy.minAmount;
   const effMax = creator.maxAmount < policy.maxAmount ? creator.maxAmount : policy.maxAmount;
@@ -196,11 +205,16 @@ export default async function StudioSettingsPage({
       <nav
         aria-label="후원 설정 메뉴"
         /**
-         * 탭이 6개다. 360px 폭 휴대폰에서 6칸 그리드로 나누면 한 칸이 50px 남짓이라
-         * "후원페이지" 같은 이름이 두 줄로 접히거나 잘렸다. 좁은 화면에서는 가로 스크롤로
-         * 두어 글자가 온전히 보이게 하고, sm 이상에서만 6칸으로 나눠 담는다.
+         * 가로 스크롤을 쓰지 않는다.
+         *
+         * 예전에는 탭이 6개라 360px 폭 휴대폰에 다 들어가지 않아 가로 스크롤로 두었다.
+         * 그런데 탭 줄이 화면 오른쪽 밖으로 나가 있어 뒤쪽 탭이 있는지 모른 채 지나치고,
+         * 탭 줄에 손가락이 닿으면 화면이 옆으로 밀려 페이지가 흔들리는 느낌을 줬다.
+         *
+         * 탭을 4개로 줄였으므로 좁은 화면에서는 2x2 로 접고 sm 이상에서 한 줄로 편다.
+         * 모든 탭이 첫 화면에 다 보이고, 옆으로 미는 동작 자체가 없어진다.
          */
-        className="mb-5 flex snap-x snap-mandatory gap-1 overflow-x-auto rounded-2xl border border-ink-100 bg-white p-1 shadow-[0_8px_24px_rgba(23,22,26,0.05)] [scrollbar-width:none] sm:grid sm:grid-cols-6 sm:gap-0 sm:overflow-hidden"
+        className="mb-5 grid grid-cols-2 gap-1 rounded-2xl border border-ink-100 bg-white p-1 shadow-[0_8px_24px_rgba(23,22,26,0.05)] sm:grid-cols-4 sm:gap-0"
       >
         {SETTINGS_TABS.map((tab) => (
           <Link
@@ -208,8 +222,8 @@ export default async function StudioSettingsPage({
             href={`/studio/settings?tab=${tab.key}`}
             aria-current={activeTab === tab.key ? 'page' : undefined}
             className={cx(
-              'flex min-h-11 shrink-0 snap-start items-center justify-center rounded-xl whitespace-nowrap px-3 text-center text-[12px] font-bold transition-colors sm:shrink sm:px-3 sm:text-[13px]',
-              activeTab === tab.key ? 'bg-brand-400 text-ink-900 shadow-sm' : 'text-ink-400 hover:bg-ink-50 hover:text-ink-800',
+              'flex min-h-11 items-center justify-center rounded-xl px-2 text-center text-[12.5px] font-bold whitespace-nowrap transition-colors sm:px-3 sm:text-[13px]',
+              activeTab === tab.key ? 'bg-brand-400 text-ink-900 shadow-sm' : 'text-ink-400 hover:bg-ink-50 hover:text-ink-700',
             )}
           >
             {tab.label}
@@ -251,10 +265,28 @@ export default async function StudioSettingsPage({
             description="후원 결제가 완료됐을 때 후원자에게 발송되는 문자 본문입니다."
           />
           <Card>
-            <ActionForm action={updateThanksMessageAction} submitLabel="감사 문자 저장">
+            {/*
+              저장했다는 것이 확실히 보여야 한다.
+              예전에는 폼 맨 아래에 안내줄만 떴는데, 입력창이 길어 스크롤을 내린 상태면
+              그 줄이 화면 밖이라 눌렸는지 알 수 없었다. 두 번째 저장부터는 같은 문구가
+              같은 자리에 그대로 있어 화면이 전혀 바뀌지 않는 문제도 있었다.
+              그래서 프로젝트 공용 알림창(물음 → 확인 → 처리 → 완료)을 붙인다.
+            */}
+            <ActionForm
+              action={updateThanksMessageAction}
+              submitLabel="감사 문자 저장"
+              confirmTitle="감사 문자를 저장할까요?"
+              confirmMessage="저장하면 다음 후원부터 이 문구가 후원자에게 발송됩니다."
+              doneTitle="감사 문자가 저장되었습니다"
+            >
               <ThanksMessageEditor
                 defaultBody={creator.thanksMtMessage ?? ''}
-                variables={THANKS_MT_VARIABLES.map((v) => ({ token: v.token, label: v.label }))}
+                variables={THANKS_MT_VARIABLES.map((v) => ({
+                  token: v.token,
+                  label: v.label,
+                  button: v.button,
+                  sample: v.sample,
+                }))}
                 maxLength={THANKS_MT_MAX_LENGTH}
                 defaultPreview={thanksDefaultPreview}
               />
@@ -279,105 +311,6 @@ export default async function StudioSettingsPage({
                 앞에 자동으로 붙습니다.
               </Notice>
             </div>
-          </Card>
-        </section> : null}
-
-        {activeTab === 'sns' ? <section>
-          <SectionTitle
-            title="SNS 링크 · 라이브"
-            description="등록한 링크는 후원 페이지에 버튼으로 표시됩니다. 방송 중인 플랫폼의 스위치를 켜면 프로필이 두근거리고 ON AIR 배지가 붙습니다."
-          />
-          <Card>
-            <ActionForm action={updateSnsLinksAction} submitLabel="SNS 링크 저장">
-              <div className="space-y-3">
-                {SNS_PLATFORMS.map((platform) => {
-                  const Icon = SNS_ICONS[platform.value];
-                  const url = snsUrlOf(creator, platform.value);
-                  const live = snsLiveOf(creator, platform.value);
-                  return (
-                    <div key={platform.value} className="rounded-2xl border border-ink-100 bg-white p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="flex min-w-0 items-center gap-2 text-[13.5px] font-extrabold text-ink-900">
-                          <span
-                            className="grid h-8 w-8 shrink-0 place-items-center rounded-xl"
-                            style={{ backgroundColor: `${platform.color}14`, color: platform.color }}
-                          >
-                            <Icon size={16} strokeWidth={1.8} />
-                          </span>
-                          {platform.label}
-                        </span>
-
-                        {/*
-                          플랫폼마다 스위치를 따로 둔다. 동시송출을 하는 크리에이터가 있어
-                          하나만 고르게 하면 나머지 방송은 배지가 붙지 않는다.
-                        */}
-                        <label className="flex shrink-0 cursor-pointer items-center gap-2">
-                          <span className="text-[11.5px] font-bold text-ink-500">방송중</span>
-                          <input
-                            type="checkbox"
-                            name={platform.liveField}
-                            defaultChecked={live}
-                            className="peer sr-only"
-                          />
-                          <span className="relative h-6 w-11 rounded-full bg-ink-200 transition-colors peer-checked:bg-danger-500 after:absolute after:top-1 after:left-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-5" />
-                        </label>
-                      </div>
-
-                      <Input
-                        name={platform.urlField}
-                        defaultValue={url}
-                        placeholder={platform.placeholder}
-                        className="mt-3"
-                      />
-                      <p className="mt-1.5 text-[11.5px] text-ink-400">{platform.hostHint} 주소만 사용할 수 있습니다.</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </ActionForm>
-
-            <div className="mt-4">
-              <Notice tone="brand" title="스위치를 켜면 후원 페이지가 이렇게 바뀝니다">
-                <span className="flex items-center gap-1.5">
-                  <Radio size={14} strokeWidth={1.8} className="shrink-0 text-danger-500" />
-                  프로필 사진이 두근두근 움직이고, 그 아래에 <strong className="text-ink-900">ON AIR</strong> 배지가
-                  붙습니다. 후원자가 배지를 누르면 그 플랫폼 링크로 이동합니다.
-                </span>
-                <span className="mt-2 block">
-                  여러 곳에 동시송출 중이면 스위치를 여러 개 켜도 됩니다. 배지도 플랫폼마다 하나씩 표시됩니다.
-                  방송이 끝나면 스위치를 꺼주세요.
-                </span>
-              </Notice>
-            </div>
-          </Card>
-        </section> : null}
-
-        {activeTab === 'payment' ? <section>
-          <SectionTitle title="결제 모드" description="결제 모드는 크리에이터가 변경할 수 없습니다." />
-          <Card>
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <CardTitle>{paymentModeLabel[effectiveMode]}</CardTitle>
-              <Badge tone="neutral">읽기 전용</Badge>
-            </div>
-            <div className="mb-3">
-              <DataRow label="확인형 (CONFIRM_LINK)" value={paymentModeLabel.CONFIRM_LINK} />
-              <DataRow label="즉시형 (DIRECT_TRIGGER)" value={paymentModeLabel.DIRECT_TRIGGER} />
-              <DataRow
-                label="즉시형 허용 여부"
-                value={
-                  env.safety.allowDirectTrigger ? (
-                    <Badge tone="success">플랫폼 허용</Badge>
-                  ) : (
-                    <Badge tone="warning">전체 비활성</Badge>
-                  )
-                }
-              />
-            </div>
-            <Notice tone="warning" title="즉시형은 크리에이터가 켤 수 없습니다">
-              즉시형(DIRECT_TRIGGER)은 금융사 서면승인 등록 후 통합 관리자만 활성화할 수 있습니다. 문자 수신 즉시
-              출금이 일어나는 방식이므로, 서면승인 없이 사용하면 전자금융거래 관련 규정을 위반할 수 있습니다. 변경이
-              필요하면 고객센터를 통해 신청해 주세요.
-            </Notice>
           </Card>
         </section> : null}
 
@@ -486,11 +419,86 @@ export default async function StudioSettingsPage({
               </Field>
 
               <Notice tone="neutral">
-                라이브 링크와 방송중 스위치는 <strong className="text-ink-900">SNS·라이브</strong> 탭으로 옮겼습니다.
-                유튜브·인스타그램·틱톡·페이스북 링크를 각각 등록하고, 방송 중인 플랫폼의 스위치만 켜면 됩니다.
+                유튜브·인스타그램·틱톡·페이스북 링크와 <strong className="text-ink-900">방송중</strong> 스위치는 이
+                페이지 아래쪽 <strong className="text-ink-900">SNS 링크 · 라이브</strong> 칸에서 설정합니다.
               </Notice>
             </ActionForm>
           </Card>
+
+          {/*
+            SNS·라이브는 원래 별도 탭이었다. 다루는 내용이 "후원 페이지에 무엇이 보이나"로
+            후원페이지 설정과 같아, 탭을 하나 줄이려고 이 탭 아래로 합쳤다.
+            저장 폼은 서로 다른 액션이므로 카드는 따로 둔다.
+          */}
+          <div className="mt-6">
+          <SectionTitle
+            title="SNS 링크 · 라이브"
+            description="등록한 링크는 후원 페이지에 버튼으로 표시됩니다. 방송 중인 플랫폼의 스위치를 켜면 프로필이 두근거리고 ON AIR 배지가 붙습니다."
+          />
+          <Card>
+            <ActionForm action={updateSnsLinksAction} submitLabel="SNS 링크 저장">
+              <div className="space-y-3">
+                {SNS_PLATFORMS.map((platform) => {
+                  const Icon = SNS_ICONS[platform.value];
+                  const url = snsUrlOf(creator, platform.value);
+                  const live = snsLiveOf(creator, platform.value);
+                  return (
+                    <div key={platform.value} className="rounded-2xl border border-ink-100 bg-white p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="flex min-w-0 items-center gap-2 text-[13.5px] font-extrabold text-ink-900">
+                          <span
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-xl"
+                            style={{ backgroundColor: `${platform.color}14`, color: platform.color }}
+                          >
+                            <Icon size={16} strokeWidth={1.8} />
+                          </span>
+                          {platform.label}
+                        </span>
+
+                        {/*
+                          플랫폼마다 스위치를 따로 둔다. 동시송출을 하는 크리에이터가 있어
+                          하나만 고르게 하면 나머지 방송은 배지가 붙지 않는다.
+                        */}
+                        <label className="flex shrink-0 cursor-pointer items-center gap-2">
+                          <span className="text-[11.5px] font-bold text-ink-500">방송중</span>
+                          <input
+                            type="checkbox"
+                            name={platform.liveField}
+                            defaultChecked={live}
+                            className="peer sr-only"
+                          />
+                          <span className="relative h-6 w-11 rounded-full bg-ink-200 transition-colors peer-checked:bg-danger-500 after:absolute after:top-1 after:left-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-5" />
+                        </label>
+                      </div>
+
+                      <Input
+                        name={platform.urlField}
+                        defaultValue={url}
+                        placeholder={platform.placeholder}
+                        className="mt-3"
+                      />
+                      <p className="mt-1.5 text-[11.5px] text-ink-400">{platform.hostHint} 주소만 사용할 수 있습니다.</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </ActionForm>
+
+            <div className="mt-4">
+              <Notice tone="brand" title="스위치를 켜면 후원 페이지가 이렇게 바뀝니다">
+                <span className="flex items-center gap-1.5">
+                  <Radio size={14} strokeWidth={1.8} className="shrink-0 text-danger-600" />
+                  프로필 사진이 두근두근 움직이고, 그 아래에 <strong className="text-ink-900">ON AIR</strong> 배지가
+                  붙습니다. 후원자가 배지를 누르면 그 플랫폼 링크로 이동합니다.
+                </span>
+                <span className="mt-2 block">
+                  여러 곳에 동시송출 중이면 스위치를 여러 개 켜도 됩니다. 배지도 플랫폼마다 하나씩 표시됩니다.
+                  방송이 끝나면 스위치를 꺼주세요.
+                </span>
+              </Notice>
+            </div>
+          </Card>
+          </div>
         </section> : null}
       </div>
     </>

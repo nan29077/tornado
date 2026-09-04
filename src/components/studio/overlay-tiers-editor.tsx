@@ -354,7 +354,7 @@ function TierRow({
             type="button"
             onClick={onRemove}
             aria-label="구간 삭제"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-ink-200 text-ink-400 hover:bg-danger-50 hover:text-danger-500"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-ink-200 text-ink-400 hover:bg-danger-50 hover:text-danger-600"
           >
             <Trash2 size={16} strokeWidth={1.7} />
           </button>

@@ -1,6 +1,8 @@
 import { ChevronDown, ExternalLink } from 'lucide-react';
 import { Badge, Card, CardTitle, DataRow, Field, Input, LinkButton, Notice, SectionTitle, Textarea } from '@/components/ui';
+import { headers } from 'next/headers';
 import { PageHeader } from '@/components/layout/console-shell';
+import { OriginWarning } from '@/components/studio/origin-warning';
 import { ActionForm } from '@/components/studio/action-form';
 import { CopyField } from '@/components/studio/copy';
 import { OverlayTiersEditor } from '@/components/studio/overlay-tiers-editor';
@@ -65,6 +67,14 @@ function readTestPayload(payload: unknown): { donorName: string; amount: string;
 type Search = Record<string, string | string[] | undefined>;
 
 export default async function StudioOverlayPage({ searchParams }: { searchParams: Promise<Search> }) {
+  /**
+   * 서버가 인식한 접속 주소.
+   * Next 의 서버 액션 출처 검사가 이 값을 기준으로 삼으므로, 브라우저 주소와 다르면
+   * 모든 서버 액션이 거부된다. 화면에서 비교해 보여 주기 위해 여기서 읽는다.
+   */
+  const h = await headers();
+  const serverHost = h.get('x-forwarded-host') ?? h.get('host') ?? '';
+
   const { creatorId } = await requireCreator();
   const sp = await searchParams;
   const rawTab = Array.isArray(sp.tab) ? sp.tab[0] : sp.tab;
@@ -125,6 +135,12 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
   return (
     <>
       <PageHeader title="후원·게임 오버레이" description="OBS·PRISM 브라우저 소스를 관리합니다. 후원 알림과 시청자 참여 게임을 각각 방송 화면에 올릴 수 있습니다." />
+
+      {/*
+        접속 주소와 서버가 아는 주소가 어긋나면 [테스트 후원 보내기]·[설정 저장]이
+        아무 문구 없이 거부된다. 그 상태를 눈에 보이게 알린다. 정상이면 아무것도 그리지 않는다.
+      */}
+      <OriginWarning serverHost={serverHost} />
 
       <div className="space-y-6">
         {/*
@@ -421,7 +437,7 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
                 다만 <strong>방송용 브라우저 소스가 연결돼 있으면 실제 방송 화면에도 그대로 표시됩니다.</strong>{' '}
                 시청자에게 보이지 않게 확인하려면 방송을 시작하기 전이나 오버레이 소스를 잠시 숨긴 상태에서 눌러 주세요.
                 {liveConnections > 0 ? (
-                  <span className="mt-1 block font-bold text-danger-500">
+                  <span className="mt-1 block font-bold text-danger-600">
                     지금 방송용 소스 {liveConnections}개가 연결돼 있습니다. 방송 중이라면 시청자에게도 보입니다.
                   </span>
                 ) : null}

@@ -49,7 +49,7 @@ export function NicknameForm({
           />
         </Field>
 
-        {error ? <p className="text-[12px] font-semibold text-danger-500">{error}</p> : null}
+        {error ? <p className="text-[12px] font-semibold text-danger-600">{error}</p> : null}
 
         <div className="rounded-xl bg-brand-50 px-3.5 py-3">
           <p className="flex items-center gap-1.5 text-[11.5px] font-bold text-brand-700">

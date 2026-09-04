@@ -64,7 +64,7 @@ export function ActionForm({
             aria-live="polite"
             className={cx(
               'block max-w-[220px] text-[11px] leading-tight',
-              state.ok ? 'text-success-500' : 'text-danger-500',
+              state.ok ? 'text-success-600' : 'text-danger-600',
             )}
           >
             {state.message}
@@ -179,7 +179,7 @@ export function DatalistActionForm({
         </Button>
       </div>
       {typedButUnmatched ? (
-        <span className="text-[11px] leading-tight font-semibold text-danger-500">
+        <span className="text-[11px] leading-tight font-semibold text-danger-600">
           목록에 없는 이름입니다. 칸을 비우면 전체 목록이 나옵니다.
         </span>
       ) : hint ? (
@@ -189,7 +189,7 @@ export function DatalistActionForm({
         <span
           role="status"
           aria-live="polite"
-          className={cx('text-[11px] leading-tight', state.ok ? 'text-success-500' : 'text-danger-500')}
+          className={cx('text-[11px] leading-tight', state.ok ? 'text-success-600' : 'text-danger-600')}
         >
           {state.message}
         </span>
@@ -267,7 +267,7 @@ export function SelectActionForm({
         <span
           role="status"
           aria-live="polite"
-          className={cx('text-[11px] leading-tight', state.ok ? 'text-success-500' : 'text-danger-500')}
+          className={cx('text-[11px] leading-tight', state.ok ? 'text-success-600' : 'text-danger-600')}
         >
           {state.message}
         </span>

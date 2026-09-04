@@ -210,7 +210,8 @@ export default async function StudioSettlementPage({
 
       <nav
         aria-label="정산 관리 메뉴"
-        className="mb-5 grid grid-cols-4 overflow-hidden rounded-2xl border border-ink-100 bg-white p-1 shadow-[0_8px_24px_rgba(23,22,26,0.05)]"
+        /* 후원 설정 탭과 같은 규칙: 좁은 화면에서는 2x2 로 접어 글자가 잘리지 않게 한다. */
+        className="mb-5 grid grid-cols-2 gap-1 rounded-2xl border border-ink-100 bg-white p-1 shadow-[0_8px_24px_rgba(23,22,26,0.05)] sm:grid-cols-4 sm:gap-0"
       >
         {TABS.map((tab) => (
           <Link
@@ -218,8 +219,8 @@ export default async function StudioSettlementPage({
             href={`/studio/settlement?tab=${tab.key}${sp.month ? `&month=${sp.month}` : ''}`}
             aria-current={activeTab === tab.key ? 'page' : undefined}
             className={cx(
-              'flex min-h-11 items-center justify-center rounded-xl px-1 text-center text-[12px] font-bold transition-colors sm:px-3 sm:text-[13px]',
-              activeTab === tab.key ? 'bg-brand-400 text-ink-900 shadow-sm' : 'text-ink-400 hover:bg-ink-50 hover:text-ink-800',
+              'flex min-h-11 items-center justify-center rounded-xl px-2 text-center text-[12.5px] font-bold whitespace-nowrap transition-colors sm:px-3 sm:text-[13px]',
+              activeTab === tab.key ? 'bg-brand-400 text-ink-900 shadow-sm' : 'text-ink-400 hover:bg-ink-50 hover:text-ink-700',
             )}
           >
             {tab.label}
@@ -321,7 +322,7 @@ export default async function StudioSettlementPage({
                       key={w}
                       className={cx(
                         'text-center text-[11px] font-extrabold',
-                        i === 0 ? 'text-danger-500' : i === 6 ? 'text-brand-700' : 'text-ink-400',
+                        i === 0 ? 'text-danger-600' : i === 6 ? 'text-brand-700' : 'text-ink-400',
                       )}
                     >
                       {w}
@@ -353,7 +354,7 @@ export default async function StudioSettlementPage({
                             isToday
                               ? 'inline-grid h-5 w-5 place-items-center rounded-full bg-brand-400 text-center text-ink-900'
                               : isHoliday || dow === 0
-                                ? 'text-danger-500'
+                                ? 'text-danger-600'
                                 : dow === 6
                                   ? 'text-brand-700'
                                   : 'text-ink-400',
@@ -529,7 +530,7 @@ export default async function StudioSettlementPage({
                           <Td>
                             <Badge tone={st.tone}>{st.text}</Badge>
                             {r.status === 'PAYOUT_FAILED' && r.payoutFailReason ? (
-                              <span className="mt-0.5 block max-w-[160px] break-words text-[11px] text-danger-500">
+                              <span className="mt-0.5 block max-w-[160px] break-words text-[11px] text-danger-600">
                                 {r.payoutFailReason}
                               </span>
                             ) : null}
@@ -539,7 +540,7 @@ export default async function StudioSettlementPage({
                           <Td
                             className={cx(
                               'text-right tabular-nums',
-                              r.withholding > 0n ? 'text-danger-500' : 'text-ink-400',
+                              r.withholding > 0n ? 'text-danger-600' : 'text-ink-400',
                             )}
                           >
                             {r.withholding > 0n ? `-${formatWon(r.withholding)}` : '0원'}
@@ -707,8 +708,8 @@ export default async function StudioSettlementPage({
                         <Td
                           className={
                             e.amount < 0n
-                              ? 'whitespace-nowrap text-right font-semibold tabular-nums text-danger-500'
-                              : 'whitespace-nowrap text-right font-semibold tabular-nums text-success-500'
+                              ? 'whitespace-nowrap text-right font-semibold tabular-nums text-danger-600'
+                              : 'whitespace-nowrap text-right font-semibold tabular-nums text-success-600'
                           }
                         >
                           {e.amount >= 0n ? '+' : ''}

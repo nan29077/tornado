@@ -180,7 +180,7 @@ export default async function RegistrationCompletePage({
         {creator ? <CompleteRedirect creatorCode={creator.code} creatorName={creator.displayName} /> : null}
 
         <Card>
-          <div className="flex items-center gap-2 text-success-500">
+          <div className="flex items-center gap-2 text-success-600">
             <CircleCheck size={20} strokeWidth={1.7} />
             <p className="text-[17px] font-extrabold text-ink-900">
               {resultMethod === 'CARD' ? '카드 등록이 완료되었습니다' : '계좌 등록이 완료되었습니다'}
@@ -274,7 +274,7 @@ function FailCard({ token, title, message }: { token: string; title: string; mes
   return (
     <div className="space-y-3">
       <Card>
-        <div className="flex items-center gap-2 text-danger-500">
+        <div className="flex items-center gap-2 text-danger-600">
           <CircleX size={20} strokeWidth={1.7} />
           <p className="text-[16px] font-extrabold text-ink-900">{title}</p>
         </div>

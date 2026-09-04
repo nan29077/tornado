@@ -274,7 +274,7 @@ export default async function StudioDonationDetailPage({ params }: { params: Pro
                             <span className="ml-2 text-ink-400">{formatKst(a.createdAt)}</span>
                             {a.latencyMs != null ? <span className="ml-2 text-ink-400">{a.latencyMs}ms</span> : null}
                             {a.errorCode ? (
-                              <span className="ml-2 text-danger-500">
+                              <span className="ml-2 text-danger-600">
                                 {a.errorCode} {a.errorMessage ?? ''}
                               </span>
                             ) : null}

@@ -163,7 +163,7 @@ export default async function StudioYouTubePage({
                   value={
                     connection.lastError ? (
                       // 구글 API 응답 원문에는 내부 설정 정보가 섞일 수 있어 그대로 노출하지 않는다.
-                      <span className="text-danger-500">
+                      <span className="text-danger-600">
                         마지막 시도에서 문제가 있었습니다. [현재 라이브 방송 조회]로 재시도해 보세요.
                       </span>
                     ) : (

@@ -25,7 +25,7 @@ export function MoNumberPanel({ numbers, guideText }: { numbers: MoNumberView[];
     return (
       <Card>
         <div className="flex gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-warning-50 text-warning-500">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-warning-50 text-warning-600">
             <Phone size={18} strokeWidth={1.7} />
           </span>
           <div>
@@ -117,7 +117,7 @@ function CopyButton({ text }: { text: string }) {
       }}
       className={cx(
         'flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-[12px] font-bold transition-colors',
-        done ? 'border-success-500/40 bg-success-50 text-success-500' : 'border-ink-200 bg-white text-ink-700 hover:bg-ink-50',
+        done ? 'border-success-500/40 bg-success-50 text-success-600' : 'border-ink-200 bg-white text-ink-700 hover:bg-ink-50',
       )}
     >
       {done ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={1.8} />}

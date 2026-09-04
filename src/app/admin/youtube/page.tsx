@@ -172,13 +172,13 @@ export default async function AdminYouTubePage() {
                     <Td className="whitespace-nowrap">
                       {formatKst(c.expiresAt, false)}
                       {expired && c.status === 'CONNECTED' ? (
-                        <span className="mt-0.5 block text-[11px] text-warning-500">만료됨 · 재인증 필요</span>
+                        <span className="mt-0.5 block text-[11px] text-warning-600">만료됨 · 재인증 필요</span>
                       ) : null}
                     </Td>
                     <Td className="whitespace-nowrap">{formatKst(c.lastCheckedAt, false)}</Td>
                     <Td className="max-w-[220px] break-words">{c.lastError ?? '-'}</Td>
                     <Td className="text-right tabular-nums">
-                      <span className={failures > 0 ? 'font-semibold text-danger-500' : ''}>{formatNumber(failures)}</span>
+                      <span className={failures > 0 ? 'font-semibold text-danger-600' : ''}>{formatNumber(failures)}</span>
                     </Td>
                     <Td>
                       {c.status === 'REVOKED' ? (
@@ -225,7 +225,7 @@ export default async function AdminYouTubePage() {
                     <Td className="font-mono text-[11px]">{f.donation.transactionNo}</Td>
                     <Td className="text-right tabular-nums">{formatNumber(f.attempts)}</Td>
                     <Td className="max-w-[200px] break-words">
-                      <span className="font-semibold text-danger-500">{f.errorCode ?? '-'}</span>
+                      <span className="font-semibold text-danger-600">{f.errorCode ?? '-'}</span>
                       {f.errorMessage ? <span className="block text-ink-500">{f.errorMessage}</span> : null}
                     </Td>
                   </tr>

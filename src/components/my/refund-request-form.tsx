@@ -34,7 +34,7 @@ export function RefundRequestForm({
 
   if (state.ok) {
     return (
-      <p className="rounded-lg bg-success-50 px-3 py-2 text-[12.5px] font-semibold text-success-500">
+      <p className="rounded-lg bg-success-50 px-3 py-2 text-[12.5px] font-semibold text-success-600">
         {state.message}
       </p>
     );

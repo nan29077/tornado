@@ -41,7 +41,7 @@ export function TestLoginPanel({ seedAccounts }: { seedAccounts: { email: string
   return (
     <Card className="border border-warning-500/30 bg-warning-50">
       <div className="flex gap-3">
-        <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-warning-500">
+        <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-warning-600">
           <UserCog size={17} strokeWidth={1.7} />
         </span>
         <div className="min-w-0 flex-1">

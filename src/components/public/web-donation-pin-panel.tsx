@@ -263,7 +263,7 @@ export function WebDonationPinPanel({
                     />
                     <span className="text-[14px] font-bold text-ink-700">원</span>
                     {!amountValid && customAmount ? (
-                      <span className="text-[12px] font-semibold text-danger-500">
+                      <span className="text-[12px] font-semibold text-danger-600">
                         {formatWon(min)} ~ {formatWon(max)} 사이로 입력해 주세요.
                       </span>
                     ) : null}
@@ -397,7 +397,7 @@ export function WebDonationPinPanel({
                   <span
                     className={cx(
                       'mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-bold tabular-nums',
-                      expired ? 'bg-danger-50 text-danger-500' : 'bg-white text-ink-700',
+                      expired ? 'bg-danger-50 text-danger-600' : 'bg-white text-ink-700',
                     )}
                   >
                     <Clock size={14} strokeWidth={1.7} />

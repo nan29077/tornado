@@ -103,7 +103,7 @@ export function ImageUploadField({
       )}
 
       {hint ? <p className="mt-1 text-[11.5px] leading-relaxed text-ink-400">{hint}</p> : null}
-      {error ? <p className="mt-1 text-[11.5px] text-danger-500">{error}</p> : null}
+      {error ? <p className="mt-1 text-[11.5px] text-danger-600">{error}</p> : null}
 
       {value ? (
         <div className="mt-2.5 flex items-center gap-3">

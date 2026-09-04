@@ -57,7 +57,7 @@ export function MockPinForm({
   if (result?.ok) {
     return (
       <Card>
-        <div className="flex items-center gap-2 text-success-500">
+        <div className="flex items-center gap-2 text-success-600">
           <CircleCheck size={20} strokeWidth={1.7} />
           <p className="text-[16px] font-extrabold text-ink-900">후원이 완료되었습니다</p>
         </div>
@@ -123,7 +123,7 @@ export function MockPinForm({
           />
         </Field>
         {result && !result.ok ? (
-          <div className="mt-2 flex items-start gap-2 text-danger-500">
+          <div className="mt-2 flex items-start gap-2 text-danger-600">
             <CircleX size={16} strokeWidth={1.7} />
             <p className="text-[13px] leading-relaxed">{result.message}</p>
           </div>

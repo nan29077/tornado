@@ -221,7 +221,7 @@ export function DonationLookupSheet({ open, onClose }: { open: boolean; onClose:
               <div className="flex items-center justify-between gap-3 rounded-2xl bg-ink-50 px-4 py-3">
                 <div>
                   <p className="flex items-center gap-1.5 text-[12px] font-bold text-ink-500">
-                    <ShieldCheck size={14} strokeWidth={2} className="text-success-500" />
+                    <ShieldCheck size={14} strokeWidth={2} className="text-success-600" />
                     {result.phoneMasked} 확인 완료
                   </p>
                   <p className="mt-1 text-[13px] font-semibold text-ink-900">

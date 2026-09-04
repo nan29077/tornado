@@ -132,7 +132,7 @@ export async function OnboardingChecklist({ creatorId }: { creatorId: string }) 
           >
             <span className="flex min-w-0 items-start gap-2.5">
               {item.done ? (
-                <CircleCheck size={17} strokeWidth={1.7} className="mt-0.5 shrink-0 text-success-500" />
+                <CircleCheck size={17} strokeWidth={1.7} className="mt-0.5 shrink-0 text-success-600" />
               ) : (
                 <Circle size={17} strokeWidth={1.7} className="mt-0.5 shrink-0 text-ink-300" />
               )}

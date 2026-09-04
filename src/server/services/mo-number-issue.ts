@@ -261,8 +261,8 @@ export async function issueMoNumberForCreator(creatorId: string): Promise<Issued
   // 구 체계 번호가 붙어 있으면 먼저 떼어 낸다. 새 번호를 붙인 뒤에 떼면 그 사이에 들어온
   // 문자가 어느 쪽으로 갈지 모호해지고, 한 크리에이터에게 번호 두 개가 붙은 상태가 남는다.
   if (existing) {
-    await releaseMoNumberRow(existing.id, '구 번호 체계 — 재발급으로 회수');
-    logger.info('구 체계 MO 번호 회수', { creatorId, phoneNumber: existing.phoneNumber });
+    await retireLegacyMoNumberRow(existing.id, '구 번호 체계 — 재발급으로 사용중지');
+    logger.info('구 체계 MO 번호 사용중지', { creatorId, phoneNumber: existing.phoneNumber });
   }
 
   const issued = await allocateSubCode(
@@ -305,8 +305,18 @@ export interface LegacyReissueResult {
   baseNumber: string;
   /** 새 번호를 받은 건 */
   reissued: Array<{ creatorId: string; displayName: string; from: string; to: string }>;
-  /** 승인 상태가 아니어서 회수만 한 건 */
-  reclaimedOnly: Array<{ creatorId: string; displayName: string; from: string }>;
+  /**
+   * 새 번호를 주지 않고 내리기만 한 건.
+   * reason 으로 이유를 구분한다. 두 경우를 뭉뚱그리면 보고서가 사실과 달라진다.
+   *  - NOT_APPROVED : 승인 상태가 아닌 채널
+   *  - ORPHAN_ROW   : 배정 상태가 아닌 채 붙어 있던 잔재 행
+   */
+  reclaimedOnly: Array<{
+    creatorId: string;
+    displayName: string;
+    from: string;
+    reason: 'NOT_APPROVED' | 'ORPHAN_ROW';
+  }>;
   /** 실패한 건 (번호 소진 등) */
   failed: Array<{ creatorId: string; displayName: string; from: string; message: string }>;
   /**
@@ -332,11 +342,21 @@ export interface LegacyReissueResult {
 export async function reissueLegacyMoNumbers(): Promise<LegacyReissueResult> {
   const baseNumber = requireBaseNumber();
 
+  /**
+   * 크리에이터에게 **붙어 있는** 번호를 모두 본다. 상태로 거르지 않는다.
+   *
+   * 예전에는 `status='ASSIGNED'` 인 행만 봤다. 정상 경로는 배정을 풀 때 creatorId 도
+   * 함께 비우므로 대개 맞지만, 그렇지 않은 행이 하나라도 생기면
+   * (수동 SQL, 옛 시드, 중간에 끊긴 작업) 이 정리에서 **통째로 빠진다.**
+   * 그런 행은 크리에이터 설정 화면에는 그대로 보이므로 "고쳤다는데 화면엔 그대로"가 된다.
+   * 붙어 있는 것은 상태와 무관하게 전부 훑는 편이 안전하다.
+   */
   const assigned = await prisma.creatorMoNumber.findMany({
-    where: { status: 'ASSIGNED', creatorId: { not: null } },
+    where: { creatorId: { not: null } },
     select: {
       id: true,
       phoneNumber: true,
+      status: true,
       creatorId: true,
       creator: { select: { status: true, displayName: true } },
     },
@@ -350,11 +370,22 @@ export async function reissueLegacyMoNumbers(): Promise<LegacyReissueResult> {
     if (!creatorId) continue;
     const displayName = row.creator?.displayName ?? creatorId;
 
+    /**
+     * 배정 상태가 아닌데 크리에이터가 붙어 있는 행은 떼어 내기만 한다.
+     * 이미 다른 번호가 정상 배정돼 있을 수 있어, 새 번호를 또 주면 한 채널에 번호가
+     * 둘이 된다. 잘못된 잔재를 지우는 것이 목적이다.
+     */
+    if (row.status !== 'ASSIGNED') {
+      await retireLegacyMoNumberRow(row.id, '구 번호 체계 정리 — 배정 상태가 아닌 잔재 행 정리');
+      result.reclaimedOnly.push({ creatorId, displayName, from: row.phoneNumber, reason: 'ORPHAN_ROW' });
+      continue;
+    }
+
     // 승인 상태가 아닌 채널에 번호가 붙어 있으면 새 번호를 주지 않고 회수만 한다.
     // (정지된 채널로 후원 문자가 계속 들어오는 것을 막는 것이 우선이다)
     if (row.creator?.status !== 'APPROVED') {
-      await releaseMoNumberRow(row.id, '구 번호 체계 정리 — 미승인 채널이라 회수만 함');
-      result.reclaimedOnly.push({ creatorId, displayName, from: row.phoneNumber });
+      await retireLegacyMoNumberRow(row.id, '구 번호 체계 정리 — 미승인 채널이라 번호만 내림');
+      result.reclaimedOnly.push({ creatorId, displayName, from: row.phoneNumber, reason: 'NOT_APPROVED' });
       continue;
     }
 
@@ -377,7 +408,7 @@ export async function reissueLegacyMoNumbers(): Promise<LegacyReissueResult> {
        */
       const issued = await allocateSubCode(creatorId, baseNumber, '구 번호 체계 일괄 재발급');
       try {
-        await releaseMoNumberRow(row.id, '구 번호 체계 — 일괄 재발급으로 회수');
+        await retireLegacyMoNumberRow(row.id, '구 번호 체계 — 일괄 재발급으로 사용중지');
       } catch (e) {
         // 새 번호는 이미 살아 있다. 옛 번호가 함께 남아도 후원 접수에는 지장이 없으므로
         // 실패로 처리하지 않고, 관리자가 정리할 수 있도록 경고만 남긴다.
@@ -410,6 +441,8 @@ export async function reissueLegacyMoNumbers(): Promise<LegacyReissueResult> {
     where: { status: { not: 'DISABLED' }, creatorId: null },
     select: { id: true, phoneNumber: true, status: true },
   });
+  // (이미 DISABLED 인 구 번호는 화면에서 "사용중지"로 표시되고 배정할 수도 없으므로 그대로 둔다.
+  //  과거 수신 이력이 이 행을 참조하므로 지우지도 않는다.)
   for (const row of stock) {
     if (isCurrentScheme(row.phoneNumber, baseNumber)) continue;
     await prisma.creatorMoNumber.update({
@@ -456,6 +489,27 @@ async function releaseMoNumberRow(id: string, memo: string): Promise<void> {
   await prisma.creatorMoNumber.update({
     where: { id },
     data: { status: 'RECLAIMED', creatorId: null, releasedAt: new Date(), memo },
+  });
+}
+
+/**
+ * 구 체계 번호를 **재고에서 완전히 내린다.**
+ *
+ * 왜 회수(RECLAIMED)로는 부족한가
+ * --------------------------------
+ * 회수만 하면 그 번호는 배정만 풀린 채 재고 목록에 그대로 남는다.
+ *  - 관리자 MO 번호 화면과 MO 시뮬레이터 선택지에 0505 가 계속 보인다
+ *    ("번호를 바꿨다는데 왜 아직 보이냐"의 실제 원인 중 하나다)
+ *  - 회수 상태는 관리자가 다시 배정할 수 있다. 배정해도 그 번호로는 문자가 오지 않으므로
+ *    후원이 통째로 끊긴 채널이 만들어진다.
+ *
+ * 지우지 않고 사용중지로 내리는 이유는 과거 수신 이력(mo_inbound_message)이 이 번호를
+ * 참조하고, 어떤 번호가 언제 쓰였는지가 분쟁 대응에 필요하기 때문이다.
+ */
+async function retireLegacyMoNumberRow(id: string, memo: string): Promise<void> {
+  await prisma.creatorMoNumber.update({
+    where: { id },
+    data: { status: 'DISABLED', creatorId: null, releasedAt: new Date(), memo },
   });
 }
 

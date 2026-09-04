@@ -302,7 +302,7 @@ export default async function AdminSystemPage() {
                       <Td className="font-mono text-[12px]">{shortId(a.transaction.orderNo, 8, 4)}</Td>
                       <Td>{a.operation}</Td>
                       <Td className="max-w-[200px] break-words">
-                        <span className="font-semibold text-danger-500">{a.errorCode}</span>
+                        <span className="font-semibold text-danger-600">{a.errorCode}</span>
                         {a.errorMessage ? <span className="block text-ink-500">{a.errorMessage}</span> : null}
                       </Td>
                       <Td className="text-right tabular-nums">{a.latencyMs != null ? `${a.latencyMs}ms` : '-'}</Td>

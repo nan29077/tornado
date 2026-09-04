@@ -50,9 +50,41 @@ export function OverlayCanvas({
     const el = boxRef.current;
     if (!el) return;
 
+    /**
+     * 크기를 못 재면 화면을 통째로 감춘다(scale 0). 그래서 **한 번이라도 0 을 물면
+     * 그대로 굳어 버리는 경로가 있으면 안 된다.**
+     *
+     * 실제로 0 이 나오는 상황
+     *  - 미리보기 틀이 아직 접혀 있거나 display:none 인 채로 iframe 이 먼저 뜬 경우
+     *  - 부모 창이 레이아웃을 잡기 전에 iframe 문서가 먼저 그려진 경우
+     * 이때 ResizeObserver 가 뒤늦게 불러 주면 살아나지만, 브라우저·타이밍에 따라
+     * 관찰 대상이 0x0 이라 변화로 잡히지 않는 경우가 있다. 그러면 미리보기가
+     * **영영 빈 화면**이 된다. 화면에는 아무 오류도 뜨지 않아 원인을 짐작하기 어렵다.
+     *
+     * 그래서 아직 한 번도 재지 못했을 때만 짧게 다시 시도한다.
+     * 한 번 재고 나면 이 재시도는 완전히 멈춘다(상시 폴링이 아니다).
+     */
+    let measured = false;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const RETRY_MS = 120;
+    const RETRY_LIMIT = 25; // 약 3초. 그 뒤에도 0 이면 정말로 화면에 자리가 없는 것이다.
+    let tries = 0;
+
     const measure = () => {
       const r = el.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0) return;
+      if (r.width <= 0 || r.height <= 0) {
+        if (!measured && tries < RETRY_LIMIT) {
+          tries += 1;
+          if (retry) clearTimeout(retry);
+          retry = setTimeout(measure, RETRY_MS);
+        }
+        return;
+      }
+      measured = true;
+      if (retry) {
+        clearTimeout(retry);
+        retry = null;
+      }
       setBox((prev) =>
         prev && Math.abs(prev.w - r.width) < 0.5 && Math.abs(prev.h - r.height) < 0.5
           ? prev
@@ -66,6 +98,7 @@ export function OverlayCanvas({
     window.addEventListener('resize', measure);
     window.addEventListener('orientationchange', measure);
     return () => {
+      if (retry) clearTimeout(retry);
       observer.disconnect();
       window.removeEventListener('resize', measure);
       window.removeEventListener('orientationchange', measure);

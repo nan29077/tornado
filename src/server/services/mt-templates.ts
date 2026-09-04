@@ -158,13 +158,23 @@ export interface DonationSuccessInput {
 /** 감사 문자 본문 최대 길이. LMS(2,000byte) 안에 확실히 들어가는 보수적인 값. */
 export const THANKS_MT_MAX_LENGTH = 200;
 
-/** 감사 문자에서 쓸 수 있는 치환자. 스튜디오 설정 화면 안내와 검증에 함께 쓴다. */
+/**
+ * 감사 문자에서 쓸 수 있는 "자동으로 채워지는 항목".
+ * 스튜디오 설정 화면 안내와 저장 검증에 함께 쓴다.
+ *
+ * button / sample 은 크리에이터 화면 전용이다
+ * -------------------------------------------
+ * 이 화면을 쓰는 사람은 개발자가 아니다. `{금액}` 이라는 글자만 봐서는 무엇이 들어가는지
+ * 알 수 없으므로, 버튼에 적을 일상어(button)와 실제로 채워질 값의 예시(sample)를 함께 둔다.
+ * **화면 쪽에 따로 표를 만들지 않는다.** 두 곳에 나눠 두면 항목을 추가했을 때 한쪽만
+ * 고쳐져 버튼에 `{누적}` 같은 날글자가 그대로 노출된다.
+ */
 export const THANKS_MT_VARIABLES = [
-  { token: '{후원자}', label: '후원자 이름' },
-  { token: '{크리에이터}', label: '크리에이터 이름' },
-  { token: '{금액}', label: '후원 금액' },
-  { token: '{메시지}', label: '후원자가 보낸 메시지' },
-  { token: '{누적}', label: '누적 후원 금액' },
+  { token: '{후원자}', label: '후원자 이름', button: '후원한 사람 이름', sample: '구영' },
+  { token: '{크리에이터}', label: '크리에이터 이름', button: '내 채널 이름', sample: '도네이도TV' },
+  { token: '{금액}', label: '후원 금액', button: '이번 후원 금액', sample: '10,000원' },
+  { token: '{메시지}', label: '후원자가 보낸 메시지', button: '후원자가 남긴 말', sample: '오늘 방송 재밌어요' },
+  { token: '{누적}', label: '누적 후원 금액', button: '누적 후원 금액', sample: '52,000원' },
 ] as const;
 
 const THANKS_VALUES: Record<string, (i: DonationSuccessInput) => string> = {
@@ -544,12 +554,12 @@ export function validateMtTemplateBody(code: MtTemplateCode, body: string): stri
   const allowed = new Set(meta.variables.map((v) => v.token.slice(1, -1)));
   const unknown = [...trimmed.matchAll(OVERRIDE_TOKEN_RE)].map((m) => m[1]).filter((k) => !allowed.has(k));
   if (unknown.length > 0) {
-    return `이 문자에서 쓸 수 없는 치환자입니다: ${[...new Set(unknown)].map((k) => `{${k}}`).join(', ')}`;
+    return `이 문자에서 쓸 수 없는 항목입니다: ${[...new Set(unknown)].map((k) => `{${k}}`).join(', ')}`;
   }
 
   // 인증번호가 빠지면 후원자가 인증을 끝낼 방법이 없어진다.
   if (allowed.has('인증번호') && !trimmed.includes('{인증번호}')) {
-    return '인증번호 문자에는 {인증번호} 치환자가 반드시 들어가야 합니다.';
+    return '인증번호 문자에는 {인증번호} 항목이 반드시 들어가야 합니다.';
   }
 
   /**
@@ -558,12 +568,12 @@ export function validateMtTemplateBody(code: MtTemplateCode, body: string): stri
    * 그래서 저장 자체를 막는다.
    */
   if (SECURE_LINK_TEMPLATES.has(code) && !trimmed.includes('{보안링크}')) {
-    return `${meta.label} 문자에는 {보안링크} 치환자가 반드시 들어가야 합니다. 링크가 빠지면 후원자가 등록·결제를 끝낼 수 없습니다.`;
+    return `${meta.label} 문자에는 {보안링크} 항목이 반드시 들어가야 합니다. 링크가 빠지면 후원자가 등록·결제를 끝낼 수 없습니다.`;
   }
 
   // 링크를 직접 적어 넣으면 1회용 보안링크 대신 그 주소가 나가고, 스팸 필터에도 걸린다.
   if (/https?:\/\/|www\./i.test(trimmed)) {
-    return '본문에 주소를 직접 적을 수 없습니다. 링크가 필요한 문자에는 {보안링크} 치환자를 사용해 주세요.';
+    return '본문에 주소를 직접 적을 수 없습니다. 링크가 필요한 문자에는 {보안링크} 항목을 사용해 주세요.';
   }
   return null;
 }

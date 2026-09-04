@@ -10,7 +10,9 @@ export default defineConfig({
     fileParallelism: false,
     testTimeout: 30000,
     hookTimeout: 30000,
-    include: ['tests/**/*.test.ts'],
+    // .tsx 도 받는다. 화면 컴포넌트를 실제로 그려 보고 문구·버튼을 확인하는
+    // 렌더 테스트가 있다(예: 감사 문자 편집기).
+    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
   },
   resolve: {
     alias: {

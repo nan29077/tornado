@@ -135,6 +135,23 @@ export async function GET(req: Request, ctx: { params: Promise<{ creatorId: stri
         'donation',
       );
 
+      /**
+       * 프록시 버퍼 밀어내기.
+       *
+       * SSE 는 응답을 열어 둔 채 조금씩 흘려보내는 방식인데, 중간에 낀 프록시(Cloudflare
+       * 터널·회사 프록시·일부 CDN)가 **일정 크기가 찰 때까지 응답을 붙들고 있는** 경우가 있다.
+       * 그러면 서버는 정상적으로 보냈는데 화면에는 아무것도 도착하지 않는다.
+       * localhost 로 열면 멀쩡하고 터널 주소로만 안 되는 증상이 정확히 이것이다.
+       *
+       * 주석 줄(':')로 2KB 를 먼저 흘려 그 버퍼를 채워 준다. SSE 규격상 주석은 무시되므로
+       * 클라이언트에는 아무 영향이 없고, 연결당 딱 한 번 2KB 다.
+       */
+      try {
+        controller.enqueue(encoder.encode(`:${' '.repeat(2048)}\n\n`));
+      } catch {
+        /* 연결 종료 */
+      }
+
       send('ready', { creatorId, at: new Date().toISOString(), resumed: Boolean(lastEventId) });
 
       // 재전송 중에 도착한 실시간 이벤트는 잠시 모아 두었다가 재전송 뒤에 이어 보낸다.

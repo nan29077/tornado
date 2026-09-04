@@ -1308,7 +1308,7 @@ function RemainBadge({ closesAt, status }: { closesAt: string | null; status: Ro
     <span
       className={cx(
         'inline-flex h-8 w-[76px] shrink-0 items-center justify-center rounded-lg text-[13px] font-black tabular-nums',
-        left <= 10 ? 'bg-danger-50 text-danger-500' : 'bg-ink-50 text-ink-700',
+        left <= 10 ? 'bg-danger-50 text-danger-600' : 'bg-ink-50 text-ink-700',
       )}
     >
       {String(Math.floor(left / 60)).padStart(2, '0')}:{String(left % 60).padStart(2, '0')}

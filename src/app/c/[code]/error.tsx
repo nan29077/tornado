@@ -22,7 +22,7 @@ export default function CreatorDonationError({
     <div className="grid min-h-dvh place-items-center bg-[#f7f5ef] px-4 py-10">
       <div className="w-full max-w-[440px]">
         <div className="rounded-[26px] border border-ink-100 bg-white p-6 shadow-[0_24px_60px_rgba(23,22,26,0.1)]">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-warning-50 text-warning-500">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-warning-50 text-warning-600">
             <CircleAlert size={20} strokeWidth={1.7} />
           </span>
           <h1 className="mt-3 text-[19px] font-extrabold leading-snug tracking-tight text-ink-900">

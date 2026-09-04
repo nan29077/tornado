@@ -736,7 +736,7 @@ export async function updateThanksMessageAction(
     if (raw.length === 0) {
       await prisma.creatorProfile.update({ where: { id: creatorId }, data: { thanksMtMessage: null } });
       revalidatePath('/studio/settings');
-      return { ok: true, message: '감사 문자를 기본 문구로 되돌렸습니다.' };
+      return { ok: true, message: '본문을 비워 두셔서 플랫폼 기본 문구로 발송됩니다.' };
     }
 
     if (raw.length > THANKS_MT_MAX_LENGTH) {
@@ -752,7 +752,8 @@ export async function updateThanksMessageAction(
     if (unknown.length > 0) {
       return {
         ok: false,
-        message: `사용할 수 없는 치환자입니다: {${unknown[0]}} — ${THANKS_MT_VARIABLES.map((v) => v.token).join(' ')} 만 사용할 수 있습니다.`,
+        // 크리에이터가 읽는 문구다. "치환자" 같은 개발 용어를 쓰지 않는다.
+        message: `{${unknown[0]}} 는 없는 항목입니다. ${THANKS_MT_VARIABLES.map((v) => v.token).join(' ')} 만 쓸 수 있어요.`,
       };
     }
 
@@ -771,7 +772,7 @@ export async function updateThanksMessageAction(
 
     await prisma.creatorProfile.update({ where: { id: creatorId }, data: { thanksMtMessage: raw } });
     revalidatePath('/studio/settings');
-    return { ok: true, message: '감사 문자 내용을 저장했습니다. 다음 후원부터 적용됩니다.' };
+    return { ok: true, message: '다음 후원부터 이 문구로 발송됩니다.' };
   });
 }
 

@@ -87,7 +87,7 @@ export function DonationPageShare({ url, creatorName }: { url: string; creatorNa
               <Download size={14} /> QR 다운로드
             </button>
           </div>
-          <p aria-live="polite" className="mt-2 min-h-4 text-[11px] font-semibold text-success-500">
+          <p aria-live="polite" className="mt-2 min-h-4 text-[11px] font-semibold text-success-600">
             {message ? <span className="inline-flex items-center gap-1"><Check size={12} />{message}</span> : null}
           </p>
         </div>

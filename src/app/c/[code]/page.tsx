@@ -448,7 +448,7 @@ export default async function CreatorDonationPage({ params }: Params) {
         ) : (
           /* 번호 미배정: 문자후원 영역만 안내로 대체한다. 위 PC 웹 후원은 그대로 동작한다. */
           <div className="mt-6 sm:hidden">
-            <span className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-warning-50 text-warning-500">
+            <span className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-warning-50 text-warning-600">
               <CircleAlert size={22} strokeWidth={1.7} />
             </span>
             <p className="mt-3 text-[15px] font-extrabold text-ink-900">후원 번호가 아직 배정되지 않았습니다</p>
@@ -490,7 +490,7 @@ export default async function CreatorDonationPage({ params }: Params) {
       {/* 첫 문자 안내 (모바일 문자후원) */}
       <section className="mt-5 rounded-[1.5rem] border border-warning-500/30 bg-warning-50 px-5 py-4 sm:hidden">
         <p className="flex items-center gap-1.5 text-[13px] font-bold text-ink-900">
-          <CircleAlert size={15} strokeWidth={1.8} className="shrink-0 text-warning-500" />
+          <CircleAlert size={15} strokeWidth={1.8} className="shrink-0 text-warning-600" />
           처음 보내는 문자는 후원되지 않습니다
         </p>
         <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-700">
@@ -691,7 +691,7 @@ function NotFoundView() {
     <div className="grid min-h-dvh place-items-center bg-warm-50 px-4 py-10">
       <div className="w-full max-w-[440px]">
         <div className="rounded-[2rem] border border-warm-300/70 bg-white p-6 shadow-panel">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-warning-50 text-warning-500">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-warning-50 text-warning-600">
             <CircleAlert size={20} strokeWidth={1.7} />
           </span>
           <h1 className="mt-3 text-[19px] leading-snug font-extrabold tracking-tight text-ink-900">

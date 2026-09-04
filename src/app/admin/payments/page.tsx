@@ -76,8 +76,8 @@ function TxRows({ rows, reconcilable = false }: { rows: TxRow[]; reconcilable?: 
           </Td>
           <Td className="whitespace-nowrap">
             {formatKst(t.requestedAt, false)}
-            {t.approvedAt ? <span className="mt-0.5 block text-[11px] text-success-500">승인 {formatKst(t.approvedAt, false)}</span> : null}
-            {t.canceledAt ? <span className="mt-0.5 block text-[11px] text-danger-500">취소 {formatKst(t.canceledAt, false)}</span> : null}
+            {t.approvedAt ? <span className="mt-0.5 block text-[11px] text-success-600">승인 {formatKst(t.approvedAt, false)}</span> : null}
+            {t.canceledAt ? <span className="mt-0.5 block text-[11px] text-danger-600">취소 {formatKst(t.canceledAt, false)}</span> : null}
           </Td>
           <Td>
             <details>
@@ -96,7 +96,7 @@ function TxRows({ rows, reconcilable = false }: { rows: TxRow[]; reconcilable?: 
                       <span className="ml-2 text-ink-400">{formatKst(a.createdAt, false)}</span>
                       <span className="ml-2 tabular-nums text-ink-400">{a.latencyMs != null ? `${a.latencyMs}ms` : '-'}</span>
                       {a.errorCode ? (
-                        <span className="block text-danger-500">
+                        <span className="block text-danger-600">
                           {a.errorCode} {a.errorMessage ?? ''}
                         </span>
                       ) : null}

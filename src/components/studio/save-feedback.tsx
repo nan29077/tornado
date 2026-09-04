@@ -123,7 +123,7 @@ export function SaveToast({ feedback }: { feedback: SaveFeedback }) {
         <span
           className={cx(
             'grid h-6 w-6 shrink-0 place-items-center rounded-full',
-            toast.ok ? 'bg-success-500/20 text-success-500' : 'bg-white/20 text-white',
+            toast.ok ? 'bg-success-500/20 text-success-600' : 'bg-white/20 text-white',
           )}
         >
           {toast.ok ? <Check size={15} strokeWidth={2.2} /> : <CircleAlert size={15} strokeWidth={2} />}

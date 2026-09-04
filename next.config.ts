@@ -1,5 +1,42 @@
 import type { NextConfig } from "next";
 
+/**
+ * 이 빌드에서 터널 주소를 신뢰해도 되는가.
+ *
+ * **예전에는 `NODE_ENV !== 'production'` 으로만 판단했다.** 그런데 로컬 미리보기
+ * (1_미리보기실행.bat → tools/preview.mjs)는 개발 서버가 아니라 **프로덕션 빌드**로 뜬다.
+ * 그래서 이 예외가 정작 필요한 곳에서 통째로 꺼져 있었다.
+ *
+ * 무슨 일이 벌어지나
+ *  - Next 는 서버 액션 요청의 Origin 헤더와 Host 헤더가 다르면 **500 으로 거부**한다.
+ *  - Cloudflare 터널을 거치면 Origin 은 `https://xxx.trycloudflare.com`, Host 는
+ *    터널 설정에 따라 `localhost:3025` 로 바뀌어 들어올 수 있다. 그러면 전부 거부된다.
+ *  - 거부돼도 화면에는 아무 문구도 뜨지 않는다. [테스트 후원 보내기]를 눌러도
+ *    **아무 반응이 없는 것처럼** 보인다. 실제로 신고된 증상이 이것이다.
+ *
+ * 그래서 판단 기준을 "개발 모드인가"가 아니라 **"내 컴퓨터에서 도는 미리보기인가"** 로 바꾼다.
+ * tools/preview.mjs 가 빌드와 실행 양쪽에 TORNADO_LOCAL_PREVIEW=1 을 넣어 준다.
+ * 진짜 운영 배포에는 이 표시가 없으므로 예외도 걸리지 않는다.
+ */
+const isLocalPreview = process.env.TORNADO_LOCAL_PREVIEW === '1';
+const allowTunnelOrigins = isLocalPreview || process.env.NODE_ENV !== 'production';
+
+/**
+ * 신뢰할 출처 목록.
+ * 터널 주소는 실행할 때마다 앞부분이 바뀌므로 와일드카드로 둔다.
+ * 사내망 IP 등으로 접속해야 하면 PREVIEW_ALLOWED_ORIGINS 에 쉼표로 나열한다.
+ *   예) PREVIEW_ALLOWED_ORIGINS="192.168.0.10:3025,*.ngrok-free.app"
+ */
+const TUNNEL_ORIGINS = [
+  '*.trycloudflare.com',
+  '*.ngrok-free.app',
+  '*.loca.lt',
+  ...(process.env.PREVIEW_ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean),
+];
+
 const nextConfig: NextConfig = {
   /**
    * 개발 모드 좌측 하단 "N Issue" 배지 비활성화.
@@ -18,7 +55,7 @@ const nextConfig: NextConfig = {
    * allowedDevOrigins 에 추가된 호스트는 dev 서버가 신뢰하는 출처로 인식한다.
    * 이 설정은 개발 모드에만 적용되며 프로덕션 빌드에는 아무 효과가 없다.
    */
-  allowedDevOrigins: ['*.trycloudflare.com'],
+  allowedDevOrigins: TUNNEL_ORIGINS,
 
   /**
    * 위 allowedDevOrigins 는 화면 데이터(RSC) 요청만 풀어 준다.
@@ -29,15 +66,15 @@ const nextConfig: NextConfig = {
    * 개발 모드에서만 켠다. 운영에서는 실제 도메인만 정상 출처이므로 예외를 두지 않는다.
    * (터널 주소를 운영에서까지 신뢰하면 남의 터널에서 서버 액션을 부를 수 있다)
    */
-  ...(process.env.NODE_ENV === 'production'
-    ? {}
-    : {
+  ...(allowTunnelOrigins
+    ? {
         experimental: {
           serverActions: {
-            allowedOrigins: ['*.trycloudflare.com'],
+            allowedOrigins: TUNNEL_ORIGINS,
           },
         },
-      }),
+      }
+    : {}),
 
   /**
    * 컨테이너 배포(ECS/Fargate)에서는 standalone 출력을 쓴다.

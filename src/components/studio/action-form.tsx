@@ -103,7 +103,12 @@ export function ActionForm({
         <SecretBox label={state.secretLabel ?? '발급된 값'} value={state.secret} hint={state.secretHint} />
       ) : null}
 
-      {state.message ? (
+      {/*
+        알림창을 쓰는 폼은 결과를 알림창에서 보여 준다.
+        여기서 또 안내줄을 그리면 같은 문구가 두 번 나오고, 알림창을 닫은 뒤에도
+        남아 있어 "닫았는데 왜 그대로지" 하게 된다. InlineActionForm 과 같은 규칙이다.
+      */}
+      {state.message && !confirmMessage ? (
         <Notice tone={state.ok ? 'success' : 'danger'}>{state.message}</Notice>
       ) : null}
 
@@ -177,7 +182,8 @@ export function InlineActionForm({
         {pending ? pendingLabel : submitLabel}
       </Button>
       {state.message && !confirmMessage ? (
-        <span className={cx('mt-1 block text-[11.5px] leading-snug', state.ok ? 'text-success-500' : 'text-danger-500')}>
+        // 흰 배경 위 작은 글씨라 success-500 은 대비가 모자란다. 문구에는 600 을 쓴다.
+        <span className={cx('mt-1 block text-[11.5px] leading-snug', state.ok ? 'text-success-600' : 'text-danger-600')}>
           {state.message}
         </span>
       ) : null}

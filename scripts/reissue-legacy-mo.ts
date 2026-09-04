@@ -22,14 +22,43 @@ import { reissueLegacyMoNumbers, requireBaseNumber } from '../src/server/service
 
 const dryRun = process.argv.includes('--dry-run');
 
+/**
+ * 지금 어느 데이터베이스에 붙어 있는지 사람이 읽을 수 있게 만든다.
+ *
+ * **이 한 줄이 없어서 크게 헤맸다.**
+ * 미리보기(1_미리보기실행.bat)는 `.pglite` 폴더의 내장 DB(5433)를 쓰고,
+ * 이 도구는 `.env` 의 DATABASE_URL(보통 PostgreSQL 5432)에 붙는다.
+ * 서로 다른 DB 라서 화면에는 0505 가 그대로 보이는데 도구는
+ * "구 체계 번호가 없습니다" 라고 답하는 일이 실제로 있었다.
+ * 무엇을 보고 있는지 먼저 밝히면 그런 오해가 생기지 않는다.
+ */
+function describeDatabase(): string {
+  const raw = process.env.DATABASE_URL ?? '';
+  if (!raw) return '(DATABASE_URL 없음)';
+  try {
+    const u = new URL(raw);
+    const where = `${u.hostname}:${u.port || '5432'}${u.pathname}`;
+    if (process.env.PGLITE === '1' || u.port === '5433') {
+      return `${where}  ← 미리보기 내장 DB (.pglite)`;
+    }
+    return `${where}  ← PostgreSQL`;
+  } catch {
+    return '(DATABASE_URL 형식을 알 수 없음)';
+  }
+}
+
 async function main() {
   const baseNumber = requireBaseNumber();
+  console.log(`데이터베이스: ${describeDatabase()}`);
   console.log(`대표번호: ${formatMoNumber(baseNumber)}  (EMMA_MO_BASE_NUMBER)`);
   console.log(dryRun ? '모드: 미리보기 (변경 없음)\n' : '모드: 실제 재발급\n');
 
+  // 상태로 거르지 않는다. 크리에이터에게 붙어 있는 것은 전부 본다.
+  // (배정 상태가 아닌 채 붙어 있는 잔재 행도 화면에는 그대로 보이기 때문)
   const assigned = await prisma.creatorMoNumber.findMany({
-    where: { status: 'ASSIGNED', creatorId: { not: null } },
-    select: { phoneNumber: true, creator: { select: { displayName: true, status: true } } },
+    where: { creatorId: { not: null } },
+    select: { phoneNumber: true, status: true, creator: { select: { displayName: true, status: true } } },
+    orderBy: { phoneNumber: 'asc' },
   });
 
   /**
@@ -58,23 +87,33 @@ async function main() {
   } else {
     for (const r of assigned) {
       const ok = digitsOnly(r.phoneNumber).startsWith(baseNumber) ? '' : '   <-- 구 체계';
-      console.log(`  - ${(r.creator?.displayName ?? '(이름 없음)').padEnd(16)} ${formatMoNumber(r.phoneNumber)}${ok}`);
+      const state = r.status === 'ASSIGNED' ? '' : `  [${r.status}]`;
+      console.log(
+        `  - ${(r.creator?.displayName ?? '(이름 없음)').padEnd(16)} ${formatMoNumber(r.phoneNumber)}${state}${ok}`,
+      );
     }
   }
   console.log('');
 
-  console.log(`재고(미배정) ${stock.length}건 · 그중 구 체계 ${legacyStock.length}건:`);
+  /**
+   * 사용중지(DISABLED)된 구 번호는 **이미 정리가 끝난 것**이다.
+   * 배정할 수 없고 화면에도 사용중지로 표시된다. 과거 수신 이력이 참조하므로 남겨 둘 뿐이다.
+   * 이것까지 "구 체계"로 세면 정리가 끝난 뒤에도 할 일이 남은 것처럼 보인다.
+   */
+  const pendingStock = legacyStock.filter((r) => r.status !== 'DISABLED');
+  console.log(`재고(미배정) ${stock.length}건 · 그중 정리가 필요한 구 체계 ${pendingStock.length}건:`);
   if (stock.length === 0) {
     console.log('  (없음)');
   } else {
     for (const r of stock) {
-      const mark = digitsOnly(r.phoneNumber).startsWith(baseNumber) ? '' : '   <-- 구 체계';
+      const current = digitsOnly(r.phoneNumber).startsWith(baseNumber);
+      const mark = current ? '' : r.status === 'DISABLED' ? '   (구 체계 — 정리 완료)' : '   <-- 구 체계';
       console.log(`  - ${formatMoNumber(r.phoneNumber).padEnd(16)} ${r.status}${mark}`);
     }
   }
   console.log('');
 
-  if (legacy.length === 0 && legacyStock.length === 0) {
+  if (legacy.length === 0 && pendingStock.length === 0) {
     console.log('구 체계 번호가 없습니다. 배정된 번호와 재고가 모두 현재 대표번호 체계입니다.');
     return;
   }
@@ -97,7 +136,11 @@ async function main() {
     console.log(`  [완료] ${r.displayName}: ${formatMoNumber(r.from)} -> ${formatMoNumber(r.to)}`);
   }
   for (const r of result.reclaimedOnly) {
-    console.log(`  [회수] ${r.displayName}: ${formatMoNumber(r.from)} (승인 상태가 아니라 새 번호를 주지 않음)`);
+    const why =
+      r.reason === 'NOT_APPROVED'
+        ? '승인 상태가 아니라 새 번호를 주지 않음'
+        : '배정 상태가 아닌 잔재 행이라 내리기만 함';
+    console.log(`  [내림] ${r.displayName}: ${formatMoNumber(r.from)} (${why})`);
   }
   for (const r of result.failed) {
     console.log(`  [실패] ${r.displayName}: ${formatMoNumber(r.from)} — ${r.message}`);
@@ -107,7 +150,7 @@ async function main() {
   }
 
   console.log(
-    `\n재발급 ${result.reissued.length}건 · 회수 ${result.reclaimedOnly.length}건 · ` +
+    `\n재발급 ${result.reissued.length}건 · 내림 ${result.reclaimedOnly.length}건 · ` +
       `재고정리 ${result.retiredStock.length}건 · 실패 ${result.failed.length}건`,
   );
   if (result.reissued.length > 0) {

@@ -58,7 +58,7 @@ export function TempPasswordButton({
         </div>
       ) : state.message ? (
         <span
-          className={cx('block max-w-[220px] text-[11px] leading-tight', state.ok ? 'text-success-500' : 'text-danger-500')}
+          className={cx('block max-w-[220px] text-[11px] leading-tight', state.ok ? 'text-success-600' : 'text-danger-600')}
         >
           {state.message}
         </span>
