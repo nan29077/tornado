@@ -791,7 +791,55 @@ export async function startPinAuthorization(donationId: string): Promise<PinStar
   }
 
   if (!issued.ok || !issued.data) {
-    // 링크 발급 실패는 출금이 없는 실패다. 한도 카운터도 아직 쓰지 않았다.
+    // PIN_NOT_SUPPORTED: 카드 빌키(코엠, 카카오 등)는 PIN 단계 자체가 없다.
+    // ALLOW_LEGACY_CONFIRM_LINK=true 이면 토네이도 자체 확인 링크(deprecated)로 fallback 한다.
+    // 그 외에는 "카드 결제 준비 중" 안내를 반환하고 결제를 종료한다.
+    // 주의: DIRECT_TRIGGER 로 이어지지 않는다(CLAUDE.md 규칙 7 — 금융사 서면승인 필수).
+    if (issued.code === 'PIN_NOT_SUPPORTED') {
+      if (allowLegacyConfirmLink()) {
+        // deprecated fallback: 확인 버튼 클릭이 곧 출금임을 감안해 안정화 후 제거한다.
+        logger.warn('PIN_NOT_SUPPORTED — ALLOW_LEGACY_CONFIRM_LINK fallback 사용', {
+          donationId,
+          provider: env.payment.provider,
+        });
+        await setStatus(donationId, 'PENDING_CONFIRM', '후원자 확인 대기 (legacy fallback)');
+        const confirmLink = await issueSecureLink({
+          purpose: 'CONFIRM_PAYMENT',
+          phoneHash: donation.donor.phoneHash,
+          creatorId: donation.creatorId,
+          donationId,
+        });
+        await sendMtForDonor(
+          donorId,
+          tpl.tplConfirmPayment(
+            donation.creator.displayName,
+            donation.amount,
+            confirmLink.url,
+            Math.floor(env.payment.confirmTtlSec / 60),
+          ),
+          donationId,
+          donation.creatorId,
+        );
+        return { ok: true, status: 'PENDING_CONFIRM', message: '결제 확인 링크를 발송했습니다.' };
+      }
+      // ALLOW_LEGACY_CONFIRM_LINK=false: 카드 결제 미지원 안내
+      const cardReason = '카드 결제는 현재 준비 중입니다. 잠시 후 다시 시도해 주세요.';
+      await setStatus(donationId, 'PAYMENT_FAILED', 'PIN_NOT_SUPPORTED — 카드 결제 준비 중');
+      await sendMtForDonor(
+        donorId,
+        tpl.tplDonationFailed(donation.creator.displayName, cardReason),
+        donationId,
+        donation.creatorId,
+      );
+      logger.warn('PIN_NOT_SUPPORTED — 카드 결제 흐름 미구성', {
+        donationId,
+        provider: env.payment.provider,
+        phone: donation.donor.phoneMasked,
+      });
+      return { ok: false, status: 'PAYMENT_FAILED', message: cardReason };
+    }
+
+    // 그 외 링크 발급 실패는 출금이 없는 실패다. 한도 카운터도 아직 쓰지 않았다.
     const reason = issued.message ?? 'PIN 인증창을 생성하지 못했습니다.';
     await setStatus(donationId, 'PAYMENT_FAILED', `PIN 링크 발급 실패: ${reason}`);
     await sendMtForDonor(

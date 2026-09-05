@@ -131,6 +131,50 @@ export const env = {
     hectoAuthApiBase: str('HECTO_AUTH_API_BASE', 'https://ezauthapi.settlebank.co.kr:8081'),
     /** 결제 결과 콜백을 받을 자사 URL. 결제창 hash 재료(호스트)에도 사용된다. */
     hectoCallbackUrl: str('HECTO_CALLBACK_URL'),
+
+    // ---------------------------------------------------------------- 온기(Ongi) 결제
+    /**
+     * 온기 결제 REST API.
+     *
+     * 헥토 EzAuth 와는 **완전히 다른 구조**다. 계좌 인증창·빌키·AES/SHA256 서명이 없고,
+     * 모든 요청은 `X-API-KEY` 헤더로 인증하는 JSON REST API 다.
+     * (헥토 방식으로 착각해 서명을 만들어 보내면 전건 인증 실패한다)
+     */
+    ongiApiBase: str('ONGI_API_BASE', 'https://api.ongi.site'),
+    /** 모든 요청 헤더 `X-API-KEY` 에 실린다. */
+    ongiApiKey: str('ONGI_API_KEY'),
+    /** 선택. 가맹점 식별 강화용 `X-API-MID` 헤더. 비어 있으면 헤더를 붙이지 않는다. */
+    ongiApiMid: str('ONGI_API_MID'),
+    /** 온기 정기결제 MID. 값은 `.env` 에서 주입한다. */
+    ongiRecurringMid: str('ONGI_RECURRING_MID'),
+    /**
+     * 결제 노티(웹훅) 서명 검증용 공유 비밀.
+     * 서명 = sha256=HMAC-SHA256(secret, `${timestamp}.${rawBody}`)
+     * 비어 있으면 웹훅을 신뢰할 수 없으므로 검증 자체를 실패시킨다(fail-closed).
+     */
+    ongiWebhookSecret: str('ONGI_WEBHOOK_SECRET'),
+
+    // ---------------------------------------------------------------- 카카오페이 정기결제(빌키)
+    /**
+     * 카카오페이 어드민 키 (SECRET_KEY).
+     * Authorization: SECRET_KEY ${KAKAO_SECRET_KEY} 헤더에 사용.
+     * 카카오페이 계약 후 CID 환경변수와 함께 설정해야 한다.
+     */
+    kakaoSecretKey: str('KAKAO_SECRET_KEY'),
+    /**
+     * 카카오페이 가맹점 코드.
+     * 정기결제(빌키) 전용 CID 는 일반 CID 와 다르므로 계약 시 별도 발급받아야 한다.
+     */
+    kakaoCid: str('KAKAO_CID'),
+
+    // ---------------------------------------------------------------- 코엠페이먼츠 카드 빌키
+    /** 상점ID (Fix 15자리). */
+    koemMid: str('KOEM_MID'),
+    /** 64자리 고유 암호키. HMAC-SHA256 서명 키로 쓴다. */
+    koemApiKey: str('KOEM_API_KEY'),
+    /** 개발기 https://183.111.29.87:39500 / 상용기 https://paycc.coam.co.kr */
+    koemApiBase: str('KOEM_API_BASE'),
+
     /** 헥토 공식 제한은 결제인증 후 10분. 그보다 짧게 운용한다. */
     confirmTtlSec: num('PAYMENT_CONFIRM_TTL_SEC', 300),
     /** PIN 입력 링크 유효시간. 결제사 인증창 유효시간(10분)을 넘지 않게 잡는다. */
@@ -432,13 +476,27 @@ export function assertProductionSafety(): string[] {
   } else if (!process.env.S3_BUCKET) {
     problems.push('STORAGE_DRIVER=s3 인데 S3_BUCKET 이 비어 있습니다.');
   }
-  if (env.payment.provider !== 'mock') {
+  // 각 provider 가 설정된 경우에만 해당 provider 의 키를 검증한다.
+  // 다른 provider 의 키는 요구하지 않는다.
+  if (env.payment.provider === 'hecto') {
     if (!env.payment.hectoMid) problems.push('HECTO_MID 가 비어 있습니다.');
     if (!env.payment.hectoHashKey) problems.push('HECTO_HASH_KEY 가 비어 있습니다.');
     if (!env.payment.hectoAesKey) problems.push('HECTO_AES_KEY 가 비어 있습니다.');
     if (env.payment.hectoAuthUiBase === env.payment.hectoAuthApiBase) {
       problems.push('HECTO_AUTH_UI_BASE 와 HECTO_AUTH_API_BASE 는 서로 다른 호스트여야 합니다.');
     }
+  }
+  if (env.payment.provider === 'koem') {
+    if (!env.payment.koemMid) problems.push('KOEM_MID 가 비어 있습니다.');
+    if (!env.payment.koemApiKey) problems.push('KOEM_API_KEY 가 비어 있습니다.');
+    if (!env.payment.koemApiBase) problems.push('KOEM_API_BASE 가 비어 있습니다.');
+  }
+  if (env.payment.provider === 'ongi') {
+    if (!env.payment.ongiApiKey) problems.push('ONGI_API_KEY 가 비어 있습니다.');
+  }
+  if (env.payment.provider === 'kakao') {
+    if (!env.payment.kakaoSecretKey) problems.push('KAKAO_SECRET_KEY 가 비어 있습니다.');
+    if (!env.payment.kakaoCid) problems.push('KAKAO_CID 가 비어 있습니다.');
   }
   return problems;
 }

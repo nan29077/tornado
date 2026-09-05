@@ -178,7 +178,8 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
                 OBS 또는 PRISM 에서 [소스 추가] → [브라우저]를 선택하고 아래 주소를 붙여넣습니다. 후원 알림과 게임은
                 소스를 나눠 등록하면 크기와 위치를 따로 잡을 수 있습니다. (권장 크기 1920x1080)
               </p>
-          <div className="grid gap-2.5 lg:grid-cols-2">
+          {/* 화면 너비(lg)가 아니라 이 칸의 너비를 기준으로 단을 나눈다. */}
+          <div className="@container/urls grid gap-2.5 @2xl/urls:grid-cols-2">
             <Card>
               <CardTitle>방송 프로그램 연결 주소</CardTitle>
               <div className="mt-2">

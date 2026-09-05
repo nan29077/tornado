@@ -19,6 +19,8 @@ import { formatWon } from '@/lib/money';
 import { computeFees } from '@/server/services/settlement';
 import { LinkShell } from './link-shell';
 import { RegisterForm, type TermsItem } from './register-form';
+import { CardRegisterForm } from './card-register-form';
+import { env } from '@/lib/env';
 import { defaultDonorName } from '@/lib/donor-name';
 import { ConfirmPanel } from './confirm-panel';
 
@@ -298,7 +300,16 @@ async function RegisterScreen({ token }: { token: string }) {
         </ul>
       </Card>
 
-      <RegisterForm token={token} terms={terms} defaultName={defaultDonorName(ctx.phoneMasked)} />
+      {/*
+        결제사에 따라 등록 화면이 다르다.
+        - 헥토/온기: 결제창으로 이동해 계좌를 인증한다 (RegisterForm)
+        - 코엠: 호스팅 결제창이 없어 카드번호를 이 화면에서 직접 받는다 (CardRegisterForm)
+      */}
+      {env.payment.provider === 'koem' ? (
+        <CardRegisterForm token={token} terms={terms} defaultName={defaultDonorName(ctx.phoneMasked)} />
+      ) : (
+        <RegisterForm token={token} terms={terms} defaultName={defaultDonorName(ctx.phoneMasked)} />
+      )}
     </div>
   );
 }

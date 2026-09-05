@@ -26,7 +26,8 @@ export function OverlayTabs({ active, gameLive }: { active: 'donation' | 'game';
       - z-index 는 진행 컨트롤(20)보다 높아야 컨트롤 카드가 이 바 밑으로 미끄러져 들어간다.
       높이(4.75rem)는 globals.css 의 --overlay-tabbar-h 와 맞춘다.
     */
-    <div className="overlay-tabbar sticky top-[var(--console-header-h)] z-30 -mx-1 px-1 pb-4 pt-2">
+    /* pb 는 --overlay-tabbar-h 와 함께 움직인다. 16px 로는 붙어 보여 20px 로 벌렸다. */
+    <div className="overlay-tabbar sticky top-[var(--console-header-h)] z-30 -mx-1 px-1 pb-5 pt-2">
       <div className="flex gap-1.5 rounded-2xl border border-ink-100 bg-white p-1.5 shadow-[0_1px_2px_rgba(92,61,28,0.05)]">
         {tabs.map(({ key, label, Icon }) => {
           const on = active === key;

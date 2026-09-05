@@ -46,6 +46,10 @@ export default async function RegistrationCompletePage({
   const bankCode = one(sp.bankCode);
   const bankName = one(sp.bankName);
   const account = one(sp.account);
+  // 헥토: 결제창이 authNo(인증번호)를 쿼리스트링으로 전달한다.
+  const authNo = one(sp.authNo) || one(sp.outAuthNo);
+  // 카카오: 사용자가 결제수단 선택 완료 후 approval_url 로 pg_token 이 전달된다.
+  const pgToken = one(sp.pg_token);
   const failed = one(sp.fail) === '1' || one(sp.result) === 'FAIL';
   const failMessage = one(sp.message);
 
@@ -135,7 +139,17 @@ export default async function RegistrationCompletePage({
     const res = await completeRegistrationAction({
       token,
       registrationId: registration.id,
-      providerPayload: { tid, bankCode, bankName, account },
+      providerPayload: {
+        // 공통: 헥토 계좌 등록 기본 필드
+        tid,
+        bankCode,
+        bankName,
+        account,
+        // 헥토: 결제창 인증번호 (completeRegistration 에서 authNo ?? outAuthNo 로 참조)
+        authNo,
+        // 카카오: 빌키 승인에 필요한 pg_token
+        pg_token: pgToken,
+      },
     });
     ok = res.ok;
     message = res.message;

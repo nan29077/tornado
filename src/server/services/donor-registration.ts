@@ -1,7 +1,7 @@
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
 import { decrypt, encrypt, maskSecret } from '@/lib/crypto';
-import { logger } from '@/lib/logger';
+import { logger, scrubText } from '@/lib/logger';
 import { notifySuperAdmins } from './notifications';
 import { env } from '@/lib/env';
 import { getPaymentAdapter } from '@/server/adapters/payment';
@@ -79,6 +79,11 @@ export async function startRegistration(input: {
   nickname?: string;
   /** SNS 플랫폼(선택). 닉네임과 세트로 저장한다. */
   snsPlatform?: string;
+  /**
+   * 결제창(호스팅 페이지) 생성을 건너뛴다.
+   * 결제창이 없는 사업자(코엠 카드 빌키)에서만 true 로 준다.
+   */
+  skipProviderSession?: boolean;
   ip?: string;
   userAgent?: string;
 }) {
@@ -141,6 +146,18 @@ export async function startRegistration(input: {
     },
   });
 
+  /**
+   * 결제창이 없는 사업자(코엠 카드 빌키 등)는 이 단계를 건너뛴다.
+   *
+   * 코엠 DIRECTPAY 는 호스팅 결제창 없이 카드번호를 우리 서버가 직접 받는 방식이라
+   * 리다이렉트할 URL 자체가 존재하지 않는다. 그런 경우에도 등록 행(paymentRegistration)은
+   * 필요하므로, 행만 만들고 redirectUrl 은 null 로 돌려준다.
+   * 이후 completeRegistration() 이 카드정보를 받아 빌키를 발급한다.
+   */
+  if (input.skipProviderSession) {
+    return { registrationId: registration.id, redirectUrl: null as string | null, ctx };
+  }
+
   const adapter = getPaymentAdapter();
   const session = await adapter.createRegistrationSession({
     donorRef: registration.id,
@@ -155,7 +172,7 @@ export async function startRegistration(input: {
     data: { status: 'AUTH_DONE', providerTid: session.data.providerTid },
   });
 
-  return { registrationId: registration.id, redirectUrl: session.data.redirectUrl, ctx };
+  return { registrationId: registration.id, redirectUrl: session.data.redirectUrl as string | null, ctx };
 }
 
 /** 결제창 콜백 처리 → 빌키 저장. 계좌 원문은 저장하지 않는다. */
@@ -182,12 +199,14 @@ export async function completeRegistration(input: {
 
   const adapter = getPaymentAdapter();
   // 결제수단 종류는 결제창 응답이 아니라 우리가 시작할 때 기록한 값이 기준이다.
-  const res = await adapter.completeRegistration({ ...input.providerPayload, method: owned.method });
+  // registrationId 를 함께 주입한다. 카카오 등 partner_order_id/partner_user_id 를
+  // DB 에 저장하지 않고 재현해야 하는 어댑터에서 사용한다(kakao.ts 주석 참고).
+  const res = await adapter.completeRegistration({ ...input.providerPayload, method: owned.method, registrationId: owned.id });
 
   if (!res.ok || !res.data) {
     await prisma.paymentRegistration.update({
       where: { id: input.registrationId },
-      data: { status: 'FAILED', resultCode: res.code ?? null, resultMessage: res.message ?? null },
+      data: { status: 'FAILED', resultCode: res.code ?? null, resultMessage: res.message != null ? scrubText(res.message) : null },
     });
     throw new Error(res.message ?? '계좌 등록에 실패했습니다.');
   }

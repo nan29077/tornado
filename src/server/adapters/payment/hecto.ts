@@ -31,6 +31,31 @@ import { mockPinUrl } from './mock-pin';
  */
 
 /** 연동규격서와 대조해야 하는 값 모음. 규격서 수령 시 여기만 수정한다. */
+/**
+ * 헥토파이낸셜 연동규격서 수령 후 채워야 할 항목 목록
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 1. PIN 인증창 발급 API (requestPinLink 실구현)
+ *    - HECTO_SPEC.pinAuthPath: 실제 경로 확인 후 교체 (현재 추정값 '/v3/APIPayAuth.do')
+ *    - 요청 필드: mercntId, ordNo, amount, phone, returnUrl 등 규격 확인 필요
+ *    - 응답 필드: 인증 URL, 세션 ID, 만료시각 — 필드명 확인 필요
+ *    - requestPinLink() 의 TODO 블록을 실제 postJson 호출로 교체하고 mock: false 로 변경
+ *
+ * 2. 환경변수 확인
+ *    - HECTO_AUTH_API_BASE: 서버 API 호스트 (현재 기본값 'https://ezauthapi.settlebank.co.kr:8081')
+ *    - HECTO_AUTH_UI_BASE: 결제창 UI 호스트 (현재 기본값 'https://ezauth.settlebank.co.kr')
+ *    - 위 두 호스트가 규격서 기준과 다르면 .env 에서 재설정한다.
+ *    - HECTO_MID, HECTO_LICENSE_KEY, HECTO_AES_KEY, HECTO_HASH_KEY: 계약 시 발급받는 값
+ *
+ * 3. 콜백 URL 등록
+ *    - HECTO_CALLBACK_URL: 헥토 대시보드에 등록해야 하는 자사 콜백 URL
+ *    - PIN 콜백은 /api/webhooks/pin-callback 이 처리한다.
+ *
+ * 4. 기타 확인 사항
+ *    - 승인 요청(approvePath)의 ordNo 중복 재요청 시 동일 결과를 돌려주는지(멱등성) 확인
+ *    - 인증창 유효시간(현재 10분으로 가정, pinTtlSec 환경변수와 맞추기)
+ *    - AES-256-ECB 키 길이·패딩 방식 확인 (현재 PKCS5Padding 가정)
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
 export const HECTO_SPEC = {
   /** 결제창(계좌 인증 + 출금이체 등록) */
   authWindowPath: '/auth/main.do',
@@ -45,8 +70,9 @@ export const HECTO_SPEC = {
   billKeyPath: '/v3/APIRegularpayKey.do',
   /**
    * 결제 PIN 인증창 발급.
-   * TODO(계약 후): 연동규격서를 받아 실제 경로·필드명으로 교체한다.
+   * TODO(규격서 수령 후): 실제 경로를 확인해 교체한다.
    * 지금 값은 추정이며, 실제 호출에는 사용하지 않는다(아래 requestPinLink 참고).
+   * 교체 후 requestPinLink() 내 TODO 블록도 함께 완성한다.
    */
   pinAuthPath: '/v3/APIPayAuth.do',
   /** 성공 응답 코드 */

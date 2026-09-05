@@ -136,6 +136,56 @@ interface LayerRect {
   h: number;
 }
 
+/**
+ * 오버레이가 자리를 알려 주기 전에 쓸 **대략 상자**.
+ *
+ * 왜 필요한가
+ * -----------
+ * 예전에는 오버레이(iframe)가 `donaido-overlay-rect` 로 자기 자리를 알려 줄 때까지
+ * 조정 상자를 **아예 그리지 않았다**. 그래서 오버레이가 아직 안 떴거나 실시간 연결이
+ * 끊긴 상태에서는 [위치·크기 조정]을 켜도 **화면에 아무것도 나타나지 않아**
+ * "드래그로 옮길 수 없다" 가 된다. 기능이 없는 게 아니라 잡을 것이 없는 상태다.
+ *
+ * 실제 자리가 오면 곧바로 그 값으로 바뀐다. 그때까지는 이 근사치로 잡고 끌 수 있다.
+ * 크기·위치는 저장된 배치값을 그대로 반영하므로 끄는 느낌도 실제와 같다.
+ */
+const FALLBACK_BOX: Record<LayoutTarget, { w: number; h: number; cx: number; cy: number }> = {
+  // 후원 알림 배너: 가로로 긴 띠. 기본 자리는 아래쪽 가운데다.
+  donation: { w: 0.46, h: 0.17, cx: 0.5, cy: 0.72 },
+  // 게임 화면: 가운데 큰 카드.
+  game: { w: 0.5, h: 0.46, cx: 0.5, cy: 0.48 },
+};
+
+/**
+ * 이 자리로 두면 방송 화면 밖으로 나가는가.
+ *
+ * 조절 한도(±40%) 안에서도 **완전히 화면 밖으로 밀어낼 수 있다.**
+ * 예: 아래쪽에 붙는 후원 배너를 세로 +40% 로 내리면 캔버스 아래로 완전히 사라진다.
+ * 그러면 OBS 화면에도 아무것도 나오지 않는데, 크리에이터는 이유를 알 수 없다.
+ * (미리보기에서도 안 보이니 "오버레이가 고장 났다" 로 읽힌다)
+ * 값 자체를 막지는 않는다 — 화면 밖으로 빼 두고 싶은 경우도 있다. 대신 **경고한다.**
+ */
+export function offscreenRatio(r: LayerRect): number {
+  const inX = Math.max(0, Math.min(1, r.x + r.w) - Math.max(0, r.x));
+  const inY = Math.max(0, Math.min(1, r.y + r.h) - Math.max(0, r.y));
+  const area = r.w * r.h;
+  if (area <= 0) return 1;
+  return Math.max(0, Math.min(1, 1 - (inX * inY) / area));
+}
+
+export function fallbackRect(target: LayoutTarget, layout: OverlayLayout): LayerRect {
+  const base = FALLBACK_BOX[target];
+  const s = layout.scalePct / 100;
+  const w = base.w * s;
+  const h = base.h * s;
+  return {
+    x: base.cx + layout.offsetX / 100 - w / 2,
+    y: base.cy + layout.offsetY / 100 - h / 2,
+    w,
+    h,
+  };
+}
+
 // ---------------------------------------------------------------- 배지
 
 /**
@@ -144,17 +194,33 @@ interface LayerRect {
  * 문구 길이를 고정폭 칸 안에 가둔다. 남은 초처럼 1초마다 글자 수가 바뀌는 값은 넣지 않는다.
  * 배지가 탭·버튼과 자리를 다투면 줄바꿈이 켜졌다 꺼졌다 하며 아래 내용이 위아래로 흔들린다.
  */
-function ConnectionBadge({ link }: { link: LinkState | null }) {
+function ConnectionBadge({ link, game }: { link: LinkState | null; game: GameLayerState | null }) {
   const phase = !link ? 'connecting' : link.phase;
   const tone = phase === 'connected' ? 'success' : phase === 'retrying' ? 'warning' : 'neutral';
   const label = phase === 'connected' ? '연결됨' : phase === 'retrying' ? '재연결 중' : '연결 중';
   const Icon = phase === 'connected' ? Wifi : PlugZap;
 
+  /**
+   * 게임 레이어의 연결 상태를 따로 표시한다.
+   *
+   * 예전에는 이 배지가 **후원 알림 레이어의 상태만** 보여 줬다. 그래서 후원 쪽은 붙었는데
+   * 게임 쪽이 못 붙은 상황에서도 [연결됨] 하나만 떠 있었고, 화면이 비어 있는 이유를
+   * 화면만 봐서는 알 수 없었다. 실제로 그 상태를 진단하는 데 오래 걸렸다.
+   * 두 레이어가 각각 어떤 상태인지 항상 보이게 한다.
+   */
+  const gamePhase = !game ? 'connecting' : game.phase || 'connecting';
+  const gameTone = gamePhase === 'connected' ? 'success' : gamePhase === 'retrying' ? 'warning' : 'neutral';
+  const gameLabel =
+    gamePhase === 'connected' ? (game?.live ? '게임 재생 중' : '게임 대기') : gamePhase === 'retrying' ? '게임 재연결' : '게임 연결 중';
+
   return (
-    <span className="inline-flex h-7 w-[86px] shrink-0 items-center justify-center">
-      <Badge tone={tone}>
+    <span className="inline-flex h-7 shrink-0 items-center gap-1">
+      <Badge tone={tone} className="whitespace-nowrap">
         <Icon size={13} strokeWidth={1.7} className="mr-1 inline-block align-[-2px]" />
-        {label}
+        후원 {label}
+      </Badge>
+      <Badge tone={gameTone} className="hidden whitespace-nowrap lg:inline-flex">
+        {gameLabel}
       </Badge>
     </span>
   );
@@ -168,7 +234,7 @@ function MetaBadge({ meta, game }: { meta: MetaState | null; game: GameLayerStat
   if (parts.length === 0) return null;
 
   return (
-    <span className="hidden h-7 shrink-0 items-center rounded-lg bg-ink-50 px-2 text-[11.5px] font-semibold text-ink-500 tabular-nums 2xl:inline-flex">
+    <span className="hidden h-7 shrink-0 items-center rounded-lg bg-ink-50 px-2 text-[11.5px] font-semibold text-ink-500 tabular-nums xl:inline-flex">
       {parts.join(' · ')}
     </span>
   );
@@ -287,6 +353,8 @@ function LayoutEditorBar({
   onSave: () => void;
 }) {
   const { offsetMax, scaleMin, scaleMax } = OVERLAY_LAYOUT_LIMITS;
+  /** 지금 값으로 두면 방송 화면 밖으로 얼마나 나가는가 (0 = 다 보임, 1 = 안 보임) */
+  const offscreen = offscreenRatio(fallbackRect(target, layout));
 
   return (
     <div className="rounded-xl border-2 border-brand-200 bg-brand-50/60 px-3 py-3">
@@ -358,11 +426,26 @@ function LayoutEditorBar({
       </div>
 
       <p className="mt-2 text-[11.5px] leading-relaxed text-ink-500">
-        미리보기에서 <b className="text-ink-700">점선 상자를 끌면</b> 옮겨지고,{' '}
-        <b className="text-ink-700">네 귀퉁이 손잡이</b>를 끌면 크기가 바뀝니다. 방향키로 1%씩(Shift 5%) 미세
-        조정할 수 있습니다. 저장하면 방송 중인 OBS·PRISM 화면에도 새로 고침 없이 바로 반영됩니다. 게임의 참여
+        미리보기에서 <b className="text-ink-700">상자를 끌면</b> 옮겨지고,{' '}
+        <b className="text-ink-700">네 귀퉁이 손잡이를 끌거나 마우스 휠을 굴리면</b> 크기가 바뀝니다. 방향키로
+        1%씩(Shift 5%) 미세 조정할 수 있습니다. 저장하면 방송 중인 OBS·PRISM 화면에도 새로 고침 없이 바로 반영됩니다. 게임의 참여
         QR 은 너무 작아지면 시청자 휴대폰이 인식하지 못하니 크기를 많이 줄이지 마세요.
       </p>
+
+      {/*
+        화면 밖으로 밀려났을 때의 경고.
+        조절 한도 안에서도 완전히 나갈 수 있는데, 그 상태로 저장하면 방송 화면에
+        아무것도 나오지 않는다. 저장을 막지는 않고(일부러 빼 두는 경우도 있다) 알려만 준다.
+      */}
+      {offscreen > 0.5 ? (
+        <div className="mt-2">
+          <Notice tone="warning" title={offscreen > 0.98 ? '방송 화면 밖으로 완전히 나갔습니다' : '방송 화면 밖으로 밀려나고 있습니다'}>
+            지금 자리로 저장하면 OBS·PRISM 방송 화면에{' '}
+            {offscreen > 0.98 ? '아무것도 보이지 않습니다' : `${Math.round((1 - offscreen) * 100)}% 만 보입니다`}.
+            되돌리려면 [처음 배치로] 를 누르거나 위 슬라이더를 0 으로 맞춰 주세요.
+          </Notice>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="mt-2">
@@ -458,6 +541,8 @@ function EditSurface({
   onKeyDown,
   onDragMove,
   onDragEnd,
+  layoutOf,
+  onWheelScale,
 }: {
   frame: PreviewTab;
   editing: LayoutTarget;
@@ -470,8 +555,20 @@ function EditSurface({
   onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   onDragMove: (e: React.PointerEvent<Element>) => void;
   onDragEnd: () => void;
+  /** 선택되지 않은 대상의 저장된 배치. 대략 상자를 그릴 때 쓴다. */
+  layoutOf: (t: LayoutTarget) => OverlayLayout;
+  /** 마우스 휠로 크기 조절 */
+  onWheelScale: (deltaY: number) => void;
 }) {
-  const rectOf = (t: LayoutTarget) => rects[`${frame}:${t}`];
+  /**
+   * 상자 위치. 오버레이가 알려 준 실제 자리를 우선 쓰고, 아직 못 받았으면 대략 상자를 쓴다.
+   * 예전에는 실제 자리가 없으면 상자를 그리지 않아 **잡을 것이 없었다.**
+   */
+  const rectOf = (t: LayoutTarget): { rect: LayerRect; exact: boolean } => {
+    const reported = rects[`${frame}:${t}`];
+    if (reported) return { rect: reported, exact: true };
+    return { rect: fallbackRect(t, t === editing ? editingLayout : layoutOf(t)), exact: false };
+  };
 
   const startMove = (e: React.PointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -480,9 +577,9 @@ function EditSurface({
 
   const startScale = (e: React.PointerEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    const r = rectOf(editing);
+    const { rect: r } = rectOf(editing);
     const el = boxRef.current;
-    if (!r || !el) return;
+    if (!el) return;
     const b = innerRect(el);
     e.currentTarget.setPointerCapture(e.pointerId);
     const cx = b.left + (r.x + r.w / 2) * b.width;
@@ -498,8 +595,28 @@ function EditSurface({
     };
   };
 
+  /**
+   * 마우스 휠로 크기를 바꾼다.
+   *
+   * React 의 onWheel 은 passive 로 붙어 preventDefault 가 통하지 않는다. 그대로 두면
+   * 크기를 줄이려고 굴릴 때마다 **페이지가 같이 스크롤돼** 조정하던 화면이 사라진다.
+   * 그래서 직접(non-passive) 붙인다.
+   */
+  const surfaceRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    const el = surfaceRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      onWheelScale(e.deltaY);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [onWheelScale]);
+
   return (
     <div
+      ref={surfaceRef}
       className="absolute inset-0 z-30"
       tabIndex={0}
       role="application"
@@ -524,8 +641,7 @@ function EditSurface({
       {snapped.y ? <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-brand-400" /> : null}
 
       {(['game', 'donation'] as LayoutTarget[]).map((t) => {
-        const r = rectOf(t);
-        if (!r) return null;
+        const { rect: r, exact } = rectOf(t);
         const active = editing === t;
         return (
           <div
@@ -553,7 +669,16 @@ function EditSurface({
             >
               {TARGET_LABEL[t]}
               {active ? '' : ' — 눌러서 선택'}
+              {exact ? '' : ' (대략 위치)'}
             </span>
+
+            {/* 끄는 동안 지금 값을 상자 안에 보여 준다. 편집 막대까지 눈을 옮기지 않아도 된다. */}
+            {active ? (
+              <span className="pointer-events-none absolute -bottom-6 left-0 whitespace-nowrap rounded bg-ink-900/80 px-1.5 py-0.5 text-[10.5px] font-bold tabular-nums text-white">
+                가로 {editingLayout.offsetX > 0 ? '+' : ''}{editingLayout.offsetX}% · 세로{' '}
+                {editingLayout.offsetY > 0 ? '+' : ''}{editingLayout.offsetY}% · 크기 {editingLayout.scalePct}%
+              </span>
+            ) : null}
 
             {/* 네 귀퉁이 크기 조절 손잡이 */}
             {active
@@ -570,7 +695,16 @@ function EditSurface({
                     onPointerDown={startScale}
                     onPointerMove={onDragMove}
                     onPointerUp={onDragEnd}
-                    className={cx('absolute h-3 w-3 rounded-sm border-2 border-brand-500 bg-white', pos)}
+                    /*
+                      보이는 크기는 작게, 집는 영역은 넉넉하게.
+                      12px 짜리 점을 정확히 집는 것은 특히 노트북 트랙패드에서 어렵다.
+                      before 로 사방 8px 를 더해 실제 클릭 영역을 28px 남짓으로 넓힌다.
+                    */
+                    className={cx(
+                      'absolute h-3.5 w-3.5 rounded-sm border-2 border-brand-500 bg-white shadow-sm',
+                      'before:absolute before:-inset-2 before:content-[""]',
+                      pos,
+                    )}
                     style={{ cursor }}
                   />
                 ))
@@ -821,6 +955,27 @@ export function BroadcastPreview({
     drag.current = null;
     setSnapped({ x: false, y: false });
   }, []);
+
+  /**
+   * 마우스 휠로 크기 조절.
+   * 귀퉁이 손잡이를 정확히 집지 않아도 되고, 화면을 보면서 바로 키우고 줄일 수 있다.
+   * 한 칸에 2%씩 움직인다(너무 크면 지나치고, 너무 작으면 답답하다).
+   */
+  const onWheelScale = React.useCallback(
+    (deltaY: number) => {
+      if (!editing) return;
+      const cur = editing === 'game' ? gameLayout : donationLayout;
+      const step = deltaY > 0 ? -2 : 2;
+      updateLayout(editing, { ...cur, scalePct: cur.scalePct + step });
+    },
+    [editing, gameLayout, donationLayout, updateLayout],
+  );
+
+  /** 선택되지 않은 대상의 저장된 배치 (대략 상자용) */
+  const layoutOf = React.useCallback(
+    (t: LayoutTarget) => (t === 'game' ? gameLayout : donationLayout),
+    [gameLayout, donationLayout],
+  );
 
   /** 방향키 미세 조정. 상자에 포커스가 있을 때만 동작한다. */
   const onEditKeyDown = React.useCallback(
@@ -1085,7 +1240,7 @@ export function BroadcastPreview({
           </div>
 
           <div className="flex h-9 shrink-0 items-center gap-1.5">
-            <ConnectionBadge link={link} />
+            <ConnectionBadge link={link} game={game} />
             <MetaBadge meta={meta} game={game} />
             <Button type="button" variant="ghost" size="sm" onClick={openZoom}>
               <Maximize2 size={14} strokeWidth={1.7} />
@@ -1099,7 +1254,32 @@ export function BroadcastPreview({
         </div>
 
         {/* ── 아랫줄: 무엇을 보여 줄까 · 무엇을 옮길까 ─────── */}
-        <div className={cx(pip && 'hidden')}>
+        <div className={cx('space-y-2', pip && 'hidden')}>
+          {/*
+            **[보여 줄 것] 토글은 조정 중에도 계속 보여 준다.**
+
+            예전에는 [위치·크기 조정]을 켜면 이 줄이 편집 막대로 **통째로 바뀌어 사라졌다.**
+            그런데 게임 자리를 잡는 동안 후원 알림을 잠깐 끄고 보고 싶은 것이 자연스럽고,
+            버튼이 갑자기 없어지면 "어디 갔지" 하고 조정을 취소하게 된다.
+            항상 같은 자리에 두고, 편집 막대는 그 아래에 덧붙인다.
+          */}
+          {editing ? (
+            <div className="rounded-xl border border-ink-100 bg-ink-50/60 px-3 py-2.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11.5px] font-extrabold tracking-[0.02em] text-ink-400">
+                  미리보기에 보여 줄 것
+                </span>
+                <LayerToggle
+                  on={showDonation}
+                  label="후원 알림"
+                  Icon={Heart}
+                  onClick={() => setShowDonation((v) => !v)}
+                />
+                <LayerToggle on={showGame} label="게임" Icon={Gamepad2} onClick={() => setShowGame((v) => !v)} />
+              </div>
+            </div>
+          ) : null}
+
           {editing ? (
             <LayoutEditorBar
               target={editing}
@@ -1210,6 +1390,8 @@ export function BroadcastPreview({
                 onKeyDown={onEditKeyDown}
                 onDragMove={onDragMove}
                 onDragEnd={endDrag}
+                layoutOf={layoutOf}
+                onWheelScale={onWheelScale}
               />
             ) : null}
           </div>
@@ -1259,6 +1441,8 @@ export function BroadcastPreview({
                   onKeyDown={onEditKeyDown}
                   onDragMove={onDragMove}
                   onDragEnd={endDrag}
+                  layoutOf={layoutOf}
+                  onWheelScale={onWheelScale}
                 />
               ) : null}
             </div>

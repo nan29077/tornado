@@ -66,17 +66,25 @@ export function OverlayCanvas({
      */
     let measured = false;
     let retry: ReturnType<typeof setTimeout> | null = null;
-    const RETRY_MS = 120;
-    const RETRY_LIMIT = 25; // 약 3초. 그 뒤에도 0 이면 정말로 화면에 자리가 없는 것이다.
     let tries = 0;
+    /**
+     * 처음에는 촘촘히, 나중에는 느슨하게 다시 잰다. **성공하면 완전히 멈춘다.**
+     *
+     * 예전에는 3초만 시도하고 포기했다. 그런데 미리보기 틀은 접혀 있거나 다른 탭에 있어
+     * 3초보다 훨씬 뒤에 펼쳐지는 경우가 있다(브라우저가 배경 탭의 크기 변화를 늦게 알리는
+     * 경우도 있다). 그때 포기해 버리면 **미리보기가 영영 빈 화면**으로 남고,
+     * 화면에는 아무 오류도 뜨지 않아 원인을 짐작할 수 없다.
+     * 재시도 비용은 getBoundingClientRect 한 번이라 느슨한 간격이면 사실상 공짜다.
+     */
+    const delayFor = (n: number) => (n < 10 ? 120 : n < 20 ? 500 : 2000);
 
     const measure = () => {
       const r = el.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) {
-        if (!measured && tries < RETRY_LIMIT) {
+        if (!measured) {
           tries += 1;
           if (retry) clearTimeout(retry);
-          retry = setTimeout(measure, RETRY_MS);
+          retry = setTimeout(measure, delayFor(tries));
         }
         return;
       }
@@ -97,11 +105,14 @@ export function OverlayCanvas({
     observer.observe(el);
     window.addEventListener('resize', measure);
     window.addEventListener('orientationchange', measure);
+    // 배경 탭에서 앞으로 나올 때도 다시 잰다. 그동안 크기 변화가 보고되지 않았을 수 있다.
+    document.addEventListener('visibilitychange', measure);
     return () => {
       if (retry) clearTimeout(retry);
       observer.disconnect();
       window.removeEventListener('resize', measure);
       window.removeEventListener('orientationchange', measure);
+      document.removeEventListener('visibilitychange', measure);
     };
   }, []);
 

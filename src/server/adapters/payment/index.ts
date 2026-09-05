@@ -1,11 +1,17 @@
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { AdapterNotConfiguredError, type AdapterInfo, type ProviderResult } from '../types';
-// hecto.ts 는 이 파일에서 '타입만' 가져오므로 런타임 순환 참조는 생기지 않는다.
+// hecto.ts / ongi.ts / koem.ts 는 이 파일에서 '타입만' 가져오므로 런타임 순환 참조는 생기지 않는다.
 import { hectoPaymentAdapter } from './hecto';
+import { ongiPaymentAdapter } from './ongi';
+import { koemPaymentAdapter } from './koem';
+import { kakaoPaymentAdapter } from './kakao';
 import { mockPinUrl } from './mock-pin';
 
 export { mockPinUrl } from './mock-pin';
+export { ongiPaymentAdapter, ONGI_SPEC } from './ongi';
+export { koemPaymentAdapter, KOEM_SPEC, koemRegisterBillKey } from './koem';
+export { kakaoPaymentAdapter, KAKAO_SPEC } from './kakao';
 
 /**
  * 결제 어댑터 (헥토파이낸셜 내통장결제 EzAuth 기준 인터페이스).
@@ -280,6 +286,24 @@ export function getPaymentAdapter(): PaymentAdapter {
       const adapter = hectoPaymentAdapter;
       const missing = adapter.info().missingCredentials;
       if (missing.length > 0) throw new AdapterNotConfiguredError('hecto', missing);
+      return adapter;
+    }
+    case 'ongi': {
+      const adapter = ongiPaymentAdapter;
+      const missing = adapter.info().missingCredentials;
+      if (missing.length > 0) throw new AdapterNotConfiguredError('ongi', missing);
+      return adapter;
+    }
+    case 'koem': {
+      const adapter = koemPaymentAdapter;
+      const missing = adapter.info().missingCredentials;
+      if (missing.length > 0) throw new AdapterNotConfiguredError('koem', missing);
+      return adapter;
+    }
+    case 'kakao': {
+      const adapter = kakaoPaymentAdapter;
+      const missing = adapter.info().missingCredentials;
+      if (missing.length > 0) throw new AdapterNotConfiguredError('kakao', missing);
       return adapter;
     }
     default:

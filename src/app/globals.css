@@ -272,7 +272,9 @@ a {
  */
 .console-canvas {
   --console-header-h: 4rem; /* 상단 헤더 높이 (h-16) */
-  --overlay-tabbar-h: 4.75rem; /* 후원/게임 탭 바 높이 (위아래 여백 포함) */
+  /* 후원/게임 탭 바 높이 (위아래 여백 포함). overlay-tabs.tsx 의 pt-2 + 바 높이 + pb-5 와 맞춘다.
+     이 값이 어긋나면 진행 컨트롤이 탭 바에 겹치거나 사이가 벌어진다. */
+  --overlay-tabbar-h: 5rem;
 }
 
 /*

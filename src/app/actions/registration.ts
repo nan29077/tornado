@@ -61,6 +61,12 @@ export async function startRegistrationAction(
     return { ok: false, message: (e as Error).message || '계좌 등록을 시작하지 못했습니다.' };
   }
 
+  // 결제창이 없는 사업자(코엠 카드 빌키)는 redirectUrl 이 없다.
+  // 이 액션은 결제창 이동 전용이므로, 그런 사업자에서는 전용 카드 등록 액션을 써야 한다.
+  if (!redirectUrl) {
+    return { ok: false, message: '이 결제사는 결제창을 사용하지 않습니다. 카드 등록 화면을 이용해 주세요.' };
+  }
+
   // redirect() 는 내부적으로 예외를 던지므로 반드시 try 블록 밖에서 호출한다.
   redirect(redirectUrl);
 }

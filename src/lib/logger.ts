@@ -57,6 +57,18 @@ const PHONE_PATTERNS: RegExp[] = [
  */
 const URL_RE = /(https?:\/\/[^\s/]+)\/\S*/gi;
 
+/**
+ * 카드번호(PAN) 패턴.
+ *
+ * 코엠 같은 화이트리스트형 PG 는 오류 응답 본문에 카드번호를 echo 할 수 있다.
+ * 그 메시지가 logger.warn 을 거쳐 로그에 남거나 DB 의 result_message 에 저장되는 것을 막는다.
+ *
+ * 13~16 연속 숫자 중 앞뒤에 숫자가 더 붙어 있으면 매칭하지 않는다.
+ * 이미 `****` 처리된 문자열은 연속 숫자 구간이 끊겨 있으므로 재매칭되지 않는다.
+ * 끝 4자리만 남겨 발급사 확인이 가능하도록 한다.
+ */
+const PAN_RE = /(?<![0-9])([0-9]{13,16})(?![0-9])/g;
+
 /** 문자열에서 개인정보·자격증명 흔적을 지운다. 로그 메시지와 meta 양쪽에 쓴다. */
 export function scrubText(input: string): string {
   let out = input.replace(URL_RE, '$1/[링크 감춤]');
@@ -68,6 +80,8 @@ export function scrubText(input: string): string {
       return '****';
     });
   }
+  // PAN 마스킹: 끝 4자리만 남기고 나머지는 * 로 교체한다.
+  out = out.replace(PAN_RE, (match) => `${'*'.repeat(match.length - 4)}${match.slice(-4)}`);
   return out;
 }
 
