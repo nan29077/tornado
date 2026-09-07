@@ -32,7 +32,12 @@ export const FAN_SORTS = {
 export type FanSort = keyof typeof FAN_SORTS;
 
 export function isFanSort(v: string): v is FanSort {
-  return v in FAN_SORTS;
+  /**
+   * `in` 은 프로토타입 키까지 참으로 본다.
+   * `?sort=constructor` · `?sort=toString` · `?sort=__proto__` 가 통과해
+   * 비교 함수를 찾지 못한 채 정렬이 통째로 무시됐다(정렬 칸도 빈 값으로 보였다).
+   */
+  return Object.prototype.hasOwnProperty.call(FAN_SORTS, v);
 }
 
 export interface CreatorFan {

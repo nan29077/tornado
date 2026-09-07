@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { LayoutGrid, Rows3, Search } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, Field, Input, Select, Table, Td, Th, cx } from '@/components/ui';
 import { PageHeader } from '@/components/layout/console-shell';
-import { buildQuery, one, type SearchParamsRecord } from '@/components/studio/shared';
+import { buildQuery, one, pageParam, type SearchParamsRecord } from '@/components/studio/shared';
 import { DonationCardGrid } from '@/components/studio/donation-cards';
 import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
@@ -62,7 +62,7 @@ export default async function StudioDonationsPage({
   const period = one(sp.period) || '30d';
   const status = one(sp.status);
   const q = one(sp.q).trim();
-  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const page = pageParam(sp.page);
   const rawView = one(sp.view);
   const view: ViewMode = VIEWS.some((v) => v.value === rawView) ? (rawView as ViewMode) : 'card';
 

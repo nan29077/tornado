@@ -8,6 +8,7 @@ import { requireCreator } from '@/server/auth';
 import { listCreatorFans, FAN_SORTS, isFanSort, type FanSort, type CreatorFan } from '@/server/services/creator-fans';
 import { formatWon, formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
+import { pageParam } from '@/components/studio/shared';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +31,7 @@ export default async function StudioFansPage({
 
   const sort: FanSort = sp.sort && isFanSort(sp.sort) ? sp.sort : 'amount';
   const q = (sp.q ?? '').trim();
-  const page = Math.max(1, Number(sp.page ?? 1) || 1);
+  const page = pageParam(sp.page);
 
   const board = await listCreatorFans(creatorId, { sort, page, q });
 

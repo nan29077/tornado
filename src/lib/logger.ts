@@ -66,8 +66,30 @@ const URL_RE = /(https?:\/\/[^\s/]+)\/\S*/gi;
  * 13~16 연속 숫자 중 앞뒤에 숫자가 더 붙어 있으면 매칭하지 않는다.
  * 이미 `****` 처리된 문자열은 연속 숫자 구간이 끊겨 있으므로 재매칭되지 않는다.
  * 끝 4자리만 남겨 발급사 확인이 가능하도록 한다.
+ *
+ * **자릿수만으로는 카드번호를 가릴 수 없다.**
+ * 주문번호(`20260902123456`)·거래 식별자처럼 14자리 숫자를 쓰는 값이 이 앱에 이미 있고,
+ * 그것까지 `**********3456` 으로 지우면 결제 장애를 추적할 때 로그로 건을 특정할 수 없다.
+ * 카드번호는 반드시 룬(Luhn) 검사를 통과하므로, 그 검사까지 붙여 진짜 카드번호만 가린다.
+ * (주문번호가 우연히 룬을 통과할 확률은 10% 남짓이고, 그때는 가려지는 쪽이 안전하다)
  */
 const PAN_RE = /(?<![0-9])([0-9]{13,16})(?![0-9])/g;
+
+/** 카드번호 검증(Luhn). 카드번호는 모두 이 검사를 통과한다. */
+function passesLuhn(digits: string): boolean {
+  let sum = 0;
+  let double = false;
+  for (let i = digits.length - 1; i >= 0; i -= 1) {
+    let n = digits.charCodeAt(i) - 48;
+    if (double) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+    double = !double;
+  }
+  return sum % 10 === 0;
+}
 
 /** 문자열에서 개인정보·자격증명 흔적을 지운다. 로그 메시지와 meta 양쪽에 쓴다. */
 export function scrubText(input: string): string {
@@ -81,7 +103,9 @@ export function scrubText(input: string): string {
     });
   }
   // PAN 마스킹: 끝 4자리만 남기고 나머지는 * 로 교체한다.
-  out = out.replace(PAN_RE, (match) => `${'*'.repeat(match.length - 4)}${match.slice(-4)}`);
+  out = out.replace(PAN_RE, (match) =>
+    passesLuhn(match) ? `${'*'.repeat(match.length - 4)}${match.slice(-4)}` : match,
+  );
   return out;
 }
 

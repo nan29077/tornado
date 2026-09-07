@@ -550,6 +550,23 @@ export async function markSettlementPaid(requestId: string, adminId?: string, pa
 
       const summary = await getSettlementSummary(req.creatorId, tx);
       if (req.amount > summary.balance) {
+        /**
+         * 지급실패 건을 다시 지급완료로 올리는 경로는 **막는다.**
+         *
+         * 이체 실패로 되돌린 뒤 크리에이터가 같은 금액을 다시 요청해 지급받은 상태에서,
+         * 관리자가 옛 실패 건을 다시 지급완료로 처리하면 **같은 돈이 두 번 나간다.**
+         * 잔액이 모자란다는 것이 바로 그 신호다.
+         *
+         * 승인(APPROVED) 건은 사정이 다르다. 이체가 이미 끝난 뒤 기록만 맞추는 단계라
+         * 여기서 막으면 나간 돈이 장부에 안 남는다. 경고만 남기고 진행한다.
+         */
+        if (req.status === 'PAYOUT_FAILED') {
+          throw new Error(
+            `잔액이 부족해 다시 지급 완료로 처리할 수 없습니다. ` +
+              `(요청 ${req.amount.toString()}원 / 잔액 ${summary.balance.toString()}원) ` +
+              `이미 다른 요청으로 지급되었는지 확인해 주세요.`,
+          );
+        }
         warnings.push(
           `잔액 초과 지급 (요청 ${req.amount.toString()}원 / 잔액 ${summary.balance.toString()}원)`,
         );
@@ -696,6 +713,15 @@ export async function markSettlementPayoutFailed(requestId: string, reason: stri
         where: { id: requestId },
         data: {
           status: 'PAYOUT_FAILED',
+          /**
+           * **지급일도 함께 지운다.**
+           *
+           * 예전에는 status 만 바꾸고 paidAt 을 남겨 두었다. 크리에이터 화면의 정산 달력과
+           * 요청 내역은 paidAt 을 보고 "지급일" 을 표시하므로, 실제로는 이체가 실패해
+           * 돈이 나가지 않았는데도 **지급완료로 보였다.** 잔액은 환입되어 다시 요청할 수
+           * 있으니, 크리에이터 눈에는 "지급됐다는데 또 요청하라고 한다" 가 된다.
+           */
+          paidAt: null,
           payoutFailReason: reason.slice(0, 300),
           adminId: adminId ?? null,
         },

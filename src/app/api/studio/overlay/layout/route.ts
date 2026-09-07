@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireCreator } from '@/server/auth';
+import { readJsonObject } from '@/lib/json-body';
 import { prisma } from '@/server/db';
 import { clampOverlayLayout } from '@/lib/overlay-layout';
 
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: (e as Error).message }, { status: 403 });
   }
 
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonObject(req);
   const target = body?.target === 'game' ? 'game' : body?.target === 'donation' ? 'donation' : null;
   if (!target) {
     return NextResponse.json({ error: '어느 화면의 배치인지 알 수 없습니다.' }, { status: 400 });

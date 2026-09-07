@@ -9,11 +9,14 @@ import { newId } from '@/lib/id';
 import { env } from '@/lib/env';
 import { accountTail4, decrypt, encrypt, generateToken, isValidResident, maskName, maskSecret, normalizeResident, tokenHash } from '@/lib/crypto';
 import { sendTestOverlay } from '@/server/services/broadcast-dispatch';
+import { closeOverlayConnections } from '@/server/services/overlay-connections';
+import { DISPLAY_PAID_STATUSES } from '@/components/studio/shared';
 import { OVERLAY_EFFECTS } from '@/server/services/overlay-tiers';
 import { resolvePolicy } from '@/server/services/limits';
 import { createSettlementRequest } from '@/server/services/settlement';
 import { notifySuperAdmins, notifyUser } from '@/server/services/notifications';
 import { formatWon } from '@/lib/money';
+import { imageUrlSchema } from '@/lib/image-url';
 import { loadBannedWords } from '@/server/services/donation-flow';
 import { THANKS_MT_MAX_LENGTH, THANKS_MT_VARIABLES } from '@/server/services/mt-templates';
 import { bannedNeedle, filterContent } from '@/server/services/content-filter';
@@ -178,9 +181,23 @@ export async function replayOverlayTestAction(
 
     const donation = await prisma.donation.findFirst({
       where: { id: donationId, creatorId },
-      select: { amount: true, displayName: true, message: true, anonymous: true },
+      select: { amount: true, displayName: true, message: true, anonymous: true, status: true },
     });
     if (!donation) return { ok: false, message: '본인 채널의 후원 내역이 아닙니다.' };
+
+    /**
+     * 결제가 확정된 후원만 다시 재생한다.
+     *
+     * 예전에는 상태를 보지 않아 **결제 실패·한도 차단·금칙어 차단·환불 완료** 건도 재생할 수
+     * 있었다. 방송 중에 누르면 결제되지 않은 후원이 시청자 화면에 그대로 뜬다. 화면에는
+     * "후원 상태에 영향이 없습니다" 라고만 적혀 있어 그게 문제라는 것을 알기 어렵다.
+     */
+    if (!DISPLAY_PAID_STATUSES.includes(donation.status)) {
+      return {
+        ok: false,
+        message: '결제가 완료된 후원만 다시 재생할 수 있습니다.',
+      };
+    }
 
     await sendTestOverlay(creatorId, {
       donorName: donation.anonymous ? '익명의 후원자' : donation.displayName,
@@ -363,6 +380,15 @@ export async function regenerateOverlayTokenAction(
     });
 
     /**
+     * 이미 붙어 있는 방송용 연결을 끊는다.
+     *
+     * 토큰 검사는 연결을 **열 때 한 번만** 한다. 끊어 주지 않으면 아래 안내 문구
+     * ("기존 URL은 즉시 무효화되었습니다")가 사실이 아니게 되고, 유출된 OBS 가 계속
+     * 후원 알림을 받는다. 스튜디오 미리보기는 세션으로 열리므로 건드리지 않는다.
+     */
+    const closed = closeOverlayConnections(creatorId, 'broadcast');
+
+    /**
      * 주소는 **요청 호스트 기준**으로 만든다.
      *
      * 예전에는 `env.baseUrl` 을 그대로 썼다. 터널(trycloudflare)이나 사내망 IP 로 접속해
@@ -374,7 +400,9 @@ export async function regenerateOverlayTokenAction(
     revalidatePath('/studio/overlay');
     return {
       ok: true,
-      message: '새 브라우저 소스 URL을 발급했습니다. 기존 URL은 즉시 무효화되었습니다.',
+      message:
+        '새 브라우저 소스 URL을 발급했습니다. 기존 URL은 즉시 무효화되었습니다.' +
+        (closed > 0 ? ` 연결돼 있던 방송 소스 ${closed}개는 끊었습니다 — OBS·PRISM 소스 주소를 새 값으로 바꿔 주세요.` : ''),
       secret: `${baseUrl}/overlay/${creatorId}?token=${token}`,
       secretLabel: '브라우저 소스 URL (후원 알림)',
       secretHint: `이 값은 지금 한 번만 표시됩니다. 게임 오버레이는 같은 토큰으로 ${baseUrl}/overlay/${creatorId}/game?token=... 주소를 쓰면 됩니다.`,
@@ -918,10 +946,15 @@ export async function requestSettlementAction(
     const memo = text(formData, 'memo').slice(0, 200) || undefined;
 
     // 개인(사업소득 3.3% 원천징수) 크리에이터는 신고용 주민등록번호가 필수다.
-    const residentRaw = text(formData, 'resident');
+    // 앞 6자리·뒤 7자리를 따로 받아 서버에서 합친다.
+    // 화면에서 13자리를 숨은 입력칸으로 합쳐 보내면 뒤 7자리를 가린 의미가 없어진다.
+    const residentTyped = (text(formData, 'residentFront') + text(formData, 'residentBack')).replace(
+      /[^0-9]/g,
+      '',
+    );
     const agreed = checked(formData, 'residentAgree');
-    // 마스킹만 전송되는 재사용 케이스(값에 * 포함)는 신규 입력으로 취급하지 않는다.
-    const isNewResident = residentRaw && !residentRaw.includes('*');
+    // 아무것도 입력하지 않았으면(변경 없이 그대로 요청) 아래에서 직전 등록분을 재사용한다.
+    const isNewResident = residentTyped.length > 0;
 
     // 이미 등록해 둔(파기 전) 주민번호가 있으면 재입력 없이 진행할 수 있다.
     const prior = await prisma.settlementRequest.findFirst({
@@ -933,7 +966,7 @@ export async function requestSettlementAction(
     let resident: string | null = null;
     if (isNewResident) {
       if (!agreed) return { ok: false, message: '주민등록번호 수집·이용에 동의해 주세요.' };
-      const norm = normalizeResident(residentRaw);
+      const norm = normalizeResident(residentTyped);
       if (!norm) return { ok: false, message: '주민등록번호 13자리를 정확히 입력해 주세요.' };
       if (!isValidResident(norm)) return { ok: false, message: '주민등록번호가 올바르지 않습니다. 다시 확인해 주세요.' };
       resident = norm;
@@ -1060,13 +1093,6 @@ export async function saveSettlementAccountAction(
 // ===========================================================================
 // 프로필
 // ===========================================================================
-
-/** http(s) 주소 또는 사이트 내 경로(/로 시작)를 허용하는 이미지 주소 검증 */
-const imageUrlSchema = z.union([
-  z.literal(''),
-  z.url(),
-  z.string().regex(/^\/[^\s]*$/u, '이미지 주소는 http(s) 주소 또는 / 로 시작하는 경로여야 합니다.'),
-]);
 
 export async function updateCreatorProfileAction(
   _prev: StudioActionState,

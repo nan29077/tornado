@@ -3,6 +3,7 @@ import { requireCreator } from '@/server/auth';
 import { createGame, listGames, listRoundHistory, GameError } from '@/server/services/games';
 import { buildStudioState } from '@/server/services/game-state';
 import { prisma } from '@/server/db';
+import { isRecord, readJsonObject, stringList } from '@/lib/json-body';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -52,12 +53,12 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json().catch(() => ({}));
+    const body = await readJsonObject(req);
     const id = await createGame(creatorId, {
       type: String(body.type ?? ''),
       title: String(body.title ?? ''),
-      items: Array.isArray(body.items) ? body.items : [],
-      config: body.config && typeof body.config === 'object' ? body.config : {},
+      items: stringList(body.items),
+      config: isRecord(body.config) ? body.config : {},
       entryMode: String(body.entryMode ?? 'LINK'),
       donationMinAmount: Number(body.donationMinAmount ?? 0),
       autoCloseSec: Number(body.autoCloseSec ?? 0),

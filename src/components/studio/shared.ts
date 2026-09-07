@@ -25,6 +25,22 @@ export const PAID_STATUSES: DonationStatus[] = [
  */
 export const DISPLAY_PAID_STATUSES: DonationStatus[] = [...PAID_STATUSES, 'REFUND_REQUESTED'];
 
+/**
+ * 주소창의 페이지 번호를 **정수 1 이상**으로 좁힌다.
+ *
+ * `Math.max(1, Number(v) || 1)` 만 쓰면 소수가 그대로 통과한다.
+ * `?page=1.1` → `Number('1.1') = 1.1` → `skip = 2.0000000000000004` → Prisma 가
+ * "Expected Int" 로 예외를 던져 **화면 전체가 500** 이 됐다. 주소를 만져 본 사람이면
+ * 누구나 재현할 수 있고, 오류 화면만 봐서는 원인을 알 수 없다.
+ *
+ * 음수·NaN·Infinity·지수 표기도 여기서 함께 걸러 1 로 되돌린다.
+ */
+export function pageParam(value: string | string[] | undefined | number): number {
+  const n = Number(Array.isArray(value) ? value[0] : value);
+  if (!Number.isFinite(n)) return 1;
+  return Math.max(1, Math.floor(n));
+}
+
 export type SearchParamsRecord = Record<string, string | string[] | undefined>;
 
 export function one(v: string | string[] | undefined): string {

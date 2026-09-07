@@ -123,6 +123,44 @@ export function registerOverlayConnection(
 }
 
 /**
+ * 이 크리에이터의 열린 연결을 끊는다.
+ *
+ * 오버레이 토큰을 재발급할 때 쓴다. 재발급 화면은 "기존 URL은 즉시 무효화되었습니다" 라고
+ * 안내하지만, **이미 붙어 있는 연결은 스스로 끊기지 않는다.** 토큰 검사는 연결을 열 때
+ * 한 번만 하기 때문이다. 그래서 번호가 유출돼 재발급해도 유출된 쪽 OBS 는 그 연결이
+ * 끊길 때까지 후원 알림을 계속 받았다. 안내 문구가 사실이 되도록 여기서 끊어 준다.
+ *
+ * 끊긴 쪽은 클라이언트가 다시 붙으려 하지만, 옛 토큰으로는 401 이라 더는 열리지 않는다.
+ * 스튜디오 미리보기(preview)는 세션으로 열리므로 대상이 아니다 — 재발급했다고 크리에이터
+ * 본인 화면까지 꺼질 이유가 없다.
+ *
+ * @returns 끊은 연결 수
+ */
+export function closeOverlayConnections(
+  creatorId: string,
+  kind: OverlayConnectionKind = 'broadcast',
+): number {
+  const set = registry.get(creatorId);
+  if (!set) return 0;
+
+  // 끊는 동안 close 콜백이 레지스트리를 건드리므로 복사본을 돈다.
+  const targets = [...set].filter((c) => c.kind === kind);
+  for (const conn of targets) {
+    set.delete(conn);
+    try {
+      conn.close();
+    } catch {
+      /* 이미 닫힌 연결 */
+    }
+  }
+  if (set.size === 0) registry.delete(creatorId);
+  if (targets.length > 0) {
+    logger.info('오버레이 연결을 끊었습니다.', { creatorId, kind, closed: targets.length });
+  }
+  return targets.length;
+}
+
+/**
  * 현재 열려 있는 연결 수 (디버그/모니터링용).
  * 기본값은 방송용(OBS · PRISM)만 센다. 스튜디오의 [현재 연결] 배지가
  * 자기 미리보기 창까지 세어 실제로 방송에 붙어 있는 것처럼 보이면 안 된다.

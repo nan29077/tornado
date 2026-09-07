@@ -15,6 +15,7 @@ import {
   paymentTxStatusLabel,
   refundStatusLabel,
 } from '@/lib/labels';
+import { DISPLAY_PAID_STATUSES } from '@/components/studio/shared';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,6 +73,8 @@ export default async function StudioDonationDetailPage({ params }: { params: Pro
   if (!donation) notFound();
 
   const st = donationStatusLabel[donation.status];
+  /** 결제가 확정된 건만 오버레이에 다시 재생할 수 있다 (서버 액션도 같은 조건). */
+  const replayable = DISPLAY_PAID_STATUSES.includes(donation.status);
   const blocked = donation.donor
     ? await prisma.blockedDonor.findUnique({
         where: { creatorId_donorId: { creatorId, donorId: donation.donor.id } },
@@ -160,6 +163,17 @@ export default async function StudioDonationDetailPage({ params }: { params: Pro
                 동일한 표시명·금액·메시지로 오버레이에 테스트 이벤트를 한 번 더 재생합니다. 실제 재송출이 아니며 후원
                 상태, 유튜브 전송, 정산에는 아무 영향이 없습니다.
               </p>
+              {/*
+                결제가 확정되지 않은 후원은 재생 버튼 자체를 숨긴다.
+                방송 중에 누르면 결제되지 않은 후원이 시청자 화면에 뜨기 때문이다.
+                (서버 액션에서도 같은 조건으로 막는다)
+              */}
+              {!replayable ? (
+                <Notice tone="neutral">
+                  결제가 완료된 후원만 다시 재생할 수 있습니다. 이 후원은{' '}
+                  <strong className="text-ink-900">{st.text}</strong> 상태입니다.
+                </Notice>
+              ) : (
               <ActionForm
                 action={replayOverlayTestAction}
                 submitLabel="테스트 재생"
@@ -173,6 +187,7 @@ export default async function StudioDonationDetailPage({ params }: { params: Pro
               >
                 <input type="hidden" name="donationId" value={donation.id} />
               </ActionForm>
+              )}
             </Card>
 
             <Card>

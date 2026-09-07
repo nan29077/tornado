@@ -12,6 +12,7 @@ import {
   undoReveal,
 } from '@/server/services/games';
 import { buildStudioState } from '@/server/services/game-state';
+import { readJsonObject } from '@/lib/json-body';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json().catch(() => ({}));
+    const body = await readJsonObject(req);
     const action = String(body.action ?? '');
     const gameId = String(body.gameId ?? '');
     const roundId = String(body.roundId ?? '');

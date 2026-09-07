@@ -1,6 +1,7 @@
 import { prisma } from '@/server/db';
 import { requireAdmin, writeAudit } from '@/server/auth';
 import { newId } from '@/lib/id';
+import { isRecord } from '@/lib/json-body';
 import {
   MT_TEMPLATE_CODES,
   MT_TEMPLATE_META,
@@ -70,7 +71,10 @@ export async function POST(req: Request) {
 
   let payload: { code?: unknown; body?: unknown; reset?: unknown };
   try {
-    payload = (await req.json()) as typeof payload;
+    const raw: unknown = await req.json();
+    // JSON 은 null · 숫자 · 배열도 유효한 본문이다. 그대로 payload.code 를 읽으면 500 이 난다.
+    if (!isRecord(raw)) throw new Error('object required');
+    payload = raw as typeof payload;
   } catch {
     return json({ ok: false, message: '요청 본문(JSON)을 읽을 수 없습니다.' }, 400);
   }

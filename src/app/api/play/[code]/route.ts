@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/server/db';
+import { readJsonObject } from '@/lib/json-body';
 import { getSessionUser } from '@/server/auth';
 import { clientIpFromRequest, consumeRateLimit } from '@/server/rate-limit';
 import { GameError, joinByCode } from '@/server/services/games';
@@ -72,7 +73,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
   const limited = await consumeRateLimit(`game-join:${code.toUpperCase()}`, ip, 30, 60);
   if (!limited.ok) return badRequest('참여 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.', 429);
 
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonObject(req);
   const clientId = String(body.clientId ?? '');
   if (!CLIENT_ID.test(clientId)) return badRequest('참여 정보를 확인할 수 없습니다. 새로고침 후 다시 시도해 주세요.');
 

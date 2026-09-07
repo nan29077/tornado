@@ -188,6 +188,32 @@ export function invalidateStudioStateCache(creatorId: string) {
   snapshotCache.delete(creatorId);
 }
 
+/**
+ * 방금 확정한 상태를 캐시에 바로 심는다.
+ *
+ * 왜 필요한가 — 실제로 있었던 일
+ * ------------------------------
+ * 이 캐시는 1.5초짜리다. 그런데 상태를 바꾼 뒤 캐시를 지우는 곳이 **한 군데도 없었다.**
+ * 그래서 이런 일이 벌어졌다.
+ *
+ *   t=0.0  A 연결이 상태를 읽어 캐시에 담는다            (OPEN)
+ *   t=0.2  [결과 발표] → 버스로 RESULT 를 즉시 보낸다     → 화면에 결과가 뜬다
+ *   t=0.5  B 연결이 2초 주기로 다시 읽는다 → 캐시 히트     → OPEN 을 내보낸다
+ *          → 방송 화면이 OPEN 으로 되돌아간다 (결과가 사라진다)
+ *   t=2.0  캐시가 만료된다 → RESULT 를 다시 내보낸다      → 결과가 다시 뜬다
+ *
+ * 시청자에게는 결과가 **떴다 사라졌다 다시 뜨는** 것으로 보인다. 그 사이 크리에이터가
+ * 다음 조작을 누르면 이미 지난 상태를 기준으로 눌러 오류가 난다.
+ *
+ * 지우기만 하면 곧바로 이어지는 폴링이 DB 를 한 번 더 읽는다(연결 수만큼). 방금 만든
+ * 정확한 값을 이미 들고 있으니 그대로 심어 두는 편이 맞다.
+ */
+export function primeStudioStateCache(creatorId: string, value: GameStudioState | null) {
+  snapshotCache.set(creatorId, { at: Date.now(), value });
+  // 진행 중이던 조회가 끝나면서 옛 값으로 덮어쓰지 않도록 함께 버린다.
+  snapshotInflight.delete(creatorId);
+}
+
 export async function buildStudioStateForRound(roundId: string): Promise<GameStudioState | null> {
   const round = await prisma.gameRound.findUnique({ where: { id: roundId }, include: { game: true } });
   if (!round) return null;

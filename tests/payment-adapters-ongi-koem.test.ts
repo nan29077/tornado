@@ -762,13 +762,21 @@ describe('카카오페이 어댑터', () => {
     vi.stubEnv('KAKAO_CID', '');
     vi.resetModules();
     const mod = await import('@/server/adapters/payment/kakao');
+    /**
+     * `vi.resetModules()` 뒤의 동적 import 는 **모듈 그래프를 새로 만든다.**
+     * 파일 맨 위에서 import 해 둔 AdapterNotConfiguredError 는 옛 그래프의 클래스라
+     * 새 그래프가 던진 같은 이름의 오류와 `instanceof` 가 맞지 않는다.
+     * (오류 자체는 정상적으로 던져지는데 검사만 실패했다)
+     * 같은 그래프에서 클래스도 함께 가져온다.
+     */
+    const { AdapterNotConfiguredError: NotConfigured } = await import('@/server/adapters/types');
     await expect(
       mod.kakaoPaymentAdapter.createRegistrationSession({
         donorRef: 'D1',
         returnUrl: 'https://x/return',
         notifyUrl: 'https://x/notify',
       }),
-    ).rejects.toThrow(AdapterNotConfiguredError);
+    ).rejects.toThrow(NotConfigured);
   });
 
   it('KAKAO_SECRET_KEY 만 있고 KAKAO_CID 가 없으면 AdapterNotConfiguredError 를 던진다', async () => {
@@ -776,6 +784,14 @@ describe('카카오페이 어댑터', () => {
     vi.stubEnv('KAKAO_CID', '');
     vi.resetModules();
     const mod = await import('@/server/adapters/payment/kakao');
+    /**
+     * `vi.resetModules()` 뒤의 동적 import 는 **모듈 그래프를 새로 만든다.**
+     * 파일 맨 위에서 import 해 둔 AdapterNotConfiguredError 는 옛 그래프의 클래스라
+     * 새 그래프가 던진 같은 이름의 오류와 `instanceof` 가 맞지 않는다.
+     * (오류 자체는 정상적으로 던져지는데 검사만 실패했다)
+     * 같은 그래프에서 클래스도 함께 가져온다.
+     */
+    const { AdapterNotConfiguredError: NotConfigured } = await import('@/server/adapters/types');
     await expect(
       mod.kakaoPaymentAdapter.approve({
         orderNo: 'ORD-1',
@@ -783,7 +799,7 @@ describe('카카오페이 어댑터', () => {
         billKey: 'SID-TEST',
         productName: '후원',
       }),
-    ).rejects.toThrow(AdapterNotConfiguredError);
+    ).rejects.toThrow(NotConfigured);
   });
 
   it('info().missingCredentials 에 누락된 환경변수 이름이 포함된다', async () => {

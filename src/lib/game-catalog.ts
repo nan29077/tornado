@@ -347,3 +347,17 @@ export const ROUND_STATUS_LABEL: Record<RoundStatus, string> = {
   RESULT: '결과 발표됨',
   ENDED: '종료',
 };
+
+/**
+ * 선택지를 지웠을 때 따라가야 하는 정답 번호.
+ *
+ * 목록만 줄이고 정답 번호를 그대로 두면 **정답이 조용히 다른 선택지로 옮겨간다.**
+ * (C 가 정답인데 B 를 지우면 번호 2 가 그대로 남아 옛 D 가 정답이 된다)
+ * 서버는 범위를 벗어난 값만 거부하므로 범위 안에서 어긋난 정답은 그대로 저장되고,
+ * 방송에서 엉뚱한 답이 정답으로 발표된다.
+ */
+export function answerIndexAfterRemove(answerIndex: number, removed: number): number {
+  if (removed === answerIndex) return 0; // 정답을 지웠으면 첫 선택지로
+  if (removed < answerIndex) return answerIndex - 1; // 앞이 빠지면 한 칸 당긴다
+  return answerIndex; // 뒤가 빠지면 그대로
+}

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireCreator } from '@/server/auth';
+import { readJsonObject } from '@/lib/json-body';
 import {
   GameOverlaySettingError,
   setGameOverlayEnabled,
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json().catch(() => ({}));
+    const body = await readJsonObject(req);
     if (typeof body.enabled !== 'boolean') {
       return NextResponse.json({ error: '사용 여부 값이 올바르지 않습니다.' }, { status: 400 });
     }

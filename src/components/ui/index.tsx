@@ -16,8 +16,13 @@ export function cx(...parts: Array<string | false | null | undefined>) {
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'accent';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
+/**
+ * `whitespace-nowrap` 이 없으면 좁은 열에서 버튼 글자가 두 줄로 접힌다.
+ * (스튜디오 오른쪽 조작 열의 [새 게임 만들기] 가 그랬다) 버튼은 줄바꿈하지 않는다 —
+ * 자리가 모자라면 버튼이 줄어드는 게 아니라 줄 자체가 바뀌어야 한다.
+ */
 const buttonBase =
-  'inline-flex items-center justify-center gap-2 font-extrabold transition-all disabled:opacity-45 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 active:scale-[0.985]';
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap font-extrabold transition-all disabled:opacity-45 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 active:scale-[0.985]';
 
 /**
  * 노랑 계열 면 위에는 흰 글자를 쓰지 않는다 (대비 부족).

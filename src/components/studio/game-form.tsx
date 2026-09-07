@@ -26,6 +26,7 @@ import {
   MAX_CHOICES,
   MAX_ITEMS,
   MAX_TITLE_LEN,
+  answerIndexAfterRemove,
   defaultConfig,
   usesEntries,
   usesItems,
@@ -603,7 +604,18 @@ function ChoiceField({
             />
             <button
               type="button"
-              onClick={() => onChange(rows.filter((_, idx) => idx !== i))}
+              onClick={() => {
+                onChange(rows.filter((_, idx) => idx !== i));
+                /**
+                 * 선택지를 지우면 **정답 번호도 따라 움직여야 한다.**
+                 *
+                 * 예전에는 목록만 줄이고 answerIndex 를 그대로 두었다. C 가 정답인 상태에서
+                 * B 를 지우면 번호 2 가 그대로 남아 정답이 옛 D(새 C)로 **조용히 바뀌었다.**
+                 * 서버는 범위를 벗어난 값만 거부하므로 범위 안에서 어긋난 정답은 그대로
+                 * 저장되고, 방송에서 엉뚱한 답이 정답으로 발표된다.
+                 */
+                if (onAnswer && answerIndex !== undefined) onAnswer(answerIndexAfterRemove(answerIndex, i));
+              }}
               disabled={rows.length <= 2}
               className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-ink-200 text-ink-400 disabled:opacity-40"
               aria-label={`${String.fromCharCode(65 + i)} 선택지 삭제`}

@@ -27,9 +27,22 @@ export interface SnsPlatformMeta {
   test: (url: string) => boolean;
 }
 
+/**
+ * 링크로 허용하는 스킴.
+ *
+ * **호스트만 검사하면 뚫린다.** `new URL('javascript://www.youtube.com/%0Aalert(1)')` 의
+ * hostname 은 `www.youtube.com` 이라 호스트 검사를 그대로 통과한다. 저장된 값은 후원
+ * 페이지의 링크(<a href>)로 그대로 나가므로, 크리에이터가 자기 후원 페이지를 보는
+ * 팬에게 스크립트를 실행시킬 수 있게 된다. `data:` `ftp:` 도 같은 경로로 통과했다.
+ * 스킴을 먼저 잠근다.
+ */
+const ALLOWED_LINK_PROTOCOLS = new Set(['https:', 'http:']);
+
 function hostMatches(url: string, pattern: RegExp, extraHosts: string[] = []): boolean {
   try {
-    const host = new URL(url).hostname;
+    const parsed = new URL(url);
+    if (!ALLOWED_LINK_PROTOCOLS.has(parsed.protocol)) return false;
+    const host = parsed.hostname;
     return pattern.test(host) || extraHosts.includes(host);
   } catch {
     return false;

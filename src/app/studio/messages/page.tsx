@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Badge, Card, EmptyState, Notice, Table, Td, Th } from '@/components/ui';
 import { PageHeader } from '@/components/layout/console-shell';
 import { InlineActionForm } from '@/components/studio/action-form';
-import { PAID_STATUSES, one, type SearchParamsRecord } from '@/components/studio/shared';
+import { PAID_STATUSES, one, pageParam, type SearchParamsRecord } from '@/components/studio/shared';
 import { blockDonorAction } from '@/app/actions/studio';
 import { MoNumberPanel, type MoNumberView } from '@/components/studio/mo-number-panel';
 import { formatMoNumber } from '@/server/emma';
@@ -69,16 +69,25 @@ export default async function StudioMessagesPage({
    * 어제 온 문자를 확인할 방법이 없어, 같은 성격의 후원 내역 화면(페이저 있음)과
    * 기능 수준도 어긋났다.
    */
-  const rawPage = Number(one(sp.page));
-  const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1;
+  const page = pageParam(sp.page);
 
-  const [total, rows, blockedRows, moNumbers, creator] = await Promise.all([
-    prisma.moInboundMessage.count({ where }),
+  /**
+   * 전체 건수를 **먼저** 세고 페이지를 자른 뒤에 조회한다.
+   *
+   * 예전에는 조회를 먼저 하고 표시용 값만 잘라서, `?page=9999` 로 들어오면 실제 조회는
+   * 빈 결과를 돌려주는데 머리글에는 "3쪽 중 3쪽" 이 떴다. 화면에는 "해당 조건의 문자가
+   * 없습니다 · 다른 탭을 선택해 보세요" 가 나와 필터 문제로 오해하게 된다.
+   */
+  const total = await prisma.moInboundMessage.count({ where });
+  const totalPages = Math.max(1, Math.ceil(total / TAKE));
+  const safePage = Math.min(page, totalPages);
+
+  const [rows, blockedRows, moNumbers, creator] = await Promise.all([
     prisma.moInboundMessage.findMany({
       where,
       // 보조 정렬키가 없으면 웹훅으로 대량 동시 수신될 때 페이지 간 중복·누락이 생긴다.
       orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
-      skip: (page - 1) * TAKE,
+      skip: (safePage - 1) * TAKE,
       take: TAKE,
       select: {
         id: true,
@@ -105,9 +114,6 @@ export default async function StudioMessagesPage({
     prisma.creatorProfile.findUnique({ where: { id: creatorId }, select: { displayName: true, donationAmount: true } }),
   ]);
 
-  const totalPages = Math.max(1, Math.ceil(total / TAKE));
-  // 범위를 벗어난 페이지로 들어와도 빈 화면에 갇히지 않게 표시용 값은 잘라 둔다.
-  const safePage = Math.min(page, totalPages);
   const blockedSet = new Set(blockedRows.map((b) => b.donorId));
 
   const numbers: MoNumberView[] = moNumbers.map((m) => ({

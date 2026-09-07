@@ -57,7 +57,15 @@ export default async function StudioYouTubePage({
 
   const [connection, broadcast, deliveries, quota] = await Promise.all([
     prisma.youTubeConnection.findUnique({ where: { creatorId } }),
-    prisma.youTubeBroadcast.findFirst({ where: { creatorId }, orderBy: { detectedAt: 'desc' } }),
+    /**
+     * "현재 라이브 방송" 은 **끝나지 않은** 방송만 본다.
+     * 예전에는 최신 행을 그대로 가져와, 이미 끝난 방송이 "채팅 활성" 배지와 함께
+     * 지금 하는 방송처럼 보였다.
+     */
+    prisma.youTubeBroadcast.findFirst({
+      where: { creatorId, endedAt: null },
+      orderBy: { detectedAt: 'desc' },
+    }),
     prisma.youTubeChatDelivery.findMany({
       where: { donation: { creatorId } },
       orderBy: { createdAt: 'desc' },
@@ -185,7 +193,13 @@ export default async function StudioYouTubePage({
                   {connection ? '다른 채널로 다시 연결' : '구글 계정으로 채널 연결'}
                 </LinkButton>
               ) : null}
-              {connected ? (
+              {/*
+                연결 해제는 **연결이 살아 있지 않아도** 할 수 있어야 한다.
+                예전에는 CONNECTED 일 때만 버튼을 보여 줘서, 토큰이 만료(EXPIRED)되거나
+                오류(ERROR) 난 크리에이터는 구글 권한 회수와 토큰 폐기를 스스로 할 수
+                없었고 refresh 토큰이 DB 에 그대로 남았다. 액션 자체는 상태를 가리지 않는다.
+              */}
+              {connection && connection.status !== 'REVOKED' ? (
                 <ActionForm
                   action={disconnectYouTubeAction}
                   submitLabel="연결 해제"

@@ -353,7 +353,17 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
             <div className="hidden xl:block" />
           )}
 
-          <div className="min-w-0">
+          {/*
+            오른쪽 열을 **행 높이만큼 늘린다**(self-stretch).
+
+            늘리지 않으면 이 열의 높이가 내용 높이와 같아서, 게임 탭처럼 내용이 짧을 때
+            카드가 탭 바 바로 아래에 붙고 그 아래로는 빈 공간만 길게 남았다.
+            늘려 두면 아래 `xl:my-auto` 가 남는 공간을 위아래로 반씩 나눠 가운데로 모은다.
+            (자동 여백은 **남는 공간이 있을 때만** 붙으므로, 후원 탭처럼 내용이 길면
+             아무 일도 일어나지 않는다 — 잘리거나 밀려나지 않는다)
+            왼쪽 미리보기 열은 sticky 라서 items-start 를 그대로 둔다.
+          */}
+          <div className="min-w-0 xl:flex xl:flex-col xl:self-stretch">
         {/*
           ── 탭 ─────────────────────────────────────────────
           탭 바는 화면에 붙으므로 space-y 바깥에 둔다. 사이 간격을 space-y 로 주면 그 틈으로
@@ -361,7 +371,8 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
         */}
         <OverlayTabs active={tab} gameLive={Boolean(activeRound)} />
 
-        <div className="space-y-6">
+        {/* 내용이 짧으면 가운데로, 길면 그대로 위에서부터. */}
+        <div className="space-y-6 xl:my-auto">
         {tab === 'game' ? (
           <GameStudio creatorId={creatorId} />
         ) : (

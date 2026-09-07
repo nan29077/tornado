@@ -12,7 +12,7 @@ import { prisma } from '@/server/db';
 import { getSettlementSummary, resolveFeePolicy, calculateWithholding, computeFees } from '@/server/services/settlement';
 import { formatWon, formatNumber } from '@/lib/money';
 import { env } from '@/lib/env';
-import { formatKst, kstDateKey, kstMonthKey } from '@/lib/datetime';
+import { formatKst, kstDateKey, kstMonthKey, kstMonthRange } from '@/lib/datetime';
 import { settlementDateFor, toDateKey, formatDateKeyKo, SETTLEMENT_BUSINESS_DAYS } from '@/lib/business-day';
 import { loadHolidaysAround, buildScheduleNotice } from '@/server/services/settlement-schedule';
 import { ledgerEntryLabel, settlementStatusLabel } from '@/lib/labels';
@@ -33,19 +33,6 @@ function ratePercent(rate: string): string {
   return `${(Number(rate) * 100).toFixed(2)}%`;
 }
 
-/** YYYY-MM 검증 후 KST 기준 월 시작/끝을 돌려준다. */
-function monthRange(ym: string) {
-  const m = /^(\d{4})-(\d{2})$/.exec(ym);
-  const now = kstMonthKey();
-  const key = m && Number(m[2]) >= 1 && Number(m[2]) <= 12 ? ym : now;
-  const [y, mo] = key.split('-').map(Number);
-  const start = new Date(`${key}-01T00:00:00+09:00`);
-  const nextKey = mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`;
-  const prevKey = mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`;
-  const end = new Date(`${nextKey}-01T00:00:00+09:00`);
-  return { key, start, end, prevKey, nextKey, year: y, month: mo };
-}
-
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 export default async function StudioSettlementPage({
@@ -56,7 +43,7 @@ export default async function StudioSettlementPage({
   const { creatorId } = await requireCreator();
   const sp = await searchParams;
   const activeTab: SettlementTab = TABS.some((t) => t.key === sp.tab) ? (sp.tab as SettlementTab) : 'overview';
-  const range = monthRange(sp.month ?? kstMonthKey());
+  const range = kstMonthRange(sp.month ?? kstMonthKey());
 
   const [summary, feePolicy, ledger, requests, account, monthDonations, monthPayouts, priorResident] = await Promise.all([
     getSettlementSummary(creatorId),
@@ -115,7 +102,12 @@ export default async function StudioSettlementPage({
       take: 20000,
     }),
     prisma.settlementRequest.findMany({
-      where: { creatorId, paidAt: { gte: range.start, lt: range.end } },
+      /**
+       * 달력의 "지급" 표시는 **실제로 지급 완료된 건만** 센다.
+       * paidAt 만 보면 나중에 이체가 실패해 되돌린 건까지 지급으로 잡힌다.
+       * (지급 실패 처리는 paidAt 을 지우지만, 옛 데이터가 남아 있을 수 있어 상태로도 거른다)
+       */
+      where: { creatorId, status: 'PAID', paidAt: { gte: range.start, lt: range.end } },
       select: { paidAt: true, payoutAmount: true },
     }),
     // 파기 전 등록된 주민번호가 있으면 재입력 없이 진행할 수 있게 마스킹만 보여준다.
@@ -556,7 +548,10 @@ export default async function StudioSettlementPage({
                               '-'
                             )}
                           </Td>
-                          <Td className="whitespace-nowrap tabular-nums">{formatKst(r.paidAt, false)}</Td>
+                          {/* 지급 실패로 되돌린 건은 지급일을 보여 주지 않는다 (옛 데이터 대비). */}
+                          <Td className="whitespace-nowrap tabular-nums">
+                            {r.status === 'PAID' ? formatKst(r.paidAt, false) : '-'}
+                          </Td>
                         </tr>
                       );
                     })}

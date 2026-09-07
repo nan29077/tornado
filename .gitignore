@@ -58,3 +58,6 @@ tornado-audit-fixes.patch
 output/
 tornado-nickname-preview.patch
 tornado-ui-and-nickname.patch
+
+# Cowork 가 대화로 전달한 산출물을 떨어뜨리는 폴더 (보고서는 docs/ 로 옮겨 커밋한다)
+Claude outputs/

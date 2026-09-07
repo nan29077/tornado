@@ -4,7 +4,6 @@ import * as React from 'react';
 import {
   BarChart3,
   Check,
-  ChevronDown,
   Disc3,
   Eye,
   EyeOff,
@@ -20,6 +19,7 @@ import {
   Network,
   Pencil,
   Play,
+  Plus,
   QrCode,
   RotateCcw,
   Square,
@@ -203,6 +203,35 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
    * 방송 중에 하기에는 손이 너무 많이 간다. 조작 자리에서 바로 열고 고른다.
    */
   const [pickerOpen, setPickerOpen] = React.useState(false);
+
+  /**
+   * [게임 관리] 팝업. 열려 있는 탭 이름이 그대로 상태다(null 이면 닫힘).
+   *
+   * 접었다 펴는 방식은 이 열에 내용이 그대로 쌓여 진행 컨트롤을 화면 밖으로 밀어냈다.
+   * 넓은 팝업으로 옮겨 게임 카드가 눌리지 않게 한다.
+   */
+  const [manageTab, setManageTab] = React.useState<'games' | 'history' | null>(null);
+
+  const openManage = React.useCallback(
+    (tab: 'games' | 'history', newGame = false) => {
+      setManageTab(tab);
+      if (newGame) {
+        setEditingId(null);
+        setProblem(null);
+        setForm(emptyGameForm());
+      }
+    },
+    [],
+  );
+
+  /** 닫을 때 작성 중이던 내용도 함께 정리한다. 다음에 열었을 때 옛 입력이 남아 있으면 헷갈린다. */
+  const closeManage = React.useCallback(() => {
+    setManageTab(null);
+    setForm(null);
+    setEditingId(null);
+    setProblem(null);
+    setPreviewGameId(null);
+  }, []);
 
   const toastTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -740,275 +769,48 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
 
       {compact ? null : (
         /*
-          진행 중에는 접어 둔다.
-          방송 중에 [내 게임]·[지난 게임 결과]를 볼 일은 없는데, 펼쳐져 있으면 진행 컨트롤이
-          화면 위로 밀려 올라간다. 게임이 떠 있지 않을 때는 그대로 펼쳐 둔다.
+          게임 관리는 **팝업으로 연다.**
+
+          예전에는 이 자리에서 접었다 펴는 방식(<details>)이었다. 펼치면 [내 게임] 카드와
+          [지난 게임 결과]가 이 열에 그대로 쌓여, 위쪽 진행 컨트롤과 미리보기가 화면 밖으로
+          밀려 올라갔다. 좁은 열이라 게임 카드도 눌려서 제목이 잘리고 버튼이 두 줄로 접혔다.
+          "펼치면 오히려 보기 힘들다" 는 상태였다.
+
+          이제 이 자리에는 **버튼만** 두고, 실제 관리는 넓은 팝업에서 한다.
+          팝업은 진행 화면을 가리지 않고 닫으면 원래 자리로 돌아온다.
         */
-        <details className="group space-y-6" open={!state}>
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl border border-ink-100 bg-white px-4 py-3 [&::-webkit-details-marker]:hidden">
-            <span className="min-w-0">
-              <span className="block text-[14px] font-bold text-ink-900">게임 관리</span>
-              <span className="mt-0.5 block text-[12px] text-ink-400">
-                게임 만들기 · 수정 · 지난 게임 결과{state ? ' (진행 중에는 접어 둡니다)' : ''}
-              </span>
+        <Card>
+          <div className="flex items-start gap-3">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-ink-100 text-ink-500">
+              <Gamepad2 size={20} strokeWidth={1.7} />
             </span>
-            <ChevronDown
-              size={18}
-              strokeWidth={1.7}
-              className="shrink-0 text-ink-400 transition-transform group-open:rotate-180"
-            />
-          </summary>
+            <div className="min-w-0 flex-1">
+              <CardTitle>게임 관리</CardTitle>
+              <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-400">
+                게임을 만들고 고치는 곳입니다. 방송에 띄우는 것은 위 [게임 바꾸기]·[게임 고르기]에서 합니다.
+              </p>
+            </div>
+          </div>
 
-          {/* 2. 게임 목록 */}
-          <section>
-            <SectionTitle
-              title="내 게임"
-              description="게임을 만들고 고치는 곳입니다. 방송에 띄우는 것은 위 [게임 바꾸기]·[게임 고르기]에서 합니다."
-              action={
-                form ? null : (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      setEditingId(null);
-                      setProblem(null);
-                      setForm(emptyGameForm());
-                    }}
-                  >
-                    새 게임 만들기
-                  </Button>
-                )
-              }
-            />
-
-            {problem?.scope === 'list' ? (
-              <div className="mb-2.5">
-                <Notice tone="danger">{problem.text}</Notice>
-              </div>
-            ) : null}
-            {form && problem?.scope === 'form' ? (
-              <div className="mb-2.5">
-                <Notice tone="danger">{problem.text}</Notice>
-              </div>
-            ) : null}
-
-            {form ? (
-              <GameForm
-                value={form}
-                onChange={setForm}
-                onSubmit={saveForm}
-                onCancel={() => {
-                  setForm(null);
-                  setEditingId(null);
-                  setProblem(null);
-                }}
-                busy={busy}
-                mode={editingId ? 'edit' : 'create'}
-              />
-            ) : loading ? (
-              <Card>
-                <p className="py-6 text-center text-[13px] text-ink-400">불러오는 중</p>
-              </Card>
-            ) : games.length === 0 ? (
-              <Card>
-                <EmptyState
-                  title="아직 만든 게임이 없습니다"
-                  description="룰렛·투표·퀴즈 등 8가지 중에서 고를 수 있습니다."
-                  action={
-                    <Button
-                      onClick={() => {
-                        setEditingId(null);
-                        setProblem(null);
-                        setForm(emptyGameForm());
-                      }}
-                    >
-                      첫 게임 만들기
-                    </Button>
-                  }
-                />
-              </Card>
-            ) : (
-              /*
-                `lg:` 는 **화면 너비** 기준이라, 오른쪽 조작 열이 600px 밖에 안 되는데도
-                화면만 넓으면 무조건 2단이 됐다. 카드가 290px 로 눌려 제목이 잘리고
-                버튼이 두 줄로 접혔다. `@container` 는 **이 열의 너비**를 기준으로 하므로
-                좁은 열에서는 1단, 넓은 화면(후원 탭처럼 폭이 넉넉한 곳)에서는 2단이 된다.
-              */
-              <div className="@container/games">
-              <div className="grid gap-2.5 @2xl/games:grid-cols-2">
-                {games.map((g) => {
-                  const meta = GAME_TYPE_META[g.type as GameType];
-                  const Icon = ICONS[meta?.icon ?? 'Disc3'] ?? Disc3;
-                  const live = state?.gameId === g.id;
-                  return (
-                    <Card key={g.id}>
-                      <div className="flex items-start gap-3">
-                        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700">
-                          <Icon size={20} strokeWidth={1.7} />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <CardTitle className="truncate">{g.title}</CardTitle>
-                            {live ? <Badge tone="success">방송 중</Badge> : null}
-                          </div>
-                          <p className="mt-0.5 text-[12px] text-ink-400">
-                            {meta?.label}
-                            {usesEntries(g.type) ? ` · ${g.autoCloseSec > 0 ? `${g.autoCloseSec}초 자동 마감` : '수동 마감'}` : ''}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/*
-                        띄우기 버튼은 여기 두지 않는다.
-
-                        이 목록은 진행 컨트롤 **아래**에 있어서, 방송 중에 게임을 바꾸려면
-                        스크롤을 한참 내려야 했고 그마저도 진행 컨트롤 카드에 가려 잘 보이지 않았다.
-                        띄우는 일은 위 [게임 바꾸기](진행 중) · [게임 고르기](대기 중) 팝업 한 곳으로 모았다.
-                        여기는 **만들기 · 수정 · 삭제 · 미리보기** 전용이다.
-                      */}
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {/*
-                          띄우기 전에 방송 화면을 확인한다.
-                          회차를 만들지 않으므로 [지난 게임 결과]에 아무것도 남지 않는다.
-                        */}
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => setPreviewGameId((cur) => (cur === g.id ? null : g.id))}
-                        >
-                          {previewGameId === g.id ? (
-                            <>
-                              <EyeOff size={15} strokeWidth={1.8} /> 미리보기 닫기
-                            </>
-                          ) : (
-                            <>
-                              <Eye size={15} strokeWidth={1.8} /> 미리보기
-                            </>
-                          )}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          disabled={live}
-                          onClick={() => {
-                            setEditingId(g.id);
-                            setProblem(null);
-                            setForm({
-                              type: g.type as GameType,
-                              title: g.title,
-                              items: g.items.length ? g.items : ['', ''],
-                              config: g.config,
-                              entryMode: g.entryMode as GameFormValue['entryMode'],
-                              donationMinAmount: g.donationMinAmount,
-                              autoCloseSec: g.autoCloseSec,
-                            });
-                          }}
-                        >
-                          <Pencil size={15} strokeWidth={1.8} /> 수정
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={live}
-                          onClick={() => {
-                            setRemoveTarget(g);
-                            setRemovePhase('ask');
-                          }}
-                        >
-                          <Trash2 size={15} strokeWidth={1.8} /> 삭제
-                        </Button>
-                      </div>
-                      {live ? (
-                        <p className="mt-2 text-[12px] text-ink-400">
-                          방송 중인 게임은 수정·삭제할 수 없습니다. 화면에서 내린 뒤 바꿔 주세요.
-                        </p>
-                      ) : null}
-
-                      {previewGameId === g.id ? (
-                        <div className="mt-3">
-                          <p className="mb-1.5 text-[12px] font-semibold text-ink-500">
-                            띄우면 이렇게 보입니다 — 참여자 0명 기준의 고정 화면입니다.
-                          </p>
-                          <div className="overflow-hidden rounded-xl border border-ink-100" style={CHECKER_STYLE}>
-                            <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
-                              <iframe
-                                title={`${g.title} 미리보기`}
-                                src={`/overlay/${encodeURIComponent(creatorId)}/game?preview=1&sample=${encodeURIComponent(g.id)}`}
-                                className="absolute inset-0 h-full w-full"
-                              />
-                            </div>
-                          </div>
-                          <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-400">
-                            회차를 만들지 않는 확인용 화면이라 방송에는 나가지 않고 [지난 게임 결과]에도 남지
-                            않습니다. QR 은 자리만 보여 주는 것이라 찍어도 참여되지 않습니다.
-                          </p>
-                        </div>
-                      ) : null}
-                    </Card>
-                  );
-                })}
-              </div>
-              </div>
-            )}
-          </section>
-
-          {/* 3. 지난 게임 결과 */}
-          <section>
-            <SectionTitle
-              title="지난 게임 결과"
-              description="언제 어떤 게임을 했고 누가 당첨됐는지입니다. 보상을 실제로 전달했으면 체크해 두세요."
-            />
-            <Card>
-              {history.length === 0 ? (
-                <p className="py-4 text-center text-[13px] text-ink-400">아직 진행한 게임이 없습니다.</p>
-              ) : (
-                <>
-                <div className="space-y-3">
-                  {history.map((h) => (
-                    <div key={h.id} className="rounded-xl border border-ink-100 px-4 py-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[13.5px] font-bold text-ink-900">{h.title}</span>
-                        <Badge tone="neutral">{h.seq}번째 진행</Badge>
-                        <span className="text-[12px] text-ink-400">참여 {h.participantCount}명</span>
-                        {/* 날짜가 없으면 어제 건지 지난주 건지 알 수 없어 목록이 의미를 잃는다. */}
-                        <span className="text-[12px] text-ink-400 tabular-nums">
-                          {formatKst(new Date(h.openedAt), false)}
-                          {h.revealedAt ? ' 진행' : ' 시작 (발표 없음)'}
-                        </span>
-                      </div>
-                      {h.winners.length > 0 ? (
-                        <div className="mt-2 space-y-1.5">
-                          {h.winners.map((w) => (
-                            <label key={w.id} className="flex items-center gap-2.5">
-                              <input
-                                type="checkbox"
-                                checked={w.fulfilled}
-                                onChange={(e) => void toggleFulfilled(w.id, e.target.checked)}
-                                className="h-4 w-4 rounded border-ink-300 text-brand-700 focus:ring-brand-300"
-                              />
-                              <span className="text-[13px] font-semibold text-ink-700">
-                                {w.rank}등 · {w.name}
-                                {w.prize ? <span className="ml-1.5 text-ink-400">{w.prize}</span> : null}
-                              </span>
-                              {w.fulfilled ? <Badge tone="success">전달 완료</Badge> : null}
-                            </label>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="mt-1.5 text-[12px] text-ink-400">당첨자 기록이 없는 진행입니다.</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-3 text-[11.5px] leading-relaxed text-ink-400">
-                  게임을 삭제해도 이 기록은 남습니다. 당첨자와 보상을 나중에 확인할 수 있어야 하기 때문입니다.
-                  최근 20건까지 보여 줍니다.
-                </p>
-                </>
-              )}
-            </Card>
-          </section>
-        </details>
+          {/*
+            버튼은 좁은 열에서 세로로, 넓어지면 가로로 나란히 둔다.
+            `sm:` 는 화면 너비 기준이라 좁은 오른쪽 열에서도 3칸으로 눌렸다.
+            이 열의 너비를 보는 컨테이너 쿼리를 쓴다.
+          */}
+          <div className="@container/manage mt-4">
+            <div className="grid gap-2 @md/manage:grid-cols-3">
+              <Button size="sm" onClick={() => openManage('games', true)}>
+                <Plus size={15} strokeWidth={2} /> 새 게임 만들기
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => openManage('games')}>
+                <ListOrdered size={15} strokeWidth={1.8} /> 내 게임 {games.length}개
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => openManage('history')}>
+                <Trophy size={15} strokeWidth={1.8} /> 지난 게임 결과
+              </Button>
+            </div>
+          </div>
+        </Card>
       )}
 
       {/* QR 크게 보기 */}
@@ -1025,6 +827,316 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
               <Button variant="secondary" className="mt-4" onClick={() => setQrOpen(false)}>
                 닫기
               </Button>
+            </div>
+          </div>
+        </Portal>
+      ) : null}
+
+      {/* 게임 관리 팝업 — 만들기 · 수정 · 삭제 · 미리보기 / 지난 게임 결과 */}
+      {manageTab ? (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[85] grid place-items-center bg-ink-900/45 p-3 sm:p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="게임 관리"
+            /* 작성 중인 내용이 있으면 바깥을 눌러도 닫지 않는다. 실수로 다 날아간다. */
+            onClick={() => {
+              if (!form) closeManage();
+            }}
+          >
+            <div
+              className="flex max-h-[90dvh] w-full max-w-[900px] flex-col overflow-hidden rounded-3xl border border-ink-100 bg-white shadow-[var(--shadow-panel)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-ink-100 px-5 py-4">
+                <div className="min-w-0">
+                  <span className="block text-[15px] font-black text-ink-900">게임 관리</span>
+                  <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-400">
+                    여기서 만든 게임을 방송에 띄우는 것은 [게임 바꾸기]·[게임 고르기]에서 합니다.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  aria-label="닫기"
+                  onClick={closeManage}
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-ink-50 hover:text-ink-700"
+                >
+                  <X size={17} strokeWidth={2} />
+                </button>
+              </div>
+
+              <div className="flex gap-1 border-b border-ink-100 px-5">
+                {([
+                  { key: 'games' as const, label: `내 게임 ${games.length}` },
+                  { key: 'history' as const, label: '지난 게임 결과' },
+                ]).map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setManageTab(t.key)}
+                    className={cx(
+                      'relative -mb-px border-b-2 px-3 py-2.5 text-[13px] font-bold transition-colors',
+                      manageTab === t.key
+                        ? 'border-brand-500 text-ink-900'
+                        : 'border-transparent text-ink-400 hover:text-ink-700',
+                    )}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                {manageTab === 'games' ? (
+            <section>
+              <SectionTitle
+                title="내 게임"
+                description="만들기 · 수정 · 삭제 · 미리보기"
+                action={
+                  form ? null : (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setEditingId(null);
+                        setProblem(null);
+                        setForm(emptyGameForm());
+                      }}
+                    >
+                      <Plus size={15} strokeWidth={2} /> 새 게임 만들기
+                    </Button>
+                  )
+                }
+              />
+
+              {problem?.scope === 'list' ? (
+                <div className="mb-2.5">
+                  <Notice tone="danger">{problem.text}</Notice>
+                </div>
+              ) : null}
+              {form && problem?.scope === 'form' ? (
+                <div className="mb-2.5">
+                  <Notice tone="danger">{problem.text}</Notice>
+                </div>
+              ) : null}
+
+              {form ? (
+                <GameForm
+                  value={form}
+                  onChange={setForm}
+                  onSubmit={saveForm}
+                  onCancel={() => {
+                    setForm(null);
+                    setEditingId(null);
+                    setProblem(null);
+                  }}
+                  busy={busy}
+                  mode={editingId ? 'edit' : 'create'}
+                />
+              ) : loading ? (
+                <Card>
+                  <p className="py-6 text-center text-[13px] text-ink-400">불러오는 중</p>
+                </Card>
+              ) : games.length === 0 ? (
+                <Card>
+                  <EmptyState
+                    title="아직 만든 게임이 없습니다"
+                    description="룰렛·투표·퀴즈 등 8가지 중에서 고를 수 있습니다."
+                    action={
+                      <Button
+                        onClick={() => {
+                          setEditingId(null);
+                          setProblem(null);
+                          setForm(emptyGameForm());
+                        }}
+                      >
+                        첫 게임 만들기
+                      </Button>
+                    }
+                  />
+                </Card>
+              ) : (
+                /*
+                  `lg:` 는 **화면 너비** 기준이라, 오른쪽 조작 열이 600px 밖에 안 되는데도
+                  화면만 넓으면 무조건 2단이 됐다. 카드가 290px 로 눌려 제목이 잘리고
+                  버튼이 두 줄로 접혔다. `@container` 는 **이 열의 너비**를 기준으로 하므로
+                  좁은 열에서는 1단, 넓은 화면(후원 탭처럼 폭이 넉넉한 곳)에서는 2단이 된다.
+                */
+                <div className="@container/games">
+                <div className="grid gap-2.5 @2xl/games:grid-cols-2">
+                  {games.map((g) => {
+                    const meta = GAME_TYPE_META[g.type as GameType];
+                    const Icon = ICONS[meta?.icon ?? 'Disc3'] ?? Disc3;
+                    const live = state?.gameId === g.id;
+                    return (
+                      <Card key={g.id}>
+                        <div className="flex items-start gap-3">
+                          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700">
+                            <Icon size={20} strokeWidth={1.7} />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <CardTitle className="truncate">{g.title}</CardTitle>
+                              {live ? <Badge tone="success">방송 중</Badge> : null}
+                            </div>
+                            <p className="mt-0.5 text-[12px] text-ink-400">
+                              {meta?.label}
+                              {usesEntries(g.type) ? ` · ${g.autoCloseSec > 0 ? `${g.autoCloseSec}초 자동 마감` : '수동 마감'}` : ''}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/*
+                          띄우기 버튼은 여기 두지 않는다.
+
+                          이 목록은 진행 컨트롤 **아래**에 있어서, 방송 중에 게임을 바꾸려면
+                          스크롤을 한참 내려야 했고 그마저도 진행 컨트롤 카드에 가려 잘 보이지 않았다.
+                          띄우는 일은 위 [게임 바꾸기](진행 중) · [게임 고르기](대기 중) 팝업 한 곳으로 모았다.
+                          여기는 **만들기 · 수정 · 삭제 · 미리보기** 전용이다.
+                        */}
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {/*
+                            띄우기 전에 방송 화면을 확인한다.
+                            회차를 만들지 않으므로 [지난 게임 결과]에 아무것도 남지 않는다.
+                          */}
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => setPreviewGameId((cur) => (cur === g.id ? null : g.id))}
+                          >
+                            {previewGameId === g.id ? (
+                              <>
+                                <EyeOff size={15} strokeWidth={1.8} /> 미리보기 닫기
+                              </>
+                            ) : (
+                              <>
+                                <Eye size={15} strokeWidth={1.8} /> 미리보기
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            disabled={live}
+                            onClick={() => {
+                              setEditingId(g.id);
+                              setProblem(null);
+                              setForm({
+                                type: g.type as GameType,
+                                title: g.title,
+                                items: g.items.length ? g.items : ['', ''],
+                                config: g.config,
+                                entryMode: g.entryMode as GameFormValue['entryMode'],
+                                donationMinAmount: g.donationMinAmount,
+                                autoCloseSec: g.autoCloseSec,
+                              });
+                            }}
+                          >
+                            <Pencil size={15} strokeWidth={1.8} /> 수정
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={live}
+                            onClick={() => {
+                              setRemoveTarget(g);
+                              setRemovePhase('ask');
+                            }}
+                          >
+                            <Trash2 size={15} strokeWidth={1.8} /> 삭제
+                          </Button>
+                        </div>
+                        {live ? (
+                          <p className="mt-2 text-[12px] text-ink-400">
+                            방송 중인 게임은 수정·삭제할 수 없습니다. 화면에서 내린 뒤 바꿔 주세요.
+                          </p>
+                        ) : null}
+
+                        {previewGameId === g.id ? (
+                          <div className="mt-3">
+                            <p className="mb-1.5 text-[12px] font-semibold text-ink-500">
+                              띄우면 이렇게 보입니다 — 참여자 0명 기준의 고정 화면입니다.
+                            </p>
+                            <div className="overflow-hidden rounded-xl border border-ink-100" style={CHECKER_STYLE}>
+                              <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
+                                <iframe
+                                  title={`${g.title} 미리보기`}
+                                  src={`/overlay/${encodeURIComponent(creatorId)}/game?preview=1&sample=${encodeURIComponent(g.id)}`}
+                                  className="absolute inset-0 h-full w-full"
+                                />
+                              </div>
+                            </div>
+                            <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-400">
+                              회차를 만들지 않는 확인용 화면이라 방송에는 나가지 않고 [지난 게임 결과]에도 남지
+                              않습니다. QR 은 자리만 보여 주는 것이라 찍어도 참여되지 않습니다.
+                            </p>
+                          </div>
+                        ) : null}
+                      </Card>
+                    );
+                  })}
+                </div>
+                </div>
+              )}
+            </section>
+                ) : (
+            <section>
+              <SectionTitle
+                title="지난 게임 결과"
+                description="언제 어떤 게임을 했고 누가 당첨됐는지입니다. 보상을 실제로 전달했으면 체크해 두세요."
+              />
+              <Card>
+                {history.length === 0 ? (
+                  <p className="py-4 text-center text-[13px] text-ink-400">아직 진행한 게임이 없습니다.</p>
+                ) : (
+                  <>
+                  <div className="space-y-3">
+                    {history.map((h) => (
+                      <div key={h.id} className="rounded-xl border border-ink-100 px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[13.5px] font-bold text-ink-900">{h.title}</span>
+                          <Badge tone="neutral">{h.seq}번째 진행</Badge>
+                          <span className="text-[12px] text-ink-400">참여 {h.participantCount}명</span>
+                          {/* 날짜가 없으면 어제 건지 지난주 건지 알 수 없어 목록이 의미를 잃는다. */}
+                          <span className="text-[12px] text-ink-400 tabular-nums">
+                            {formatKst(new Date(h.openedAt), false)}
+                            {h.revealedAt ? ' 진행' : ' 시작 (발표 없음)'}
+                          </span>
+                        </div>
+                        {h.winners.length > 0 ? (
+                          <div className="mt-2 space-y-1.5">
+                            {h.winners.map((w) => (
+                              <label key={w.id} className="flex items-center gap-2.5">
+                                <input
+                                  type="checkbox"
+                                  checked={w.fulfilled}
+                                  onChange={(e) => void toggleFulfilled(w.id, e.target.checked)}
+                                  className="h-4 w-4 rounded border-ink-300 text-brand-700 focus:ring-brand-300"
+                                />
+                                <span className="text-[13px] font-semibold text-ink-700">
+                                  {w.rank}등 · {w.name}
+                                  {w.prize ? <span className="ml-1.5 text-ink-400">{w.prize}</span> : null}
+                                </span>
+                                {w.fulfilled ? <Badge tone="success">전달 완료</Badge> : null}
+                              </label>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-1.5 text-[12px] text-ink-400">당첨자 기록이 없는 진행입니다.</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-[11.5px] leading-relaxed text-ink-400">
+                    게임을 삭제해도 이 기록은 남습니다. 당첨자와 보상을 나중에 확인할 수 있어야 하기 때문입니다.
+                    최근 20건까지 보여 줍니다.
+                  </p>
+                  </>
+                )}
+              </Card>
+            </section>
+                )}
+              </div>
             </div>
           </div>
         </Portal>

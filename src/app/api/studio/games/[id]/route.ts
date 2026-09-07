@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireCreator } from '@/server/auth';
+import { isRecord, readJsonObject, stringList } from '@/lib/json-body';
 import { deleteGame, updateGame, GameError } from '@/server/services/games';
 
 export const runtime = 'nodejs';
@@ -21,12 +22,12 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   try {
     const { id } = await ctx.params;
-    const body = await req.json().catch(() => ({}));
+    const body = await readJsonObject(req);
     await updateGame(creatorId, id, {
       type: '',
       title: String(body.title ?? ''),
-      items: Array.isArray(body.items) ? body.items : [],
-      config: body.config && typeof body.config === 'object' ? body.config : {},
+      items: stringList(body.items),
+      config: isRecord(body.config) ? body.config : {},
       entryMode: String(body.entryMode ?? 'LINK'),
       donationMinAmount: Number(body.donationMinAmount ?? 0),
       autoCloseSec: Number(body.autoCloseSec ?? 0),

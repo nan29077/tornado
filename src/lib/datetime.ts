@@ -84,3 +84,33 @@ export function addSeconds(date: Date, seconds: number): Date {
 export function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 86_400_000);
 }
+
+/**
+ * YYYY-MM 검증 후 KST 기준 월 시작/끝을 돌려준다.
+ *
+ * **연도까지 봐야 한다.** 예전에는 월(01~12)만 검사했다. `?month=9999-12` 로 들어오면
+ * 다음 달 키가 `10000-01` 이 되고 `new Date('10000-01-01T00:00:00+09:00')` 는
+ * Invalid Date 다. 그 값이 그대로 Prisma 조건에 들어가 **정산 화면 전체가 500** 이 났다.
+ * 주소만 만지면 누구나 재현할 수 있고, 오류 화면으로는 원인을 알 수 없다.
+ * 이상한 값은 막지 말고 **이번 달로 되돌린다** — 주소를 잘못 만졌다고 화면이 죽으면 안 된다.
+ */
+export const MIN_MONTH_YEAR = 2020;
+
+export function kstMonthRange(ym: string) {
+  const m = /^(\d{4})-(\d{2})$/.exec(ym);
+  const now = kstMonthKey();
+  const maxYear = Number(now.slice(0, 4)) + 1;
+  const valid =
+    m &&
+    Number(m[1]) >= MIN_MONTH_YEAR &&
+    Number(m[1]) <= maxYear &&
+    Number(m[2]) >= 1 &&
+    Number(m[2]) <= 12;
+  const key = valid ? ym : now;
+  const [y, mo] = key.split('-').map(Number);
+  const start = new Date(`${key}-01T00:00:00+09:00`);
+  const nextKey = mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`;
+  const prevKey = mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`;
+  const end = new Date(`${nextKey}-01T00:00:00+09:00`);
+  return { key, start, end, prevKey, nextKey, year: y, month: mo };
+}

@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import Redis from 'ioredis';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import type { GameStudioState } from '@/server/services/game-state';
+import { primeStudioStateCache, type GameStudioState } from '@/server/services/game-state';
 
 /**
  * 게임 오버레이 실시간 버스.
@@ -92,7 +92,12 @@ export function publishGameStateThrottled(creatorId: string, build: () => Promis
     pending.delete(creatorId);
     build()
       .then((state) => {
-        if (state) publishGameState(state);
+        if (state) {
+          // 참여자 수처럼 자주 바뀌는 값도 캐시에 심어 둔다. 심지 않으면 각 SSE 연결이
+          // 2초 폴링에서 캐시에 남은 이전 숫자를 읽어 참여자 수가 뒤로 갔다 앞으로 간다.
+          primeStudioStateCache(state.creatorId, state);
+          publishGameState(state);
+        }
       })
       .catch((e: Error) => logger.warn('게임 상태 발행 실패', { creatorId, message: e.message }));
   }, THROTTLE_MS);

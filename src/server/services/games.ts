@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import { Prisma } from '@/generated/prisma/client';
-import { prisma } from '@/server/db';
+import { prisma, withAdvisoryLock } from '@/server/db';
 import { logger } from '@/lib/logger';
 import { newId } from '@/lib/id';
 import { randomCodeString, sha256 } from '@/lib/crypto';
@@ -35,6 +35,7 @@ import {
   buildStudioState,
   buildStudioStateForRound,
   findActiveRound,
+  primeStudioStateCache,
   sumDonationsSince,
 } from '@/server/services/game-state';
 
@@ -238,38 +239,48 @@ export async function startRound(creatorId: string, gameId: string) {
   const joinCode = await nextJoinCode();
 
   /**
-   * "화면에 뜬 회차는 하나"를 트랜잭션 안에서 보장한다.
+   * "화면에 뜬 회차는 하나"를 보장한다.
    *
-   * 예전에는 조회 → 종료 → 생성이 트랜잭션 밖이라, 스튜디오 창과 팝아웃 컨트롤에서 거의
-   * 동시에 [방송에 시작]을 누르면 둘 다 "활성 회차 없음"을 보고 각각 OPEN 회차를 만들었다.
-   * 그러면 하나는 화면에 보이지 않은 채 참여 코드로 참여를 계속 받는다.
+   * 트랜잭션만으로는 부족하다
+   * -------------------------
+   * 예전 주석은 "updateMany 라 동시에 들어와도 한쪽만 실제로 바꾼다" 였지만, 그것은
+   * **이미 있던 행**에만 해당한다. 기본 격리 수준(READ COMMITTED)에서 updateMany 는
+   * 상대 트랜잭션이 아직 커밋하지 않은 **새 회차**를 보지 못한다. 그래서 스튜디오 창과
+   * 팝아웃 컨트롤에서 서로 다른 게임을 거의 동시에 시작하면 둘 다 통과해 OPEN 회차가
+   * 두 개 만들어졌다. 하나는 화면에 보이지 않은 채 참여 코드로 참여를 계속 받는다.
+   * 같은 게임을 동시에 시작하면 (gameId, seq) 유니크 위반으로 500 이 났다.
+   *
+   * 크리에이터 단위 자문 잠금으로 아예 줄을 세운다. 정산 요청에서 쓰는 것과 같은 방식이고,
+   * 잠금 범위가 크리에이터 한 명이라 다른 크리에이터의 시작은 막지 않는다.
    */
-  const round = await prisma.$transaction(async (tx) => {
-    // 활성 회차를 먼저 모두 내린다. updateMany 라 동시에 들어와도 한쪽만 실제로 바꾼다.
-    await tx.gameRound.updateMany({
-      where: { creatorId, status: { in: ['OPEN', 'CLOSED', 'RESULT'] } },
-      data: { status: 'ENDED', endedAt: now },
-    });
+  const round = await prisma.$transaction(async (tx) =>
+    withAdvisoryLock(tx, `game:round:${creatorId}`, async () => {
+      // 활성 회차를 먼저 모두 내린다.
+      await tx.gameRound.updateMany({
+        where: { creatorId, status: { in: ['OPEN', 'CLOSED', 'RESULT'] } },
+        data: { status: 'ENDED', endedAt: now },
+      });
 
-    const last = await tx.gameRound.findFirst({
-      where: { gameId },
-      orderBy: { seq: 'desc' },
-      select: { seq: true },
-    });
+      const last = await tx.gameRound.findFirst({
+        where: { gameId },
+        orderBy: { seq: 'desc' },
+        select: { seq: true },
+      });
 
-    return tx.gameRound.create({
-      data: {
-        id: newId(),
-        gameId,
-        creatorId,
-        seq: (last?.seq ?? 0) + 1,
-        status: 'OPEN',
-        joinCode,
-        openedAt: now,
-        closesAt,
-      },
-    });
-  });
+      return tx.gameRound.create({
+        data: {
+          id: newId(),
+          gameId,
+          creatorId,
+          seq: (last?.seq ?? 0) + 1,
+          status: 'OPEN',
+          joinCode,
+          openedAt: now,
+          closesAt,
+        },
+      });
+    }),
+  );
 
   await publish(creatorId);
   return round.id;
@@ -285,16 +296,36 @@ export async function spinRound(creatorId: string, roundId: string, selectedInde
   const config = asRecord(round.game.config);
   if (items.length < 2) fail('항목이 2개 이상 필요합니다.');
 
+  /**
+   * 고른 번호는 항목 범위 안이어야 한다.
+   * 범위를 벗어난 값이 그대로 저장되면 화면이 없는 줄을 따라 그리려다 아무것도 그리지 않는다.
+   */
+  if (selectedIndex !== undefined && (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= items.length)) {
+    fail('고른 번호가 올바르지 않습니다.');
+  }
+
   const result =
     round.game.type === 'ROULETTE'
       ? computeRoulette(items)
       : computeLadder(items, asStringArray(config.destinations), selectedIndex);
 
+  /**
+   * 결과 발표(revealRound)와 **같은 방식으로** 상태를 조건부 선점한 뒤에만 결과를 쓴다.
+   *
+   * 예전에는 위에서 status 를 읽어 검사하고 무조건 update 했다. 그러면 팝아웃 컨트롤과
+   * 메인 창에서 동시에 [돌리기]를 누르거나 Enter 를 연타했을 때 두 요청이 각각 다른 추첨
+   * 결과를 계산해 나중 것이 이기고, 당첨자 기록(gameWinner)이 **두 벌** 쌓여 진행 이력에
+   * 당첨자가 중복으로 보였다. 추첨은 조작 시비가 붙기 쉬운 기능이라 한 번만 확정돼야 한다.
+   */
+  const claimed = await prisma.gameRound.updateMany({
+    where: { id: roundId, status: 'OPEN' },
+    data: { status: 'RESULT', result: result as object, closedAt: new Date(), revealedAt: new Date() },
+  });
+  if (claimed.count === 0) fail('이미 결과가 나온 회차입니다. 화면을 새로 고쳐 주세요.');
+
   await prisma.$transaction([
-    prisma.gameRound.update({
-      where: { id: roundId },
-      data: { status: 'RESULT', result: result as object, closedAt: new Date(), revealedAt: new Date() },
-    }),
+    // 선점에 성공한 요청만 여기 오지만, 재발표 경로와 같은 규칙으로 남은 기록을 먼저 지운다.
+    prisma.gameWinner.deleteMany({ where: { roundId } }),
     ...winnerRows(round, winnersOf(round.game.type, result, config)),
   ]);
 
@@ -799,12 +830,23 @@ export async function refreshDonationGauge(creatorId: string): Promise<void> {
   }
 }
 
+/**
+ * 바뀐 상태를 모든 화면에 알린다.
+ *
+ * 버스로 미는 것만으로는 부족하다. 각 SSE 연결은 2초마다 스스로 상태를 다시 읽는데,
+ * 그때 **짧은 캐시에 남아 있던 이전 상태**를 읽어 내보내면 방금 바뀐 화면이 되돌아간다.
+ * 그래서 방금 만든 정확한 값을 캐시에 먼저 심고 나서 발행한다. (자세한 설명은
+ * game-state.ts 의 primeStudioStateCache 주석에 있다)
+ */
 async function publish(creatorId: string) {
   const state = await buildStudioState(creatorId);
   if (state) {
+    primeStudioStateCache(creatorId, state);
     publishGameState(state);
     return;
   }
+  // 회차가 사라진 경우도 "없음"으로 심어 둔다. 지우기만 하면 다음 폴링이 DB 를 다시 읽는다.
+  primeStudioStateCache(creatorId, null);
   // 화면에 띄운 회차가 사라졌다는 사실도 알려야 오버레이가 화면을 비운다.
   publishGameState({
     creatorId,

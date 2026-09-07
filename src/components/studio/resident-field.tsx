@@ -9,15 +9,15 @@ import { Input, Notice } from '@/components/ui';
  * - 원천징수 전용이며 신고 후 파기한다는 안내를 반드시 노출한다.
  * - 이미 등록해 둔(파기 전) 번호가 있으면 재입력 없이 재사용하고, "변경" 시에만 새로 입력받는다.
  * - 화면에는 원문을 두지 않고, 서버에서 암호화 저장 + 마스킹만 보관한다.
+ * - 앞·뒤 칸을 합친 13자리를 숨은 입력칸에 다시 담지 않는다.
+ *   숨은 칸에 담으면 뒤 7자리를 가려 둔 의미가 사라지고(개발자 도구·확장 프로그램·
+ *   브라우저 자동완성이 그대로 읽는다) 전체 번호가 DOM 에 한 번 더 남는다.
+ *   앞·뒤를 각각 보내고 서버에서 합친다.
  */
 export function ResidentField({ priorMasked }: { priorMasked: string | null }) {
   const [editing, setEditing] = React.useState(!priorMasked);
   const [front, setFront] = React.useState('');
   const [back, setBack] = React.useState('');
-
-  // 재사용 시에는 마스킹 값을 그대로 서버로 보낸다(서버가 * 포함 여부로 신규/재사용을 구분).
-  const reuseValue = priorMasked ?? '';
-  const combined = editing ? `${front}${back}` : reuseValue;
 
   return (
     <div className="rounded-2xl border border-ink-100 bg-ink-50/60 p-4">
@@ -39,7 +39,6 @@ export function ResidentField({ priorMasked }: { priorMasked: string | null }) {
           >
             변경
           </button>
-          <input type="hidden" name="resident" value={reuseValue} />
         </div>
       ) : (
         <>
@@ -47,6 +46,7 @@ export function ResidentField({ priorMasked }: { priorMasked: string | null }) {
             <Input
               inputMode="numeric"
               maxLength={6}
+              name="residentFront"
               value={front}
               onChange={(e) => setFront(e.target.value.replace(/[^0-9]/g, ''))}
               placeholder="앞 6자리"
@@ -57,6 +57,7 @@ export function ResidentField({ priorMasked }: { priorMasked: string | null }) {
             <Input
               inputMode="numeric"
               maxLength={7}
+              name="residentBack"
               type="password"
               value={back}
               onChange={(e) => setBack(e.target.value.replace(/[^0-9]/g, ''))}
@@ -74,8 +75,6 @@ export function ResidentField({ priorMasked }: { priorMasked: string | null }) {
               </button>
             ) : null}
           </div>
-          <input type="hidden" name="resident" value={combined} />
-
           <label className="mt-3 flex cursor-pointer items-start gap-2 text-[12.5px] leading-relaxed text-ink-600">
             <input type="checkbox" name="residentAgree" className="mt-0.5 h-4 w-4 accent-brand-400" />
             <span>
