@@ -157,12 +157,24 @@ const positionClass: Record<string, string> = {
 
 // ------------------------------------------------------------------- 테마
 
-export type OverlayTheme = 'TORNADO' | 'MINIMAL' | 'NEON';
+/**
+ * 알림 디자인.
+ *
+ * TORNADO · MINIMAL · NEON 은 **배경 판이 없다.** 글자와 캐릭터만 방송 화면에 얹힌다.
+ * 투네이션·트윕이 그렇고, 방송 화면에 상자를 깔면 그 안이 가려지기 때문이다.
+ * CARD 는 예전 카드형을 그대로 남겨 둔 것이다 — 상자를 원하는 크리에이터를 위해서다.
+ */
+export type OverlayTheme = 'TORNADO' | 'MINIMAL' | 'NEON' | 'CARD';
 
 /** DB 에 저장된 문자열을 알고 있는 테마로 좁힌다. 모르는 값은 기본 테마로 동작한다. */
-function themeOf(value?: string): OverlayTheme {
+export function themeOf(value?: string): OverlayTheme {
   const t = (value || 'TORNADO').toUpperCase();
-  return t === 'MINIMAL' || t === 'NEON' ? t : 'TORNADO';
+  return t === 'MINIMAL' || t === 'NEON' || t === 'CARD' ? t : 'TORNADO';
+}
+
+/** 배경 판이 있는 테마인지. 지금은 CARD 하나뿐이다. */
+export function themeHasCard(theme: OverlayTheme): boolean {
+  return theme === 'CARD';
 }
 
 interface ThemeClasses {
@@ -175,7 +187,80 @@ interface ThemeClasses {
   test: string;
 }
 
+/**
+ * 배경 없는 알림의 색.
+ *
+ * 배경 판을 없애면 밝은 장면(하늘·물·눈) 위에서 흰 글자가 사라진다. 판 대신
+ * **글자 자신이 테두리를 두르게** 해서 어떤 배경에서도 읽히게 한다.
+ * `paint-order: stroke fill` 은 테두리를 글자 **뒤에** 그려 획이 가늘어지지 않게 한다
+ * (없으면 두꺼운 테두리가 글자 속을 파고들어 글씨가 얇아 보인다).
+ */
+interface PlainTheme {
+  /** 닉네임·안내 문구 색 */
+  text: string;
+  /** 금액 강조 색 */
+  accent: string;
+  /** 후원 메시지 색 */
+  message: string;
+  /** 글자 테두리 색 */
+  stroke: string;
+  /** 테두리 두께 (1920 기준 px) */
+  strokeWidth: number;
+  /** 글자 그림자 (테두리만으로 부족한 어두운 장면 대비) */
+  shadow: string;
+  /** 캐릭터 스티커에 씌울 클래스 */
+  sticker: string;
+}
+
+const PLAIN_THEMES: Record<Exclude<OverlayTheme, 'CARD'>, PlainTheme> = {
+  /** 기본 — 흰 글자에 검은 테두리, 금액만 도네이도 꿀색 */
+  TORNADO: {
+    text: '#ffffff',
+    accent: '#ffc632',
+    message: '#ffffff',
+    stroke: '#17161a',
+    strokeWidth: 9,
+    shadow: '0 8px 26px rgba(0,0,0,0.55)',
+    sticker: 'drop-shadow-[0_14px_26px_rgba(0,0,0,0.45)]',
+  },
+  /** 미니멀 — 색을 쓰지 않는다. 금액도 같은 흰색으로 두고 굵기로만 구분한다. */
+  MINIMAL: {
+    text: '#ffffff',
+    accent: '#e7e7ea',
+    message: '#e7e7ea',
+    stroke: '#000000',
+    strokeWidth: 8,
+    shadow: '0 6px 20px rgba(0,0,0,0.5)',
+    sticker: 'opacity-80 drop-shadow-[0_10px_20px_rgba(0,0,0,0.4)]',
+  },
+  /** 네온 — 형광 글로우. 테두리는 짙은 남색이라야 글로우가 살아난다. */
+  NEON: {
+    text: '#e8fdff',
+    accent: '#22d3ee',
+    message: '#9be9f5',
+    stroke: '#06121f',
+    strokeWidth: 9,
+    shadow: '0 0 28px rgba(34,211,238,0.85), 0 8px 24px rgba(0,0,0,0.5)',
+    sticker: 'drop-shadow-[0_0_16px_rgba(34,211,238,0.6)]',
+  },
+};
+
+/**
+ * 카드형(CARD) 전용 색. 배경 판이 있는 유일한 테마다.
+ * 예전 기본 테마의 모양을 그대로 보존한 것이다.
+ */
+const CARD_CLASSES: ThemeClasses = {
+  card: 'border-white/40 bg-white/95 shadow-[0_18px_48px_rgba(19,26,58,0.28)]',
+  title: 'text-ink-900',
+  message: 'text-ink-700',
+  swirl: 'bg-brand-50 text-brand-700',
+  sticker: 'border-brand-200 bg-brand-50 text-brand-700',
+  footer: 'text-ink-300',
+  test: 'bg-ink-100 text-ink-500',
+};
+
 const THEME_CLASSES: Record<OverlayTheme, ThemeClasses> = {
+  CARD: CARD_CLASSES,
   /** 기본: 밝은 카드형 배너 (기존 스타일) */
   TORNADO: {
     card: 'border-white/40 bg-white/95 shadow-[0_18px_48px_rgba(19,26,58,0.28)]',
@@ -684,6 +769,14 @@ export function OverlayClient({
       ? clampOverlayLayout({ offsetX: current.offsetX, offsetY: current.offsetY, scalePct: current.scalePct })
       : clampOverlayLayout(layout));
 
+  /**
+   * 배경 판 없이 글자만 그리는 테마인지. CARD 만 예외다.
+   * 타입까지 좁혀 두면 아래에서 PlainDonationAlert 에 그대로 넘길 수 있다.
+   */
+  const plainTheme: Exclude<OverlayTheme, 'CARD'> | null = themeHasCard(themeName)
+    ? null
+    : (themeName as Exclude<OverlayTheme, 'CARD'>);
+
   const standalone = useStandalone();
 
   // 대기 수·테마는 부모(스튜디오 미리보기)의 상태 배지에서 함께 보여 준다.
@@ -707,25 +800,54 @@ export function OverlayClient({
       {/* 파티클은 배너를 끈 구간에서도 재생된다. 캐릭터 스티커는 배너 위 인라인으로 처리. */}
       {current && !leaving ? <EffectLayer effect={effectOf(current)} theme={themeName} /> : null}
 
-      <div className={`relative z-20 flex h-full w-full p-6 ${align}`}>
+      {/*
+        가장자리 여백. 카드형은 작은 배너라 24px 이면 충분하지만, 배경 없는 큰 글씨는
+        화면 끝에 글자가 닿으면 잘려 보인다(방송 프로그램마다 가장자리를 조금씩 자른다).
+        1920 기준 72px 을 둔다.
+      */}
+      <div className={`relative z-20 flex h-full w-full ${plainTheme ? 'p-[72px]' : 'p-6'} ${align}`}>
         {shown && bannerOf(shown) ? (
           // 배치 미세 조정은 배너(와 그 위 캐릭터)에만 적용한다.
           // 파티클은 화면 전체 연출이라 함께 움직이면 어색하다.
           <div
             ref={bannerBoxRef}
-            className="flex flex-col items-center gap-0"
+            className={`flex flex-col gap-0 ${plainTheme ? 'items-start' : 'items-center'}`}
             style={{ transform: overlayLayoutTransform(activeLayout), transformOrigin: 'center' }}
           >
-            {/* 캐릭터 스티커: 배너 바로 위에 자연스럽게 붙임 */}
-            {current && isCharacterStickerEffect(effectOf(current)) && !leaving ? (
-              <CharacterStickerInline effect={effectOf(current)} theme={themeName} />
-            ) : null}
-            <DonationCard
-              payload={shown}
-              leaving={Boolean(current) && leaving}
-              maxMessageLen={shown.maxMessageLen ?? maxMessageLen}
-              theme={themeName}
-            />
+            {plainTheme ? (
+              /*
+                배경 없는 큰 글씨. 캐릭터는 글자 **왼쪽**에 나란히 들어간다
+                (배너 위에 크게 얹으면 세로로 길어져 방송 화면을 가로지른다).
+              */
+              <PlainDonationAlert
+                payload={shown}
+                leaving={Boolean(current) && leaving}
+                maxMessageLen={shown.maxMessageLen ?? maxMessageLen}
+                theme={plainTheme}
+                sticker={
+                  current && isCharacterStickerEffect(effectOf(current)) && !leaving ? (
+                    <CharacterStickerInline
+                      effect={effectOf(current)}
+                      theme={plainTheme}
+                      placement="side"
+                    />
+                  ) : null
+                }
+              />
+            ) : (
+              <>
+                {/* 카드형: 캐릭터 스티커를 배너 바로 위에 얹는다 (예전 방식 그대로) */}
+                {current && isCharacterStickerEffect(effectOf(current)) && !leaving ? (
+                  <CharacterStickerInline effect={effectOf(current)} theme={themeName} />
+                ) : null}
+                <DonationCard
+                  payload={shown}
+                  leaving={Boolean(current) && leaving}
+                  maxMessageLen={shown.maxMessageLen ?? maxMessageLen}
+                  theme={themeName}
+                />
+              </>
+            )}
           </div>
         ) : null}
       </div>
@@ -753,6 +875,105 @@ export function OverlayClient({
 }
 
 // ------------------------------------------------------------------ 알림 배너
+
+/**
+ * 배경 없는 큰 글씨 알림 (기본 · 미니멀 · 네온).
+ *
+ * 왜 이렇게 만드나
+ * ----------------
+ * 방송 화면에 상자를 깔면 그 안의 장면이 가려진다. 투네이션·트윕·스트림엘리먼트가
+ * 모두 **글자만** 얹는 이유다. 도네이도도 같은 방식으로 맞춘다.
+ *
+ * 크기 기준
+ * ---------
+ * 이 화면은 항상 **1920x1080 캔버스** 위에 그려진다(방송용은 OBS 소스가 그 크기,
+ * 미리보기는 OverlayCanvas 가 그 크기로 그린 뒤 축소). 그래서 px 를 그대로 쓰면 된다.
+ * 시청자 상당수가 휴대폰으로 보므로, 1920 기준 64px 은 6인치 화면에서 겨우 읽히는 크기다.
+ * 더 키우고 싶으면 [위치·크기 조정]의 크기 슬라이더(50~150%)를 쓰면 된다 —
+ * 이 배너 전체가 그 배율로 함께 커진다.
+ *
+ * 가독성
+ * ------
+ * 배경 판이 없으므로 밝은 장면 위에서 흰 글자가 사라진다. 글자마다 테두리를 두르고
+ * (paint-order 로 획이 얇아지지 않게), 그 위에 그림자를 얹어 어두운 장면도 대비를 준다.
+ */
+function PlainDonationAlert({
+  payload,
+  leaving,
+  maxMessageLen,
+  theme,
+  sticker,
+}: {
+  payload: OverlayPayload;
+  leaving: boolean;
+  maxMessageLen: number;
+  theme: Exclude<OverlayTheme, 'CARD'>;
+  sticker: React.ReactNode;
+}) {
+  const p = PLAIN_THEMES[theme];
+  const amountText = payload.amount ? `${formatNumber(BigInt(payload.amount))}원` : '';
+  const message =
+    payload.message.length > maxMessageLen ? `${payload.message.slice(0, maxMessageLen)}...` : payload.message;
+
+  /** 글자 테두리. 두 줄로 나눠 두면 제목·본문이 같은 규칙을 쓴다. */
+  const outline: React.CSSProperties = {
+    WebkitTextStrokeWidth: `${p.strokeWidth}px`,
+    WebkitTextStrokeColor: p.stroke,
+    paintOrder: 'stroke fill',
+    textShadow: p.shadow,
+  };
+
+  return (
+    <div
+      className={`flex max-w-[1340px] items-start gap-6 ${
+        leaving ? 'animate-tornado-out' : 'animate-banner-in'
+      }`}
+    >
+      {/* 캐릭터는 첫 줄 왼쪽에 붙는다. 없는 효과(파티클 계열)면 아무것도 오지 않는다. */}
+      {sticker}
+
+      <div className="min-w-0 flex-1">
+        {payload.isTest ? (
+          <span className="mb-2 inline-block rounded-lg bg-black/55 px-3 py-1 text-[26px] font-black text-white">
+            테스트
+          </span>
+        ) : null}
+
+        <p
+          className="break-keep text-[64px] font-black leading-[1.18] tracking-[-0.01em]"
+          style={{ ...outline, color: p.text }}
+        >
+          <span>{payload.donorName}</span>
+          <span>님이 </span>
+          {amountText ? (
+            <>
+              {/* 금액만 색을 달리한다. 시선이 먼저 가야 하는 정보다. */}
+              <span style={{ color: p.accent }}>{amountText}</span>
+              <span>을 </span>
+            </>
+          ) : null}
+          <span>후원하셨습니다</span>
+        </p>
+
+        {message ? (
+          /*
+            메시지는 **세 줄까지만** 보여 준다. 글자가 커진 만큼 긴 메시지는 방송 화면을
+            통째로 덮는다. 넘치는 부분은 말줄임으로 끊는다(글자 수 상한과는 별개다 —
+            짧은 글도 줄바꿈이 많으면 길어지기 때문이다).
+          */
+          <p
+            className="mt-3 line-clamp-3 break-keep text-[46px] font-extrabold leading-[1.3]"
+            style={{ ...outline, WebkitTextStrokeWidth: `${p.strokeWidth - 2}px`, color: p.message }}
+          >
+            {message}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------- 카드형(예전 기본)
 
 function DonationCard({
   payload,

@@ -90,9 +90,10 @@ const EFFECTS: EffectOption[] = [
 ];
 
 const THEMES = [
-  { value: 'TORNADO', label: '도네이도 기본', desc: '밝은 카드형 배너' },
-  { value: 'MINIMAL', label: '미니멀', desc: '반투명 검정 + 흰 글자, 절제된 효과' },
-  { value: 'NEON', label: '네온', desc: '형광빛 글로우 효과' },
+  { value: 'TORNADO', label: '도네이도 기본', desc: '배경 없이 큰 글씨 · 금액은 꿀색으로' },
+  { value: 'MINIMAL', label: '미니멀', desc: '배경 없이 큰 글씨 · 색을 쓰지 않음' },
+  { value: 'NEON', label: '네온', desc: '배경 없이 큰 글씨 · 형광빛 글로우' },
+  { value: 'CARD', label: '카드형', desc: '흰 상자 안에 작게 — 예전 기본 디자인' },
 ];
 
 const TTS_PROVIDERS = [
@@ -695,31 +696,69 @@ function VoiceRow({
 
 // ---------------------------------------------------------------- 테마 미리보기
 
+/** 미리보기용 글자 테두리. 방송 화면에서 쓰는 것과 같은 방식(두께만 비례해 줄임). */
+const OUTLINE_PREVIEW: React.CSSProperties = {
+  WebkitTextStrokeWidth: '2.5px',
+  WebkitTextStrokeColor: '#17161a',
+  paintOrder: 'stroke fill',
+  textShadow: '0 2px 6px rgba(0,0,0,0.55)',
+};
+
 function ThemePreview({ theme }: { theme: string }) {
+  /**
+   * 실제 방송 화면(1920x1080)의 축소판이다. 작은 칸이라 크기를 그대로 줄 수는 없지만,
+   * **배경 판이 있는지 없는지**와 **글자가 화면에서 얼마나 큰지**는 그대로 보여야
+   * 고르는 의미가 있다. 그래서 상자 유무와 글자 비율을 실제와 같게 맞췄다.
+   */
+  const sample = (
+    <>
+      홍길동님이 <b className="font-black">5,000원</b>을 후원하셨습니다
+    </>
+  );
+
+  if (theme === 'CARD') {
+    return (
+      <span className="grid h-24 place-items-center bg-[#3a3a42] px-3">
+        <span className="w-full max-w-[200px] rounded-lg border border-white/40 bg-white/95 px-3 py-2 text-center shadow">
+          <span className="block text-[11px] font-extrabold text-ink-900">{sample}</span>
+        </span>
+      </span>
+    );
+  }
+
   if (theme === 'MINIMAL') {
     return (
       <span className="grid h-24 place-items-center bg-[#3a3a42] px-3">
-        <span className="w-full max-w-[200px] rounded-lg bg-black/60 px-3 py-2 text-center">
-          <span className="block text-[11px] font-bold text-white">홍길동님이 5,000원을 후원하셨습니다</span>
+        <span
+          className="block w-full text-left text-[15px] font-black leading-tight text-white"
+          style={OUTLINE_PREVIEW}
+        >
+          {sample}
         </span>
       </span>
     );
   }
+
   if (theme === 'NEON') {
     return (
-      <span className="grid h-24 place-items-center bg-[#0a0e1f] px-3">
-        <span className="w-full max-w-[200px] rounded-lg border border-[#22d3ee]/60 bg-[#101636] px-3 py-2 text-center shadow-[0_0_14px_rgba(34,211,238,0.45)]">
-          <span className="block text-[11px] font-bold text-[#a5f3fc] [text-shadow:0_0_8px_rgba(34,211,238,0.9)]">
-            홍길동님이 5,000원을 후원하셨습니다
-          </span>
+      <span className="grid h-24 place-items-center bg-[#101a2e] px-3">
+        <span
+          className="block w-full text-left text-[15px] font-black leading-tight text-[#e8fdff]"
+          style={{ ...OUTLINE_PREVIEW, textShadow: '0 0 10px rgba(34,211,238,0.9)' }}
+        >
+          홍길동님이 <b className="font-black text-[#22d3ee]">5,000원</b>을 후원하셨습니다
         </span>
       </span>
     );
   }
+
   return (
     <span className="grid h-24 place-items-center bg-[#3a3a42] px-3">
-      <span className="w-full max-w-[200px] rounded-lg border border-white/40 bg-white/95 px-3 py-2 text-center shadow">
-        <span className="block text-[11px] font-extrabold text-ink-900">홍길동님이 5,000원을 후원하셨습니다</span>
+      <span
+        className="block w-full text-left text-[15px] font-black leading-tight text-white"
+        style={OUTLINE_PREVIEW}
+      >
+        홍길동님이 <b className="font-black text-[#ffc632]">5,000원</b>을 후원하셨습니다
       </span>
     </span>
   );

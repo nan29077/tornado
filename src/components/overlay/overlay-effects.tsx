@@ -236,7 +236,23 @@ export function isCharacterStickerEffect(effect: string): boolean {
  * 캐릭터 스티커를 배너 바로 위에 인라인으로 렌더링한다.
  * fixed 레이어가 아니므로 배너와 자연스럽게 붙는다.
  */
-export function CharacterStickerInline({ effect, theme = 'TORNADO' }: { effect: string; theme?: string }) {
+export function CharacterStickerInline({
+  effect,
+  theme = 'TORNADO',
+  /**
+   * 배치 방식.
+   *  - 'stack' : 배너 **위**에 크게 (카드형에서 쓰던 방식)
+   *  - 'side'  : 글자 **왼쪽**에 나란히 (배경 없는 큰 글씨에서 쓴다)
+   *
+   * 배경이 없는 알림에서는 캐릭터를 글자 위에 크게 얹으면 세로로 너무 길어져
+   * 방송 화면을 위아래로 가로지른다. 투네이션이 뱃지를 첫 줄 왼쪽에 두는 것과 같은 이유다.
+   */
+  placement = 'stack',
+}: {
+  effect: string;
+  theme?: string;
+  placement?: 'stack' | 'side';
+}) {
   const name = (effect || 'DEFAULT').toUpperCase() as EffectName;
   const characterSticker = findCharacterSticker(name);
   if (!characterSticker) return null;
@@ -254,7 +270,8 @@ export function CharacterStickerInline({ effect, theme = 'TORNADO' }: { effect: 
       // 1920 기준 고정 크기. 예전에는 clamp(100px,18vw,260px) 이었는데, 화면이 좁아질수록
       // 상대적으로 커져(322px 틀에서 화면의 31%) 위쪽이 잘렸다. 1920 에서는 clamp 결과가
       // 260px 이므로 방송 화면의 크기는 그대로다.
-      className={`w-[260px] drop-shadow-[0_20px_28px_rgba(15,10,0,0.24)] ${characterSticker.animationClass} ${themeClass}`}
+      // 옆에 붙일 때는 글자 두세 줄 높이에 맞춰 200px 로 줄인다.
+      className={`${placement === 'side' ? 'w-[200px] shrink-0' : 'w-[260px]'} drop-shadow-[0_20px_28px_rgba(15,10,0,0.24)] ${characterSticker.animationClass} ${themeClass}`}
     >
       <Image
         src={characterSticker.image}
