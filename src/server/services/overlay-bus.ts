@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import Redis from 'ioredis';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { quietRedisWhenUnavailable } from '@/server/redis-quiet';
 
 /**
  * 오버레이 실시간 이벤트 버스 (SSE 백엔드).
@@ -175,8 +176,12 @@ function ensureRedis() {
     const retryStrategy = (times: number) => (times > 5 ? null : Math.min(times * 300, 2000));
     const pub = new Redis(env.redisUrl, { maxRetriesPerRequest: 2, enableOfflineQueue: false, retryStrategy });
     const sub = new Redis(env.redisUrl, { maxRetriesPerRequest: 2, enableOfflineQueue: false, retryStrategy });
-    pub.on('error', (e: Error) => logger.warn('overlay pub error', { message: e.message }));
-    sub.on('error', (e: Error) => logger.warn('overlay sub error', { message: e.message }));
+    quietRedisWhenUnavailable(pub, '후원 알림 발행', () => {
+      globalForBus.overlayPub = undefined;
+    });
+    quietRedisWhenUnavailable(sub, '후원 알림 구독', () => {
+      globalForBus.overlaySub = undefined;
+    });
     sub.subscribe(CHANNEL).catch((e: Error) => logger.warn('overlay subscribe 실패', { message: e.message }));
     sub.on('message', (_ch: string, raw: string) => {
       try {

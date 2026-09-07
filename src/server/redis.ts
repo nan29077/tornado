@@ -1,6 +1,7 @@
 import Redis from 'ioredis';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { quietRedisWhenUnavailable } from '@/server/redis-quiet';
 
 /**
  * Redis (ElastiCache) 클라이언트.
@@ -214,7 +215,14 @@ function build(): KvStore {
       enableOfflineQueue: !env.allowInMemoryFallback,
       retryStrategy: (times) => (times > 5 ? null : Math.min(times * 300, 2000)),
     });
-    client.on('error', (e: Error) => logger.warn('redis error', { message: e.message }));
+    /**
+     * 개별 연결 오류는 찍지 않는다. Redis 가 없는 로컬에서는 같은 줄이 수십 번 쌓여
+     * 진짜 문제를 가린다. 명령이 실패하면 아래 RedisStore 가 인메모리로 강등하면서
+     * 사람이 읽을 문장을 한 번 남긴다.
+     */
+    quietRedisWhenUnavailable(client, '속도 제한·중복 방지 저장소', () => {
+      globalForKv.redis = undefined;
+    });
     globalForKv.redis = client;
     return new RedisStore(client);
   } catch (e) {

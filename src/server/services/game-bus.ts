@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import Redis from 'ioredis';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { quietRedisWhenUnavailable } from '@/server/redis-quiet';
 import { primeStudioStateCache, type GameStudioState } from '@/server/services/game-state';
 
 /**
@@ -43,8 +44,12 @@ function ensureRedis() {
     const retryStrategy = (times: number) => (times > 5 ? null : Math.min(times * 300, 2000));
     const pub = new Redis(env.redisUrl, { maxRetriesPerRequest: 2, enableOfflineQueue: false, retryStrategy });
     const sub = new Redis(env.redisUrl, { maxRetriesPerRequest: 2, enableOfflineQueue: false, retryStrategy });
-    pub.on('error', (e: Error) => logger.warn('game pub error', { message: e.message }));
-    sub.on('error', (e: Error) => logger.warn('game sub error', { message: e.message }));
+    quietRedisWhenUnavailable(pub, '게임 상태 발행', () => {
+      globalForGameBus.gamePub = undefined;
+    });
+    quietRedisWhenUnavailable(sub, '게임 상태 구독', () => {
+      globalForGameBus.gameSub = undefined;
+    });
     sub.subscribe(CHANNEL).catch((e: Error) => logger.warn('game subscribe 실패', { message: e.message }));
     sub.on('message', (_ch: string, raw: string) => {
       try {
