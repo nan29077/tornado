@@ -116,6 +116,25 @@ export function OverlayCanvas({
     };
   }, []);
 
+  /**
+   * 부모(스튜디오 미리보기)에게 **틀 크기를 쟀는지**를 알린다.
+   *
+   * 크기를 못 재면 캔버스를 통째로 감추므로(scale 0) 화면이 완전히 빈다. 그런데 그 상태는
+   * "연결은 됐는데 아무것도 안 나온다" 와 화면상 구분이 되지 않아, 원인을 짚는 데
+   * 매번 오래 걸렸다. 어느 단계에서 멈췄는지 툴바가 바로 말해 줄 수 있어야 한다.
+   */
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || window.parent === window) return;
+    try {
+      window.parent.postMessage(
+        { type: 'donaido-overlay-canvas', ready: Boolean(box), w: box?.w ?? 0, h: box?.h ?? 0 },
+        window.location.origin,
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [box]);
+
   const scale = box ? Math.min(box.w / OVERLAY_CANVAS_WIDTH, box.h / OVERLAY_CANVAS_HEIGHT) : 0;
   // 축소한 캔버스를 틀 한가운데에 놓는다. 좌표 계산을 직접 하므로 브라우저별 차이가 없다.
   const offsetX = box ? (box.w - OVERLAY_CANVAS_WIDTH * scale) / 2 : 0;

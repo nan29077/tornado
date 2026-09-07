@@ -29,11 +29,22 @@ export async function GET() {
     return NextResponse.json({ error: (e as Error).message }, { status: 403 });
   }
 
-  const [games, state, history, overlaySetting] = await Promise.all([
+  const [games, state, history, overlaySetting, youtube] = await Promise.all([
     listGames(creatorId),
     buildStudioState(creatorId),
     listRoundHistory(creatorId),
     prisma.overlaySetting.findUnique({ where: { creatorId }, select: { gameEnabled: true } }),
+    /**
+     * 유튜브 연결 여부.
+     *
+     * [유튜브 채팅에 올리기] 버튼이 **연결하지 않은 크리에이터에게도 보였다.**
+     * 누르면 "유튜브를 먼저 연결해 주세요" 오류만 나온다. 쓸 수 없는 버튼을 방송 중에
+     * 눌러 보게 만드는 셈이라, 연결돼 있을 때만 버튼을 그리도록 상태를 함께 내려준다.
+     */
+    prisma.youTubeConnection.findFirst({
+      where: { creatorId, status: { not: 'REVOKED' } },
+      select: { id: true },
+    }),
   ]);
   return NextResponse.json({
     games,
@@ -41,6 +52,7 @@ export async function GET() {
     history,
     overlayConfigured: Boolean(overlaySetting),
     gameEnabled: overlaySetting?.gameEnabled ?? false,
+    youtubeConnected: Boolean(youtube),
   });
 }
 

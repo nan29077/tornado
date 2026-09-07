@@ -219,10 +219,93 @@ function ConnectionBadge({ link, game }: { link: LinkState | null; game: GameLay
         <Icon size={13} strokeWidth={1.7} className="mr-1 inline-block align-[-2px]" />
         후원 {label}
       </Badge>
-      <Badge tone={gameTone} className="hidden whitespace-nowrap lg:inline-flex">
+      <Badge tone={gameTone} className="whitespace-nowrap">
         {gameLabel}
       </Badge>
     </span>
+  );
+}
+
+/**
+ * 미리보기 진단 줄.
+ *
+ * 왜 필요한가
+ * -----------
+ * "미리보기에 아무것도 안 나온다" 는 원인이 여럿인데 **화면상으로는 전부 똑같이 비어 보인다.**
+ *   1. 실시간 연결이 안 붙었다
+ *   2. 붙었는데 서버에 띄운 게임이 없다 / 재생할 후원이 없다
+ *   3. 둘 다 정상인데 틀 크기를 재지 못해 화면을 통째로 감추고 있다
+ *   4. 정상인데 [보여 줄 것]에서 그 층을 꺼 두었다
+ * 그때마다 화면을 보고 원인을 짐작해야 했고, 매번 오래 걸렸다.
+ * 지금 어느 단계인지 한 줄로 말해 준다. **정상적으로 재생 중일 때는 뜨지 않는다.**
+ */
+export interface PreviewDiagnosisInput {
+  link: LinkState | null;
+  game: GameLayerState | null;
+  meta: MetaState | null;
+  canvasReady: boolean | null;
+  showDonation: boolean;
+  showGame: boolean;
+}
+
+/**
+ * 지금 어느 단계에서 멈춰 있는지 한 줄씩. 정상 재생 중이면 빈 배열.
+ * (그리는 일과 판단하는 일을 나눠 두면 이 판단만 따로 검사할 수 있다)
+ */
+export function previewDiagnosisLines({
+  link,
+  game,
+  meta,
+  canvasReady,
+  showDonation,
+  showGame,
+}: PreviewDiagnosisInput): string[] {
+  const lines: string[] = [];
+
+  if (canvasReady === false) {
+    lines.push(
+      '미리보기 틀의 크기를 재지 못했습니다 — 화면이 통째로 감춰집니다. [다시 연결]을 눌러 주세요.',
+    );
+  }
+
+  if (!showDonation && !showGame) {
+    lines.push('아래 [보여 줄 것]에서 후원 알림과 게임을 모두 꺼 두었습니다.');
+  }
+
+  const donationPhase = link?.phase ?? 'connecting';
+  if (donationPhase !== 'connected') {
+    lines.push(
+      donationPhase === 'retrying'
+        ? '후원 알림 연결이 끊겨 다시 붙는 중입니다.'
+        : '후원 알림 연결을 여는 중입니다.',
+    );
+  }
+
+  const gamePhase = game?.phase || 'connecting';
+  if (gamePhase !== 'connected') {
+    lines.push(
+      gamePhase === 'retrying' ? '게임 연결이 끊겨 다시 붙는 중입니다.' : '게임 연결을 여는 중입니다.',
+    );
+  } else if (!game?.live) {
+    lines.push('게임 연결은 정상입니다 — 지금 방송 화면에 띄운 게임이 없어서 비어 있습니다.');
+  }
+
+  // 후원 알림은 "지금 재생 중인 것"이 없는 게 정상이라, 대기열이 밀려 있을 때만 알린다.
+  if (donationPhase === 'connected' && (meta?.queue ?? 0) > 0) {
+    lines.push(`재생 대기 중인 후원 알림이 ${meta?.queue}건 있습니다.`);
+  }
+
+  return lines;
+}
+
+function PreviewDiagnosis(props: PreviewDiagnosisInput) {
+  const lines = previewDiagnosisLines(props);
+  if (lines.length === 0) return null;
+
+  return (
+    <p className="rounded-xl border border-ink-100 bg-ink-50/60 px-3 py-2 text-[12px] leading-relaxed text-ink-500">
+      <b className="text-ink-700">지금 미리보기 상태</b> — {lines.join(' ')}
+    </p>
   );
 }
 
@@ -734,6 +817,12 @@ export function BroadcastPreview({
   const [link, setLink] = React.useState<LinkState | null>(null);
   const [meta, setMeta] = React.useState<MetaState | null>(null);
   const [game, setGame] = React.useState<GameLayerState | null>(null);
+  /**
+   * 오버레이가 미리보기 틀의 크기를 쟀는지.
+   * 못 재면 화면을 통째로 감추므로(scale 0) "연결은 됐는데 아무것도 안 나온다" 가 된다.
+   * 화면만 봐서는 구분이 안 돼 원인을 짚기 어려웠던 상태라, 아래 진단 줄에서 따로 알린다.
+   */
+  const [canvasReady, setCanvasReady] = React.useState<boolean | null>(null);
 
   /** 값이 바뀌면 그 틀의 iframe 이 새로 마운트되어 SSE 를 다시 연결한다. */
   const [pcKey, setPcKey] = React.useState(0);
@@ -1053,7 +1142,19 @@ export function BroadcastPreview({
             rect?: LayerRect;
           }
         | null;
-      if (!data || data.creatorId !== creatorId) return;
+      if (!data) return;
+
+      /**
+       * 틀 크기 측정 결과. **creatorId 검사보다 먼저 본다** — 이 메시지는 오버레이 캔버스가
+       * 보내는 것이라 creatorId 를 싣지 않는다(캔버스는 누구의 오버레이인지 모른다).
+       * 하나라도 재지 못한 틀이 있으면 그 화면은 통째로 감춰지므로, 그 사실을 툴바에 띄운다.
+       */
+      if (data.type === 'donaido-overlay-canvas') {
+        setCanvasReady(Boolean((data as { ready?: boolean }).ready));
+        return;
+      }
+
+      if (data.creatorId !== creatorId) return;
 
       if (data.type === 'donaido-overlay-ready') setLink((prev) => prev ?? { phase: 'connected' });
       if (data.type === 'donaido-overlay-status' && data.phase) {
@@ -1251,6 +1352,18 @@ export function BroadcastPreview({
               다시 연결
             </Button>
           </div>
+        </div>
+
+        {/* 지금 어느 단계에서 멈춰 있는지 한 줄로. 정상 재생 중에는 뜨지 않는다. */}
+        <div className={cx(pip && 'hidden')}>
+          <PreviewDiagnosis
+            link={link}
+            game={game}
+            meta={meta}
+            canvasReady={canvasReady}
+            showDonation={showDonation}
+            showGame={showGame}
+          />
         </div>
 
         {/* ── 아랫줄: 무엇을 보여 줄까 · 무엇을 옮길까 ─────── */}

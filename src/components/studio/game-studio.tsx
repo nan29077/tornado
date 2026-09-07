@@ -7,7 +7,6 @@ import {
   Disc3,
   Eye,
   EyeOff,
-  ExternalLink,
   Hash,
   HelpCircle,
   ListOrdered,
@@ -169,6 +168,8 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
   const [settingBusy, setSettingBusy] = React.useState(false);
   const [overlayConfigured, setOverlayConfigured] = React.useState(false);
   const [gameEnabled, setGameEnabled] = React.useState(false);
+  /** 유튜브 채팅 공유 버튼은 연결돼 있을 때만 그린다(쓸 수 없는 버튼을 보여 주지 않는다). */
+  const [youtubeConnected, setYoutubeConnected] = React.useState(false);
   /** seq: 같은 문구를 연달아 띄워도 새로 뜬 것이 보이도록 애니메이션 key 로 쓴다. */
   const [toast, setToast] = React.useState<{ text: string; undo?: () => void; seq: number } | null>(null);
   const toastSeq = React.useRef(0);
@@ -195,14 +196,6 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
    */
   const [overlayOffPhase, setOverlayOffPhase] = React.useState<ConfirmPhase>('closed');
 
-  /**
-   * [게임 바꾸기] 팝업.
-   *
-   * 예전에는 게임을 바꾸려면 아래 [게임 관리]를 펼치고(진행 중에는 자동으로 접힌다)
-   * 진행 컨트롤 아래까지 스크롤해서, 좁은 열에 2단으로 눌린 카드에서 골라야 했다.
-   * 방송 중에 하기에는 손이 너무 많이 간다. 조작 자리에서 바로 열고 고른다.
-   */
-  const [pickerOpen, setPickerOpen] = React.useState(false);
 
   /**
    * [게임 관리] 팝업. 열려 있는 탭 이름이 그대로 상태다(null 이면 닫힘).
@@ -266,6 +259,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
       setState(data.state ?? null);
       setOverlayConfigured(Boolean(data.overlayConfigured));
       setGameEnabled(Boolean(data.gameEnabled));
+      setYoutubeConnected(Boolean(data.youtubeConnected));
     } finally {
       setLoading(false);
     }
@@ -730,13 +724,13 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
           settingBusy={settingBusy}
           overlayConfigured={overlayConfigured}
           onToggleOverlay={() => toggleGameOverlay()}
-          onChangeGame={compact ? undefined : () => setPickerOpen(true)}
+          onChangeGame={compact ? undefined : () => openManage('games')}
           onPrimary={runPrimary}
           onAction={control}
           onQr={() => setQrOpen(true)}
           onPopout={openPopout}
           onShowBroadcast={showBroadcast}
-          onChatShare={compact ? undefined : shareToChat}
+          onChatShare={compact || !youtubeConnected ? undefined : shareToChat}
         />
       ) : compact ? (
         // 팝아웃 창에서도 게임을 바로 띄울 수 있어야 한다. 방송 중에 큰 창으로 돌아가지 않도록.
@@ -757,9 +751,9 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
         <Card>
           <EmptyState
             title="지금 방송 화면에 띄운 게임이 없습니다"
-            description="게임을 고르면 여기에 진행 컨트롤이 나타납니다."
+            description="[게임 고르기]에서 게임을 띄우면 여기에 진행 버튼이 나타납니다."
             action={
-              <Button onClick={() => setPickerOpen(true)} disabled={busy || !gameEnabled || games.length === 0}>
+              <Button onClick={() => openManage('games')} disabled={busy || !gameEnabled}>
                 <Gamepad2 size={16} strokeWidth={1.8} /> 게임 고르기
               </Button>
             }
@@ -787,7 +781,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
             <div className="min-w-0 flex-1">
               <CardTitle>게임 관리</CardTitle>
               <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-400">
-                게임을 만들고 고치는 곳입니다. 방송에 띄우는 것은 위 [게임 바꾸기]·[게임 고르기]에서 합니다.
+                게임 만들기 · 수정 · 방송에 띄우기를 한곳에서 합니다.
               </p>
             </div>
           </div>
@@ -853,7 +847,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
                 <div className="min-w-0">
                   <span className="block text-[15px] font-black text-ink-900">게임 관리</span>
                   <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-400">
-                    여기서 만든 게임을 방송에 띄우는 것은 [게임 바꾸기]·[게임 고르기]에서 합니다.
+                    만들기 · 수정 · 미리보기 · <b className="text-ink-600">방송에 띄우기</b>를 여기서 다 합니다.
                   </span>
                 </div>
                 <button
@@ -892,7 +886,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
             <section>
               <SectionTitle
                 title="내 게임"
-                description="만들기 · 수정 · 삭제 · 미리보기"
+                description="고르고 → 미리 보고 → 방송에 띄웁니다."
                 action={
                   form ? null : (
                     <Button
@@ -987,14 +981,38 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
                         </div>
 
                         {/*
-                          띄우기 버튼은 여기 두지 않는다.
+                          **띄우는 버튼은 여기 있다.**
 
-                          이 목록은 진행 컨트롤 **아래**에 있어서, 방송 중에 게임을 바꾸려면
-                          스크롤을 한참 내려야 했고 그마저도 진행 컨트롤 카드에 가려 잘 보이지 않았다.
-                          띄우는 일은 위 [게임 바꾸기](진행 중) · [게임 고르기](대기 중) 팝업 한 곳으로 모았다.
-                          여기는 **만들기 · 수정 · 삭제 · 미리보기** 전용이다.
+                          한때 이 목록이 진행 컨트롤 *아래*에 길게 붙어 있던 시절에는, 방송 중에
+                          게임을 바꾸려면 스크롤을 한참 내려야 해서 띄우기 버튼을 따로 뺐었다.
+                          그러다 "[방송에 시작] 버튼이 어디 갔는지 안 보인다" 가 됐다.
+                          이제 목록이 팝업으로 올라와 어디서든 한 번에 열리므로, 고르는 곳과
+                          띄우는 곳을 **같은 자리**에 둔다. 게임을 고르는 사람 입장에서 가장
+                          자연스러운 순서다: 목록에서 찾는다 → 미리 본다 → 띄운다.
                         */}
                         <div className="mt-3 flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            disabled={busy || !gameEnabled || live}
+                            onClick={() => {
+                              closeManage();
+                              void startGame(g.id);
+                            }}
+                            title={
+                              !gameEnabled
+                                ? '게임 오버레이 사용을 먼저 켜 주세요'
+                                : live
+                                  ? '이미 방송 화면에 떠 있습니다'
+                                  : '이 게임을 방송 화면에 띄웁니다'
+                            }
+                          >
+                            {pendingGameId === g.id ? (
+                              <Loader2 size={15} strokeWidth={1.9} className="animate-spin" />
+                            ) : (
+                              <Play size={15} strokeWidth={1.9} />
+                            )}
+                            {live ? '방송 중' : state ? '이 게임으로 바꾸기' : '방송에 띄우기'}
+                          </Button>
                           {/*
                             띄우기 전에 방송 화면을 확인한다.
                             회차를 만들지 않으므로 [지난 게임 결과]에 아무것도 남지 않는다.
@@ -1142,53 +1160,6 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
         </Portal>
       ) : null}
 
-      {/* 게임 바꾸기 팝업 — 조작 자리에서 바로 연다 */}
-      {pickerOpen ? (
-        <Portal>
-          <div
-            className="fixed inset-0 z-[85] grid place-items-center bg-ink-900/45 p-4"
-            role="dialog"
-            aria-modal="true"
-            aria-label="게임 바꾸기"
-            onClick={() => setPickerOpen(false)}
-          >
-            <div
-              className="max-h-[80dvh] w-full max-w-[420px] overflow-y-auto rounded-3xl border border-ink-100 bg-white p-5 shadow-[var(--shadow-panel)]"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="mb-3 flex items-start justify-between gap-3">
-                <span className="min-w-0">
-                  <span className="block text-[15px] font-black text-ink-900">게임 바꾸기</span>
-                  <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-400">
-                    고르면 지금 떠 있는 게임을 내리고 새 게임을 방송 화면에 띄웁니다.
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  aria-label="닫기"
-                  onClick={() => setPickerOpen(false)}
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-ink-50 hover:text-ink-700"
-                >
-                  <X size={17} strokeWidth={2} />
-                </button>
-              </div>
-
-              <GamePickerList
-                games={games}
-                busy={busy}
-                gameEnabled={gameEnabled}
-                pendingGameId={pendingGameId}
-                liveGameId={state?.gameId ?? null}
-                onPick={(id) => {
-                  setPickerOpen(false);
-                  void startGame(id);
-                }}
-              />
-            </div>
-          </div>
-        </Portal>
-      ) : null}
-
       <ConfirmDialog
         phase={overlayOffPhase}
         title="게임 오버레이를 끌까요?"
@@ -1236,7 +1207,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
  * 290px 로 눌려 제목이 잘리고("선착순 키워드 이…") 버튼이 두 줄로 접혔다.
  * 방송 중에 게임을 고르는 자리에서는 **제목이 온전히 보이는 것**이 가장 중요하다.
  *
- * 팝아웃 컨트롤 창과 [게임 바꾸기] 팝업이 같은 목록을 쓴다.
+ * 지금은 팝아웃 컨트롤 창에서만 쓴다. 큰 화면에서는 [게임 관리] 팝업이 같은 일을 한다.
  */
 function GamePickerList({
   games,
@@ -1256,7 +1227,7 @@ function GamePickerList({
   if (games.length === 0) {
     return (
       <p className="text-[13px] text-ink-400">
-        아직 만든 게임이 없습니다. 아래 [게임 관리]에서 먼저 만들어 주세요.
+        아직 만든 게임이 없습니다. [게임 관리]에서 먼저 만들어 주세요.
       </p>
     );
   }
@@ -1328,7 +1299,7 @@ function ControlPanel({
   settingBusy: boolean;
   overlayConfigured: boolean;
   onToggleOverlay: () => void;
-  /** [게임 바꾸기] 팝업 열기. 팝아웃 창에서는 넘기지 않는다. */
+  /** [게임 관리] 팝업 열기(= 게임 바꾸기). 팝아웃 창에서는 넘기지 않는다. */
   onChangeGame?: () => void;
   onPrimary: () => void;
   onAction: (a: Action, extra?: Record<string, unknown>) => Promise<boolean>;
@@ -1347,18 +1318,16 @@ function ControlPanel({
 
   return (
     /*
-      진행 컨트롤은 헤더 → 탭 바 다음 세 번째로 붙는다.
-      기준 높이는 globals.css 의 변수를 쓰고, z-index 는 탭 바(30)보다 낮게 둔다.
-      그래야 스크롤을 올릴 때 이 카드가 탭 바 밑으로 미끄러져 들어간다.
-      card-solid 는 뒤 내용이 비치지 않는 불투명 배경이다.
+      **화면에 고정(sticky)하지 않는다.**
+
+      예전에는 이 카드를 탭 바 아래에 붙여 두었다. 아래에 [내 게임] 목록과
+      [지난 게임 결과]가 길게 이어져 있어서, 스크롤해도 진행 버튼이 늘 보이게 하려는
+      의도였다. 그런데 그 목록을 팝업으로 옮겨 이 열이 짧아지면서 의도는 사라지고
+      **부작용만 남았다** — 스크롤할 때 아래 [게임 관리] 카드가 이 카드 밑으로
+      미끄러져 들어가 절반이 잘린 채 보였다. 화면 비율에 따라 잘리기도 하고 아니기도 해서
+      더 고장처럼 보였다. 이제 다른 카드와 똑같이 흐른다.
     */
-    <Card
-      className={
-        compact
-          ? ''
-          : 'card-solid sticky top-[calc(var(--console-header-h)+var(--overlay-tabbar-h))] z-20'
-      }
-    >
+    <Card>
       {/* 상태 줄 — 높이를 고정한다. 상태가 바뀌어도 아래 내용이 위아래로 흔들리지 않는다. */}
       <div className="flex h-11 items-center gap-2.5">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700">
@@ -1448,9 +1417,15 @@ function ControlPanel({
             <Gamepad2 size={16} strokeWidth={1.8} /> 게임 바꾸기
           </Button>
         ) : null}
+        {/*
+          **[방송 종료]가 아니라 [게임 내리기]다.**
+          이 버튼이 하는 일은 회차를 끝내고 방송 화면에서 게임을 내리는 것뿐인데,
+          "방송 종료" 는 라이브 방송 자체를 끊는 것처럼 읽혀 방송 중에 누르기 무섭다.
+          하는 일을 그대로 적는다.
+        */}
         {state.status !== 'RESULT' ? (
-          <Button variant="ghost" onClick={() => void onAction('end')} disabled={busy}>
-            <X size={16} strokeWidth={1.8} /> 방송 종료
+          <Button variant="ghost" onClick={() => void onAction('end')} disabled={busy} title="회차를 끝내고 방송 화면에서 게임을 내립니다. 라이브 방송은 그대로입니다.">
+            <X size={16} strokeWidth={1.8} /> 게임 내리기
           </Button>
         ) : (
           <Button variant="secondary" onClick={() => void onAction('start', { gameId: state.gameId })} disabled={busy}>
@@ -1567,23 +1542,14 @@ function ControlPanel({
           <Button size="sm" variant="ghost" onClick={onPopout}>
             <Maximize2 size={15} strokeWidth={1.8} /> 게임 조작창 열기
           </Button>
-          <a
-            href={`/overlay/${creatorId}/game?preview=1&debug=1`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-ink-400 hover:text-ink-700"
-          >
-            <ExternalLink size={14} strokeWidth={1.8} /> 새 탭에서 보기
-          </a>
         </div>
       ) : null}
 
       {!compact ? (
         <p className="mt-3 text-[11.5px] leading-relaxed text-ink-400">
-          단축키 — <b className="text-ink-700">Enter</b> 는 위의 큰 버튼,{' '}
-          <b className="text-ink-700">Backspace</b> 는 마감·발표 취소입니다. 입력 칸이나 버튼에 커서가 있을 때,
-          게임을 만들거나 고치는 중일 때는 동작하지 않습니다.
-          진행 버튼에는 확인창을 두지 않았습니다. 잘못 눌러도 위의 [마감 취소] · [발표 취소]로 되돌릴 수 있습니다.
+          단축키 — <b className="text-ink-700">Enter</b> 위의 큰 버튼 · <b className="text-ink-700">Backspace</b>{' '}
+          되돌리기. 진행 버튼에는 확인창이 없습니다(방송 타이밍을 놓치지 않도록). 잘못 눌러도 [마감 취소] ·
+          [발표 취소]로 되돌릴 수 있습니다.
         </p>
       ) : null}
     </Card>

@@ -113,6 +113,12 @@ const MAX_BACKOFF_MS = 30000;
  */
 const MAX_QUEUE = 12;
 /** 대기열이 밀렸을 때 적용하는 짧은 표시 시간. */
+/**
+ * TTS 한 건이 붙들 수 있는 최대 시간.
+ * 이 시간이 지나면 읽기가 안 끝나도 다음 알림으로 넘어간다(위 playNext 주석 참고).
+ */
+const TTS_MAX_MS = 20_000;
+
 const RUSH_DURATION_MS = 2600;
 
 /** 서로 다른 기기·환경에서 TTS 종료 신호가 오지 않을 때를 대비한 상한. */
@@ -398,8 +404,24 @@ export function OverlayClient({
       const duration = queue.current.length >= 3 ? Math.min(base, RUSH_DURATION_MS) : base;
       const shown = new Promise<void>((r) => setTimeout(r, duration));
 
-      // 표시 시간과 TTS 재생 시간 중 긴 쪽을 기준으로 다음 항목으로 넘어간다.
-      Promise.all([shown, speak(next)]).then(() => {
+      /**
+       * 표시 시간과 TTS 재생 시간 중 긴 쪽을 기준으로 다음 항목으로 넘어간다.
+       *
+       * **TTS 는 반드시 시간 제한을 둔다.**
+       * speechSynthesis 는 브라우저가 음성을 막았을 때(자동재생 정책, 탭이 백그라운드,
+       * 목소리 목록이 아직 안 왔을 때) `onend` 를 **영영 부르지 않는 경우**가 있다.
+       * 그러면 이 Promise 가 끝나지 않아 `busy` 가 true 로 굳고,
+       * **그 뒤로는 후원 알림이 한 건도 재생되지 않는다.** 화면에는 아무 오류도 안 뜨고
+       * 대기열만 쌓이거나(대기 N) 방금 뜬 알림이 사라지지 않은 채 멈춘다.
+       * 미리보기에서 [테스트 후원 보내기]를 눌러도 아무 반응이 없어 보이는 원인이 된다.
+       * 읽기가 끝나지 않아도 제한 시간이 지나면 다음으로 넘어간다.
+       */
+      const spoken = Promise.race([
+        speak(next).catch(() => undefined),
+        new Promise<void>((r) => setTimeout(r, TTS_MAX_MS)),
+      ]);
+
+      Promise.all([shown, spoken]).then(() => {
         if (disposed) return;
         setLeaving(true);
         setTimeout(() => {
