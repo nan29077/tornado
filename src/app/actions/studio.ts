@@ -4,7 +4,7 @@ import { logger } from '@/lib/logger';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { prisma } from '@/server/db';
-import { requireCreator, writeAudit } from '@/server/auth';
+import { hashPassword, requireCreator, verifyPassword, writeAudit } from '@/server/auth';
 import { newId } from '@/lib/id';
 import { env } from '@/lib/env';
 import { accountTail4, decrypt, encrypt, generateToken, isValidResident, maskName, maskSecret, normalizeResident, tokenHash } from '@/lib/crypto';
@@ -12,6 +12,7 @@ import { sendTestOverlay } from '@/server/services/broadcast-dispatch';
 import { closeOverlayConnections } from '@/server/services/overlay-connections';
 import { DISPLAY_PAID_STATUSES } from '@/components/studio/shared';
 import { OVERLAY_EFFECTS } from '@/server/services/overlay-tiers';
+import { OVERLAY_TEXT_ANIM_VALUES, textAnimOf } from '@/lib/overlay-text-anim';
 import { resolvePolicy } from '@/server/services/limits';
 import { createSettlementRequest } from '@/server/services/settlement';
 import { notifySuperAdmins, notifyUser } from '@/server/services/notifications';
@@ -140,6 +141,7 @@ export async function blockDonorAction(
     // 누른 뒤에도 그대로 남아 있던 원인이다.
     revalidatePath('/studio/donations/[id]', 'page');
     revalidatePath('/studio/messages');
+    revalidatePath('/studio/fans');
     return { ok: true, message: '해당 후원자를 차단했습니다. 이후 문자는 후원으로 접수되지 않습니다.' };
   });
 }
@@ -158,7 +160,39 @@ export async function unblockDonorAction(
     revalidatePath('/studio/moderation');
     revalidatePath('/studio/donations');
     revalidatePath('/studio/donations/[id]', 'page');
+    // 차단할 때는 재검증하면서 해제할 때는 하지 않아, 문자 관리 화면에 [차단] 버튼이
+    // 그대로 남아 있었다(이미 해제된 후원자인데도). 양쪽 목록을 같이 갱신한다.
+    revalidatePath('/studio/messages');
+    revalidatePath('/studio/fans');
     return { ok: true, message: '차단을 해제했습니다.' };
+  });
+}
+
+/**
+ * 팬 메모 저장 (크리에이터 비공개).
+ *
+ * 후원자에게는 어떤 경로로도 노출하지 않는다. 크리에이터가 "매주 후원하는 단골",
+ * "이벤트 당첨자" 같은 운영 메모를 남기는 곳이다.
+ */
+export async function saveFanMemoAction(
+  _prev: StudioActionState,
+  formData: FormData,
+): Promise<StudioActionState> {
+  return withCreator(async (creatorId) => {
+    const donorId = text(formData, 'donorId');
+    const memo = text(formData, 'memo');
+    if (!donorId) return { ok: false, message: '후원자 정보가 올바르지 않습니다.' };
+    if (memo.length > 200) return { ok: false, message: '메모는 200자 이내로 입력해 주세요.' };
+
+    // 남의 팬에 메모를 남길 수 없도록 creatorId 를 조건에 함께 넣는다.
+    const updated = await prisma.donorCreatorLink.updateMany({
+      where: { creatorId, donorId },
+      data: { creatorMemo: memo || null },
+    });
+    if (updated.count === 0) return { ok: false, message: '본인 채널과 연결된 후원자가 아닙니다.' };
+
+    revalidatePath('/studio/fans');
+    return { ok: true, message: memo ? '메모를 저장했습니다.' : '메모를 지웠습니다.' };
   });
 }
 
@@ -423,6 +457,8 @@ export async function updateOverlaySettingAction(
         theme: z.string().min(1).max(30),
         stickerSet: z.string().min(1).max(30),
         soundVolume: z.coerce.number().int().min(0).max(100),
+        // 모르는 값이 들어오면 저장하지 않고 AUTO 로 떨어뜨린다.
+        textAnim: z.enum(OVERLAY_TEXT_ANIM_VALUES),
       })
       .safeParse({
         maxMessageLen: text(formData, 'maxMessageLen'),
@@ -431,6 +467,7 @@ export async function updateOverlaySettingAction(
         theme: text(formData, 'theme'),
         stickerSet: text(formData, 'stickerSet'),
         soundVolume: text(formData, 'soundVolume') || '80',
+        textAnim: textAnimOf(text(formData, 'textAnim')),
       });
     if (!parsed.success) {
       return { ok: false, message: '입력값을 확인해 주세요. 최대 글자 수는 10~200자, 표시 시간은 2000~30000ms, 효과음 음량은 0~100 입니다.' };
@@ -453,6 +490,7 @@ export async function updateOverlaySettingAction(
         position: parsed.data.position,
         theme: parsed.data.theme,
         stickerSet: parsed.data.stickerSet,
+        textAnim: parsed.data.textAnim,
         soundEnabled: checked(formData, 'soundEnabled'),
         soundVolume: parsed.data.soundVolume,
       },
@@ -1081,6 +1119,23 @@ export async function saveSettlementAccountAction(
       linkUrl: '/studio/settlement?tab=account',
     }).catch(() => undefined);
 
+    /**
+     * 실명확인은 관리자가 수동으로 해야 하는데, 알림이 없으면 관리자는 계좌가 등록된 사실
+     * 자체를 알 수 없다. 인증 전에는 정산 요청이 막혀 있으므로 이 알림이 없으면
+     * 첫 정산이 영영 시작되지 않는다. (/admin/settlements 의 실명확인 대기 큐와 짝을 이룬다)
+     */
+    const profile = await prisma.creatorProfile.findUnique({
+      where: { id: creatorId },
+      select: { displayName: true, code: true },
+    });
+    await notifySuperAdmins({
+      title: '정산 계좌 실명확인이 필요합니다',
+      body: `${profile?.displayName ?? '크리에이터'}(${profile?.code ?? creatorId}) · ${data.bankName} ****${data.accountTail4} · 예금주 ${data.holderMasked}${before ? ' (기존 계좌에서 변경)' : ' (신규 등록)'}`,
+      linkUrl: '/admin/settlements',
+    }).catch(() => undefined);
+
+    revalidatePath('/admin/settlements');
+
     revalidatePath('/studio/settlement/account');
     revalidatePath('/studio/settlement');
     return {
@@ -1120,6 +1175,30 @@ export async function updateCreatorProfileAction(
       };
     }
 
+    /**
+     * 표시명·채널명도 후원 페이지에 그대로 노출되는 **공개 문자열**이다.
+     *
+     * 화면 안내는 "개인정보를 입력하지 마세요" 라고 하는데 정작 검증이 없어서, 전화번호나
+     * 계좌번호를 표시명에 넣으면 그대로 공개됐다. 감사 문자 본문과 같은 기준을 적용한다.
+     */
+    const rules = await loadBannedWords(creatorId);
+    for (const [label, value] of [
+      ['표시명', parsed.data.displayName],
+      ['채널명', parsed.data.channelName],
+    ] as const) {
+      if (!value) continue;
+      const filtered = filterContent(value, { bannedWords: rules, maxLength: 50 });
+      if (filtered.action === 'BLOCK') {
+        return {
+          ok: false,
+          message: `${label}에 운영정책에 어긋나는 표현이 있어 저장할 수 없습니다.${filtered.reasons.length ? ` (${filtered.reasons.join(', ')})` : ''}`,
+        };
+      }
+      if (filtered.containsPersonalInfo) {
+        return { ok: false, message: `${label}에 전화번호·계좌번호 등 개인정보를 넣을 수 없습니다.` };
+      }
+    }
+
     await prisma.creatorProfile.update({
       where: { id: creatorId },
       data: {
@@ -1132,6 +1211,71 @@ export async function updateCreatorProfileAction(
     revalidatePath('/studio/profile');
     revalidatePath('/studio');
     return { ok: true, message: '프로필을 저장했습니다.' };
+  });
+}
+
+/**
+ * 크리에이터 비밀번호 변경.
+ *
+ * 정산 계좌 변경 알림이 "즉시 비밀번호를 바꾸고 고객센터로 문의해 주세요" 라고 안내하는데
+ * 정작 바꿀 화면이 없었다. 계정 탈취를 감지한 사람이 할 수 있는 일이 아무것도 없던 셈이다.
+ *
+ * 규칙
+ *  - 현재 비밀번호를 확인한다(세션 탈취만으로 비밀번호를 바꾸지 못하게 한다).
+ *  - 변경하면 **본인 것을 포함한 전 세션을 폐기**한다. 침입자 세션을 끊는 것이 목적이므로
+ *    본인이 다시 로그인하는 불편은 감수한다. (비밀번호 재설정 경로와 같은 규칙)
+ *  - 남아 있는 비밀번호 재설정 링크도 함께 무효화한다.
+ */
+export async function changeCreatorPasswordAction(
+  _prev: StudioActionState,
+  formData: FormData,
+): Promise<StudioActionState> {
+  return withCreator(async (_creatorId, userId) => {
+    const current = text(formData, 'currentPassword');
+    const next = text(formData, 'newPassword');
+    const confirm = text(formData, 'newPasswordConfirm');
+
+    if (!current) return { ok: false, message: '현재 비밀번호를 입력해 주세요.' };
+    if (next.length < 8 || next.length > 72) {
+      return { ok: false, message: '새 비밀번호는 8자 이상 72자 이내로 입력해 주세요.' };
+    }
+    if (next !== confirm) return { ok: false, message: '새 비밀번호가 서로 일치하지 않습니다.' };
+    if (next === current) return { ok: false, message: '현재 비밀번호와 다른 값을 입력해 주세요.' };
+
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } });
+    if (!user?.passwordHash) {
+      return {
+        ok: false,
+        message: '소셜 로그인으로 가입한 계정은 비밀번호가 없습니다. 로그인 화면의 비밀번호 찾기로 설정해 주세요.',
+      };
+    }
+    if (!(await verifyPassword(current, user.passwordHash))) {
+      return { ok: false, message: '현재 비밀번호가 일치하지 않습니다.' };
+    }
+
+    const passwordHash = await hashPassword(next);
+    const now = new Date();
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
+      prisma.userSession.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: now } }),
+      prisma.passwordResetToken.updateMany({
+        where: { userId, usedAt: null, expiresAt: { gt: now } },
+        data: { expiresAt: now },
+      }),
+    ]);
+
+    await writeAudit({
+      // 접미사 _BY_CREATOR 로 "본인이 한 변경" 임을 표시한다. 감사로그 화면이 이 규칙을 읽는다.
+      action: 'PASSWORD_CHANGE_BY_CREATOR',
+      targetType: 'User',
+      targetId: userId,
+      after: { sessionsRevoked: true },
+    }).catch(() => undefined);
+
+    return {
+      ok: true,
+      message: '비밀번호를 변경했습니다. 보안을 위해 모든 기기에서 로그아웃되었으니 새 비밀번호로 다시 로그인해 주세요.',
+    };
   });
 }
 

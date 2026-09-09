@@ -9,6 +9,7 @@ import { prisma } from '@/server/db';
 import { formatWon, formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
 import { creatorStatusLabel } from '@/lib/labels';
+import { formatMoNumber } from '@/server/emma';
 import type { Prisma } from '@/generated/prisma/client';
 import type { CreatorStatus } from '@/generated/prisma/enums';
 import { requireAdminPage } from '@/server/admin-guard';
@@ -75,7 +76,8 @@ function CreatorRows({
             ) : (
               c.moRoutes.map((m) => (
                 <span key={`${m.phoneNumber}-${m.keyword ?? ''}`} className="block text-[12px]">
-                  {m.phoneNumber}
+                  {/* 상세 화면과 같은 표기(하이픈 포함)를 쓴다. 두 화면의 번호가 달라 보이면 안 된다. */}
+                  {formatMoNumber(m.phoneNumber)}
                   {m.keyword ? ` (${m.keyword})` : ''}
                 </span>
               ))
@@ -91,14 +93,23 @@ function CreatorRows({
           </Td>
           <Td>
             <SelectActionForm
-                        ariaLabel="크리에이터 심사 상태 변경"
+              ariaLabel={`${c.displayName} 심사 상태 변경`}
               action={updateCreatorStatus}
               values={{ creatorId: c.id }}
               name="status"
               defaultValue={c.status}
               options={STATUS_OPTIONS}
-              confirm={`${c.displayName} 님의 심사 상태를 변경합니다.`}
-              hint={c.status === 'PENDING' ? '승인 후 MO 번호 배정이 필요합니다.' : undefined}
+              confirm={`${c.displayName} 님의 심사 상태를 변경합니다. 반려·정지 사유는 크리에이터에게 그대로 전달됩니다.`}
+              hint={c.status === 'PENDING' ? '승인하면 MO 번호가 자동으로 배정됩니다.' : undefined}
+              extra={
+                <input
+                  name="reason"
+                  maxLength={300}
+                  placeholder="반려·정지 사유 (필수)"
+                  aria-label={`${c.displayName} 반려·정지 사유`}
+                  className="h-8 w-full min-w-[150px] rounded-lg border border-ink-200 px-2 text-[12px] outline-none focus:border-brand-400"
+                />
+              }
             />
           </Td>
         </tr>
@@ -156,7 +167,7 @@ export default async function AdminCreatorsPage({
       : {}),
   };
 
-  const [pending, pendingTotal, total, creators, byStatus, bounds] = await Promise.all([
+  const [pending, pendingTotal, total, creators, byStatus, minMode, maxMode] = await Promise.all([
     prisma.creatorProfile.findMany({
       where: { status: 'PENDING' },
       orderBy: { createdAt: 'asc' },
@@ -174,17 +185,34 @@ export default async function AdminCreatorsPage({
     }),
     // 상단 타일은 전체 현황을 보여 주는 것이 목적이므로 필터를 적용하지 않는다(라벨로 명시).
     prisma.creatorProfile.groupBy({ by: ['status'], _count: { _all: true } }),
-    // 일괄 적용 폼에 채울 "현재 적용 중인 범위". 대다수가 공유하는 값을 대표값으로 쓴다.
-    prisma.creatorProfile.aggregate({
+    /**
+     * 일괄 적용 폼의 기본값 = **최빈값(mode)**.
+     *
+     * 예전에는 `_min(minAmount)` / `_max(maxAmount)` 를 썼다. 그건 "대다수가 공유하는 값" 이
+     * 아니라 **가장 넓은 범위**다. 개별로 범위를 넓혀 준 크리에이터가 한 명만 있어도 그
+     * 극단값이 기본값으로 채워지고, [전체 적용]을 누르면 전원의 범위가 그만큼 넓어졌다.
+     */
+    prisma.creatorProfile.groupBy({
+      by: ['minAmount'],
       where: { status: 'APPROVED' },
-      _min: { minAmount: true },
-      _max: { maxAmount: true },
+      _count: { _all: true },
+      orderBy: { _count: { minAmount: 'desc' } },
+      take: 1,
+    }),
+    prisma.creatorProfile.groupBy({
+      by: ['maxAmount'],
+      where: { status: 'APPROVED' },
+      _count: { _all: true },
+      orderBy: { _count: { maxAmount: 'desc' } },
+      take: 1,
     }),
   ]);
 
   const currentBounds = {
-    min: (bounds._min.minAmount ?? 1000n).toString(),
-    max: (bounds._max.maxAmount ?? 50000n).toString(),
+    min: (minMode[0]?.minAmount ?? 1000n).toString(),
+    max: (maxMode[0]?.maxAmount ?? 50000n).toString(),
+    minCount: minMode[0]?._count._all ?? 0,
+    maxCount: maxMode[0]?._count._all ?? 0,
   };
 
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -196,7 +224,7 @@ export default async function AdminCreatorsPage({
     <>
       <PageHeader
         title="크리에이터 심사"
-        description="심사 대기 건을 먼저 처리하고, 승인 후에는 MO 번호를 배정해야 문자후원이 접수됩니다."
+        description="심사 대기 건을 먼저 처리합니다. 승인하면 MO 번호가 자동으로 배정되어 곧바로 문자후원을 받을 수 있습니다."
       />
 
       <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
@@ -223,13 +251,19 @@ export default async function AdminCreatorsPage({
             confirm={`승인된 크리에이터 ${count('APPROVED')}명 전체에 새 허용 범위를 적용합니다. 개별로 조정해 둔 값도 함께 덮어쓰며 되돌릴 수 없습니다. 계속할까요?`}
           >
             <div className="grid max-w-xl grid-cols-2 gap-2">
-              <AdminField label="1건 최소 (원)">
-                {/* 기본값을 하드코딩하지 않고 현재 적용 중인 값을 그대로 보여 준다.
+              <AdminField
+                label="1건 최소 (원)"
+                hint={currentBounds.minCount > 0 ? `가장 많이 쓰는 값 (${formatNumber(currentBounds.minCount)}명)` : undefined}
+              >
+                {/* 기본값을 하드코딩하지 않고 가장 많은 크리에이터가 쓰는 값(최빈값)을 채운다.
                     예전에는 1000/50000 이 늘 채워져 있어, 다른 목적으로 들어온 운영자가
                     그 값을 현재 설정으로 오해하고 [전체 적용]을 눌러 전원을 초기화할 수 있었다. */}
                 <AdminInput name="minAmount" inputMode="numeric" defaultValue={String(currentBounds.min)} required />
               </AdminField>
-              <AdminField label="1건 최대 (원)">
+              <AdminField
+                label="1건 최대 (원)"
+                hint={currentBounds.maxCount > 0 ? `가장 많이 쓰는 값 (${formatNumber(currentBounds.maxCount)}명)` : undefined}
+              >
                 <AdminInput name="maxAmount" inputMode="numeric" defaultValue={String(currentBounds.max)} required />
               </AdminField>
             </div>
@@ -248,9 +282,26 @@ export default async function AdminCreatorsPage({
             }
           />
           <Notice tone="warning" title="승인 전 확인 사항">
-            채널 실명 확인, 사업자 정보, 정산 계좌 인증 여부를 함께 검토해 주세요. 승인 후 MO 번호 배정 화면에서 수신
-            번호를 지정해야 후원 문자가 라우팅됩니다.
+            크리에이터 이름을 눌러 상세로 들어가면 <strong>신청서의 채널 주소·플랫폼·소개</strong>를 볼 수 있습니다.
+            채널이 실제로 운영 중인지, 사업자 정보와 정산 계좌 인증 여부를 함께 검토해 주세요.
+            <strong> 승인하면 MO 번호가 자동으로 배정됩니다</strong>(별도 배정 작업이 필요 없습니다).
+            반려·정지에는 사유가 반드시 필요하며, 입력한 문장이 크리에이터에게 그대로 전달됩니다.
           </Notice>
+          {/*
+            상단 표는 50건까지만 그린다. 하단 전체 목록은 PENDING 을 빼기 때문에,
+            안내가 없으면 51건째부터는 어느 화면에도 나타나지 않는다.
+          */}
+          {pendingTotal > pending.length ? (
+            <div className="mt-2">
+              <Notice tone="danger" title={`심사 대기 ${pendingTotal}건 중 ${pending.length}건만 표시하고 있습니다`}>
+                나머지 {pendingTotal - pending.length}건은 아래 <strong>상태 필터를 &lsquo;심사대기&rsquo;로</strong> 선택해야
+                보입니다. 여기서 처리해 대기 건이 줄어들면 다음 건이 이 표에 올라옵니다.{' '}
+                <Link href="/admin/creators?status=PENDING" className="font-bold text-brand-700 underline">
+                  심사대기 전체 보기
+                </Link>
+              </Notice>
+            </div>
+          ) : null}
           <div className="mt-3">
             <Table className="min-w-[1100px]">
               {HEAD}

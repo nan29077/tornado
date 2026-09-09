@@ -32,7 +32,7 @@ interface ChecklistItem {
 }
 
 export async function OnboardingChecklist({ creatorId }: { creatorId: string }) {
-  const [profile, youtube, moNumber, overlay, tierCount] = await Promise.all([
+  const [profile, youtube, moNumber, overlay, account] = await Promise.all([
     prisma.creatorProfile.findUnique({
       where: { id: creatorId },
       select: { onboardingObsLinked: true, onboardingTestDone: true },
@@ -43,10 +43,17 @@ export async function OnboardingChecklist({ creatorId }: { creatorId: string }) 
       select: { id: true },
     }),
     prisma.overlaySetting.findUnique({ where: { creatorId }, select: { id: true } }),
-    prisma.overlayTier.count({ where: { creatorId } }),
+    prisma.settlementAccount.findUnique({ where: { creatorId }, select: { verified: true } }),
   ]);
 
-  const overlayReady = Boolean(overlay) && tierCount > 0;
+  /**
+   * 오버레이 준비 판정은 **URL(설정 행) 발급 여부**만 본다.
+   *
+   * 예전에는 금액 구간(overlayTier)이 1개 이상 있어야 완료로 쳤고, 안내도 "금액 구간을 최소
+   * 한 개 만들어야 효과가 재생됩니다" 였다. 사실이 아니다 — 구간이 없어도 전역 설정으로
+   * 효과가 재생된다. 없는 조건을 필수처럼 안내하면 다음 단계로 넘어가지 못한다.
+   */
+  const overlayReady = Boolean(overlay);
 
   const items: ChecklistItem[] = [
     {
@@ -67,8 +74,8 @@ export async function OnboardingChecklist({ creatorId }: { creatorId: string }) 
     },
     {
       key: 'overlay',
-      label: '오버레이 효과 설정',
-      hint: '금액 구간을 최소 한 개 만들어야 후원 화면 효과가 재생됩니다.',
+      label: '오버레이 URL 발급',
+      hint: '방송에 띄울 브라우저 소스 주소를 발급받아야 후원 화면 효과가 재생됩니다. (금액 구간은 선택 사항입니다)',
       done: overlayReady,
       href: '/studio/overlay',
       linkLabel: '설정하러 가기',
@@ -97,6 +104,24 @@ export async function OnboardingChecklist({ creatorId }: { creatorId: string }) 
     href: '/studio/overlay',
     linkLabel: '테스트 보내기',
     manualStep: 'testDone',
+  });
+
+  /**
+   * 정산 계좌 등록.
+   *
+   * 첫 정산까지 가는 경로가 체크리스트 어디에도 없었다. 계좌가 없으면 후원이 아무리
+   * 쌓여도 돈을 받을 수 없고, 등록해도 관리자 실명확인 전에는 요청이 막힌다.
+   * 그래서 "등록" 과 "실명확인 대기" 를 구분해 안내한다.
+   */
+  items.push({
+    key: 'settlementAccount',
+    label: '정산 계좌 등록',
+    hint: account
+      ? '계좌는 등록되었지만 예금주 실명확인이 끝나지 않아 아직 정산을 요청할 수 없습니다. 확인이 끝나면 알림으로 안내됩니다.'
+      : '후원금을 받으려면 정산 계좌를 등록해야 합니다. 등록 후 관리자 실명확인을 거칩니다.',
+    done: account?.verified ?? false,
+    href: '/studio/settlement?tab=account',
+    linkLabel: account ? '계좌 확인하기' : '계좌 등록하기',
   });
 
   const doneCount = items.filter((i) => i.done).length;

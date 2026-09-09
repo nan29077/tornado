@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ConsoleShell, type NavGroup } from '@/components/layout/console-shell';
 import { getSessionUser, requireCreator } from '@/server/auth';
+import { prisma } from '@/server/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,11 +56,11 @@ const STATUS_NOTICE: Record<string, { title: string; body: string }> = {
   },
   REJECTED: {
     title: '채널 심사가 반려되었습니다',
-    body: '제출하신 채널 정보로는 승인이 어려웠습니다. 사유 확인과 재심사 요청은 고객센터 문의로 접수해 주세요.',
+    body: '제출하신 채널 정보로는 승인이 어려웠습니다. 재심사 요청은 고객센터 문의로 접수해 주세요.',
   },
   SUSPENDED: {
     title: '채널이 정지되었습니다',
-    body: '운영정책 위반 또는 관리자 조치로 채널이 정지된 상태입니다. 정지 사유와 해제 절차는 고객센터로 문의해 주세요.',
+    body: '운영정책 위반 또는 관리자 조치로 채널이 정지된 상태입니다. 해제 절차는 고객센터로 문의해 주세요.',
   },
 };
 
@@ -70,11 +71,30 @@ export default async function StudioLayout({ children }: { children: React.React
   // 미승인·반려·정지 채널은 스튜디오 기능 대신 상태 안내만 노출한다.
   if (session.creatorStatus !== 'APPROVED') {
     const notice = STATUS_NOTICE[session.creatorStatus ?? 'PENDING'] ?? STATUS_NOTICE.PENDING;
+    /**
+     * 반려·정지 사유를 화면에 그대로 보여 준다.
+     * 예전에는 "사유 확인은 고객센터로" 라고만 안내했는데, 사유를 담을 컬럼조차 없어
+     * 고객센터도 답할 근거가 없었다. 이제 관리자가 입력한 문장을 그대로 노출한다.
+     */
+    const reason =
+      session.creatorStatus === 'REJECTED' || session.creatorStatus === 'SUSPENDED'
+        ? (
+            await prisma.creatorProfile
+              .findUnique({ where: { id: session.creatorId }, select: { rejectReason: true } })
+              .catch(() => null)
+          )?.rejectReason ?? null
+        : null;
     return (
       <div className="console-canvas mx-auto flex min-h-screen max-w-[560px] flex-col justify-center px-5 py-16">
         <div className="card p-7">
           <h1 className="text-[19px] font-bold text-ink-900">{notice.title}</h1>
           <p className="mt-3 text-[14px] leading-relaxed text-ink-500">{notice.body}</p>
+          {reason ? (
+            <div className="mt-4 rounded-xl border border-danger-500/30 bg-danger-50 px-4 py-3">
+              <p className="text-[12px] font-bold text-danger-600">관리자가 남긴 사유</p>
+              <p className="mt-1 text-[13.5px] leading-relaxed break-words whitespace-pre-wrap text-ink-700">{reason}</p>
+            </div>
+          ) : null}
           <div className="mt-6 flex flex-wrap gap-2">
             <Link href="/" className="rounded-xl bg-ink-900 px-4 py-2.5 text-[13px] font-semibold text-white">
               메인으로

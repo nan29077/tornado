@@ -68,6 +68,7 @@ export default async function OverlayPage({
       defaultDurationMs={setting?.durationMs ?? 7000}
       maxMessageLen={setting?.maxMessageLen ?? 80}
       theme={setting?.theme ?? 'TORNADO'}
+      textAnim={setting?.textAnim ?? 'AUTO'}
       layout={clampOverlayLayout(setting)}
       debug={debug}
     />

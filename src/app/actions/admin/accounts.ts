@@ -8,6 +8,8 @@ import { newId, newCreatorCode } from '@/lib/id';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { formatMoNumber } from '@/server/emma';
+import { creatorStatusLabel } from '@/lib/labels';
+import { closeOverlayConnections } from '@/server/services/overlay-connections';
 import type { AdminActionState } from '@/components/admin/state';
 import { issueMoNumberForCreator, reclaimMoNumberForCreator } from '@/server/services/mo-number-issue';
 import { issueTemporaryPassword } from '@/server/services/password-reset';
@@ -247,9 +249,27 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
     const creatorId = requiredId(fd, 'creatorId', '크리에이터');
     const status = enumValue(fd, 'status', ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'] as const, '심사 상태');
 
+    /**
+     * 반려·정지 사유.
+     *
+     * 크리에이터 상태 안내 화면은 "사유 확인은 고객센터로" 라고 안내했지만 사유를 담을 곳이
+     * 아예 없어서, 반려된 사람은 무엇을 고쳐야 하는지 알 수 없었다. 사유는 알림 본문과
+     * 상태 안내 화면에 그대로 노출되므로 반드시 사람이 읽을 문장으로 받는다.
+     */
+    const reasonInput = optText(fd, 'reason');
+    if ((status === 'REJECTED' || status === 'SUSPENDED') && !reasonInput) {
+      throw new Error('반려·정지는 사유를 입력해야 합니다. 크리에이터에게 그대로 전달됩니다.');
+    }
+    if (reasonInput && reasonInput.length > 300) {
+      throw new Error('사유는 300자 이내로 입력해 주세요.');
+    }
+
     const before = await prisma.creatorProfile.findUnique({
       where: { id: creatorId },
-      select: { id: true, userId: true, displayName: true, status: true, approvedAt: true, suspendedAt: true },
+      select: {
+        id: true, userId: true, displayName: true, status: true,
+        approvedAt: true, suspendedAt: true, rejectReason: true,
+      },
     });
     if (before && before.status === status) throw new Error('이미 같은 심사 상태입니다.');
     if (!before) throw new Error('크리에이터를 찾을 수 없습니다.');
@@ -257,12 +277,39 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
     const now = new Date();
     const data =
       status === 'APPROVED'
-        ? { status, approvedAt: before.approvedAt ?? now, suspendedAt: null }
+        ? // 승인으로 돌아가면 옛 반려 사유는 지운다. 남겨 두면 승인된 채널에 반려 안내가 뜬다.
+          { status, approvedAt: before.approvedAt ?? now, suspendedAt: null, rejectReason: null }
         : status === 'SUSPENDED'
-          ? { status, suspendedAt: now }
-          : { status };
+          ? { status, suspendedAt: now, rejectReason: reasonInput }
+          : { status, rejectReason: reasonInput ?? null };
 
     await prisma.creatorProfile.update({ where: { id: creatorId }, data });
+
+    /**
+     * 정지·반려는 **즉시** 효력이 있어야 한다.
+     *
+     * 예전에는 status 만 바꾸고 끝냈다. 세션은 `requireCreator()` 가 다시 호출될 때에야
+     * 폐기되고, 이미 열려 있던 OBS 오버레이 연결은 그대로 살아 있어서 정지된 채널에
+     * 후원 연출이 계속 재생됐다. 접속을 끊는 것까지가 정지 처리다.
+     */
+    if (status !== 'APPROVED' && before.status === 'APPROVED') {
+      await prisma.userSession
+        .updateMany({
+          where: { userId: before.userId, revokedAt: null },
+          data: { revokedAt: now },
+        })
+        .catch((e) => {
+          logger.warn('크리에이터 상태 변경 시 세션 폐기 실패', { creatorId, message: (e as Error).message });
+          return null;
+        });
+      try {
+        // 방송용·미리보기용 연결을 모두 끊는다.
+        closeOverlayConnections(creatorId, 'broadcast');
+        closeOverlayConnections(creatorId, 'preview');
+      } catch (e) {
+        logger.warn('크리에이터 상태 변경 시 오버레이 연결 종료 실패', { creatorId, message: (e as Error).message });
+      }
+    }
 
     /**
      * 승인과 동시에 MO 서브번호를 발급한다.
@@ -303,13 +350,19 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
       if (reclaimed > 0) numberNotice = ' 배정된 MO 번호는 회수했습니다.';
     }
 
+    /**
+     * 알림 본문은 사람이 읽는 문장이다.
+     * 예전에는 `SUSPENDED(으)로 변경되었습니다` 처럼 영문 enum 이 그대로 나갔고, 사유도 없었다.
+     */
     await notifyUser({
       userId: before.userId,
       title: status === 'APPROVED' ? '크리에이터 승인이 완료되었습니다' : '크리에이터 심사 상태가 변경되었습니다',
       body:
         status === 'APPROVED'
           ? '이제 크리에이터 관리자에서 후원샵과 방송 연동을 설정할 수 있습니다.'
-          : `${before.displayName}님의 심사 상태가 ${status}(으)로 변경되었습니다.`,
+          : `${before.displayName}님의 심사 상태가 '${creatorStatusLabel[status].text}' 로 변경되었습니다.${
+              reasonInput ? ` 사유: ${reasonInput}` : ''
+            }`,
       linkUrl: '/studio',
     });
     await writeAudit({
@@ -317,7 +370,12 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
       action: 'CREATOR_STATUS_UPDATE',
       targetType: 'CreatorProfile',
       targetId: creatorId,
-      before: { status: before.status, approvedAt: before.approvedAt, suspendedAt: before.suspendedAt },
+      before: {
+        status: before.status,
+        approvedAt: before.approvedAt,
+        suspendedAt: before.suspendedAt,
+        rejectReason: before.rejectReason,
+      },
       after: data,
     });
     revalidatePath('/admin/creators');
@@ -330,6 +388,12 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
 
 export async function updateCreatorPaymentMode(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
+    /**
+     * 결제 모드는 MO 수신 즉시 결제(DIRECT_TRIGGER)를 켜고 끄는 스위치다.
+     * 심사 상태 변경·코드 재발급보다 훨씬 민감한데 가드가 없어 고객지원(SUPPORT) 권한으로도
+     * 바꿀 수 있었다. 같은 파일의 다른 운영 액션과 같은 등급으로 맞춘다.
+     */
+    assertOperationAdmin(admin, '크리에이터 결제 모드 변경');
     const creatorId = requiredId(fd, 'creatorId', '크리에이터');
     const raw = text(fd, 'paymentMode');
     if (!['', 'CONFIRM_LINK', 'DIRECT_TRIGGER'].includes(raw)) throw new Error('결제 모드 값이 올바르지 않습니다.');

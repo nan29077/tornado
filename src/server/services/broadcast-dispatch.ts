@@ -5,7 +5,7 @@ import { logger } from '@/lib/logger';
 import { getYouTubeAdapter, formatChatMessage } from '@/server/adapters/youtube';
 import { buildTtsText } from '@/server/adapters/tts';
 import { publishOverlayEvent, type OverlayEventPayload } from './overlay-bus';
-import { resolveOverlayTier, type ResolvedTier } from './overlay-tiers';
+import { resolveOverlayTier, countOverlayTiersAtOrBelow, type ResolvedTier } from './overlay-tiers';
 import { broadcastDonorName } from '@/lib/donor-name';
 import {
   ensureYouTubeAccessToken,
@@ -16,6 +16,8 @@ import {
 import { reserveYouTubeQuota, releaseYouTubeQuota, getYouTubeQuotaUsage } from './youtube-quota';
 import { normalizeTtsProvider } from './tts/naver';
 import { clampOverlayLayout } from '@/lib/overlay-layout';
+import { textAnimOf } from '@/lib/overlay-text-anim';
+import { effectLevelOfRank } from '@/lib/overlay-effect-level';
 import { joinFromDonation, refreshDonationGauge } from '@/server/services/games';
 
 /**
@@ -166,6 +168,7 @@ function displayOf(
         offsetX: number;
         offsetY: number;
         scalePct: number;
+        textAnim: string;
       }
     | null,
 ) {
@@ -175,6 +178,8 @@ function displayOf(
     position: overlay?.position || 'BOTTOM_CENTER',
     maxMessageLen: overlay?.maxMessageLen ?? 80,
     enabled: overlay?.enabled ?? true,
+    // 모르는 값이 저장돼 있어도 AUTO 로 떨어뜨린다(방송 중 알림이 사라지는 것보다 낫다).
+    textAnim: textAnimOf(overlay?.textAnim),
     ...layout,
   };
 }
@@ -242,7 +247,10 @@ export async function buildOverlayPayload(donationId: string, isTest = false): P
     overlay?.anonymize || donation.anonymous ? '익명의 후원자' : overlayDonorName(donation.displayName);
   const message = overlay?.showMessage === false ? '' : donation.message;
 
-  const tier = await resolveOverlayTier(donation.creatorId, donation.amount);
+  const [tier, tierRank] = await Promise.all([
+    resolveOverlayTier(donation.creatorId, donation.amount),
+    countOverlayTiersAtOrBelow(donation.creatorId, donation.amount),
+  ]);
   const merged = mergeTier(tier, overlay);
 
   return {
@@ -261,6 +269,8 @@ export async function buildOverlayPayload(donationId: string, isTest = false): P
     ...soundOf(overlay),
     durationMs: merged.durationMs,
     ...displayOf(overlay),
+    // 몇 번째 금액 구간인가로 연출 세기를 정한다. 구간을 안 쓰면 언제나 레벨 1.
+    effectLevel: effectLevelOfRank(tierRank),
     occurredAt: new Date().toISOString(),
     isTest,
   };
@@ -493,7 +503,10 @@ export async function sendTestOverlay(
   if (!creator) throw new Error('크리에이터를 찾을 수 없습니다.');
 
   const overlay = creator.overlaySetting;
-  const tier = await resolveOverlayTier(creatorId, input.amount);
+  const [tier, tierRank] = await Promise.all([
+    resolveOverlayTier(creatorId, input.amount),
+    countOverlayTiersAtOrBelow(creatorId, input.amount),
+  ]);
   const merged = mergeTier(tier, overlay);
 
   // 테스트는 "실제 방송에 나갈 화면"을 그대로 보여 주는 것이 목적이므로
@@ -517,6 +530,8 @@ export async function sendTestOverlay(
     ...soundOf(overlay),
     durationMs: merged.durationMs,
     ...displayOf(overlay),
+    // 테스트도 실제 방송과 같은 레벨로 재생한다. 구간별 연출 확인이 목적이다.
+    effectLevel: effectLevelOfRank(tierRank),
     occurredAt: new Date().toISOString(),
     isTest: true,
   };

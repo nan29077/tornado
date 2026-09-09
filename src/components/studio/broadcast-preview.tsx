@@ -245,6 +245,8 @@ function ConnectionBadge({ link, game }: { link: LinkState | null; game: GameLay
  * 지금 어느 단계인지 한 줄로 말해 준다. **정상적으로 재생 중일 때는 뜨지 않는다.**
  */
 export interface PreviewDiagnosisInput {
+  /** 게임 샘플 미리보기 중. SSE 를 열지 않으므로 게임 연결 상태를 진단하지 않는다. */
+  sampleGameId?: string | null;
   link: LinkState | null;
   game: GameLayerState | null;
   meta: MetaState | null;
@@ -264,6 +266,7 @@ export function previewDiagnosisLines({
   canvasReady,
   showDonation,
   showGame,
+  sampleGameId,
 }: PreviewDiagnosisInput): string[] {
   const lines: string[] = [];
 
@@ -286,13 +289,18 @@ export function previewDiagnosisLines({
     );
   }
 
-  const gamePhase = game?.phase || 'connecting';
-  if (gamePhase !== 'connected') {
-    lines.push(
-      gamePhase === 'retrying' ? '게임 연결이 끊겨 다시 붙는 중입니다.' : '게임 연결을 여는 중입니다.',
-    );
-  } else if (!game?.live) {
-    lines.push('게임 연결은 정상입니다 — 지금 방송 화면에 띄운 게임이 없어서 비어 있습니다.');
+  // 샘플 미리보기 중에는 SSE 를 열지 않으므로 게임 연결 상태 진단을 건너뛴다.
+  if (sampleGameId) {
+    lines.push('게임 미리보기 중입니다 — 실제 라이브 상태와 다를 수 있습니다.');
+  } else {
+    const gamePhase = game?.phase || 'connecting';
+    if (gamePhase !== 'connected') {
+      lines.push(
+        gamePhase === 'retrying' ? '게임 연결이 끊겨 다시 붙는 중입니다.' : '게임 연결을 여는 중입니다.',
+      );
+    } else if (!game?.live) {
+      lines.push('게임 연결은 정상입니다 — 지금 방송 화면에 띄운 게임이 없어서 비어 있습니다.');
+    }
   }
 
   // 후원 알림은 "지금 재생 중인 것"이 없는 게 정상이라, 대기열이 밀려 있을 때만 알린다.
@@ -832,6 +840,12 @@ export function BroadcastPreview({
   /** 값이 바뀌면 그 틀의 iframe 이 새로 마운트되어 SSE 를 다시 연결한다. */
   const [pcKey, setPcKey] = React.useState(0);
   const [mobileKey, setMobileKey] = React.useState(0);
+  /**
+   * GameStudio 에서 [미리보기] 버튼을 누르면 이 값이 설정된다.
+   * gameUrl 에 &sample= 파라미터로 붙어 게임 오버레이가 샘플 데이터를 보여 준다.
+   * null 이 되면 SSE 라이브 모드로 돌아간다.
+   */
+  const [sampleGameId, setSampleGameId] = React.useState<string | null>(null);
   const pcFrame = React.useRef<HTMLIFrameElement | null>(null);
   const mobileFrame = React.useRef<HTMLIFrameElement | null>(null);
 
@@ -1198,6 +1212,16 @@ export function BroadcastPreview({
     return () => window.removeEventListener('message', onMessage);
   }, [creatorId]);
 
+  /** GameStudio 가 [미리보기] 를 토글할 때 발생하는 커스텀 이벤트를 받아 게임 iframe URL 을 갱신한다. */
+  React.useEffect(() => {
+    const handler = (e: Event) => {
+      const gameId = (e as CustomEvent<{ gameId: string | null }>).detail?.gameId ?? null;
+      setSampleGameId(gameId);
+    };
+    window.addEventListener('donaido-preview-game', handler);
+    return () => window.removeEventListener('donaido-preview-game', handler);
+  }, []);
+
   /** 첫 상태 알림을 놓쳤을 때를 대비한 재문의. */
   React.useEffect(() => {
     if (link) return;
@@ -1262,7 +1286,7 @@ export function BroadcastPreview({
 
   const isPc = tab === 'pc';
   const donationUrl = `/overlay/${encodeURIComponent(creatorId)}?preview=1`;
-  const gameUrl = `/overlay/${encodeURIComponent(creatorId)}/game?preview=1`;
+  const gameUrl = `/overlay/${encodeURIComponent(creatorId)}/game?preview=1${sampleGameId ? `&sample=${encodeURIComponent(sampleGameId)}` : ''}`;
   // 세로형 틀에서는 방송 화면을 위쪽에 붙인다(유튜브 모바일 실제 배치).
   const donationMobileUrl = `${donationUrl}&align=top`;
   const gameMobileUrl = `${gameUrl}&align=top`;
@@ -1368,6 +1392,7 @@ export function BroadcastPreview({
             canvasReady={canvasReady}
             showDonation={showDonation}
             showGame={showGame}
+            sampleGameId={sampleGameId}
           />
         </div>
 

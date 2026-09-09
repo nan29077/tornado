@@ -7,6 +7,7 @@ import { updateReportStatus, createBannedWord, deleteBannedWord } from '@/app/ac
 import { prisma } from '@/server/db';
 import { formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
+import { supportCategoryLabel } from '@/lib/labels';
 import type { Prisma } from '@/generated/prisma/client';
 import type { ReportStatus, ContentAction } from '@/generated/prisma/enums';
 import { requireAdminPage } from '@/server/admin-guard';
@@ -183,7 +184,8 @@ export default async function AdminModerationPage({
                           <span className="mt-0.5 block text-[11px] text-ink-400">처리 {formatKst(r.handledAt, false)}</span>
                         ) : null}
                       </Td>
-                      <Td>{r.category}</Td>
+                      {/* enum 원문(ABUSE)이 아니라 사람이 읽는 분류명을 쓴다. */}
+                      <Td>{supportCategoryLabel(r.category)}</Td>
                       <Td className="whitespace-nowrap text-[12px]">
                         {(() => {
                           const u = r.reporterUserId ? reporterById.get(r.reporterUserId) : null;

@@ -187,6 +187,17 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
    */
   const [pendingGameId, setPendingGameId] = React.useState<string | null>(null);
   const [previewGameId, setPreviewGameId] = React.useState<string | null>(null);
+
+  /**
+   * [미리보기] 를 토글할 때 BroadcastPreview 의 게임 iframe URL 도 함께 갱신한다.
+   * CustomEvent 로 같은 페이지에 있는 BroadcastPreview 에 게임 ID 를 전달한다.
+   */
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(
+      new CustomEvent('donaido-preview-game', { detail: { gameId: previewGameId } }),
+    );
+  }, [previewGameId]);
   const [removeTarget, setRemoveTarget] = React.useState<GameRow | null>(null);
   const [removePhase, setRemovePhase] = React.useState<ConfirmPhase>('closed');
   /**

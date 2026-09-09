@@ -9,8 +9,8 @@
  * 🟢 You can import this file directly.
  */
 import type * as runtime from "@prisma/client/runtime/client"
-import type * as $Enums from "../enums"
-import type * as Prisma from "../internal/prismaNamespace"
+import type * as $Enums from "../enums.ts"
+import type * as Prisma from "../internal/prismaNamespace.ts"
 
 /**
  * Model CreatorProfile
@@ -61,6 +61,7 @@ export type CreatorProfileMinAggregateOutputType = {
   facebookLive: boolean | null
   channelUrl: string | null
   status: $Enums.CreatorStatus | null
+  rejectReason: string | null
   donationAmount: bigint | null
   minAmount: bigint | null
   maxAmount: bigint | null
@@ -98,6 +99,7 @@ export type CreatorProfileMaxAggregateOutputType = {
   facebookLive: boolean | null
   channelUrl: string | null
   status: $Enums.CreatorStatus | null
+  rejectReason: string | null
   donationAmount: bigint | null
   minAmount: bigint | null
   maxAmount: bigint | null
@@ -135,6 +137,7 @@ export type CreatorProfileCountAggregateOutputType = {
   facebookLive: number
   channelUrl: number
   status: number
+  rejectReason: number
   donationAmount: number
   minAmount: number
   maxAmount: number
@@ -186,6 +189,7 @@ export type CreatorProfileMinAggregateInputType = {
   facebookLive?: true
   channelUrl?: true
   status?: true
+  rejectReason?: true
   donationAmount?: true
   minAmount?: true
   maxAmount?: true
@@ -223,6 +227,7 @@ export type CreatorProfileMaxAggregateInputType = {
   facebookLive?: true
   channelUrl?: true
   status?: true
+  rejectReason?: true
   donationAmount?: true
   minAmount?: true
   maxAmount?: true
@@ -260,6 +265,7 @@ export type CreatorProfileCountAggregateInputType = {
   facebookLive?: true
   channelUrl?: true
   status?: true
+  rejectReason?: true
   donationAmount?: true
   minAmount?: true
   maxAmount?: true
@@ -384,6 +390,7 @@ export type CreatorProfileGroupByOutputType = {
   facebookLive: boolean
   channelUrl: string | null
   status: $Enums.CreatorStatus
+  rejectReason: string | null
   donationAmount: bigint
   minAmount: bigint
   maxAmount: bigint
@@ -444,6 +451,7 @@ export type CreatorProfileWhereInput = {
   facebookLive?: Prisma.BoolFilter<"CreatorProfile"> | boolean
   channelUrl?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
   status?: Prisma.EnumCreatorStatusFilter<"CreatorProfile"> | $Enums.CreatorStatus
+  rejectReason?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
   donationAmount?: Prisma.BigIntFilter<"CreatorProfile"> | bigint | number
   minAmount?: Prisma.BigIntFilter<"CreatorProfile"> | bigint | number
   maxAmount?: Prisma.BigIntFilter<"CreatorProfile"> | bigint | number
@@ -502,6 +510,7 @@ export type CreatorProfileOrderByWithRelationInput = {
   facebookLive?: Prisma.SortOrder
   channelUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   status?: Prisma.SortOrder
+  rejectReason?: Prisma.SortOrderInput | Prisma.SortOrder
   donationAmount?: Prisma.SortOrder
   minAmount?: Prisma.SortOrder
   maxAmount?: Prisma.SortOrder
@@ -563,6 +572,7 @@ export type CreatorProfileWhereUniqueInput = Prisma.AtLeast<{
   facebookLive?: Prisma.BoolFilter<"CreatorProfile"> | boolean
   channelUrl?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
   status?: Prisma.EnumCreatorStatusFilter<"CreatorProfile"> | $Enums.CreatorStatus
+  rejectReason?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
   donationAmount?: Prisma.BigIntFilter<"CreatorProfile"> | bigint | number
   minAmount?: Prisma.BigIntFilter<"CreatorProfile"> | bigint | number
   maxAmount?: Prisma.BigIntFilter<"CreatorProfile"> | bigint | number
@@ -621,6 +631,7 @@ export type CreatorProfileOrderByWithAggregationInput = {
   facebookLive?: Prisma.SortOrder
   channelUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   status?: Prisma.SortOrder
+  rejectReason?: Prisma.SortOrderInput | Prisma.SortOrder
   donationAmount?: Prisma.SortOrder
   minAmount?: Prisma.SortOrder
   maxAmount?: Prisma.SortOrder
@@ -666,6 +677,7 @@ export type CreatorProfileScalarWhereWithAggregatesInput = {
   facebookLive?: Prisma.BoolWithAggregatesFilter<"CreatorProfile"> | boolean
   channelUrl?: Prisma.StringNullableWithAggregatesFilter<"CreatorProfile"> | string | null
   status?: Prisma.EnumCreatorStatusWithAggregatesFilter<"CreatorProfile"> | $Enums.CreatorStatus
+  rejectReason?: Prisma.StringNullableWithAggregatesFilter<"CreatorProfile"> | string | null
   donationAmount?: Prisma.BigIntWithAggregatesFilter<"CreatorProfile"> | bigint | number
   minAmount?: Prisma.BigIntWithAggregatesFilter<"CreatorProfile"> | bigint | number
   maxAmount?: Prisma.BigIntWithAggregatesFilter<"CreatorProfile"> | bigint | number
@@ -702,6 +714,7 @@ export type CreatorProfileCreateInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -760,6 +773,7 @@ export type CreatorProfileUncheckedCreateInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -816,6 +830,7 @@ export type CreatorProfileUpdateInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -874,6 +889,7 @@ export type CreatorProfileUncheckedUpdateInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -931,6 +947,7 @@ export type CreatorProfileCreateManyInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -967,6 +984,7 @@ export type CreatorProfileUpdateManyMutationInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -1004,6 +1022,7 @@ export type CreatorProfileUncheckedUpdateManyInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -1051,6 +1070,7 @@ export type CreatorProfileCountOrderByAggregateInput = {
   facebookLive?: Prisma.SortOrder
   channelUrl?: Prisma.SortOrder
   status?: Prisma.SortOrder
+  rejectReason?: Prisma.SortOrder
   donationAmount?: Prisma.SortOrder
   minAmount?: Prisma.SortOrder
   maxAmount?: Prisma.SortOrder
@@ -1094,6 +1114,7 @@ export type CreatorProfileMaxOrderByAggregateInput = {
   facebookLive?: Prisma.SortOrder
   channelUrl?: Prisma.SortOrder
   status?: Prisma.SortOrder
+  rejectReason?: Prisma.SortOrder
   donationAmount?: Prisma.SortOrder
   minAmount?: Prisma.SortOrder
   maxAmount?: Prisma.SortOrder
@@ -1131,6 +1152,7 @@ export type CreatorProfileMinOrderByAggregateInput = {
   facebookLive?: Prisma.SortOrder
   channelUrl?: Prisma.SortOrder
   status?: Prisma.SortOrder
+  rejectReason?: Prisma.SortOrder
   donationAmount?: Prisma.SortOrder
   minAmount?: Prisma.SortOrder
   maxAmount?: Prisma.SortOrder
@@ -1505,6 +1527,7 @@ export type CreatorProfileCreateWithoutUserInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -1561,6 +1584,7 @@ export type CreatorProfileUncheckedCreateWithoutUserInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -1622,6 +1646,7 @@ export type CreatorProfileCreateWithoutSignupFansInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -1679,6 +1704,7 @@ export type CreatorProfileUncheckedCreateWithoutSignupFansInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -1750,6 +1776,7 @@ export type CreatorProfileUpdateWithoutUserInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -1806,6 +1833,7 @@ export type CreatorProfileUncheckedUpdateWithoutUserInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -1873,6 +1901,7 @@ export type CreatorProfileUpdateWithoutSignupFansInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -1930,6 +1959,7 @@ export type CreatorProfileUncheckedUpdateWithoutSignupFansInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -1985,6 +2015,7 @@ export type CreatorProfileCreateWithoutFanAccountsInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -2042,6 +2073,7 @@ export type CreatorProfileUncheckedCreateWithoutFanAccountsInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -2113,6 +2145,7 @@ export type CreatorProfileUpdateWithoutFanAccountsInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2170,6 +2203,7 @@ export type CreatorProfileUncheckedUpdateWithoutFanAccountsInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2225,6 +2259,7 @@ export type CreatorProfileCreateWithoutDonorLinksInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -2282,6 +2317,7 @@ export type CreatorProfileUncheckedCreateWithoutDonorLinksInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -2353,6 +2389,7 @@ export type CreatorProfileUpdateWithoutDonorLinksInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2410,6 +2447,7 @@ export type CreatorProfileUncheckedUpdateWithoutDonorLinksInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2465,6 +2503,7 @@ export type CreatorProfileCreateWithoutBlockedDonorsInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -2522,6 +2561,7 @@ export type CreatorProfileUncheckedCreateWithoutBlockedDonorsInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -2593,6 +2633,7 @@ export type CreatorProfileUpdateWithoutBlockedDonorsInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2650,6 +2691,7 @@ export type CreatorProfileUncheckedUpdateWithoutBlockedDonorsInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2705,6 +2747,7 @@ export type CreatorProfileCreateWithoutCodesInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -2762,6 +2805,7 @@ export type CreatorProfileUncheckedCreateWithoutCodesInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -2833,6 +2877,7 @@ export type CreatorProfileUpdateWithoutCodesInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2890,6 +2935,7 @@ export type CreatorProfileUncheckedUpdateWithoutCodesInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -2945,6 +2991,7 @@ export type CreatorProfileCreateWithoutMoRoutesInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -3002,6 +3049,7 @@ export type CreatorProfileUncheckedCreateWithoutMoRoutesInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -3073,6 +3121,7 @@ export type CreatorProfileUpdateWithoutMoRoutesInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3130,6 +3179,7 @@ export type CreatorProfileUncheckedUpdateWithoutMoRoutesInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3185,6 +3235,7 @@ export type CreatorProfileCreateWithoutMoMessagesInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -3242,6 +3293,7 @@ export type CreatorProfileUncheckedCreateWithoutMoMessagesInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -3313,6 +3365,7 @@ export type CreatorProfileUpdateWithoutMoMessagesInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3370,6 +3423,7 @@ export type CreatorProfileUncheckedUpdateWithoutMoMessagesInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3425,6 +3479,7 @@ export type CreatorProfileCreateWithoutDonationsInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -3482,6 +3537,7 @@ export type CreatorProfileUncheckedCreateWithoutDonationsInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -3553,6 +3609,7 @@ export type CreatorProfileUpdateWithoutDonationsInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3610,6 +3667,7 @@ export type CreatorProfileUncheckedUpdateWithoutDonationsInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3665,6 +3723,7 @@ export type CreatorProfileCreateWithoutLimitPoliciesInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -3722,6 +3781,7 @@ export type CreatorProfileUncheckedCreateWithoutLimitPoliciesInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -3793,6 +3853,7 @@ export type CreatorProfileUpdateWithoutLimitPoliciesInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3850,6 +3911,7 @@ export type CreatorProfileUncheckedUpdateWithoutLimitPoliciesInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -3905,6 +3967,7 @@ export type CreatorProfileCreateWithoutBannedWordsInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -3962,6 +4025,7 @@ export type CreatorProfileUncheckedCreateWithoutBannedWordsInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -4033,6 +4097,7 @@ export type CreatorProfileUpdateWithoutBannedWordsInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4090,6 +4155,7 @@ export type CreatorProfileUncheckedUpdateWithoutBannedWordsInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4145,6 +4211,7 @@ export type CreatorProfileCreateWithoutYoutubeConnectionInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -4202,6 +4269,7 @@ export type CreatorProfileUncheckedCreateWithoutYoutubeConnectionInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -4273,6 +4341,7 @@ export type CreatorProfileUpdateWithoutYoutubeConnectionInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4330,6 +4399,7 @@ export type CreatorProfileUncheckedUpdateWithoutYoutubeConnectionInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4385,6 +4455,7 @@ export type CreatorProfileCreateWithoutYoutubeBroadcastsInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -4442,6 +4513,7 @@ export type CreatorProfileUncheckedCreateWithoutYoutubeBroadcastsInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -4513,6 +4585,7 @@ export type CreatorProfileUpdateWithoutYoutubeBroadcastsInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4570,6 +4643,7 @@ export type CreatorProfileUncheckedUpdateWithoutYoutubeBroadcastsInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4625,6 +4699,7 @@ export type CreatorProfileCreateWithoutOverlaySettingInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -4682,6 +4757,7 @@ export type CreatorProfileUncheckedCreateWithoutOverlaySettingInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -4753,6 +4829,7 @@ export type CreatorProfileUpdateWithoutOverlaySettingInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4810,6 +4887,7 @@ export type CreatorProfileUncheckedUpdateWithoutOverlaySettingInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -4865,6 +4943,7 @@ export type CreatorProfileCreateWithoutOverlayTiersInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -4922,6 +5001,7 @@ export type CreatorProfileUncheckedCreateWithoutOverlayTiersInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -4993,6 +5073,7 @@ export type CreatorProfileUpdateWithoutOverlayTiersInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -5050,6 +5131,7 @@ export type CreatorProfileUncheckedUpdateWithoutOverlayTiersInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -5105,6 +5187,7 @@ export type CreatorProfileCreateWithoutTtsSettingInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -5162,6 +5245,7 @@ export type CreatorProfileUncheckedCreateWithoutTtsSettingInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -5233,6 +5317,7 @@ export type CreatorProfileUpdateWithoutTtsSettingInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -5290,6 +5375,7 @@ export type CreatorProfileUncheckedUpdateWithoutTtsSettingInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -5345,6 +5431,7 @@ export type CreatorProfileCreateWithoutFeePoliciesInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -5402,6 +5489,7 @@ export type CreatorProfileUncheckedCreateWithoutFeePoliciesInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -5473,6 +5561,7 @@ export type CreatorProfileUpdateWithoutFeePoliciesInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -5530,6 +5619,7 @@ export type CreatorProfileUncheckedUpdateWithoutFeePoliciesInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -5585,6 +5675,7 @@ export type CreatorProfileCreateWithoutSettlementAccountInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -5642,6 +5733,7 @@ export type CreatorProfileUncheckedCreateWithoutSettlementAccountInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -5713,6 +5805,7 @@ export type CreatorProfileUpdateWithoutSettlementAccountInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -5770,6 +5863,7 @@ export type CreatorProfileUncheckedUpdateWithoutSettlementAccountInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -5825,6 +5919,7 @@ export type CreatorProfileCreateWithoutLedgerEntriesInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -5882,6 +5977,7 @@ export type CreatorProfileUncheckedCreateWithoutLedgerEntriesInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -5953,6 +6049,7 @@ export type CreatorProfileUpdateWithoutLedgerEntriesInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -6010,6 +6107,7 @@ export type CreatorProfileUncheckedUpdateWithoutLedgerEntriesInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -6065,6 +6163,7 @@ export type CreatorProfileCreateWithoutSettlementRequestsInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -6122,6 +6221,7 @@ export type CreatorProfileUncheckedCreateWithoutSettlementRequestsInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -6193,6 +6293,7 @@ export type CreatorProfileUpdateWithoutSettlementRequestsInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -6250,6 +6351,7 @@ export type CreatorProfileUncheckedUpdateWithoutSettlementRequestsInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -6305,6 +6407,7 @@ export type CreatorProfileCreateWithoutGamesInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -6362,6 +6465,7 @@ export type CreatorProfileUncheckedCreateWithoutGamesInput = {
   facebookLive?: boolean
   channelUrl?: string | null
   status?: $Enums.CreatorStatus
+  rejectReason?: string | null
   donationAmount?: bigint | number
   minAmount?: bigint | number
   maxAmount?: bigint | number
@@ -6433,6 +6537,7 @@ export type CreatorProfileUpdateWithoutGamesInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -6490,6 +6595,7 @@ export type CreatorProfileUncheckedUpdateWithoutGamesInput = {
   facebookLive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   channelUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.EnumCreatorStatusFieldUpdateOperationsInput | $Enums.CreatorStatus
+  rejectReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   donationAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   minAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   maxAmount?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
@@ -6712,6 +6818,7 @@ export type CreatorProfileSelect<ExtArgs extends runtime.Types.Extensions.Intern
   facebookLive?: boolean
   channelUrl?: boolean
   status?: boolean
+  rejectReason?: boolean
   donationAmount?: boolean
   minAmount?: boolean
   maxAmount?: boolean
@@ -6771,6 +6878,7 @@ export type CreatorProfileSelectCreateManyAndReturn<ExtArgs extends runtime.Type
   facebookLive?: boolean
   channelUrl?: boolean
   status?: boolean
+  rejectReason?: boolean
   donationAmount?: boolean
   minAmount?: boolean
   maxAmount?: boolean
@@ -6809,6 +6917,7 @@ export type CreatorProfileSelectUpdateManyAndReturn<ExtArgs extends runtime.Type
   facebookLive?: boolean
   channelUrl?: boolean
   status?: boolean
+  rejectReason?: boolean
   donationAmount?: boolean
   minAmount?: boolean
   maxAmount?: boolean
@@ -6847,6 +6956,7 @@ export type CreatorProfileSelectScalar = {
   facebookLive?: boolean
   channelUrl?: boolean
   status?: boolean
+  rejectReason?: boolean
   donationAmount?: boolean
   minAmount?: boolean
   maxAmount?: boolean
@@ -6861,7 +6971,7 @@ export type CreatorProfileSelectScalar = {
   updatedAt?: boolean
 }
 
-export type CreatorProfileOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "code" | "displayName" | "channelName" | "channelPlatform" | "avatarUrl" | "bannerUrl" | "description" | "liveOn" | "liveUrl" | "livePlatform" | "youtubeLiveUrl" | "instagramLiveUrl" | "tiktokLiveUrl" | "facebookLiveUrl" | "youtubeLive" | "instagramLive" | "tiktokLive" | "facebookLive" | "channelUrl" | "status" | "donationAmount" | "minAmount" | "maxAmount" | "paymentMode" | "thanksMtMessage" | "businessNo" | "onboardingObsLinked" | "onboardingTestDone" | "approvedAt" | "suspendedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["creatorProfile"]>
+export type CreatorProfileOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "code" | "displayName" | "channelName" | "channelPlatform" | "avatarUrl" | "bannerUrl" | "description" | "liveOn" | "liveUrl" | "livePlatform" | "youtubeLiveUrl" | "instagramLiveUrl" | "tiktokLiveUrl" | "facebookLiveUrl" | "youtubeLive" | "instagramLive" | "tiktokLive" | "facebookLive" | "channelUrl" | "status" | "rejectReason" | "donationAmount" | "minAmount" | "maxAmount" | "paymentMode" | "thanksMtMessage" | "businessNo" | "onboardingObsLinked" | "onboardingTestDone" | "approvedAt" | "suspendedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["creatorProfile"]>
 export type CreatorProfileInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   codes?: boolean | Prisma.CreatorProfile$codesArgs<ExtArgs>
@@ -6978,6 +7088,11 @@ export type $CreatorProfilePayload<ExtArgs extends runtime.Types.Extensions.Inte
      */
     channelUrl: string | null
     status: $Enums.CreatorStatus
+    /**
+     * 반려·정지 사유. 관리자가 심사 상태를 바꿀 때 입력하고, 크리에이터 알림과 상태 안내 화면에 그대로 노출된다.
+     * 승인으로 되돌아가면 지운다(옛 사유가 승인된 채널에 남아 있으면 안 된다).
+     */
+    rejectReason: string | null
     /**
      * 문자 1건당 후원금 (원)
      */
@@ -7473,6 +7588,7 @@ export interface CreatorProfileFieldRefs {
   readonly facebookLive: Prisma.FieldRef<"CreatorProfile", 'Boolean'>
   readonly channelUrl: Prisma.FieldRef<"CreatorProfile", 'String'>
   readonly status: Prisma.FieldRef<"CreatorProfile", 'CreatorStatus'>
+  readonly rejectReason: Prisma.FieldRef<"CreatorProfile", 'String'>
   readonly donationAmount: Prisma.FieldRef<"CreatorProfile", 'BigInt'>
   readonly minAmount: Prisma.FieldRef<"CreatorProfile", 'BigInt'>
   readonly maxAmount: Prisma.FieldRef<"CreatorProfile", 'BigInt'>

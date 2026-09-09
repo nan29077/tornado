@@ -1,7 +1,7 @@
 import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle, EmptyState, Notice, SectionTitle, StatTile } from '@/components/ui';
 import { ActionForm } from '@/components/admin/action-form';
-import { AdminInput, AdminSelect } from '@/components/admin/controls';
+import { AdminInput } from '@/components/admin/controls';
 import { updateCreatorTtsSetting } from '@/app/actions/admin/broadcast';
 import { prisma } from '@/server/db';
 import { env } from '@/lib/env';
@@ -16,16 +16,15 @@ const CREATOR_OPTION_LIMIT = 300;
 /**
  * TTS 연동 관리 (통합 관리자 전용).
  *
- * TTS 는 외부 음성 합성 서비스 계약과 API 키가 필요하므로 크리에이터는 다루지 않는다.
- * 여기서 연동 상태를 확인하고, 크리에이터별 읽기 옵션을 관리자가 직접 조정한다.
+ * **소유권 경계** — 음성·속도·제공사는 크리에이터가 `/studio/overlay` 간편 설정에서 정한다.
+ * 이 화면은 운영 정책에 해당하는 읽기 옵션(사용 여부·최소 후원금·최대 글자 수·볼륨)만 다루고,
+ * 크리에이터가 고른 음성 값은 읽기 전용으로 보여 준다.
  */
 
-const VOICES = [
-  { value: 'ko-KR-Standard-A', label: 'ko-KR-Standard-A (여성)' },
-  { value: 'ko-KR-Standard-B', label: 'ko-KR-Standard-B (여성)' },
-  { value: 'ko-KR-Standard-C', label: 'ko-KR-Standard-C (남성)' },
-  { value: 'ko-KR-Standard-D', label: 'ko-KR-Standard-D (남성)' },
-];
+const PROVIDER_LABEL: Record<string, string> = {
+  browser: '브라우저 내장 음성',
+  naver: '네이버 클로바 Voice',
+};
 
 export default async function AdminTtsPage() {
   // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
@@ -54,7 +53,7 @@ export default async function AdminTtsPage() {
     <>
       <PageHeader
         title="TTS 연동"
-        description="음성 합성 서비스 연동과 크리에이터별 읽기 설정을 관리합니다. 크리에이터 화면에는 노출되지 않습니다."
+        description="음성 합성 서비스 연동 상태와 크리에이터별 읽기 옵션(사용 여부·최소 후원금·최대 글자 수·볼륨)을 관리합니다. 음성·속도·제공사는 크리에이터가 오버레이 설정에서 직접 고릅니다."
       />
 
       <div className="space-y-5">
@@ -83,8 +82,8 @@ export default async function AdminTtsPage() {
 
         <section>
           <SectionTitle
-            title="크리에이터별 읽기 설정"
-            description="TTS 는 오버레이에 표시되는 필터링된 메시지만 읽습니다. 금칙어·마스킹이 적용된 문장이 사용됩니다."
+            title="크리에이터별 읽기 옵션"
+            description="TTS 는 오버레이에 표시되는 필터링된 메시지만 읽습니다. 금칙어·마스킹이 적용된 문장이 사용됩니다. 저장해도 크리에이터가 고른 음성·속도·제공사는 바뀌지 않습니다."
           />
           {creators.length === 0 ? (
             <EmptyState title="등록된 크리에이터가 없습니다" />
@@ -122,28 +121,17 @@ export default async function AdminTtsPage() {
                         </label>
                       </div>
 
-                      <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
-                        <label className="block">
-                          <span className="mb-1 block text-[12px] font-semibold text-ink-500">음성</span>
-                          <AdminSelect name="voice" defaultValue={s?.voice ?? 'ko-KR-Standard-A'}>
-                            {VOICES.map((v) => (
-                              <option key={v.value} value={v.value}>
-                                {v.label}
-                              </option>
-                            ))}
-                          </AdminSelect>
-                        </label>
-                        <label className="block">
-                          <span className="mb-1 block text-[12px] font-semibold text-ink-500">속도 (%)</span>
-                          <AdminInput
-                            name="speedPercent"
-                            type="number"
-                            min={50}
-                            max={200}
-                            step={10}
-                            defaultValue={Math.round((s?.speed ?? 1) * 100)}
-                          />
-                        </label>
+                      {/* 음성·속도·제공사는 크리에이터 소유값이라 읽기 전용으로만 보여 준다. */}
+                      <div className="rounded-xl border border-ink-100 bg-ink-50/60 px-3 py-2.5 text-[12px] text-ink-500">
+                        <span className="font-semibold text-ink-700">크리에이터 설정(읽기 전용)</span>
+                        <span className="mt-1 block">
+                          제공사 {PROVIDER_LABEL[s?.provider ?? 'browser'] ?? (s?.provider ?? 'browser')} · 음성{' '}
+                          <span className="font-mono">{s?.voice ?? '기본값'}</span> · 속도{' '}
+                          {Math.round((s?.speed ?? 1) * 100)}%
+                        </span>
+                      </div>
+
+                      <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
                         <label className="block">
                           <span className="mb-1 block text-[12px] font-semibold text-ink-500">볼륨 (%)</span>
                           <AdminInput

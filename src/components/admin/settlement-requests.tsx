@@ -8,6 +8,7 @@ import {
   bulkUpdateSettlementAction,
   applyPayoutResultsAction,
   fileWithholdingAction,
+  updateSettlementRequestStatus,
 } from '@/app/actions/admin/settlement';
 
 export interface SettlementRow {
@@ -34,6 +35,105 @@ export interface SettlementRow {
 }
 
 const SELECTABLE = new Set(['REQUESTED', 'REVIEWING', 'APPROVED', 'PAID']);
+
+/** `/api/admin/settlements/payout?preview=1` 응답 (계좌 원문은 담기지 않는다) */
+interface PayoutPreview {
+  selected: number;
+  included: Array<{ requestId: string; creatorName: string; creatorCode: string; bankName: string; amount: string }>;
+  excluded: Array<{ requestId: string; creatorName: string; creatorCode: string; payoutAmount: string; reason: string }>;
+  totalAmount: string;
+  reissue: Array<{ requestId: string; previousBatchNo: string | null }>;
+}
+
+/**
+ * 단건 처리 줄.
+ *
+ * `updateSettlementRequestStatus` 는 REVIEWING 전환·단건 지급실패·낙관적 상태 가드를 갖춘
+ * 유일한 경로인데 화면 어디에서도 호출되지 않아, "검토중" 상태를 만들 방법이 아예 없었다.
+ * 일괄 툴바는 여러 건을 한 번에 밀 때 쓰고, 여기서는 한 건을 신중히 다룬다.
+ */
+function RowActions({ row }: { row: SettlementRow }) {
+  const [state, formAction, pending] = React.useActionState(updateSettlementRequestStatus, initialAdminState);
+  const [memo, setMemo] = React.useState('');
+
+  // 상태 기계상 지금 누를 수 있는 것만 보여 준다. 누를 수 없는 버튼을 늘어놓으면 오클릭만 는다.
+  const buttons: Array<{ value: string; label: string; tone: 'brand' | 'danger' | 'plain'; confirm: string; needMemo?: boolean }> = [];
+  if (row.status === 'REQUESTED') {
+    buttons.push({ value: 'REVIEWING', label: '검토중', tone: 'plain', confirm: '이 요청을 검토중으로 표시합니다. 계속할까요?' });
+  }
+  if (row.status === 'REQUESTED' || row.status === 'REVIEWING') {
+    buttons.push({ value: 'APPROVED', label: '승인', tone: 'brand', confirm: '이 정산 요청을 승인합니다. 계속할까요?' });
+    buttons.push({
+      value: 'REJECTED', label: '반려', tone: 'danger', needMemo: true,
+      confirm: '이 정산 요청을 반려합니다. 사유가 크리에이터에게 전달됩니다. 계속할까요?',
+    });
+  }
+  if (row.status === 'APPROVED') {
+    buttons.push({
+      value: 'PAYOUT_FAILED', label: '지급실패', tone: 'danger', needMemo: true,
+      confirm: '이 건을 지급 실패로 처리합니다. 이미 지급 분개가 있었다면 잔액으로 환입됩니다. 계속할까요?',
+    });
+  }
+  if (buttons.length === 0) return null;
+
+  const needMemo = buttons.some((b) => b.needMemo);
+
+  return (
+    <form
+      action={formAction}
+      onSubmit={(e) => {
+        const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+        const picked = buttons.find((b) => b.value === submitter?.value);
+        if (picked?.needMemo && !memo.trim()) {
+          e.preventDefault();
+          window.alert(picked.value === 'REJECTED' ? '반려 사유를 입력해 주세요.' : '지급 실패 사유를 입력해 주세요.');
+          return;
+        }
+        if (picked && !window.confirm(picked.confirm)) e.preventDefault();
+      }}
+      className="flex flex-col gap-1"
+    >
+      <input type="hidden" name="requestId" value={row.id} />
+      {needMemo ? (
+        <input
+          name="memo"
+          value={memo}
+          onChange={(e) => setMemo(e.target.value)}
+          placeholder="반려·실패 사유"
+          aria-label={`${row.creatorName} 정산 요청 처리 사유`}
+          className="h-7 w-full min-w-[110px] rounded-lg border border-ink-200 px-2 text-[11.5px] outline-none focus:border-brand-400"
+        />
+      ) : null}
+      <div className="flex flex-wrap gap-1">
+        {buttons.map((b) => (
+          <button
+            key={b.value}
+            name="status"
+            value={b.value}
+            disabled={pending}
+            className={cx(
+              'h-7 rounded-lg px-2 text-[11.5px] font-bold disabled:opacity-50',
+              b.tone === 'brand' && 'bg-brand-400 text-ink-900',
+              b.tone === 'danger' && 'border border-danger-500 text-danger-600',
+              b.tone === 'plain' && 'border border-ink-200 text-ink-700',
+            )}
+          >
+            {b.label}
+          </button>
+        ))}
+      </div>
+      {state.message ? (
+        <span
+          role="status"
+          aria-live="polite"
+          className={cx('block max-w-[160px] text-[11px] leading-tight', state.ok ? 'text-success-600' : 'text-danger-600')}
+        >
+          {state.message}
+        </span>
+      ) : null}
+    </form>
+  );
+}
 
 export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
@@ -65,6 +165,50 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
 
   const payoutUrl =
     approvedSelected.length > 0 ? `/api/admin/settlements/payout?ids=${approvedSelected.join(',')}` : null;
+
+  /**
+   * 이체파일 다운로드 전 확인 단계.
+   *
+   * 예전에는 링크를 누르면 곧바로 CSV 가 떨어졌고, 미인증 계좌·잔액 부족으로 빠진 건은
+   * 파일명 끝 숫자로만 알 수 있었다(재발급 경고는 응답 헤더라 아무도 못 봤다).
+   * 미리보기는 상태를 바꾸지 않으므로 몇 번을 눌러도 배치 발급 이력이 더럽혀지지 않는다.
+   */
+  /**
+   * 미리보기는 **어떤 선택으로 받은 것인지**(selectionKey)를 함께 들고 있는다.
+   * 그래야 선택이 바뀌었을 때 useEffect 로 지우지 않고도 자동으로 무효가 된다.
+   * (effect 안에서 setState 하면 렌더가 연쇄된다)
+   */
+  const selectionKey = approvedSelected.join(',');
+  const [previewState, setPreviewState] = React.useState<{
+    key: string;
+    data: PayoutPreview | null;
+    error: string | null;
+  } | null>(null);
+  const [previewPending, setPreviewPending] = React.useState(false);
+  const current = previewState?.key === selectionKey ? previewState : null;
+  const preview = current?.data ?? null;
+  const previewError = current?.error ?? null;
+
+  const loadPreview = async () => {
+    if (!payoutUrl) return;
+    setPreviewPending(true);
+    try {
+      const res = await fetch(`${payoutUrl}&preview=1`, { cache: 'no-store' });
+      if (!res.ok) {
+        setPreviewState({ key: selectionKey, data: null, error: await res.text() });
+        return;
+      }
+      setPreviewState({ key: selectionKey, data: (await res.json()) as PayoutPreview, error: null });
+    } catch {
+      setPreviewState({
+        key: selectionKey,
+        data: null,
+        error: '미리보기를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
+      });
+    } finally {
+      setPreviewPending(false);
+    }
+  };
 
   const lastState = lastForm === 'bulk' ? bulkState : lastForm === 'result' ? resultState : lastForm === 'file' ? fileState : null;
   const anyMsg = lastState?.message ?? null;
@@ -137,20 +281,15 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
 
           <span className="mx-1 hidden h-5 w-px bg-ink-100 sm:block" />
 
-          {/* 지급대행 파일 다운로드 (승인 건) */}
-          <a
-            href={payoutUrl ?? '#'}
-            aria-disabled={!payoutUrl}
-            onClick={(e) => {
-              if (!payoutUrl) e.preventDefault();
-            }}
-            className={cx(
-              'flex h-8 items-center rounded-lg border border-ink-200 px-3 text-[12px] font-bold text-ink-700',
-              !payoutUrl && 'pointer-events-none opacity-50',
-            )}
+          {/* 지급대행 파일 다운로드 (승인 건) — 반드시 미리보기를 거친다 */}
+          <button
+            type="button"
+            onClick={loadPreview}
+            disabled={!payoutUrl || previewPending}
+            className="h-8 rounded-lg border border-ink-200 px-3 text-[12px] font-bold text-ink-700 disabled:opacity-50"
           >
-            지급대행 파일 받기 ({approvedSelected.length})
-          </a>
+            {previewPending ? '확인 중' : `지급대행 파일 받기 (${approvedSelected.length})`}
+          </button>
 
           {/* 원천징수 신고 완료 + 주민번호 파기 (지급완료 건) */}
           <form
@@ -187,7 +326,93 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
             {anyMsg}
           </p>
         ) : null}
+        {previewError ? <p className="mt-2 text-[12px] text-danger-600">{previewError}</p> : null}
       </div>
+
+      {/* ── 이체파일 다운로드 확인 단계 ─────────────────────────────── */}
+      {preview ? (
+        <div className="rounded-2xl border border-brand-200 bg-brand-50/40 p-3.5">
+          <p className="text-[13px] font-black text-ink-900">
+            선택 {preview.selected}건 중 {preview.included.length}건 이체
+            {preview.excluded.length > 0 ? (
+              <span className="text-danger-600"> · {preview.excluded.length}건 제외</span>
+            ) : null}
+          </p>
+          <p className="mt-1 text-[12px] text-ink-600">
+            이체 합계 {formatWon(BigInt(preview.totalAmount))}
+          </p>
+
+          {preview.excluded.length > 0 ? (
+            <div className="mt-2.5 rounded-xl border border-danger-500/30 bg-white p-2.5">
+              <p className="text-[11.5px] font-bold text-danger-600">이체파일에서 빠지는 건</p>
+              <ul className="mt-1 space-y-1">
+                {preview.excluded.map((e) => (
+                  <li key={e.requestId} className="text-[11.5px] leading-snug break-words text-ink-700">
+                    <span className="font-semibold">
+                      {e.creatorName}
+                      {e.creatorCode !== '-' ? ` (${e.creatorCode})` : ''}
+                    </span>
+                    {BigInt(e.payoutAmount) > 0n ? ` · ${formatWon(BigInt(e.payoutAmount))}` : ''} — {e.reason}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 text-[11px] text-ink-400">
+                빠진 건은 이번 배치에 포함되지 않습니다. 계좌 인증·잔액을 확인한 뒤 다시 받아 주세요.
+              </p>
+            </div>
+          ) : null}
+
+          {preview.reissue.length > 0 ? (
+            <div className="mt-2.5 rounded-xl border border-danger-500/30 bg-white p-2.5">
+              <p className="text-[11.5px] font-bold text-danger-600">
+                재발급 {preview.reissue.length}건 — 이미 이체파일이 나간 적 있는 건입니다
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {preview.reissue.map((r) => (
+                  <li key={r.requestId} className="font-mono text-[11px] text-ink-600">
+                    {r.requestId.slice(-8)} · 이전 배치 {r.previousBatchNo ?? '-'}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 text-[11px] leading-snug text-ink-500">
+                이전 파일을 이미 은행에 올렸다면 <strong className="text-danger-600">이중이체</strong>가 됩니다.
+                지급대행 결과를 먼저 반영했는지 확인해 주세요.
+              </p>
+            </div>
+          ) : null}
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <a
+              href={payoutUrl ?? '#'}
+              onClick={(e) => {
+                if (!payoutUrl || preview.included.length === 0) {
+                  e.preventDefault();
+                  return;
+                }
+                if (!window.confirm(`${preview.included.length}건 / ${formatWon(BigInt(preview.totalAmount))} 이체파일을 내려받습니다. 받는 순간 배치번호가 확정됩니다. 계속할까요?`)) {
+                  e.preventDefault();
+                  return;
+                }
+                // 파일을 받으면 배치가 확정되므로 확인 단계를 닫는다.
+                setPreviewState(null);
+              }}
+              className={cx(
+                'flex h-8 items-center rounded-lg bg-ink-900 px-3 text-[12px] font-bold text-white',
+                preview.included.length === 0 && 'pointer-events-none opacity-50',
+              )}
+            >
+              확인했습니다 · 파일 받기
+            </a>
+            <button
+              type="button"
+              onClick={() => setPreviewState(null)}
+              className="h-8 rounded-lg border border-ink-200 px-3 text-[12px] font-bold text-ink-700"
+            >
+              취소
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {/* 지급대행 결과 반영 */}
       <details className="rounded-2xl border border-ink-100 bg-white p-3.5">
@@ -247,7 +472,7 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
       {rows.length === 0 ? (
         <EmptyState title="조건에 맞는 정산 요청이 없습니다" />
       ) : (
-      <Table className="min-w-[1200px]">
+      <Table className="min-w-[1360px]">
         <thead>
           <tr>
             <Th>
@@ -261,6 +486,7 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
             <Th className="text-right">실지급</Th>
             <Th>주민번호</Th>
             <Th>상태</Th>
+            <Th>단건 처리</Th>
           </tr>
         </thead>
         <tbody>
@@ -316,6 +542,9 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
                   <span className="mt-0.5 block max-w-[140px] break-words text-[11px] text-ink-400">{r.adminMemo}</span>
                 ) : null}
                 {r.paidAt ? <span className="mt-0.5 block text-[11px] text-success-600">지급 {r.paidAt}</span> : null}
+              </Td>
+              <Td>
+                <RowActions row={r} />
               </Td>
             </tr>
           ))}

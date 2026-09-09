@@ -38,6 +38,8 @@ export default async function AdminDashboardPage() {
     openReports,
     openRisks,
     openInquiries,
+    pendingCreators,
+    unverifiedAccounts,
     recentDonations,
   ] = await Promise.all([
     prisma.donation.aggregate({
@@ -64,6 +66,9 @@ export default async function AdminDashboardPage() {
     prisma.report.count({ where: { status: { in: ['OPEN', 'REVIEWING'] } } }),
     prisma.riskDetection.count({ where: { resolved: false } }),
     prisma.supportInquiry.count({ where: { status: 'OPEN' } }),
+    // 심사 대기와 실명확인 대기는 둘 다 "관리자가 손대지 않으면 영원히 멈춰 있는" 큐다.
+    prisma.creatorProfile.count({ where: { status: 'PENDING' } }),
+    prisma.settlementAccount.count({ where: { verified: false } }),
     prisma.donation.findMany({
       orderBy: { receivedAt: 'desc' },
       take: 10,
@@ -84,7 +89,9 @@ export default async function AdminDashboardPage() {
   // 처리 대기 건이 하나라도 있으면 '확인이 필요한 건' 섹션을 지표보다 위에 배치한다.
   // 운영자가 접속해서 가장 먼저 할 일이 화면 순서와 일치하도록.
   const pendingTotal =
-    unregistered + limitBlocked + youtubeFailed + openRisks + settlementPending._count._all + openReports + openInquiries;
+    unregistered + limitBlocked + youtubeFailed + openRisks + settlementPending._count._all + openReports + openInquiries
+    // 심사 대기·실명확인 대기가 빠져 있어, 신청자가 쌓여도 대기 건이 0 으로 보였다.
+    + pendingCreators + unverifiedAccounts;
 
   /** 오늘 기준 타일에서 이동할 때 같은 날짜 조건을 그대로 넘긴다. */
   const todayParam = `from=${kstDateKey(todayStart)}&to=${kstDateKey(todayStart)}`;
@@ -156,8 +163,21 @@ export default async function AdminDashboardPage() {
         <Link href="/admin/refunds">
           <StatTile label="환불 관리" value="바로가기" sub="요청 승인·거절 처리" />
         </Link>
-        <Link href="/admin/creators">
-          <StatTile label="크리에이터 심사" value="바로가기" sub="대기 건 확인" />
+        <Link href="/admin/creators?status=PENDING">
+          <StatTile
+            label="크리에이터 심사 대기"
+            value={formatNumber(pendingCreators)}
+            sub="승인 전까지 후원을 받을 수 없음"
+            tone={pendingCreators > 0 ? 'warning' : 'neutral'}
+          />
+        </Link>
+        <Link href="/admin/settlements">
+          <StatTile
+            label="실명확인 대기 계좌"
+            value={formatNumber(unverifiedAccounts)}
+            sub="인증 전에는 정산 요청 불가"
+            tone={unverifiedAccounts > 0 ? 'warning' : 'neutral'}
+          />
         </Link>
       </div>
     </section>

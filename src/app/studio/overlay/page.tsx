@@ -17,7 +17,7 @@ import {
 } from '@/app/actions/studio';
 import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
-import { env } from '@/lib/env';
+import { getPublicBaseUrl } from '@/server/public-base-url';
 import { formatWon } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
 import { deliveryStatusLabel } from '@/lib/labels';
@@ -81,7 +81,21 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
   const tab: 'donation' | 'game' = rawTab === 'game' ? 'game' : 'donation';
   const [setting, ttsSetting, tiers, testEvents] = await Promise.all([
     prisma.overlaySetting.findUnique({ where: { creatorId } }),
-    prisma.ttsSetting.findUnique({ where: { creatorId } }),
+    /**
+     * select 를 명시해 `naverClientSecretEnc` 암호문이 이 화면의 메모리로 올라오지 않게 한다.
+     * (화면에는 마스킹 값과 "키 등록 여부" 만 필요하다)
+     */
+    prisma.ttsSetting.findUnique({
+      where: { creatorId },
+      select: {
+        enabled: true, voice: true, speed: true, volume: true, provider: true,
+        readAmount: true, readName: true, minAmount: true, maxChars: true,
+        naverClientIdMasked: true,
+        // 원문이 아니라 "등록되어 있는가" 만 알면 되지만, Prisma 로는 존재 여부만 고를 수 없다.
+        // ID 쪽만 읽어 Boolean 으로 환산하고 Secret 암호문은 아예 읽지 않는다.
+        naverClientIdEnc: true,
+      },
+    }),
     listOverlayTiers(creatorId),
     // 테스트 전송 기록은 overlay_event 에만 남는다. donation 과는 무관하다.
     prisma.overlayEvent.findMany({
@@ -129,8 +143,16 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
   // 게임이 방송 화면에 떠 있으면 탭 라벨에 상태 점을 찍는다(다른 탭에 있어도 알 수 있게).
   const activeRound = await findActiveRound(creatorId);
 
-  const urlBase = `${env.baseUrl}/overlay/${creatorId}?token=`;
-  const gameUrlBase = `${env.baseUrl}/overlay/${creatorId}/game?token=`;
+  /**
+   * 안내에 쓰는 주소는 **발급 액션과 같은 기준**(요청 호스트)으로 만든다.
+   *
+   * 예전에는 `env.baseUrl` 을 썼는데, URL 발급(`studio.ts` 의 `getPublicBaseUrl`)은 요청
+   * 호스트를 쓴다. 터널·사내망 IP 로 접속하면 안내문의 호스트와 실제 발급된 URL 의 호스트가
+   * 달라, 크리에이터가 안내문 주소를 그대로 OBS 에 넣으면 연결되지 않았다.
+   */
+  const publicBase = await getPublicBaseUrl();
+  const urlBase = `${publicBase}/overlay/${creatorId}?token=`;
+  const gameUrlBase = `${publicBase}/overlay/${creatorId}/game?token=`;
 
   return (
     <>
@@ -391,6 +413,7 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
                 position: setting.position,
                 theme: setting.theme,
                 stickerSet: setting.stickerSet,
+                textAnim: setting.textAnim,
                 soundEnabled: setting.soundEnabled,
                 soundVolume: setting.soundVolume,
               }}
@@ -403,7 +426,7 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
                       provider: ttsSetting.provider,
                       // 인증 정보 원문은 어떤 경로로도 화면에 내려보내지 않는다.
                       naverClientIdMasked: ttsSetting.naverClientIdMasked,
-                      hasNaverKey: Boolean(ttsSetting.naverClientIdEnc && ttsSetting.naverClientSecretEnc),
+                      hasNaverKey: Boolean(ttsSetting.naverClientIdEnc),
                     }
                   : null
               }

@@ -5,6 +5,7 @@ import { prisma } from '@/server/db';
 import { newId, newCreatorCode } from '@/lib/id';
 import { createSession, getSessionUser, hashPassword } from '@/server/auth';
 import { consumeIpRateLimit } from '@/server/rate-limit';
+import { notifySuperAdmins } from '@/server/services/notifications';
 
 /**
  * 크리에이터 가입 신청.
@@ -206,6 +207,18 @@ export async function applyCreator(_prev: CreatorApplyState, formData: FormData)
     if (!session) {
       await createSession(userId);
     }
+
+    /**
+     * 심사 대기 건이 생겼다는 사실을 관리자에게 알린다.
+     *
+     * 정산 요청은 알리면서 심사 신청은 조용히 쌓이고 있었다. 관리자가 `/admin/creators` 를
+     * 스스로 열어 보지 않으면 신청자는 무한정 대기한다. (알림 실패가 신청을 되돌리지는 않는다)
+     */
+    await notifySuperAdmins({
+      title: '새 크리에이터 심사 신청이 접수되었습니다',
+      body: `${creator.displayName}(${creator.code})${channelUrl ? ` · 채널 ${channelUrl}` : ' · 채널 주소 미기재'}`,
+      linkUrl: `/admin/creators/${creator.id}`,
+    }).catch(() => undefined);
 
     return { ok: true, code: creator.code, displayName: creator.displayName };
   } catch {

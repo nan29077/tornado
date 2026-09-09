@@ -15,7 +15,11 @@ import type {
   PaymentMethodKind,
   UserStatus,
   AdminPermission,
+  UserRole,
+  PolicyScope,
+  YouTubeConnectionStatus,
 } from '@/generated/prisma/enums';
+import { SUPPORT_CATEGORIES } from '@/components/public/support-options';
 
 export type Tone = 'neutral' | 'brand' | 'success' | 'warning' | 'danger';
 
@@ -197,3 +201,45 @@ export const adminPermissionLabel: Record<AdminPermission, string> = {
   SUPPORT: '고객지원',
   READ_ONLY: '읽기 전용',
 };
+
+/** 회원 역할. 문의 상세가 `CREATOR` 원문을 그대로 노출하고 있었다. */
+export const userRoleLabel: Record<UserRole, string> = {
+  DONOR: '후원자',
+  CREATOR: '크리에이터',
+  ADMIN: '관리자',
+};
+
+/** 수수료 정책 적용 범위. 크리에이터 상세가 `GLOBAL` 원문을 그대로 보여 주고 있었다. */
+export const policyScopeLabel: Record<PolicyScope, string> = {
+  GLOBAL: '전체 공통',
+  CREATOR: '이 크리에이터 전용',
+  DONOR: '후원자 전용',
+};
+
+/** 유튜브 연결 상태. */
+export const youtubeConnectionStatusLabel: Record<YouTubeConnectionStatus, { text: string; tone: Tone }> = {
+  CONNECTED: { text: '연결됨', tone: 'success' },
+  EXPIRED: { text: '토큰 만료', tone: 'warning' },
+  REVOKED: { text: '연결 해제', tone: 'neutral' },
+  ERROR: { text: '오류', tone: 'danger' },
+};
+
+/**
+ * 크리에이터 신청서의 대표 채널 플랫폼.
+ * 신청 폼(`components/public/creator-apply-form.tsx`)이 보내는 값과 같은 목록이다.
+ */
+export const channelPlatformLabel: Record<string, string> = {
+  YOUTUBE: 'YouTube',
+  INSTAGRAM: 'Instagram',
+  FACEBOOK: 'Facebook',
+  TIKTOK: 'TikTok',
+  CHZZK: '치지직',
+  SOOP: '숲 (구 아프리카TV)',
+  TWITCH: 'Twitch',
+  OTHER: '기타',
+};
+
+/** 신고·문의 분류. 신고 목록이 `ABUSE` 원문을 그대로 보여 주고 있었다. */
+export function supportCategoryLabel(value: string): string {
+  return SUPPORT_CATEGORIES.find((c) => c.value === value)?.label ?? value;
+}

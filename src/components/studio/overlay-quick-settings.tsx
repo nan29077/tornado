@@ -2,9 +2,17 @@
 
 import * as React from 'react';
 import Image from 'next/image';
-import { AudioLines, Ban, ChevronDown, Coins, Globe, Heart, KeyRound, PartyPopper, Server, Shapes, Sparkles, Star, Volume2 } from 'lucide-react';
+import { AudioLines, Ban, ChevronDown, Coins, Globe, Heart, KeyRound, PartyPopper, Play, Server, Shapes, Sparkles, Star, Volume2 } from 'lucide-react';
 import { Button, Checkbox, Field, Input, Notice, SectionTitle, Select, cx } from '@/components/ui';
 import { playEffectSound } from '@/components/overlay/overlay-sound';
+import { useTypewriter } from '@/components/overlay/overlay-effects';
+import {
+  TEXT_ANIM_CLASS,
+  TEXT_ANIM_OPTIONS,
+  resolveTextAnim,
+  textAnimOf,
+  type OverlayTextAnim,
+} from '@/lib/overlay-text-anim';
 import { ConfirmDialog, useConfirmSubmit } from '@/components/studio/confirm-dialog';
 import { SaveButtonLabel, useSaveFeedback } from '@/components/studio/save-feedback';
 import { updateOverlaySettingAction } from '@/app/actions/studio';
@@ -36,6 +44,8 @@ export interface OverlaySettingInput {
   position: string;
   theme: string;
   stickerSet: string;
+  /** 감사 텍스트 등장 애니메이션. AUTO 면 금액 구간 레벨에 맞춰 자동으로 정해진다. */
+  textAnim: string;
   soundEnabled: boolean;
   soundVolume: number;
 }
@@ -139,6 +149,12 @@ export function OverlayQuickSettings({
 }) {
   const [effect, setEffect] = React.useState(setting.stickerSet || 'DEFAULT');
   const [theme, setTheme] = React.useState(setting.theme || 'TORNADO');
+  const [textAnim, setTextAnim] = React.useState<OverlayTextAnim>(textAnimOf(setting.textAnim));
+  /**
+   * 미리보기 재생 횟수. 값을 바꾸면 미리보기 요소의 key 가 바뀌어 애니메이션이 처음부터 다시 돈다.
+   * (CSS 애니메이션은 클래스가 그대로면 다시 재생되지 않는다)
+   */
+  const [animPlay, setAnimPlay] = React.useState(0);
   const [ttsOn, setTtsOn] = React.useState(Boolean(tts?.enabled));
   const [ttsVoice, setTtsVoice] = React.useState(tts?.voice ?? '');
   const [ttsSpeed, setTtsSpeed] = React.useState(String(clampSpeed(tts?.speed ?? 1)));
@@ -202,6 +218,7 @@ export function OverlayQuickSettings({
       <input type="hidden" name="withTts" value="1" />
       <input type="hidden" name="stickerSet" value={effect} />
       <input type="hidden" name="theme" value={theme} />
+      <input type="hidden" name="textAnim" value={textAnim} />
       <input
         type="hidden"
         name="ttsVoice"
@@ -365,6 +382,63 @@ export function OverlayQuickSettings({
                   <span className="block text-[13px] font-bold text-ink-900">{t.label}</span>
                   <span className="mt-0.5 block text-[11.5px] leading-snug text-ink-400">{t.desc}</span>
                 </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ── 감사 텍스트 애니메이션 ────────────────────────────── */}
+      <section>
+        <SectionTitle
+          title="감사 텍스트 애니메이션"
+          description="후원 문구가 방송 화면에 등장하는 방식입니다. [자동]은 금액 구간이 올라갈수록 강한 효과를 씁니다."
+        />
+
+        {/* 미리보기 — 실제 방송 화면과 같은 어두운 바탕 위에서 재생한다 */}
+        <div className="mb-2.5 overflow-hidden rounded-2xl border border-ink-100 bg-white">
+          <div className="relative grid h-[132px] place-items-center overflow-hidden bg-[#3a3a42] px-4">
+            <TextAnimPreview key={`${textAnim}-${animPlay}`} value={textAnim} theme={theme} />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 px-3.5 py-2.5">
+            <p className="text-[12px] leading-relaxed text-ink-400">
+              {textAnim === 'AUTO'
+                ? '금액 구간 1~4단계에 맞춰 아래에서 위로 → 통통 튀기 → 타이핑 → 진동 순으로 세집니다. 미리보기는 2단계 기준입니다.'
+                : '모든 후원에 이 방식이 적용됩니다.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => setAnimPlay((n) => n + 1)}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 text-[12.5px] font-semibold text-ink-700 hover:bg-ink-50"
+            >
+              <Play size={16} strokeWidth={1.7} />
+              미리보기
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          {TEXT_ANIM_OPTIONS.map((o) => {
+            const active = textAnim === o.value;
+            return (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => {
+                  setTextAnim(o.value);
+                  // 고르는 즉시 위 미리보기에서 재생된다.
+                  setAnimPlay((n) => n + 1);
+                }}
+                aria-pressed={active}
+                className={cx(
+                  'rounded-2xl border px-3 py-2.5 text-left transition-all',
+                  active
+                    ? 'border-brand-400 bg-brand-50 shadow-[0_6px_16px_rgba(237,166,0,0.18)]'
+                    : 'border-ink-100 bg-white hover:border-ink-200 hover:bg-ink-50',
+                )}
+              >
+                <span className="block text-[13px] font-bold text-ink-900">{o.label}</span>
+                <span className="mt-0.5 block text-[11.5px] leading-snug text-ink-400">{o.desc}</span>
               </button>
             );
           })}
@@ -691,6 +765,43 @@ function VoiceRow({
         미리듣기
       </button>
     </div>
+  );
+}
+
+// ------------------------------------------------- 감사 텍스트 애니메이션 미리보기
+
+/**
+ * 고른 애니메이션이 방송 화면에서 어떻게 재생되는지 그대로 보여 준다.
+ *
+ * 방송 화면과 같은 클래스(TEXT_ANIM_CLASS)를 쓰므로, 여기서 본 움직임이 곧 실제 움직임이다.
+ * 타이핑만 오버레이와 같은 방식(글자 수를 직접 세는 훅)을 공유한다 — 한글은 글자 폭이
+ * 제각각이라 CSS steps() 로는 줄이 흔들린다.
+ *
+ * AUTO 는 실제로는 금액 구간마다 달라지므로, 대표로 2단계(통통 튀기)를 보여 준다.
+ */
+function TextAnimPreview({ value, theme }: { value: OverlayTextAnim; theme: string }) {
+  const resolved = resolveTextAnim(value, 2);
+  const head = '홍길동님이 ';
+  const amount = '5,000원';
+  const tail = '을 후원하셨습니다';
+  const total = head.length + amount.length + tail.length;
+  const revealed = useTypewriter(total, resolved === 'TYPEWRITER');
+  const shown = resolved === 'TYPEWRITER' ? revealed : total;
+
+  const accent = theme === 'NEON' ? '#22d3ee' : theme === 'MINIMAL' ? '#e7e7ea' : '#ffc632';
+  const color = theme === 'NEON' ? '#e8fdff' : '#ffffff';
+
+  const cut = (text: string, from: number) => text.slice(0, Math.max(0, Math.min(text.length, shown - from)));
+
+  return (
+    <span
+      className={cx('block w-full text-left text-[17px] font-black leading-tight', TEXT_ANIM_CLASS[resolved])}
+      style={{ ...OUTLINE_PREVIEW, color }}
+    >
+      <span>{cut(head, 0)}</span>
+      <span style={{ color: accent }}>{cut(amount, head.length)}</span>
+      <span>{cut(tail, head.length + amount.length)}</span>
+    </span>
   );
 }
 

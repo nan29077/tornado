@@ -3,7 +3,7 @@ import { Badge, Card, CardTitle, DataRow, EmptyState, Field, Input, Notice, Sect
 import { PageHeader } from '@/components/layout/console-shell';
 import { ActionForm } from '@/components/studio/action-form';
 import { ImageUploadField } from '@/components/studio/image-upload-field';
-import { updateCreatorProfileAction } from '@/app/actions/studio';
+import { changeCreatorPasswordAction, updateCreatorProfileAction } from '@/app/actions/studio';
 import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { formatKst } from '@/lib/datetime';
@@ -83,6 +83,34 @@ export default async function StudioSettingsProfilePage() {
                 hint="파일을 올리거나 이미지 URL 을 입력하세요. 비워두면 자동 배정된 캐릭터가 표시됩니다."
               />
             </ActionForm>
+          </Card>
+        </section>
+
+        <section>
+          <SectionTitle
+            title="계정 보안"
+            description="비밀번호를 바꾸면 이 기기를 포함한 모든 기기에서 로그아웃됩니다. 계좌 정보가 임의로 바뀌었다면 즉시 변경해 주세요."
+          />
+          <Card>
+            <ActionForm action={changeCreatorPasswordAction} submitLabel="비밀번호 변경">
+              {/* 좁은 화면에서는 한 줄씩, md 이상에서는 두 칸으로 접는다 */}
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="현재 비밀번호" required>
+                  <Input type="password" name="currentPassword" autoComplete="current-password" maxLength={72} />
+                </Field>
+                <div className="hidden md:block" />
+                <Field label="새 비밀번호" hint="8자 이상 72자 이내" required>
+                  <Input type="password" name="newPassword" autoComplete="new-password" maxLength={72} />
+                </Field>
+                <Field label="새 비밀번호 확인" required>
+                  <Input type="password" name="newPasswordConfirm" autoComplete="new-password" maxLength={72} />
+                </Field>
+              </div>
+            </ActionForm>
+            <p className="mt-3 text-[11.5px] leading-relaxed text-ink-400">
+              소셜 로그인으로만 가입한 계정에는 비밀번호가 없습니다. 그 경우 로그인 화면의 비밀번호 찾기로 먼저
+              설정해 주세요.
+            </p>
           </Card>
         </section>
 

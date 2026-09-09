@@ -153,6 +153,8 @@ describe('서버 TTS 합성 허가', () => {
     theme: 'TORNADO',
     position: 'TOP_RIGHT',
     maxMessageLen: 60,
+    textAnim: 'AUTO',
+    effectLevel: 1,
     offsetX: 0,
     offsetY: 0,
     scalePct: 100,

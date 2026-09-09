@@ -42,6 +42,13 @@ export function isFanSort(v: string): v is FanSort {
 
 export interface CreatorFan {
   key: string;
+  /**
+   * 차단·메모 액션의 대상 식별자. 번호를 연결하지 않은 팬(계정만 있는 팬)은 null 이다.
+   * 그 팬에게는 차단·메모를 걸 대상 행(donor_creator_link / blocked_donor)이 아직 없다.
+   */
+  donorId: string | null;
+  /** 크리에이터만 보는 비공개 메모 (후원자에게 노출하지 않는다) */
+  creatorMemo: string | null;
   /** 화면 표시 이름 (닉네임 → 계정 이름 → 번호 끝 4자리) */
   name: string;
   avatarIndex: number | null;
@@ -241,6 +248,7 @@ export async function listCreatorFans(
         totalCount: true,
         lastDonatedAt: true,
         donorBlockedAt: true,
+        creatorMemo: true,
         donor: {
           select: {
             displayName: true,
@@ -267,6 +275,8 @@ export async function listCreatorFans(
 
   const fromLinks: CreatorFan[] = links.slice(0, FAN_SCAN_LIMIT).map((l) => ({
     key: `d:${l.donorId}`,
+    donorId: l.donorId,
+    creatorMemo: l.creatorMemo,
     name:
       l.donor.displayName?.trim() ||
       l.donor.user?.name?.trim() ||
@@ -285,6 +295,8 @@ export async function listCreatorFans(
 
   const fromSignup: CreatorFan[] = signupOnly.slice(0, FAN_SCAN_LIMIT).map((a) => ({
     key: `u:${a.user.id}`,
+    donorId: null,
+    creatorMemo: null,
     name: a.user.name?.trim() || '후원자',
     avatarIndex: a.user.avatarIndex,
     phoneMasked: null,

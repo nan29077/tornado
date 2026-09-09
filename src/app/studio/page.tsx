@@ -17,8 +17,30 @@ import { getSettlementSummary } from '@/server/services/settlement';
 import { formatNumber, formatWon } from '@/lib/money';
 import { kstMonthKey, kstStartOfDay } from '@/lib/datetime';
 import { moNumberStatusLabel } from '@/lib/labels';
+import { env } from '@/lib/env';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * mock 안내 띠에 쓸 실제 연동 상태.
+ *
+ * 예전에는 "현재 mock 모드입니다" 가 하드코딩돼 있어, 결제·문자를 실연동한 뒤에도
+ * 크리에이터 화면에는 계속 모의라고 떴다. 정말 모의인 것만 골라서 이름을 대야
+ * 크리에이터가 무엇을 믿고 무엇을 믿지 말아야 하는지 알 수 있다.
+ */
+function mockNotice(): { mocked: string[]; live: string[] } {
+  const parts: Array<{ label: string; mock: boolean }> = [
+    { label: '결제', mock: env.payment.provider === 'mock' },
+    // 엠마(문자 수신 DB 폴링)를 쓰면 MO_PROVIDER 값과 무관하게 실연동이다.
+    { label: '문자 수신', mock: !env.emma.enabled && env.mo.provider === 'mock' },
+    { label: '문자 발송', mock: env.mt.provider === 'mock' },
+    { label: '유튜브 전송', mock: env.youtube.provider === 'mock' },
+  ];
+  return {
+    mocked: parts.filter((p) => p.mock).map((p) => p.label),
+    live: parts.filter((p) => !p.mock).map((p) => p.label),
+  };
+}
 
 /**
  * 크리에이터 대시보드.
@@ -140,6 +162,7 @@ export default async function StudioDashboardPage() {
 
   // 연동 미완료 항목이 있으면 최상단에 '다음 할 일' 로 안내한다 (온보딩 완주 유도)
   const nextStep = links.find((l) => !l.ok) ?? null;
+  const { mocked, live } = mockNotice();
 
   return (
     <>
@@ -179,14 +202,17 @@ export default async function StudioDashboardPage() {
           </Link>
         ) : null}
 
-        {/* mock 안내: 큰 박스 대신 한 줄 띠 */}
-        <p className="flex items-start gap-2 rounded-xl border border-warning-500/25 bg-warning-50 px-3.5 py-2.5 text-[12px] leading-relaxed text-ink-700">
-          <Info size={15} strokeWidth={1.8} className="mt-0.5 shrink-0 text-warning-600" />
-          <span>
-            현재 mock 모드입니다. 결제·문자·유튜브 전송이 모두 모의 처리되며, 화면의 성공 표시는 실제 금융 거래나 실제
-            유튜브 전송이 아닙니다.
-          </span>
-        </p>
+        {/* mock 안내: 큰 박스 대신 한 줄 띠. 실제로 모의인 항목만 이름을 대서 알린다. */}
+        {mocked.length > 0 ? (
+          <p className="flex items-start gap-2 rounded-xl border border-warning-500/25 bg-warning-50 px-3.5 py-2.5 text-[12px] leading-relaxed text-ink-700">
+            <Info size={15} strokeWidth={1.8} className="mt-0.5 shrink-0 text-warning-600" />
+            <span>
+              <strong className="text-warning-600">{mocked.join(' · ')}</strong> 은(는) 모의(mock) 처리 중입니다.
+              화면의 성공 표시가 실제 금융 거래나 실제 전송을 뜻하지 않습니다.
+              {live.length > 0 ? ` (${live.join(' · ')}은(는) 실연동)` : null}
+            </span>
+          </p>
+        ) : null}
 
         {/* 1) 핵심 수치 — 카드 8개 대신 한 판에 정리 */}
         <Card padded={false} className="overflow-hidden">

@@ -58,7 +58,15 @@ export interface SettlementScheduleRow {
 
 /**
  * 기간 내 결제 완료 후원을 후원일별로 묶고, 각 후원일의 정산 예정일을 붙인다.
- * 화면(캘린더·안내)과 검증에서 같은 함수를 쓰도록 여기 한 곳에만 둔다.
+ *
+ * 쓰는 곳
+ *  - `tests/settlement-process.test.ts` — 정산일 규칙(영업일 5일·주말 병합)의 기준 검증
+ *  - 후원일별 정산 예정표가 필요한 화면을 만들 때의 단일 출처
+ *
+ * **정산 가능액에서 보류 금액을 빼는 실제 판정**은 여기가 아니라
+ * `services/settlement.ts` 의 `computeHoldingAmount` 가 한다(원장 기준으로 계산해야
+ * 환불·수수료 환입까지 순액으로 반영되기 때문). 두 함수 모두 `settlementDateFor` +
+ * `loadHolidaysAround` 라는 같은 규칙을 쓰므로 결과가 어긋나지 않는다.
  */
 export async function buildSettlementSchedule(
   creatorId: string,

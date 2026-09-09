@@ -5,6 +5,7 @@ import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
+import { supportCategoryLabel } from '@/lib/labels';
 import type { ReportStatus } from '@/generated/prisma/enums';
 
 export const dynamic = 'force-dynamic';
@@ -108,7 +109,8 @@ export default async function StudioReportsPage() {
                   return (
                     <tr key={r.id}>
                       <Td className="whitespace-nowrap tabular-nums">{formatKst(r.createdAt, false)}</Td>
-                      <Td className="whitespace-nowrap">{r.category}</Td>
+                      {/* enum 원문(ABUSE)이 아니라 사람이 읽는 분류명을 쓴다. */}
+                      <Td className="whitespace-nowrap">{supportCategoryLabel(r.category)}</Td>
                       <Td className="max-w-[360px]">
                         <span className="line-clamp-3">{r.content}</span>
                       </Td>

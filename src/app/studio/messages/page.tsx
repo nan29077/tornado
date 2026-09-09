@@ -41,7 +41,14 @@ function tabWhere(tab: TabValue): Prisma.MoInboundMessageWhereInput {
     case 'blocked':
       return { OR: [{ result: 'BLOCKED' }, { donation: { status: { in: ['LIMIT_BLOCKED', 'CONTENT_BLOCKED'] } } }] };
     case 'filtered':
-      return { OR: [{ donation: { status: 'CONTENT_BLOCKED' } }, { contentFiltered: { contains: '*' } }] };
+      /**
+       * 원문은 암호화 저장이라 SQL 로 "필터 전후가 달라졌는가" 를 비교할 수 없다.
+       * 남는 단서는 마스킹 흔적뿐인데, `*` 하나만 보면 `*^^*` 같은 이모티콘 문장이 전부 걸렸다.
+       * 마스킹은 항상 별표를 **연속 3개 이상** 만든다(content-filter.ts 의 maskRun).
+       * 3개 이상으로 좁히면 이모티콘 오탐이 사라진다.
+       * (2자짜리 금칙어 마스킹은 이 탭에 안 잡힐 수 있으나, 차단된 건은 아래 조건으로 걸린다)
+       */
+      return { OR: [{ donation: { status: 'CONTENT_BLOCKED' } }, { contentFiltered: { contains: '***' } }] };
     case 'youtube_failed':
       return { donation: { youtubeStatus: 'FAILED' } };
     default:
@@ -82,7 +89,7 @@ export default async function StudioMessagesPage({
   const totalPages = Math.max(1, Math.ceil(total / TAKE));
   const safePage = Math.min(page, totalPages);
 
-  const [rows, blockedRows, moNumbers, creator] = await Promise.all([
+  const [rows, moNumbers, creator] = await Promise.all([
     prisma.moInboundMessage.findMany({
       where,
       // 보조 정렬키가 없으면 웹훅으로 대량 동시 수신될 때 페이지 간 중복·누락이 생긴다.
@@ -103,9 +110,6 @@ export default async function StudioMessagesPage({
         },
       },
     }),
-    // 차단 목록 전체를 읽을 필요가 없다. 화면에 그릴 50건과 겹치는지만 알면 된다.
-    // (차단 후원자가 수천 명이면 매 요청마다 전량을 읽게 된다)
-    prisma.blockedDonor.findMany({ where: { creatorId }, select: { donorId: true }, take: 2000 }),
     prisma.creatorMoNumber.findMany({
       where: { creatorId },
       orderBy: [{ status: 'asc' }, { assignedAt: 'desc' }],
@@ -114,6 +118,20 @@ export default async function StudioMessagesPage({
     prisma.creatorProfile.findUnique({ where: { id: creatorId }, select: { displayName: true, donationAmount: true } }),
   ]);
 
+  /**
+   * 차단 여부는 **이 페이지에 실제로 보이는 후원자만** 조회한다.
+   *
+   * 예전에는 차단 목록 전체를 `take: 2000` 으로 읽어 Set 을 만들었다. 차단 후원자가
+   * 2,000명을 넘으면 상한 밖의 후원자는 차단하지 않은 것으로 보여, 이미 차단한 사람에게
+   * [차단] 버튼이 다시 나타났다. 조회 범위를 화면에 필요한 만큼으로 줄이면 상한 자체가 사라진다.
+   */
+  const pageDonorIds = [...new Set(rows.map((r) => r.donation?.donorId).filter((v): v is string => Boolean(v)))];
+  const blockedRows = pageDonorIds.length
+    ? await prisma.blockedDonor.findMany({
+        where: { creatorId, donorId: { in: pageDonorIds } },
+        select: { donorId: true },
+      })
+    : [];
   const blockedSet = new Set(blockedRows.map((b) => b.donorId));
 
   const numbers: MoNumberView[] = moNumbers.map((m) => ({

@@ -53,6 +53,12 @@ export interface OverlayEventPayload {
   position: string;
   /// 메시지 최대 표시 글자 수
   maxMessageLen: number;
+  /// 감사 텍스트 등장 애니메이션 (AUTO | SLIDE_UP | SLIDE_DOWN | BOUNCE | TYPEWRITER | FADE_ZOOM | SHAKE)
+  /// AUTO 면 오버레이가 아래 effectLevel 에 맞춰 자동으로 고른다.
+  textAnim: string;
+  /// 금액 구간이 정한 연출 세기 1~4. 구간을 쓰지 않으면 언제나 1이다.
+  /// 파티클 수·색, 캐릭터 등장 여부와 크기, 화면 테두리 빛나기가 이 값으로 갈린다.
+  effectLevel: number;
   /// 배치 미세 조정(캔버스 대비 백분율 이동 + 크기 배율 %). 이벤트마다 실어 보내므로
   /// 스튜디오에서 저장하면 브라우저 소스를 다시 로드하지 않아도 다음 알림부터 적용된다.
   offsetX: number;

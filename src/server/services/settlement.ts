@@ -6,6 +6,8 @@ import { env } from '@/lib/env';
 import { calculateWithholding } from '@/lib/withholding';
 import { kstMonthKey } from '@/lib/datetime';
 import { logger } from '@/lib/logger';
+import { addDaysKey, fromDateKey, settlementDateFor, toDateKey } from '@/lib/business-day';
+import { loadHolidaysAround } from '@/server/services/settlement-schedule';
 import type { LedgerEntryType } from '@/generated/prisma/enums';
 
 /**
@@ -360,13 +362,68 @@ export interface SettlementSummary {
   balance: bigint;
   /** 정산 요청 중이라 보류된 금액 */
   pending: bigint;
-  /** 지금 정산 요청 가능한 금액 */
+  /**
+   * 정산 보류 기간(후원일 다음날부터 영업일 5일)이 아직 지나지 않아 요청할 수 없는 금액.
+   * 화면에서는 "정산 예정" 으로 보여 준다.
+   */
+  holding: bigint;
+  /** 지금 정산 요청 가능한 금액 (= 잔액 - 요청중 - 보류) */
   available: bigint;
 }
 
 /** 요약 집계에 쓰는 클라이언트 (전역 prisma 또는 트랜잭션 tx) */
-type SummaryClient = Pick<typeof prisma, 'settlementLedger' | 'settlementRequest'>
+type SummaryClient = Pick<typeof prisma, 'settlementLedger' | 'settlementRequest' | 'donation'>
   | Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/**
+ * 보류 금액을 계산할 때 되짚어 볼 기간(일).
+ *
+ * 정산일은 후원일 다음날부터 영업일 5일째다. 설·추석 연휴가 겹쳐도 40일 안에는 반드시 도래하므로,
+ * 그보다 오래된 후원은 계산에서 빼도 결과가 달라지지 않는다. (전체 후원을 훑지 않기 위한 상한)
+ */
+const HOLDING_LOOKBACK_DAYS = 40;
+
+/** IN 절 한 번에 넣을 최대 개수 (파라미터 폭주 방지) */
+const IN_CHUNK = 1_000;
+
+/**
+ * 아직 정산일이 도래하지 않은 후원에 묶인 원장 금액.
+ *
+ * 이 금액을 빼지 않으면 오늘 결제된 후원도 즉시 전액 인출할 수 있고,
+ * 환불 요청 가능 기간 안에 지급되면 원장이 음수가 된다.
+ * 해당 후원에 달린 환불·수수료 환입 분개까지 함께 더해 순액으로 계산한다.
+ */
+export async function computeHoldingAmount(
+  creatorId: string,
+  client: SummaryClient = prisma,
+  now: Date = new Date(),
+): Promise<bigint> {
+  const todayKey = toDateKey(now);
+  const fromKey = addDaysKey(todayKey, -HOLDING_LOOKBACK_DAYS);
+
+  const donations = await client.donation.findMany({
+    where: { creatorId, paidAt: { gte: fromDateKey(fromKey) } },
+    select: { id: true, paidAt: true },
+  });
+  if (donations.length === 0) return 0n;
+
+  const holidays = await loadHolidaysAround(fromKey, todayKey);
+  const immature = donations
+    .filter((d) => d.paidAt && settlementDateFor(toDateKey(d.paidAt), holidays) > todayKey)
+    .map((d) => d.id);
+  if (immature.length === 0) return 0n;
+
+  let holding = 0n;
+  for (let i = 0; i < immature.length; i += IN_CHUNK) {
+    const agg = await client.settlementLedger.aggregate({
+      where: { creatorId, donationId: { in: immature.slice(i, i + IN_CHUNK) } },
+      _sum: { amount: true },
+    });
+    holding += agg._sum.amount ?? 0n;
+  }
+  // 환불이 커서 순액이 음수가 되면 보류할 것이 없다(잔액에서 이미 차감돼 있다).
+  return holding > 0n ? holding : 0n;
+}
 
 /**
  * 크리에이터 정산 요약.
@@ -400,12 +457,22 @@ export async function getSettlementSummary(
     _sum: { amount: true },
   });
   const pending = pendingAgg._sum.amount ?? 0n;
-  const available = balance - pending;
+
+  /**
+   * 정산 보류 기간 적용.
+   *
+   * 예전에는 `balance - pending` 을 그대로 정산 가능액으로 썼다. 화면과 캘린더는
+   * "영업일 5일 후 정산" 이라고 안내하는데 서버는 결제 직후 전액 인출을 허용해,
+   * 안내와 실제 동작이 정반대였다.
+   */
+  const holding = await computeHoldingAmount(creatorId, client);
+  const available = balance - pending - holding;
 
   return {
     totalGross, totalPgFee, totalPlatformFee, totalRefund, totalAdjustment, totalPaid,
     balance,
     pending,
+    holding,
     available: available < 0n ? 0n : available,
   };
 }
@@ -442,7 +509,13 @@ export async function createSettlementRequest(
     withAdvisoryLock(tx, `settlement:creator:${creatorId}`, async () => {
       // 잠금 획득 후 트랜잭션 안에서 읽어야 앞선 요청의 커밋 결과가 반영된 값을 본다
       const summary = await getSettlementSummary(creatorId, tx);
-      if (amount > summary.available) throw new Error('정산 가능 금액을 초과했습니다.');
+      if (amount > summary.available) {
+        throw new Error(
+          summary.holding > 0n
+            ? `정산 가능 금액(${formatWon(summary.available)})을 초과했습니다. ${formatWon(summary.holding)}은 정산일이 아직 도래하지 않아 요청할 수 없습니다.`
+            : '정산 가능 금액을 초과했습니다.',
+        );
+      }
 
       const account = await tx.settlementAccount.findUnique({ where: { creatorId } });
       if (!account || !account.verified) throw new Error('정산 계좌 인증이 완료되지 않았습니다.');
@@ -796,13 +869,31 @@ export interface PayoutRow {
   note: string;
 }
 
+/** 이체파일에서 빠진 건과 그 이유. 화면에 그대로 보여 준다. */
+export interface PayoutExclusion {
+  requestId: string;
+  creatorName: string;
+  creatorCode: string;
+  payoutAmount: bigint;
+  reason: string;
+}
+
+export interface PayoutBuildResult {
+  rows: PayoutRow[];
+  excluded: PayoutExclusion[];
+}
+
 /**
  * 승인 건을 지급대행(쿠콘) 이체 대상으로 변환한다.
  * 계좌번호·예금주는 암호화 저장돼 있으므로 여기서 복호화한다(파일 생성 목적).
- * 반환값은 그대로 CSV/엑셀로 만든다.
+ * 반환값의 `rows` 는 그대로 CSV/엑셀로 만든다.
+ *
+ * 제외 건을 **함께 돌려준다.** 예전에는 `logger.warn` 만 남기고 조용히 건너뛰어서,
+ * 관리자는 "5건 선택 → 파일 3행" 을 파일명 끝 숫자로만 알 수 있었다. 왜 빠졌는지는
+ * 서버 로그를 열어야 알 수 있었고, 빠진 건은 지급된 줄 알고 방치되었다.
  */
-export async function buildPayoutRows(requestIds: string[]): Promise<PayoutRow[]> {
-  if (requestIds.length === 0) return [];
+export async function buildPayoutBatch(requestIds: string[]): Promise<PayoutBuildResult> {
+  if (requestIds.length === 0) return { rows: [], excluded: [] };
   const reqs = await prisma.settlementRequest.findMany({
     where: { id: { in: requestIds }, status: 'APPROVED' },
     // 같은 크리에이터의 여러 건이 섞여 있을 때 판정이 순서에 좌우되지 않도록 고정 순서로 읽는다.
@@ -821,18 +912,50 @@ export async function buildPayoutRows(requestIds: string[]): Promise<PayoutRow[]
   });
 
   const rows: PayoutRow[] = [];
+  const excluded: PayoutExclusion[] = [];
   /** 이 배치에서 크리에이터별로 이미 잡은 금액. 뒤 건은 그만큼 줄어든 잔액으로 판정한다. */
   const claimedByCreator = new Map<string, bigint>();
 
+  const exclude = (r: (typeof reqs)[number], reason: string) => {
+    logger.warn('지급대행 이체파일에서 제외', { requestId: r.id, reason });
+    excluded.push({
+      requestId: r.id,
+      creatorName: r.creator.displayName,
+      creatorCode: r.creator.code,
+      payoutAmount: r.payoutAmount,
+      reason,
+    });
+  };
+
+  /**
+   * 조회에 걸리지 않은 ID 도 제외 사유가 있다(승인 상태가 아니거나 이미 사라진 건).
+   * 화면이 "선택 5건 중 3건" 을 정확히 말하려면 이것들도 세어야 한다.
+   */
+  const found = new Set(reqs.map((r) => r.id));
+  for (const id of requestIds) {
+    if (found.has(id)) continue;
+    excluded.push({
+      requestId: id,
+      creatorName: '-',
+      creatorCode: '-',
+      payoutAmount: 0n,
+      reason: '승인(APPROVED) 상태가 아니거나 존재하지 않는 요청입니다.',
+    });
+  }
+
   for (const r of reqs) {
     const acc = r.creator.settlementAccount;
-    if (!acc || !acc.verified) continue; // 미인증 계좌는 이체 대상에서 제외
+    if (!acc || !acc.verified) {
+      // 미인증 계좌는 이체 대상에서 제외
+      exclude(r, acc ? '정산 계좌 실명확인이 완료되지 않았습니다.' : '정산 계좌가 등록되지 않았습니다.');
+      continue;
+    }
     // 잔액까지 여기서 걸러낸다. 검증은 반드시 **이체 전** 에 끝나야 한다.
     // 이체가 끝난 뒤(markSettlementPaid) 막으면 이미 나간 돈이 원장에 안 남아 이중 지급이 된다.
     const alreadyClaimed = claimedByCreator.get(r.creatorId) ?? 0n;
     const payable = await assertPayable(r.id, alreadyClaimed);
     if (!payable.ok) {
-      logger.warn('지급대행 이체파일에서 제외', { requestId: r.id, reason: payable.reason });
+      exclude(r, payable.reason);
       continue;
     }
     claimedByCreator.set(r.creatorId, alreadyClaimed + r.amount);
@@ -848,5 +971,13 @@ export async function buildPayoutRows(requestIds: string[]): Promise<PayoutRow[]
       note: `도네이도 정산 ${r.creator.code}`,
     });
   }
-  return rows;
+  return { rows, excluded };
+}
+
+/**
+ * 이체 대상 행만 필요할 때 쓰는 얇은 래퍼.
+ * (제외 사유까지 필요하면 `buildPayoutBatch` 를 쓴다)
+ */
+export async function buildPayoutRows(requestIds: string[]): Promise<PayoutRow[]> {
+  return (await buildPayoutBatch(requestIds)).rows;
 }

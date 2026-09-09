@@ -4,6 +4,9 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle, EmptyState, Notice, StatTile, Table, Td, Th, Input, Select } from '@/components/ui';
 import { Pager } from '@/components/admin/controls';
 import { ProfileAvatar } from '@/components/profile/generated-avatar';
+import { InlineActionForm } from '@/components/studio/action-form';
+import { FanMemoField } from '@/components/studio/fan-memo-field';
+import { blockDonorAction, unblockDonorAction } from '@/app/actions/studio';
 import { requireCreator } from '@/server/auth';
 import { listCreatorFans, FAN_SORTS, isFanSort, type FanSort, type CreatorFan } from '@/server/services/creator-fans';
 import { formatWon, formatNumber } from '@/lib/money';
@@ -170,6 +173,8 @@ export default async function StudioFansPage({
                 <Th>최근 후원</Th>
                 <Th>가입일</Th>
                 <Th>상태</Th>
+                <Th>관리</Th>
+                <Th>메모 (비공개)</Th>
               </tr>
             </thead>
             <tbody>
@@ -213,6 +218,38 @@ export default async function StudioFansPage({
                       ) : null}
                     </span>
                   </Td>
+                  {/*
+                    차단/해제와 메모를 행에서 바로 처리한다.
+                    예전에는 상태만 보여 주고 실행은 후원 상세나 문자 관리로 가야 했다.
+                    번호를 연결하지 않은 팬은 대상 행(donor_creator_link)이 아직 없어 조작할 수 없다.
+                  */}
+                  <Td>
+                    {fan.donorId == null ? (
+                      <span className="text-[11.5px] text-ink-300">번호 연결 후 가능</span>
+                    ) : fan.blocked ? (
+                      <InlineActionForm
+                        action={unblockDonorAction}
+                        submitLabel="차단 해제"
+                        fields={{ donorId: fan.donorId }}
+                        confirmMessage={`${fan.name} 님의 차단을 해제합니다. 이후 이 후원자의 문자가 다시 후원으로 접수됩니다.`}
+                      />
+                    ) : (
+                      <InlineActionForm
+                        action={blockDonorAction}
+                        submitLabel="차단"
+                        variant="danger"
+                        fields={{ donorId: fan.donorId, reason: '팬 관리에서 차단' }}
+                        confirmMessage={`${fan.name} 님을 차단합니다. 이후 이 후원자의 문자는 후원으로 접수되지 않습니다.`}
+                      />
+                    )}
+                  </Td>
+                  <Td className="min-w-[190px]">
+                    {fan.donorId == null ? (
+                      <span className="text-[11.5px] text-ink-300">-</span>
+                    ) : (
+                      <FanMemoField donorId={fan.donorId} defaultValue={fan.creatorMemo ?? ''} />
+                    )}
+                  </Td>
                 </tr>
               ))}
             </tbody>
@@ -239,6 +276,7 @@ export default async function StudioFansPage({
               <strong className="text-ink-900">카카오·네이버로 로그인</strong>한 후원자가 자동으로 귀속됩니다.
               번호를 연결하지 않은 팬은 후원 내역 집계가 되지 않아 &lsquo;번호 미연결&rsquo;로 표시됩니다.
               후원자 보호를 위해 전화번호는 마스킹된 형태로만 보입니다.
+              <strong className="text-ink-900"> 메모는 나만 볼 수 있고</strong> 후원자에게는 어떤 화면에도 보이지 않습니다.
             </span>
           </span>
         </Notice>

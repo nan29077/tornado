@@ -210,6 +210,7 @@ export function SelectActionForm({
   hint,
   disabled,
   ariaLabel,
+  extra,
 }: {
   action: AdminServerAction;
   values: Record<string, string>;
@@ -220,6 +221,11 @@ export function SelectActionForm({
   confirm?: string;
   hint?: string;
   disabled?: boolean;
+  /**
+   * 선택 상자 위에 함께 보낼 추가 입력(사유 등).
+   * 반려·정지처럼 사유가 필수인 액션을 표 안에서 처리하려면 선택 상자 하나로는 부족하다.
+   */
+  extra?: React.ReactNode;
   /**
    * 표 안에 홀로 놓인 <select> 라 연결된 <label> 이 없다. 화면 낭독기에서는
    * "콤보 상자"라고만 읽혀 무엇을 고르는 칸인지 알 수 없었다.
@@ -244,6 +250,7 @@ export function SelectActionForm({
       {Object.entries(values).map(([k, v]) => (
         <input key={k} type="hidden" name={k} value={v} />
       ))}
+      {extra}
       <div className="flex items-center gap-1.5">
         <select
           name={name}

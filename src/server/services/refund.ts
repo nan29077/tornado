@@ -4,7 +4,8 @@ import { getPaymentAdapter, type PaymentAdapter } from '@/server/adapters/paymen
 import { calculateFees, postRefundSettlement } from './settlement';
 import { rollbackCounters } from './limits';
 import { sendMtForDonor } from './donation-flow';
-import { notifySuperAdmins } from './notifications';
+import { notifySuperAdmins, notifyUser } from './notifications';
+import { formatWon } from '@/lib/money';
 import { logger } from '@/lib/logger';
 import type { Prisma } from '@/generated/prisma/client';
 import * as tpl from './mt-templates';
@@ -233,6 +234,20 @@ async function finishRefundCancel(
       tx,
     );
   });
+
+  /**
+   * 크리에이터에게도 알린다.
+   *
+   * 환불은 크리에이터의 정산 잔액을 그 자리에서 깎는다. 그런데 알림은 최고관리자에게만
+   * 가고 있어서, 크리에이터는 원장을 직접 열어 보기 전까지 잔액이 왜 줄었는지 알 수 없었다.
+   * (알림 실패가 환불 확정을 되돌려서는 안 되므로 예외는 삼킨다)
+   */
+  await notifyUser({
+    userId: refund.donation.creator.userId,
+    title: '후원 1건이 환불되어 정산 잔액에서 차감되었습니다',
+    body: `${refund.donation.transactionNo} · ${formatWon(refund.amount)} 환불${refund.reason ? ` · 사유: ${refund.reason}` : ''}. 결제수수료·플랫폼수수료는 함께 환입됩니다.`,
+    linkUrl: `/studio/donations/${refund.donationId}`,
+  }).catch(() => undefined);
 
   if (refund.donation.donorId && refund.donation.paidAt) {
     await rollbackCounters(refund.donation.donorId, refund.donation.creatorId, refund.amount, refund.donation.paidAt);

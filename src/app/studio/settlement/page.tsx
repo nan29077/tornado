@@ -16,7 +16,7 @@ import { formatKst, kstDateKey, kstMonthKey, kstMonthRange } from '@/lib/datetim
 import { settlementDateFor, toDateKey, formatDateKeyKo, SETTLEMENT_BUSINESS_DAYS } from '@/lib/business-day';
 import { loadHolidaysAround, buildScheduleNotice } from '@/server/services/settlement-schedule';
 import { ledgerEntryLabel, settlementStatusLabel } from '@/lib/labels';
-import { PAID_STATUSES } from '@/components/studio/shared';
+import { DISPLAY_PAID_STATUSES } from '@/components/studio/shared';
 
 export const dynamic = 'force-dynamic';
 
@@ -93,7 +93,14 @@ export default async function StudioSettlementPage({
     prisma.donation.findMany({
       where: {
         creatorId,
-        status: { in: PAID_STATUSES },
+        /**
+         * 대시보드와 **같은 기준**을 쓴다.
+         *
+         * 예전에는 `PAID_STATUSES`(환불 요청 중 제외)를 써서, 후원자가 환불을 요청만 해도
+         * 캘린더의 그날 후원금이 줄었다가 관리자가 반려하면 다시 늘었다. 대시보드는
+         * `DISPLAY_PAID_STATUSES` 를 쓰고 있어 두 화면의 같은 날 숫자가 달랐다.
+         */
+        status: { in: DISPLAY_PAID_STATUSES },
         paidAt: { gte: new Date(range.start.getTime() - 45 * 86_400_000), lt: range.end },
       },
       select: { paidAt: true, amount: true, netAmount: true },
@@ -264,16 +271,27 @@ export default async function StudioSettlementPage({
             </section>
 
             <section>
-              <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
                 <StatTile
                   label={`${range.month}월 후원 합계`}
                   value={formatWon(monthTotal)}
                   sub={`${formatNumber(byDay.size)}일 · 결제 완료`}
                 />
-                <StatTile label="정산 가능금" value={formatWon(summary.available)} tone="brand" />
+                <StatTile label="확정 잔액" value={formatWon(summary.available)} sub="지금 요청 가능" tone="brand" />
+                <StatTile
+                  label="정산 예정"
+                  value={formatWon(summary.holding)}
+                  sub={`영업일 ${SETTLEMENT_BUSINESS_DAYS}일 미도래`}
+                />
                 <StatTile label="정산 보류금" value={formatWon(summary.pending)} sub="요청 검토 중" tone="warning" />
                 <StatTile label="정산 완료금" value={formatWon(summary.totalPaid)} tone="success" />
               </div>
+              {summary.holding > 0n ? (
+                <p className="mt-2 text-[11.5px] leading-relaxed text-ink-400">
+                  <strong className="text-ink-600">정산 예정 {formatWon(summary.holding)}</strong> 은 후원일로부터 영업일{' '}
+                  {SETTLEMENT_BUSINESS_DAYS}일이 지나지 않아 아직 요청할 수 없습니다. 정산일이 지나면 확정 잔액으로 옮겨집니다.
+                </p>
+              ) : null}
             </section>
 
             <section>
@@ -443,7 +461,13 @@ export default async function StudioSettlementPage({
                       )
                     }
                   />
-                  <DataRow label="정산 가능금" value={formatWon(summary.available)} />
+                  <DataRow label="확정 잔액 (요청 가능)" value={formatWon(summary.available)} />
+                  {summary.holding > 0n ? (
+                    <DataRow
+                      label="정산 예정 (요청 불가)"
+                      value={`${formatWon(summary.holding)} · 후원일 기준 영업일 ${SETTLEMENT_BUSINESS_DAYS}일 미도래`}
+                    />
+                  ) : null}
                   <DataRow
                     label="전액 요청 시 원천징수"
                     value={
@@ -464,11 +488,16 @@ export default async function StudioSettlementPage({
                     탭에서 계좌를 먼저 등록해 주세요.
                   </Notice>
                 ) : summary.available <= 0n ? (
-                  <Notice tone="neutral">현재 정산 가능한 금액이 없습니다.</Notice>
+                  <Notice tone="neutral" title="현재 요청 가능한 확정 잔액이 없습니다">
+                    {summary.holding > 0n
+                      ? `${formatWon(summary.holding)}은 후원일로부터 영업일 ${SETTLEMENT_BUSINESS_DAYS}일이 지나면 확정 잔액이 됩니다.`
+                      : '후원이 결제 완료되고 정산일이 지나면 이곳에 쌓입니다.'}
+                  </Notice>
                 ) : minSettlement > 0n && summary.available < minSettlement ? (
                   <Notice tone="neutral" title={`최소 정산 요청 금액은 ${formatWon(minSettlement)}입니다`}>
-                    현재 정산 가능금은 {formatWon(summary.available)} 입니다. {formatWon(minSettlement)} 이상
+                    현재 확정 잔액은 {formatWon(summary.available)} 입니다. {formatWon(minSettlement)} 이상
                     쌓이면 정산을 요청할 수 있습니다.
+                    {summary.holding > 0n ? ` (정산 예정 ${formatWon(summary.holding)} 별도)` : null}
                   </Notice>
                 ) : (
                   <ActionForm action={requestSettlementAction} submitLabel="정산 요청">

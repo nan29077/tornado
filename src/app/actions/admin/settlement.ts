@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { prisma } from '@/server/db';
+import { prisma, withAdvisoryLock } from '@/server/db';
 import { writeAudit } from '@/server/auth';
 import { newId } from '@/lib/id';
 import {
@@ -9,6 +9,8 @@ import {
   markSettlementPayoutFailed,
   fileWithholdingAndPurgeResident,
   purgeResidentIfNotFilable,
+  appendLedger,
+  getSettlementSummary,
 } from '@/server/services/settlement';
 import { notifyUser } from '@/server/services/notifications';
 import { formatWon } from '@/lib/money';
@@ -149,10 +151,19 @@ export async function bulkUpdateSettlementAction(
             errors.push(`${id.slice(-6)}: 승인 불가 상태(${req.status})`);
             continue;
           }
-          await prisma.settlementRequest.update({
-            where: { id },
+          /**
+           * 위에서 읽은 상태가 **그대로 남아 있을 때만** 쓴다(낙관적 잠금).
+           * 조건 없는 update 는 두 관리자가 거의 동시에 승인/반려를 누를 때 나중 쓰기가 이겨,
+           * 방금 반려한 요청이 승인 상태로 되살아난다. 단건 액션과 같은 규칙을 적용한다.
+           */
+          const claimed = await prisma.settlementRequest.updateMany({
+            where: { id, status: req.status },
             data: { status: 'APPROVED', approvedAt: now, adminId: admin.id, adminMemo: memo ?? undefined },
           });
+          if (claimed.count === 0) {
+            errors.push(`${id.slice(-6)}: 처리 중 상태가 바뀌었습니다`);
+            continue;
+          }
           await notifySettlement(req.creatorId, '정산 요청이 승인되었습니다', '지급대행을 통해 곧 지급됩니다.');
         } else if (action === 'REJECT') {
           if (req.status === 'PAID' || req.status === 'REJECTED') {
@@ -163,10 +174,14 @@ export async function bulkUpdateSettlementAction(
             errors.push(`${id.slice(-6)}: 이체파일 발급 건은 지급대행 결과를 먼저 반영해야 합니다`);
             continue;
           }
-          await prisma.settlementRequest.update({
-            where: { id },
+          const claimed = await prisma.settlementRequest.updateMany({
+            where: { id, status: req.status },
             data: { status: 'REJECTED', rejectedAt: now, adminId: admin.id, adminMemo: memo },
           });
+          if (claimed.count === 0) {
+            errors.push(`${id.slice(-6)}: 처리 중 상태가 바뀌었습니다`);
+            continue;
+          }
           await notifySettlement(req.creatorId, '정산 요청이 반려되었습니다', `사유: ${memo}`);
           // 반려 건은 원천징수 신고 대상이 아니므로 주민등록번호를 즉시 파기한다.
           await purgeResidentIfNotFilable(id);
@@ -326,6 +341,89 @@ export async function fileWithholdingAction(
     });
     revalidatePath('/admin/settlements');
     return `원천징수 신고 완료 처리했습니다. 주민등록번호 ${purged}건을 파기했습니다.`;
+  });
+}
+
+// =========================================================== 조정(ADJUSTMENT) 분개
+
+/**
+ * 정산 원장 조정 분개 생성.
+ *
+ * 원장(`settlement_ledger`)은 append-only 이고 UPDATE/DELETE 는 DB 트리거로 막혀 있다.
+ * 그래서 금액 정정은 **반대 부호의 분개를 추가**하는 방식뿐인데, 화면은 그렇게 하라고
+ * 안내하면서 정작 만드는 경로가 없어 DB 를 직접 만지는 수밖에 없었다.
+ *
+ * 규칙
+ *  - 재무 권한에서만 가능하다(`assertFinanceAdmin`).
+ *  - 사유(메모)는 필수다. 근거 없는 잔액 변동은 감사 대상이다.
+ *  - 감액(-) 은 현재 잔액을 넘길 수 없다. 잔액이 음수가 되면 다른 후원의 정산 가능액까지 깎인다.
+ *  - 발생 시각은 지금으로 고정한다. 과거 시각을 허용하면 이미 마감한 정산 월의 원장이 바뀐다.
+ */
+export async function createAdjustmentEntryAction(
+  _prev: AdminActionState,
+  fd: FormData,
+): Promise<AdminActionState> {
+  return run(async (admin) => {
+    assertFinanceAdmin(admin, '정산 원장 조정');
+    const creatorId = requiredId(fd, 'creatorId', '크리에이터');
+    const direction = enumValue(fd, 'direction', ['ADD', 'SUBTRACT'] as const, '조정 방향');
+    const rawAmount = money(fd, 'amount', '조정 금액');
+    const memo = optText(fd, 'memo');
+
+    if (rawAmount <= 0n) throw new Error('조정 금액은 1원 이상이어야 합니다.');
+    if (!memo) throw new Error('조정 사유를 입력해 주세요. 원장은 되돌릴 수 없으므로 근거를 반드시 남깁니다.');
+    if (memo.length > 200) throw new Error('조정 사유는 200자 이내로 입력해 주세요.');
+
+    const creator = await prisma.creatorProfile.findUnique({
+      where: { id: creatorId },
+      select: { id: true, displayName: true, code: true, userId: true },
+    });
+    if (!creator) throw new Error('크리에이터를 찾을 수 없습니다.');
+
+    const amount = direction === 'ADD' ? rawAmount : -rawAmount;
+
+    /**
+     * 감액은 크리에이터 단위 잠금 안에서 잔액을 다시 읽고 기록한다.
+     * 잠금 없이 확인하면 정산 요청과 겹쳐 둘 다 같은 잔액을 보고 통과한다.
+     */
+    await prisma.$transaction(async (tx) =>
+      withAdvisoryLock(tx, `settlement:creator:${creatorId}`, async () => {
+        if (amount < 0n) {
+          const summary = await getSettlementSummary(creatorId, tx);
+          // 요청 중 금액(pending)까지 감안해야 이미 요청된 돈을 깎아 음수가 되는 것을 막는다.
+          const reducible = summary.balance - summary.pending;
+          if (-amount > reducible) {
+            throw new Error(
+              `감액 가능 금액(${formatWon(reducible < 0n ? 0n : reducible)})을 초과했습니다. 정산 요청 중인 금액은 감액할 수 없습니다.`,
+            );
+          }
+        }
+        await appendLedger(
+          [{ creatorId, entryType: 'ADJUSTMENT', amount, memo: `[관리자 조정] ${memo}` }],
+          tx,
+        );
+      }),
+    );
+
+    await writeAudit({
+      adminUserId: admin.id,
+      action: 'SETTLEMENT_ADJUSTMENT_CREATE',
+      targetType: 'SettlementLedger',
+      targetId: creatorId,
+      after: { creatorId, creatorCode: creator.code, amount: amount.toString(), memo },
+    });
+
+    // 잔액이 움직였다는 사실은 본인이 알아야 한다.
+    await notifyUser({
+      userId: creator.userId,
+      title: '정산 잔액이 조정되었습니다',
+      body: `${amount > 0n ? '증액' : '감액'} ${formatWon(amount > 0n ? amount : -amount)} · 사유: ${memo}`,
+      linkUrl: '/studio/settlement?tab=ledger',
+    }).catch(() => undefined);
+
+    revalidatePath('/admin/settlements');
+    revalidatePath(`/admin/creators/${creatorId}`);
+    return `${creator.displayName} 님의 정산 원장에 조정 분개 ${formatWon(amount)}을(를) 추가했습니다. 원장은 되돌릴 수 없습니다.`;
   });
 }
 

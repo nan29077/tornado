@@ -2,7 +2,17 @@
 
 import * as React from 'react';
 import { formatNumber } from '@/lib/money';
-import { EffectLayer, CharacterStickerInline, isCharacterStickerEffect } from '@/components/overlay/overlay-effects';
+import {
+  EffectLayer,
+  CharacterStickerInline,
+  isCharacterStickerEffect,
+  LevelEffectStage,
+  useTypewriter,
+  sliceSegments,
+  segmentsLength,
+  type TextSegment,
+} from '@/components/overlay/overlay-effects';
+import { ComboBadge, useComboTracker } from '@/components/overlay/overlay-combo';
 import { playEffectSound } from '@/components/overlay/overlay-sound';
 import { Portal } from '@/components/ui/portal';
 import { useStandalone } from '@/components/overlay/use-standalone';
@@ -12,6 +22,13 @@ import {
   overlayLayoutTransform,
   type OverlayLayout,
 } from '@/lib/overlay-layout';
+import { effectLevelOf, type OverlayEffectLevel } from '@/lib/overlay-effect-level';
+import {
+  DEFAULT_OVERLAY_TEXT_ANIM,
+  TEXT_ANIM_CLASS,
+  resolveTextAnim,
+  type ResolvedTextAnim,
+} from '@/lib/overlay-text-anim';
 
 /**
  * OBS / PRISM 브라우저 소스용 오버레이 클라이언트.
@@ -70,6 +87,16 @@ export interface OverlayPayload {
   position?: string;
   /** 이 이벤트의 메시지 최대 글자 수. 없으면 페이지 로드 시 값을 쓴다. */
   maxMessageLen?: number;
+  /**
+   * 감사 텍스트 등장 애니메이션 (AUTO | SLIDE_UP | ...).
+   * 없으면(예전 이벤트) 페이지 로드 시 값을 쓴다.
+   */
+  textAnim?: string;
+  /**
+   * 금액 구간 효과 레벨 1~4. 값이 없는 예전 이벤트는 레벨 1로 본다.
+   * 구간을 쓰지 않는 크리에이터도 항상 레벨 1이다(기존 연출 그대로).
+   */
+  effectLevel?: number;
   /** 배치 미세 조정. 없으면(예전 이벤트) 페이지 로드 시 값을 쓴다. */
   offsetX?: number;
   offsetY?: number;
@@ -319,6 +346,7 @@ export function OverlayClient({
   defaultDurationMs = 7000,
   maxMessageLen = 80,
   theme = 'TORNADO',
+  textAnim = DEFAULT_OVERLAY_TEXT_ANIM,
   layout = DEFAULT_OVERLAY_LAYOUT,
   debug = false,
 }: {
@@ -331,6 +359,8 @@ export function OverlayClient({
   maxMessageLen?: number;
   /** OverlaySetting.theme 값. TORNADO / MINIMAL / NEON 외의 값은 기본 테마로 동작한다. */
   theme?: string;
+  /** OverlaySetting.textAnim 값. 이벤트에 실려 온 값이 있으면 그쪽이 우선한다. */
+  textAnim?: string;
   /** 저장된 배치(위치 미세 조정 · 크기 배율). 이벤트에 실려 온 값이 있으면 그쪽이 우선한다. */
   layout?: OverlayLayout;
   debug?: boolean;
@@ -344,6 +374,13 @@ export function OverlayClient({
   const busy = React.useRef(false);
   const seen = React.useRef<Set<string>>(new Set());
   const playNextRef = React.useRef<() => void>(() => {});
+  /**
+   * 콤보 등록 함수. 재생 파이프라인(아래 useEffect)에서 부르므로 ref 로 들고 있는다.
+   *
+   * **재생을 시작하는 그 자리에서** 불러야 한다. 화면에 뜬 뒤에 세면 파티클·캐릭터가
+   * 직전 후원의 배율로 먼저 한 번 그려지고, 콤보가 갱신되면서 또 한 번 그려진다.
+   */
+  const registerComboRef = React.useRef<(donorName: string) => number>(() => 1);
   /**
    * 마지막으로 받은 이벤트 ID.
    * 재연결할 때 서버에 알려 주면 끊긴 사이에 쌓인 후원 알림을 다시 받아 재생한다.
@@ -478,6 +515,8 @@ export function OverlayClient({
 
       busy.current = true;
       setLeaving(false);
+      // 콤보를 먼저 센다. setCurrent 와 같은 갱신으로 묶여 첫 화면부터 올바른 배율로 그려진다.
+      registerComboRef.current(next.donorName);
       setCurrent(next);
 
       // 효과음은 효과 애니메이션과 같은 시점에 시작한다. 실패해도 알림 재생에 영향을 주지 않는다.
@@ -690,10 +729,25 @@ export function OverlayClient({
     };
   }, [creatorId, token, preview]);
 
+  // ------------------------------------------------------------------- 콤보
+  /**
+   * 같은 후원자의 연속 후원을 화면에서 센다(DB 저장 없음 — overlay-combo.tsx 주석 참고).
+   * 실제 등록은 재생 파이프라인의 playNext 에서 한다.
+   */
+  const combo = useComboTracker();
+  React.useEffect(() => {
+    registerComboRef.current = combo.register;
+  }, [combo.register]);
+
   // 표시값은 이벤트에 실려 온 현재 설정을 우선 적용한다.
   // (값이 없는 예전 이벤트나 재생 중이 아닐 때는 페이지를 열 때 받은 prop 을 쓴다)
   const align = positionClass[current?.position || position] ?? positionClass.BOTTOM_CENTER;
   const themeName = themeOf(current?.theme || theme);
+
+  /** 금액 구간이 정한 연출 세기. 값이 없는 예전 이벤트는 레벨 1이다. */
+  const effectLevel: OverlayEffectLevel = effectLevelOf(current?.effectLevel);
+  /** 크리에이터가 고른 텍스트 애니메이션(AUTO 면 레벨에 맞춰 자동). */
+  const activeTextAnim: ResolvedTextAnim = resolveTextAnim(current?.textAnim ?? textAnim, effectLevel);
 
   /**
    * 스튜디오에서 배치를 드래그하는 동안 실시간으로 받아 보는 임시 값.
@@ -801,6 +855,26 @@ export function OverlayClient({
       {current && !leaving ? <EffectLayer effect={effectOf(current)} theme={themeName} /> : null}
 
       {/*
+        금액별 차등 효과(파티클 폭발 · 캐릭터 등장 · 화면 테두리).
+        key 를 이벤트마다 바꿔 다시 마운트하므로 파티클이 새로 터지고, 끝나면 스스로 사라진다.
+        캐릭터 스티커(이미지)를 쓰는 효과에서는 SVG 마스코트를 빼 캐릭터가 둘로 겹치지 않게 한다.
+        leaving 중에도 유지해야 캐릭터가 퇴장 애니메이션을 재생할 수 있다.
+      */}
+      {current ? (
+        <LevelEffectStage
+          key={current.eventId}
+          level={effectLevel}
+          multiplier={combo.multiplier}
+          theme={themeName}
+          leaving={leaving}
+          withMascot={!isCharacterStickerEffect(effectOf(current))}
+        />
+      ) : null}
+
+      {/* 콤보 배지. 재생 중이 아니어도 최고 기록을 잠깐 보여 준다. */}
+      <ComboBadge combo={combo.combo} />
+
+      {/*
         가장자리 여백. 카드형은 작은 배너라 24px 이면 충분하지만, 배경 없는 큰 글씨는
         화면 끝에 글자가 닿으면 잘려 보인다(방송 프로그램마다 가장자리를 조금씩 자른다).
         1920 기준 72px 을 둔다.
@@ -820,10 +894,12 @@ export function OverlayClient({
                 (배너 위에 크게 얹으면 세로로 길어져 방송 화면을 가로지른다).
               */
               <PlainDonationAlert
+                key={shown.eventId}
                 payload={shown}
                 leaving={Boolean(current) && leaving}
                 maxMessageLen={shown.maxMessageLen ?? maxMessageLen}
                 theme={plainTheme}
+                textAnim={activeTextAnim}
                 sticker={
                   current && isCharacterStickerEffect(effectOf(current)) && !leaving ? (
                     <CharacterStickerInline
@@ -841,10 +917,12 @@ export function OverlayClient({
                   <CharacterStickerInline effect={effectOf(current)} theme={themeName} />
                 ) : null}
                 <DonationCard
+                  key={shown.eventId}
                   payload={shown}
                   leaving={Boolean(current) && leaving}
                   maxMessageLen={shown.maxMessageLen ?? maxMessageLen}
                   theme={themeName}
+                  textAnim={activeTextAnim}
                 />
               </>
             )}
@@ -902,18 +980,39 @@ function PlainDonationAlert({
   leaving,
   maxMessageLen,
   theme,
+  textAnim,
   sticker,
 }: {
   payload: OverlayPayload;
   leaving: boolean;
   maxMessageLen: number;
   theme: Exclude<OverlayTheme, 'CARD'>;
+  /** 등장 애니메이션. 크리에이터 설정(또는 금액 레벨 자동)에서 정해진 값. */
+  textAnim: ResolvedTextAnim;
   sticker: React.ReactNode;
 }) {
   const p = PLAIN_THEMES[theme];
   const amountText = payload.amount ? `${formatNumber(BigInt(payload.amount))}원` : '';
   const message =
     payload.message.length > maxMessageLen ? `${payload.message.slice(0, maxMessageLen)}...` : payload.message;
+
+  /**
+   * 첫 줄을 색이 다른 조각으로 나눠 둔다.
+   * 타이핑 효과는 이 조각들을 앞에서부터 잘라 쓴다(금액 색을 지키면서 한 글자씩 나온다).
+   */
+  const headline: TextSegment[] = [
+    { text: payload.donorName },
+    { text: '님이 ' },
+    ...(amountText ? [{ text: amountText, color: p.accent }, { text: '을 ' }] : []),
+    { text: '후원하셨습니다' },
+  ];
+
+  const typing = textAnim === 'TYPEWRITER' && !leaving;
+  const headlineLen = segmentsLength(headline);
+  // 첫 줄을 다 찍은 뒤 메시지로 이어진다.
+  const revealed = useTypewriter(headlineLen + message.length, typing);
+  const shownHeadline = typing ? sliceSegments(headline, revealed) : headline;
+  const shownMessage = typing ? message.slice(0, Math.max(0, revealed - headlineLen)) : message;
 
   /** 글자 테두리. 두 줄로 나눠 두면 제목·본문이 같은 규칙을 쓴다. */
   const outline: React.CSSProperties = {
@@ -926,7 +1025,7 @@ function PlainDonationAlert({
   return (
     <div
       className={`flex max-w-[1340px] items-start gap-6 ${
-        leaving ? 'animate-tornado-out' : 'animate-banner-in'
+        leaving ? 'animate-tornado-out' : TEXT_ANIM_CLASS[textAnim]
       }`}
     >
       {/* 캐릭터는 첫 줄 왼쪽에 붙는다. 없는 효과(파티클 계열)면 아무것도 오지 않는다. */}
@@ -943,16 +1042,12 @@ function PlainDonationAlert({
           className="break-keep text-[64px] font-black leading-[1.18] tracking-[-0.01em]"
           style={{ ...outline, color: p.text }}
         >
-          <span>{payload.donorName}</span>
-          <span>님이 </span>
-          {amountText ? (
-            <>
-              {/* 금액만 색을 달리한다. 시선이 먼저 가야 하는 정보다. */}
-              <span style={{ color: p.accent }}>{amountText}</span>
-              <span>을 </span>
-            </>
-          ) : null}
-          <span>후원하셨습니다</span>
+          {shownHeadline.map((seg, i) => (
+            // 금액만 색을 달리한다. 시선이 먼저 가야 하는 정보다.
+            <span key={i} style={seg.color ? { color: seg.color } : undefined}>
+              {seg.text}
+            </span>
+          ))}
         </p>
 
         {message ? (
@@ -960,12 +1055,13 @@ function PlainDonationAlert({
             메시지는 **세 줄까지만** 보여 준다. 글자가 커진 만큼 긴 메시지는 방송 화면을
             통째로 덮는다. 넘치는 부분은 말줄임으로 끊는다(글자 수 상한과는 별개다 —
             짧은 글도 줄바꿈이 많으면 길어지기 때문이다).
+            타이핑 중에는 아직 안 나온 글자가 있어도 줄이 튀지 않도록 자리를 미리 잡아 둔다.
           */
           <p
             className="mt-3 line-clamp-3 break-keep text-[46px] font-extrabold leading-[1.3]"
             style={{ ...outline, WebkitTextStrokeWidth: `${p.strokeWidth - 2}px`, color: p.message }}
           >
-            {message}
+            {shownMessage}
           </p>
         ) : null}
       </div>
@@ -980,21 +1076,30 @@ function DonationCard({
   leaving,
   maxMessageLen,
   theme,
+  textAnim,
 }: {
   payload: OverlayPayload;
   leaving: boolean;
   maxMessageLen: number;
   theme: OverlayTheme;
+  textAnim: ResolvedTextAnim;
 }) {
   const t = THEME_CLASSES[theme];
   const amountText = payload.amount ? `${formatNumber(BigInt(payload.amount))}원` : '';
-  const message =
+  const fullMessage =
     payload.message.length > maxMessageLen ? `${payload.message.slice(0, maxMessageLen)}...` : payload.message;
+
+  // 카드형도 같은 규칙을 따른다. 타이핑은 한 줄 문장 + 메시지 순서로 찍힌다.
+  const headline = `${payload.donorName}님이 ${amountText ? `${amountText}을 ` : ''}후원하셨습니다`;
+  const typing = textAnim === 'TYPEWRITER' && !leaving;
+  const revealed = useTypewriter(headline.length + fullMessage.length, typing);
+  const shownHeadline = typing ? headline.slice(0, revealed) : headline;
+  const message = typing ? fullMessage.slice(0, Math.max(0, revealed - headline.length)) : fullMessage;
 
   return (
     <div
       className={`relative w-[420px] max-w-full rounded-[18px] border px-5 py-4 ${t.card} ${
-        leaving ? 'animate-tornado-out' : 'animate-banner-in'
+        leaving ? 'animate-tornado-out' : TEXT_ANIM_CLASS[textAnim]
       }`}
     >
       {payload.isTest ? (
@@ -1007,9 +1112,9 @@ function DonationCard({
         <TornadoSwirl className={t.swirl} />
         <div className="min-w-0 flex-1">
           <p className={`truncate text-[16px] font-extrabold leading-tight tracking-tight ${t.title}`}>
-            {payload.donorName}님이 {amountText ? `${amountText}을 ` : ''}후원하셨습니다
+            {shownHeadline}
           </p>
-          {message ? (
+          {fullMessage ? (
             <p className={`mt-1.5 break-words text-[13px] leading-snug ${t.message}`}>{message}</p>
           ) : null}
         </div>

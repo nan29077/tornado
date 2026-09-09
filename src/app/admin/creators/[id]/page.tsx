@@ -14,8 +14,12 @@ import { resolveFeePolicy } from '@/server/services/settlement';
 import { env } from '@/lib/env';
 import { formatWon, formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
-import { creatorStatusLabel, donationStatusLabel, paymentModeLabel, moNumberStatusLabel } from '@/lib/labels';
-import { AdminField, AdminInput } from '@/components/admin/controls';
+import {
+  creatorStatusLabel, donationStatusLabel, paymentModeLabel, moNumberStatusLabel,
+  channelPlatformLabel, policyScopeLabel, youtubeConnectionStatusLabel,
+} from '@/lib/labels';
+import { AdminField, AdminInput, AdminSelect, AdminTextarea } from '@/components/admin/controls';
+import { ExternalLink } from 'lucide-react';
 import { bankLabel, shortId } from '@/components/admin/mask';
 import { hasDirectTriggerWrittenApproval } from '@/server/services/financial-approval';
 import { requireAdminPage } from '@/server/admin-guard';
@@ -40,6 +44,8 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
     where: { id },
     select: {
       id: true, displayName: true, channelName: true, description: true, code: true, status: true,
+      // 심사 근거. 신청서가 받아 둔 값인데 화면에 표시되지 않아 "채널 실명 확인" 을 할 수 없었다.
+      channelUrl: true, channelPlatform: true, rejectReason: true,
       donationAmount: true, minAmount: true, maxAmount: true, paymentMode: true, businessNo: true,
       approvedAt: true, suspendedAt: true, createdAt: true,
       user: { select: { email: true, name: true, phoneMasked: true, status: true } },
@@ -97,7 +103,12 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
         <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
           <StatTile label="정산 잔액" value={formatWon(summary.balance)} tone="brand" />
           <StatTile label="정산 요청 보류" value={formatWon(summary.pending)} tone={summary.pending > 0n ? 'warning' : 'neutral'} />
-          <StatTile label="정산 가능" value={formatWon(summary.available)} tone="success" />
+          <StatTile
+            label="정산 가능"
+            value={formatWon(summary.available)}
+            sub={summary.holding > 0n ? `정산 예정 ${formatWon(summary.holding)} 제외` : undefined}
+            tone="success"
+          />
           <StatTile
             label="누적 후원"
             value={formatWon(donationAgg._sum.amount ?? 0n)}
@@ -115,6 +126,45 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
               />
               <DataRow label="담당자" value={`${creator.user.name ?? '-'} / ${creator.user.email ?? '-'}`} />
               <DataRow label="연락처" value={creator.user.phoneMasked ?? '-'} />
+              {/*
+                심사 근거. 신청서가 채널 주소·플랫폼·소개를 받아 두는데도 화면에 없어서
+                "채널 실명 확인" 을 지시받은 운영자가 확인할 대상 자체를 볼 수 없었다.
+                채널 주소는 외부 링크이므로 새 탭 + noreferrer 로 연다.
+              */}
+              <DataRow
+                label="채널 플랫폼"
+                value={creator.channelPlatform ? (channelPlatformLabel[creator.channelPlatform] ?? creator.channelPlatform) : '미등록'}
+              />
+              <DataRow
+                label="채널 주소"
+                value={
+                  creator.channelUrl ? (
+                    <a
+                      href={creator.channelUrl}
+                      target="_blank"
+                      rel="noopener noreferrer nofollow"
+                      className="inline-flex max-w-full items-center gap-1 font-semibold break-all text-brand-700 underline"
+                    >
+                      <span className="break-all">{creator.channelUrl}</span>
+                      <ExternalLink size={13} strokeWidth={1.8} className="shrink-0" />
+                    </a>
+                  ) : (
+                    '미등록'
+                  )
+                }
+              />
+              <DataRow
+                label="소개"
+                value={<span className="block break-words whitespace-pre-wrap">{creator.description?.trim() || '미작성'}</span>}
+              />
+              <DataRow
+                label="후원 페이지"
+                value={
+                  <Link href={`/c/${creator.code}`} className="font-semibold text-brand-700 underline">
+                    /c/{creator.code}
+                  </Link>
+                }
+              />
               {/* 개인사업자에게 사업자등록번호는 사실상 개인 식별자다. 마스킹해 표시한다. */}
               <DataRow label="사업자번호" value={creator.businessNo ? shortId(creator.businessNo) : '미등록'} />
               <DataRow label="1건 후원금" value={formatWon(creator.donationAmount)} />
@@ -122,6 +172,12 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
               <DataRow label="신청일" value={formatKst(creator.createdAt)} />
               <DataRow label="승인일" value={formatKst(creator.approvedAt)} />
               <DataRow label="정지일" value={formatKst(creator.suspendedAt)} />
+              {creator.rejectReason ? (
+                <DataRow
+                  label="반려·정지 사유"
+                  value={<span className="block break-words whitespace-pre-wrap text-danger-600">{creator.rejectReason}</span>}
+                />
+              ) : null}
             </div>
             <div className="mt-3 rounded-xl border border-ink-100 px-3 py-3">
               <p className="mb-2 text-[12.5px] font-bold text-ink-900">1건 후원금 허용 범위 변경</p>
@@ -141,22 +197,40 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
                 </div>
               </ActionForm>
             </div>
-            <div className="mt-3">
-              <SelectActionForm
-                        ariaLabel="크리에이터 심사 상태 변경"
+            {/*
+              반려·정지에는 사유가 필수다. 사유는 크리에이터 알림 본문과 상태 안내 화면에
+              그대로 나가므로, 선택 상자만 있던 예전 폼(SelectActionForm)으로는 만들 수 없었다.
+            */}
+            <div className="mt-3 rounded-xl border border-ink-100 px-3 py-3">
+              <p className="mb-2 text-[12.5px] font-bold text-ink-900">심사 상태 변경</p>
+              <ActionForm
                 action={updateCreatorStatus}
-                values={{ creatorId: creator.id }}
-                name="status"
-                defaultValue={creator.status}
-                options={[
-                  { value: 'PENDING', label: '심사대기' },
-                  { value: 'APPROVED', label: '승인' },
-                  { value: 'REJECTED', label: '반려' },
-                  { value: 'SUSPENDED', label: '정지' },
-                ]}
                 submitLabel="심사 상태 변경"
-                confirm="심사 상태를 변경합니다."
-              />
+                confirm="심사 상태를 변경합니다. 반려·정지 사유는 크리에이터에게 그대로 전달됩니다."
+              >
+                <input type="hidden" name="creatorId" value={creator.id} />
+                <AdminField label="변경할 상태">
+                  <AdminSelect name="status" defaultValue={creator.status} aria-label="크리에이터 심사 상태 변경">
+                    {(['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'] as const).map((s) => (
+                      <option key={s} value={s}>
+                        {creatorStatusLabel[s].text}
+                      </option>
+                    ))}
+                  </AdminSelect>
+                </AdminField>
+                <AdminField
+                  label="반려·정지 사유 (300자 이내)"
+                  hint="반려·정지를 고르면 반드시 입력해야 합니다. 승인으로 되돌리면 지워집니다."
+                >
+                  <AdminTextarea
+                    name="reason"
+                    rows={3}
+                    maxLength={300}
+                    defaultValue={creator.rejectReason ?? ''}
+                    placeholder="예: 신청서의 채널 주소가 열리지 않습니다. 실제 운영 중인 채널 주소로 다시 신청해 주세요."
+                  />
+                </AdminField>
+              </ActionForm>
             </div>
           </Card>
 
@@ -167,7 +241,7 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
             </p>
             <div className="mt-3">
               <SelectActionForm
-                        ariaLabel="크리에이터 심사 상태 변경"
+                ariaLabel="크리에이터 결제 모드 변경"
                 action={updateCreatorPaymentMode}
                 values={{ creatorId: creator.id }}
                 name="paymentMode"
@@ -200,7 +274,10 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
             <div className="mt-4">
               <CardTitle>수수료 정책</CardTitle>
               <div className="mt-2">
-                <DataRow label="적용 범위" value={feePolicy ? feePolicy.scope : '기본값(정책 미등록)'} />
+                <DataRow
+                  label="적용 범위"
+                  value={feePolicy ? (policyScopeLabel[feePolicy.scope] ?? feePolicy.scope) : '기본값(정책 미등록)'}
+                />
                 {/* 요율을 소수 원문(0.018)으로 보여 주면 1.8% 인지 0.018% 인지 즉시 알 수 없다. */}
                 <DataRow
                   label="결제 수수료"
@@ -335,7 +412,14 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
               {creator.youtubeConnection ? (
                 <>
                   <DataRow label="채널" value={creator.youtubeConnection.channelTitle ?? creator.youtubeConnection.channelId} />
-                  <DataRow label="상태" value={creator.youtubeConnection.status} />
+                  <DataRow
+                    label="상태"
+                    value={
+                      <Badge tone={youtubeConnectionStatusLabel[creator.youtubeConnection.status].tone}>
+                        {youtubeConnectionStatusLabel[creator.youtubeConnection.status].text}
+                      </Badge>
+                    }
+                  />
                   <DataRow label="토큰 만료" value={formatKst(creator.youtubeConnection.expiresAt)} />
                   <DataRow label="마지막 점검" value={formatKst(creator.youtubeConnection.lastCheckedAt)} />
                   <DataRow label="마지막 오류" value={creator.youtubeConnection.lastError ?? '-'} />

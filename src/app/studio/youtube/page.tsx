@@ -56,7 +56,20 @@ export default async function StudioYouTubePage({
   const callback = CALLBACK_MESSAGE[one(sp.youtube)];
 
   const [connection, broadcast, deliveries, quota] = await Promise.all([
-    prisma.youTubeConnection.findUnique({ where: { creatorId } }),
+    /**
+     * select 를 반드시 명시한다.
+     *
+     * 생략하면 `accessTokenEnc` / `refreshTokenEnc` 암호문까지 이 화면의 메모리로 올라온다.
+     * 지금은 안전한 필드만 렌더하지만, 이 객체를 클라이언트 컴포넌트로 넘기는 리팩터가
+     * 한 번만 있어도 그대로 유출이 된다. (후원 상세·정산 요청 화면과 같은 규칙)
+     */
+    prisma.youTubeConnection.findUnique({
+      where: { creatorId },
+      select: {
+        id: true, channelId: true, channelTitle: true, channelThumb: true,
+        status: true, expiresAt: true, lastError: true, lastCheckedAt: true, createdAt: true,
+      },
+    }),
     /**
      * "현재 라이브 방송" 은 **끝나지 않은** 방송만 본다.
      * 예전에는 최신 행을 그대로 가져와, 이미 끝난 방송이 "채팅 활성" 배지와 함께

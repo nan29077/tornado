@@ -1,5 +1,6 @@
 import { requireAdmin, writeAudit } from '@/server/auth';
-import { buildPayoutRows, markPayoutFileIssued } from '@/server/services/settlement';
+import { prisma } from '@/server/db';
+import { buildPayoutBatch, markPayoutFileIssued } from '@/server/services/settlement';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -60,7 +61,46 @@ export async function GET(req: Request) {
     return new Response('선택된 정산 요청이 없습니다.', { status: 400 });
   }
 
-  const rows = await buildPayoutRows(ids);
+  const { rows, excluded } = await buildPayoutBatch(ids);
+
+  /**
+   * 다운로드 전 확인 단계(preview).
+   *
+   * 제외 건을 조용히 건너뛰던 것이 문제였다. 화면이 "선택 5건 중 2건 제외" 를 미리
+   * 보여 줄 수 있도록 JSON 으로 돌려준다. **상태를 바꾸지 않는다** — 배치번호를 발급하지
+   * 않으므로 미리보기를 여러 번 눌러도 이체파일 발급 이력이 더럽혀지지 않는다.
+   * 계좌번호·예금주 원문은 절대 담지 않는다(그 값은 CSV 다운로드에만 들어간다).
+   */
+  if (url.searchParams.get('preview') === '1') {
+    const reissue = rows.length
+      ? await prisma.settlementRequest.findMany({
+          where: { id: { in: rows.map((r) => r.requestId) }, payoutIssuedAt: { not: null } },
+          select: { id: true, payoutBatchNo: true, payoutIssuedAt: true },
+        })
+      : [];
+    return Response.json(
+      {
+        selected: ids.length,
+        included: rows.map((r) => ({
+          requestId: r.requestId,
+          creatorName: r.creatorName,
+          creatorCode: r.creatorCode,
+          bankName: r.bankName,
+          amount: r.amount.toString(),
+        })),
+        excluded: excluded.map((e) => ({
+          requestId: e.requestId,
+          creatorName: e.creatorName,
+          creatorCode: e.creatorCode,
+          payoutAmount: e.payoutAmount.toString(),
+          reason: e.reason,
+        })),
+        totalAmount: rows.reduce((a, r) => a + r.amount, 0n).toString(),
+        reissue: reissue.map((r) => ({ requestId: r.id, previousBatchNo: r.payoutBatchNo })),
+      },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
 
   // 이체파일 발급 이력을 남긴다. 같은 건을 두 번 받아 두 번 업로드하면 이중이체가 되는데,
   // 기록이 없으면 사고가 난 뒤에도 흔적을 찾을 수 없다.
@@ -78,6 +118,8 @@ export async function GET(req: Request) {
       rows: rows.length,
       totalAmount: rows.reduce((a, r) => a + r.amount, 0n).toString(),
       reissuedRequestIds: issue.reissued,
+      // 왜 빠졌는지를 감사로그에도 남긴다. 나중에 "지급된 줄 알았다" 는 분쟁의 근거가 된다.
+      excluded: excluded.map((e) => ({ requestId: e.requestId, reason: e.reason })),
       permission: admin.adminPermission,
     },
   });

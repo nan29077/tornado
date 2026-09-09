@@ -45,6 +45,17 @@ export async function listOverlayTiers(creatorId: string): Promise<ResolvedTier[
   }));
 }
 
+/**
+ * 후원 금액 이하인 구간의 개수.
+ *
+ * 이 값이 곧 "몇 번째 구간인가"(1부터)이며, 금액별 차등 효과의 레벨을 정한다.
+ * 구간이 하나도 없거나 최저 구간에도 못 미치면 0 이고, 호출측이 레벨 1로 본다.
+ * (구간 기능을 쓰지 않는 기존 크리에이터의 연출을 그대로 유지하기 위함)
+ */
+export async function countOverlayTiersAtOrBelow(creatorId: string, amount: bigint): Promise<number> {
+  return prisma.overlayTier.count({ where: { creatorId, minAmount: { lte: amount } } });
+}
+
 /** 후원 금액에 해당하는 구간을 고른다. 해당 구간이 없으면 null. */
 export async function resolveOverlayTier(creatorId: string, amount: bigint): Promise<ResolvedTier | null> {
   const row = await prisma.overlayTier.findFirst({

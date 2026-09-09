@@ -11,6 +11,7 @@ import { requireAdmin } from '@/server/auth';
 import { formatKst } from '@/lib/datetime';
 import { formatNumber } from '@/lib/money';
 import { SUPPORT_CATEGORIES } from '@/components/public/support-options';
+import { userRoleLabel } from '@/lib/labels';
 import { cx } from '@/components/ui';
 import type { InquiryStatus } from '@/generated/prisma/enums';
 import { headers } from 'next/headers';
@@ -65,7 +66,11 @@ export default async function AdminInquiryDetailPage({ params }: { params: Promi
   const user = inquiry.userId
     ? await prisma.user.findUnique({
         where: { id: inquiry.userId },
-        select: { id: true, name: true, email: true, role: true, phoneMasked: true },
+        select: {
+          id: true, name: true, email: true, role: true, phoneMasked: true,
+          // 문의자가 크리에이터면 상세로 바로 갈 수 있어야 조치까지 한 화면 안에서 끝난다.
+          creatorProfile: { select: { id: true, code: true, displayName: true } },
+        },
       })
     : null;
 
@@ -145,7 +150,21 @@ export default async function AdminInquiryDetailPage({ params }: { params: Promi
                   <DataRow label="이름" value={user.name ?? '-'} />
                   <DataRow label="이메일" value={user.email ?? '-'} />
                   <DataRow label="연락처" value={user.phoneMasked ?? '-'} />
-                  <DataRow label="역할" value={user.role} />
+                  {/* enum 원문(CREATOR)이 아니라 사람이 읽는 이름을 쓴다. */}
+                  <DataRow label="역할" value={userRoleLabel[user.role] ?? user.role} />
+                  {user.creatorProfile ? (
+                    <DataRow
+                      label="크리에이터"
+                      value={
+                        <Link
+                          href={`/admin/creators/${user.creatorProfile.id}`}
+                          className="font-semibold text-brand-700 underline"
+                        >
+                          {user.creatorProfile.displayName} ({user.creatorProfile.code})
+                        </Link>
+                      }
+                    />
+                  ) : null}
                 </>
               ) : (
                 <>

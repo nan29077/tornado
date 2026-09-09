@@ -11,6 +11,12 @@ import { requireAdminPage } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * 관리자가 아니라 **당사자 본인**이 남긴 감사 기록을 가려내는 규칙.
+ * 기록하는 쪽(예: `SETTLEMENT_ACCOUNT_UPDATE_BY_CREATOR`)이 접미사를 붙인다.
+ */
+const BY_CREATOR = /_BY_CREATOR$/;
+
 function parseDate(raw?: string): Date | undefined {
   if (!raw) return undefined;
   const d = new Date(`${raw}T00:00:00+09:00`);
@@ -138,9 +144,16 @@ export default async function AdminAuditPage({
                   <tr key={l.id}>
                     <Td className="whitespace-nowrap">{formatKst(l.createdAt)}</Td>
                     <Td>
-                      {l.admin?.user.email ?? '시스템'}
+                      {/*
+                        관리자가 없는 기록을 전부 "시스템" 으로 적으면, 크리에이터가 **직접** 바꾼 것과
+                        배치·웹훅이 바꾼 것을 화면에서 구분할 수 없다. 정산 계좌처럼 같은 대상을
+                        두 주체가 만지는 경우에 특히 문제가 된다. 액션 이름의 _BY_CREATOR 접미사로 가른다.
+                      */}
+                      {l.admin?.user.email ?? (BY_CREATOR.test(l.action) ? '크리에이터 본인' : '시스템')}
                       {l.admin ? (
                         <span className="mt-0.5 block text-[11px] text-ink-400">{adminPermissionLabel[l.admin.permission]}</span>
+                      ) : BY_CREATOR.test(l.action) ? (
+                        <span className="mt-0.5 block text-[11px] text-ink-400">관리자 아님 · 당사자 변경</span>
                       ) : null}
                     </Td>
                     <Td>

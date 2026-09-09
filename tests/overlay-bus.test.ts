@@ -31,6 +31,8 @@ function samplePayload(overrides: Partial<OverlayEventPayload> = {}): OverlayEve
     theme: 'TORNADO',
     position: 'BOTTOM_CENTER',
     maxMessageLen: 80,
+    textAnim: 'AUTO',
+    effectLevel: 1,
     offsetX: 0,
     offsetY: 0,
     scalePct: 100,

@@ -2,13 +2,15 @@ import Link from 'next/link';
 import { PageHeader } from '@/components/layout/console-shell';
 import { EmptyState, Notice, SectionTitle, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminInput, AdminSelect, CreatorOptions, FilterBar, Pager } from '@/components/admin/controls';
+import { ActionForm } from '@/components/admin/action-form';
+import { createAdjustmentEntryAction } from '@/app/actions/admin/settlement';
 import { PAGE_SIZE, parsePage, clampPageOrRedirect } from '@/components/admin/constants';
 import { SettlementRequestsPanel, type SettlementRow } from '@/components/admin/settlement-requests';
 import { prisma } from '@/server/db';
 import { getSettlementSummary } from '@/server/services/settlement';
 import { formatWon, formatNumber } from '@/lib/money';
 import { formatKst, kstMonthKey } from '@/lib/datetime';
-import { settlementStatusLabel, ledgerEntryLabel } from '@/lib/labels';
+import { settlementStatusLabel, ledgerEntryLabel, creatorStatusLabel } from '@/lib/labels';
 import type { Prisma } from '@/generated/prisma/client';
 import type { SettlementRequestStatus } from '@/generated/prisma/enums';
 import { requireAdminPage } from '@/server/admin-guard';
@@ -19,6 +21,8 @@ export const dynamic = 'force-dynamic';
 const CREATOR_FILTER_LIMIT = 200;
 /** 요약 표에 계산할 최대 인원. 1명당 원장 집계 쿼리가 돌므로 무제한으로 둘 수 없다. */
 const SUMMARY_LIMIT = 50;
+/** 실명확인 대기 큐에 한 번에 보여줄 최대 건수. */
+const UNVERIFIED_LIMIT = 30;
 
 const REQUEST_STATUSES: SettlementRequestStatus[] = ['REQUESTED', 'REVIEWING', 'APPROVED', 'PAID', 'PAYOUT_FAILED', 'REJECTED'];
 
@@ -50,7 +54,7 @@ export default async function AdminSettlementsPage({
     ...(settlementKey ? { settlementKey } : {}),
   };
 
-  const [creators, requestTotal, requests, ledgerTotal, ledgers, byStatus, ledgerKeys] = await Promise.all([
+  const [creators, requestTotal, requests, ledgerTotal, ledgers, byStatus, ledgerKeys, unverifiedTotal, unverifiedAccounts] = await Promise.all([
     prisma.creatorProfile.findMany({
       where: { status: 'APPROVED' },
       orderBy: { displayName: 'asc' },
@@ -97,6 +101,26 @@ export default async function AdminSettlementsPage({
       orderBy: { settlementKey: 'desc' },
       take: 24,
       select: { settlementKey: true },
+    }),
+    /**
+     * 실명확인 대기 큐.
+     *
+     * 계좌 인증 전에는 정산 요청 자체가 막히므로, 이 큐가 없으면 관리자는 계좌가 등록된
+     * 사실을 알 수 없고 첫 정산이 시작되지 않는다. 인증 처리는 크리에이터 상세에서 한다.
+     */
+    prisma.settlementAccount.count({ where: { verified: false } }),
+    prisma.settlementAccount.findMany({
+      where: { verified: false },
+      orderBy: { updatedAt: 'asc' },
+      take: UNVERIFIED_LIMIT,
+      select: {
+        creatorId: true,
+        bankName: true,
+        accountTail4: true,
+        holderMasked: true,
+        updatedAt: true,
+        creator: { select: { id: true, displayName: true, code: true, status: true } },
+      },
     }),
   ]);
 
@@ -190,15 +214,139 @@ export default async function AdminSettlementsPage({
         <StatTile label="지급 완료" value={formatNumber(countOf('PAID'))} sub={formatWon(sumOf('PAID'))} tone="success" />
       </div>
 
+      <section className="mt-5">
+        <SectionTitle
+          title="실명확인 대기 계좌"
+          description="크리에이터가 등록했으나 아직 예금주 실명확인이 끝나지 않은 계좌입니다. 인증 전에는 정산을 요청할 수 없습니다."
+        />
+        {unverifiedAccounts.length === 0 ? (
+          <EmptyState title="실명확인 대기 중인 계좌가 없습니다" />
+        ) : (
+          <>
+            <div className="mb-2">
+              <Notice tone="warning" title={`실명확인 대기 계좌 ${formatNumber(unverifiedTotal)}건`}>
+                증빙(통장사본·사업자등록증)을 확인한 뒤 각 크리에이터 상세 화면에서 실명확인 완료 처리를 해 주세요.
+                {unverifiedTotal > UNVERIFIED_LIMIT
+                  ? ` 오래 대기한 순으로 ${UNVERIFIED_LIMIT}건까지만 표시합니다.`
+                  : null}
+              </Notice>
+            </div>
+            {/* 모바일에서는 카드, md 이상에서는 표로 본다 */}
+            <div className="grid gap-2 md:hidden">
+              {unverifiedAccounts.map((a) => (
+                <div key={a.creatorId} className="rounded-xl border border-ink-200 bg-white p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <Link href={`/admin/creators/${a.creator.id}`} className="block truncate font-semibold text-brand-700">
+                        {a.creator.displayName}
+                      </Link>
+                      <span className="mt-0.5 block text-[11px] text-ink-400">
+                        {a.creator.code} · {creatorStatusLabel[a.creator.status].text}
+                      </span>
+                    </div>
+                    <Link
+                      href={`/admin/creators/${a.creator.id}`}
+                      className="shrink-0 rounded-lg border border-ink-200 px-2.5 py-1 text-[11.5px] font-bold text-ink-700"
+                    >
+                      인증하기
+                    </Link>
+                  </div>
+                  <p className="mt-2 text-[12px] text-ink-600">
+                    {a.bankName} ****{a.accountTail4} · 예금주 {a.holderMasked}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-ink-400">등록/변경 {formatKst(a.updatedAt, false)}</p>
+                </div>
+              ))}
+            </div>
+            <div className="hidden md:block">
+              <Table className="min-w-[720px]">
+                <thead>
+                  <tr>
+                    <Th>크리에이터</Th>
+                    <Th>상태</Th>
+                    <Th>계좌</Th>
+                    <Th>예금주</Th>
+                    <Th>등록/변경</Th>
+                    <Th className="text-right">처리</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unverifiedAccounts.map((a) => (
+                    <tr key={a.creatorId}>
+                      <Td>
+                        <Link href={`/admin/creators/${a.creator.id}`} className="font-semibold text-brand-700">
+                          {a.creator.displayName}
+                        </Link>
+                        <span className="mt-0.5 block text-[11px] text-ink-400">{a.creator.code}</span>
+                      </Td>
+                      <Td>{creatorStatusLabel[a.creator.status].text}</Td>
+                      <Td className="whitespace-nowrap">
+                        {a.bankName} ****{a.accountTail4}
+                      </Td>
+                      <Td>{a.holderMasked}</Td>
+                      <Td className="whitespace-nowrap">{formatKst(a.updatedAt, false)}</Td>
+                      <Td className="text-right">
+                        <Link
+                          href={`/admin/creators/${a.creator.id}`}
+                          className="inline-block rounded-lg border border-ink-200 px-2.5 py-1 text-[11.5px] font-bold text-ink-700 hover:bg-ink-50"
+                        >
+                          인증하기
+                        </Link>
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+          </>
+        )}
+      </section>
+
       <Notice tone="danger" title="정산 원장은 조회 전용입니다">
         settlement_ledger 는 append-only 테이블이며, UPDATE/DELETE 는 DB 트리거로 차단되어 있습니다. 금액 정정이
-        필요하면 반대 부호의 조정(ADJUSTMENT) 분개를 추가해야 합니다. 이 화면에서 원장을 직접 수정할 수 없습니다.
+        필요하면 아래 <strong>조정 분개 추가</strong>로 반대 부호의 분개를 남깁니다. 이 화면에서 원장을 직접 수정할 수 없습니다.
       </Notice>
 
       <section className="mt-5">
         <SectionTitle
+          title="조정 분개 추가"
+          description="원장을 고치는 유일한 방법입니다. 추가된 분개는 되돌릴 수 없으니 금액과 방향을 반드시 확인해 주세요. (재무 권한)"
+        />
+        <div className="rounded-2xl border border-ink-100 bg-white p-3.5 shadow-[0_8px_24px_rgba(23,22,26,0.05)]">
+          <ActionForm
+            action={createAdjustmentEntryAction}
+            submitLabel="조정 분개 추가"
+            variant="danger"
+            confirm="정산 원장에 조정 분개를 추가합니다. append-only 이므로 되돌릴 수 없고, 다시 정정하려면 또 하나의 반대 분개가 필요합니다. 계속할까요?"
+          >
+            {/* 모바일에서는 한 줄씩, md 이상에서는 4열로 늘어놓는다 */}
+            <div className="grid gap-2.5 md:grid-cols-4">
+              <AdminField label="크리에이터">
+                <AdminSelect name="creatorId" required defaultValue={creatorId ?? ''}>
+                  <CreatorOptions creators={creatorOptions} allLabel="선택하세요" />
+                </AdminSelect>
+              </AdminField>
+              <AdminField label="방향">
+                <AdminSelect name="direction" defaultValue="ADD">
+                  <option value="ADD">증액 (+) — 크리에이터에게 더 준다</option>
+                  <option value="SUBTRACT">감액 (−) — 크리에이터에게서 뺀다</option>
+                </AdminSelect>
+              </AdminField>
+              <AdminField label="금액 (원)">
+                <AdminInput name="amount" inputMode="numeric" placeholder="10000" required />
+              </AdminField>
+              <AdminField label="사유 (필수, 200자)">
+                <AdminInput name="memo" maxLength={200} placeholder="예: 2026-08 수수료 이중 차감 정정" required />
+              </AdminField>
+            </div>
+          </ActionForm>
+        </div>
+      </section>
+
+      <section className="mt-5">
+        <SectionTitle
           title="크리에이터별 정산 요약"
-          description={`잔액 = 원장 합계 / 보류 = 정산 요청 중 금액 / 가능 = 지금 요청 가능한 금액 · 원장 금액 상위 ${SUMMARY_LIMIT}명까지 계산합니다`}
+          description={`잔액 = 원장 합계 / 정산 예정 = 후원일 기준 영업일 5일이 지나지 않은 금액 / 보류 = 정산 요청 중 금액 / 가능 = 지금 요청 가능한 금액 · 원장 금액 상위 ${SUMMARY_LIMIT}명까지 계산합니다`}
         />
         {summaryTruncated ? (
           <div className="mb-2">
@@ -220,6 +368,7 @@ export default async function AdminSettlementsPage({
                 <Th className="text-right">환불</Th>
                 <Th className="text-right">지급 완료</Th>
                 <Th className="text-right">잔액</Th>
+                <Th className="text-right">정산 예정</Th>
                 <Th className="text-right">보류</Th>
                 <Th className="text-right">정산 가능</Th>
               </tr>
@@ -238,6 +387,7 @@ export default async function AdminSettlementsPage({
                   <Td className="text-right tabular-nums">{formatWon(summary.totalRefund)}</Td>
                   <Td className="text-right tabular-nums">{formatWon(summary.totalPaid)}</Td>
                   <Td className="text-right font-semibold tabular-nums">{formatWon(summary.balance)}</Td>
+                  <Td className="text-right tabular-nums">{formatWon(summary.holding)}</Td>
                   <Td className="text-right tabular-nums">{formatWon(summary.pending)}</Td>
                   <Td className="text-right font-semibold tabular-nums text-brand-700">{formatWon(summary.available)}</Td>
                 </tr>

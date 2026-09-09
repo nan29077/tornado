@@ -522,6 +522,8 @@ model DonorCreatorLink {
    * 후원 이력이 없어도 팬 목록에 남아야 하므로 링크 행 자체를 만든다.
    */
   joinedVia      String    @default("DONATION") @map("joined_via")
+  /// 크리에이터가 이 팬에 대해 남기는 비공개 메모(200자). 후원자에게는 어떤 경로로도 노출하지 않는다.
+  creatorMemo    String?   @map("creator_memo")
   totalAmount    BigInt    @default(0) @map("total_amount")
   totalCount     Int       @default(0) @map("total_count")
   lastDonatedAt  DateTime? @map("last_donated_at") @db.Timestamptz(3)
@@ -592,6 +594,9 @@ model CreatorProfile {
   /// 이후 후원샵 설정 저장이 영구히 막히므로 반드시 별도 컬럼에 보관한다.
   channelUrl          String?       @map("channel_url")
   status              CreatorStatus @default(PENDING)
+  /// 반려·정지 사유. 관리자가 심사 상태를 바꿀 때 입력하고, 크리에이터 알림과 상태 안내 화면에 그대로 노출된다.
+  /// 승인으로 되돌아가면 지운다(옛 사유가 승인된 채널에 남아 있으면 안 된다).
+  rejectReason        String?       @map("reject_reason")
   /// 문자 1건당 후원금 (원)
   donationAmount      BigInt        @default(3000) @map("donation_amount")
   minAmount           BigInt        @default(1000) @map("min_amount")
@@ -1272,6 +1277,10 @@ model OverlaySetting {
   durationMs    Int      @default(7000) @map("duration_ms")
   theme         String   @default("TORNADO")
   stickerSet    String   @default("DEFAULT") @map("sticker_set")
+  /// 감사 텍스트 등장 애니메이션.
+  /// AUTO | SLIDE_UP | SLIDE_DOWN | BOUNCE | TYPEWRITER | FADE_ZOOM | SHAKE
+  /// AUTO 는 금액 구간 효과 레벨(1~4)에 맞춰 자동으로 고른다.
+  textAnim      String   @default("AUTO") @map("text_anim")
   /// 효과음 재생 여부와 음량(0~100). 효과음은 오버레이에서 Web Audio 로 직접 합성한다.
   soundEnabled  Boolean  @default(true) @map("sound_enabled")
   soundVolume   Int      @default(80) @map("sound_volume")
