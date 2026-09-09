@@ -69,7 +69,18 @@ export function ActionForm({
     if (seenState.current === state) return;
     seenState.current = state;
     if (!scrollToId || !state.ok || typeof document === 'undefined') return;
-    document.getElementById(scrollToId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const root = document.getElementById(scrollToId);
+    if (!root) return;
+    /**
+     * 대상 안에 실제로 보여 줄 상자(`data-scroll-target`)가 있으면 그쪽을 가운데로 맞춘다.
+     * 방송 화면 미리보기처럼 **안쪽에서 따로 스크롤되는 고정 열**에 들어 있으면, 바깥 섹션을
+     * 가운데로 맞춰도 정작 재생되는 상자는 접힌 영역 아래에 남아 아무 반응이 없어 보인다.
+     * 숨겨진 상자(다른 탭)는 건너뛴다.
+     */
+    const inner = Array.from(root.querySelectorAll<HTMLElement>('[data-scroll-target]')).find(
+      (el) => el.getBoundingClientRect().height > 0,
+    );
+    (inner ?? root).scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [state, scrollToId]);
 
   return (

@@ -349,8 +349,19 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
   const showBroadcast = React.useCallback(() => {
     if (typeof document === 'undefined') return;
     const el = document.getElementById('broadcast-preview');
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    else window.open(`/overlay/${encodeURIComponent(creatorId)}/game?preview=1&debug=1`, '_blank', 'noopener');
+    if (el) {
+      /**
+       * 섹션 첫머리가 아니라 **실제 방송 화면 상자**(`data-scroll-target`)를 가운데로 맞춘다.
+       * 왼쪽 열은 화면에 고정된 채 안쪽에서 따로 스크롤되므로, 섹션 첫머리로만 옮기면
+       * 작은 창에서는 툴바만 보이고 상자는 접힌 영역 아래에 남아 "눌러도 아무것도 안 보인다" 가 됐다.
+       */
+      const box = Array.from(el.querySelectorAll<HTMLElement>('[data-scroll-target]')).find(
+        (node) => node.getBoundingClientRect().height > 0,
+      );
+      (box ?? el).scrollIntoView({ behavior: 'smooth', block: box ? 'center' : 'start' });
+    } else {
+      window.open(`/overlay/${encodeURIComponent(creatorId)}/game?preview=1&debug=1`, '_blank', 'noopener');
+    }
   }, [creatorId]);
 
   /**

@@ -831,11 +831,17 @@ export function BroadcastPreview({
   const [meta, setMeta] = React.useState<MetaState | null>(null);
   const [game, setGame] = React.useState<GameLayerState | null>(null);
   /**
-   * 오버레이가 미리보기 틀의 크기를 쟀는지.
+   * 오버레이가 미리보기 틀의 크기를 쟀는지. `${틀}:${레이어}` 별로 기억한다.
    * 못 재면 화면을 통째로 감추므로(scale 0) "연결은 됐는데 아무것도 안 나온다" 가 된다.
    * 화면만 봐서는 구분이 안 돼 원인을 짚기 어려웠던 상태라, 아래 진단 줄에서 따로 알린다.
+   *
+   * **틀별로 나눠 두는 이유**: [PC 방송]·[모바일] 틀을 항상 함께 마운트하므로, 안 보이는 쪽
+   * 틀의 iframe 은 0x0 이라 "못 쟀다" 를 보낸다. 예전에는 이것을 값 하나로 받아서
+   * 숨겨진 모바일 틀의 false 가 멀쩡한 PC 틀의 true 를 덮어썼고, 화면은 정상인데
+   * 툴바에는 "틀의 크기를 재지 못했습니다 — [다시 연결]을 눌러 주세요" 가 계속 떠 있었다.
+   * 지금 보고 있는 틀의 값만 진단에 쓴다.
    */
-  const [canvasReady, setCanvasReady] = React.useState<boolean | null>(null);
+  const [canvasReadyMap, setCanvasReadyMap] = React.useState<Record<string, boolean>>({});
 
   /** 값이 바뀌면 그 틀의 iframe 이 새로 마운트되어 SSE 를 다시 연결한다. */
   const [pcKey, setPcKey] = React.useState(0);
@@ -1166,10 +1172,25 @@ export function BroadcastPreview({
       /**
        * 틀 크기 측정 결과. **creatorId 검사보다 먼저 본다** — 이 메시지는 오버레이 캔버스가
        * 보내는 것이라 creatorId 를 싣지 않는다(캔버스는 누구의 오버레이인지 모른다).
-       * 하나라도 재지 못한 틀이 있으면 그 화면은 통째로 감춰지므로, 그 사실을 툴바에 띄운다.
+       * 어느 iframe 이 보냈는지는 e.source 로 찾아 틀·레이어를 알아낸다(캔버스는 자기가
+       * 어느 틀에 들어 있는지도 모른다). 못 찾으면(이미 내려간 iframe 등) 무시한다.
        */
       if (data.type === 'donaido-overlay-canvas') {
-        setCanvasReady(Boolean((data as { ready?: boolean }).ready));
+        const roots = [rootRef.current, zoomRef.current].filter(Boolean) as HTMLElement[];
+        let sender: HTMLIFrameElement | null = null;
+        for (const root of roots) {
+          for (const frame of root.querySelectorAll('iframe')) {
+            if (frame.contentWindow === e.source) {
+              sender = frame;
+              break;
+            }
+          }
+          if (sender) break;
+        }
+        if (!sender || !sender.dataset.frame || !sender.dataset.layer) return;
+        const key = `${sender.dataset.frame}:${sender.dataset.layer}`;
+        const ready = Boolean((data as { ready?: boolean }).ready);
+        setCanvasReadyMap((prev) => (prev[key] === ready ? prev : { ...prev, [key]: ready }));
         return;
       }
 
@@ -1291,16 +1312,48 @@ export function BroadcastPreview({
   const donationMobileUrl = `${donationUrl}&align=top`;
   const gameMobileUrl = `${gameUrl}&align=top`;
 
+  /**
+   * 지금 보고 있는 틀의 캔버스 측정 결과만 진단에 쓴다.
+   *  - 아직 아무 보고도 없으면 null (판단 보류)
+   *  - 두 레이어(후원·게임) 중 하나라도 "못 쟀다" 면 false — 그 층은 통째로 감춰진 상태다
+   */
+  const canvasReady: boolean | null = (() => {
+    const values = [canvasReadyMap[`${tab}:donation`], canvasReadyMap[`${tab}:game`]].filter(
+      (v): v is boolean => v !== undefined,
+    );
+    if (values.length === 0) return null;
+    return values.every(Boolean);
+  })();
+
   const reconnect = () => {
     setLink(null);
     setMeta(null);
     setGame(null);
+    // 새로 마운트될 틀의 측정 결과는 처음부터 다시 받는다.
+    const frame: PreviewTab = isPc ? 'pc' : 'mobile';
+    setCanvasReadyMap((prev) => {
+      const next = { ...prev };
+      delete next[`${frame}:donation`];
+      delete next[`${frame}:game`];
+      return next;
+    });
     if (isPc) setPcKey((k) => k + 1);
     else setMobileKey((k) => k + 1);
   };
 
   return (
-    <div ref={wrapRef} style={pip && placeholder > 0 ? { height: placeholder } : undefined}>
+    <div
+      /*
+        wrapRef(작은 창 판정) 와 rootRef(iframe 탐색) 를 같은 요소에 건다.
+        예전에는 rootRef 가 어디에도 연결되지 않아 postToFrames 가 [확대 보기] 틀에만 닿았고,
+        PC·모바일 틀은 배치 조정 신호(donaido-overlay-edit / -layout)를 받지 못했다.
+      */
+      ref={(el) => {
+        wrapRef.current = el;
+        rootRef.current = el;
+      }}
+      style={pip && placeholder > 0 ? { height: placeholder } : undefined}
+    >
       <div
         ref={surfaceRef}
         className={cx(
@@ -1508,6 +1561,13 @@ export function BroadcastPreview({
 
           <div
             ref={pcBox}
+            /*
+              data-scroll-target: [테스트 후원 보내기]·[방송 화면 보기]가 화면을 옮길 때 이 상자를
+              가운데로 맞춘다. 왼쪽 열은 화면에 고정된 채 **안쪽에서 따로 스크롤**되므로, 섹션
+              첫머리로만 옮기면 작은 창(1280x720 등)에서는 툴바만 보이고 이 상자는 접힌
+              영역 아래에 남아 "눌러도 아무것도 안 보인다" 가 됐다.
+            */
+            data-scroll-target=""
             className="relative w-full overflow-hidden rounded-xl border border-ink-200"
             style={{ aspectRatio: '16 / 9', ...CHECKERBOARD_STYLE }}
           >
@@ -1550,6 +1610,7 @@ export function BroadcastPreview({
           <div className="flex justify-center rounded-xl border border-ink-100 bg-[#1c1c1e] px-3 py-4">
             <div
               ref={mobileBox}
+              data-scroll-target=""
               className="relative overflow-hidden shadow-[0_14px_36px_rgba(0,0,0,0.5)]"
               style={{
                 borderWidth: MOBILE_BEZEL,
