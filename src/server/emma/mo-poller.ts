@@ -113,17 +113,53 @@ async function clearAttempts(moKey: string): Promise<void> {
  * **EMMA 가 행을 넣은 시각(date_mo_recv)** 을 기준으로 오래된 것만 되살린다.
  * (정상 처리는 1초 안에 끝나므로 기본 5분이면 진행 중인 건을 건드리지 않는다)
  */
+/**
+ * 우리 대표번호가 아닌 것으로 확인돼 건너뛴 mo_key 와 그 만료 시각.
+ *
+ * 왜 필요한가 — 대표번호가 다른 행은 **남의 것일 수 있으므로 상태를 바꾸지 않고 NEW 로
+ * 되돌린다**(한 EMMA 에 여러 서비스가 물린 구성 대비). 그런데 조회가
+ * `WHERE msg_status = NEW ... ORDER BY date_mo ASC LIMIT n` 이라, 이런 행은 매 폴링마다
+ * 다시 뽑혀 **배치 앞자리를 영구히 차지한다.** 그 뒤에 줄 서 있는 진짜 후원 문자가 굶는다.
+ * (스팸이나 대표번호로 바로 온 답장이 몇 건만 쌓여도 폴링이 통째로 막힌다)
+ *
+ * EMMA 쪽 데이터는 그대로 두고, **우리 쪽에서만** 잠시 건너뛴다. 만료되면 다시 확인하므로
+ * 설정이 바뀌어 우리 번호가 된 경우에도 결국 처리된다.
+ */
+const foreignSkip = new Map<string, number>();
+const FOREIGN_SKIP_MS = 30 * 60_000;
+
+function rememberForeign(moKey: string): void {
+  foreignSkip.set(moKey, Date.now() + FOREIGN_SKIP_MS);
+  // 만료된 항목은 그때그때 걷어낸다. 폴러는 오래 사는 프로세스라 무한히 쌓이면 안 된다.
+  if (foreignSkip.size > 2000) {
+    const now = Date.now();
+    for (const [k, exp] of foreignSkip) if (exp <= now) foreignSkip.delete(k);
+  }
+}
+
+function foreignKeys(): string[] {
+  const now = Date.now();
+  const keys: string[] = [];
+  for (const [k, exp] of foreignSkip) {
+    if (exp > now) keys.push(k);
+    else foreignSkip.delete(k);
+  }
+  return keys;
+}
+
 async function fetchCandidates(suffix: string, limit: number, staleSec: number): Promise<EmmaMoRow[]> {
   assertSafeSuffix(suffix);
   const q = getEmmaQuerier();
+  const skip = foreignKeys();
   return q.query<EmmaMoRow>(
     `SELECT ${MO_COLUMNS}
        FROM em_mo_log_${suffix}
-      WHERE msg_status = $1
-         OR (msg_status = $2 AND date_mo_recv < NOW() - MAKE_INTERVAL(secs => $3))
+      WHERE (msg_status = $1
+         OR (msg_status = $2 AND date_mo_recv < NOW() - MAKE_INTERVAL(secs => $3)))
+        AND NOT (mo_key = ANY($4::text[]))
       ORDER BY date_mo ASC
       LIMIT ${Number(limit)}`,
-    [EMMA_MO_STATUS.NEW, EMMA_MO_STATUS.CLAIMED, staleSec],
+    [EMMA_MO_STATUS.NEW, EMMA_MO_STATUS.CLAIMED, staleSec, skip],
   );
 }
 
@@ -376,6 +412,8 @@ export async function pollEmmaMo(handler: EmmaMoHandler): Promise<EmmaPollResult
       // (한 EMMA 에 여러 서비스의 번호가 물린 구성에서 서로의 후원을 가로채는 사고를 막는다)
       if (expectedBase && single.baseNumber !== expectedBase) {
         await setStatus(suffix, moKey, EMMA_MO_STATUS.NEW).catch(() => undefined);
+        // 다음 폴링에서 이 행이 다시 배치 앞자리를 차지하지 않게 한다(위 foreignSkip 주석 참고).
+        rememberForeign(moKey);
         result.skipped++;
         result.details.push({
           moKey,

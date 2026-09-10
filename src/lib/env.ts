@@ -452,6 +452,18 @@ export function assertProductionSafety(): string[] {
   // EMMA 폴링을 쓰면 MO 사업자 어댑터(웹훅 파서)는 사용되지 않는다.
   if (!env.emma.enabled && env.mo.provider === 'mock') problems.push('MO_PROVIDER 가 mock 입니다.');
   if (env.emma.enabled) {
+    /**
+     * 수신 경로는 하나만 쓴다.
+     *
+     * EMMA 폴링과 MO 웹훅은 중복 방지 키(provider_message_id)의 네임스페이스가 서로 달라,
+     * 둘 다 살아 있으면 같은 문자 한 통이 두 건의 후원이 되어 **후원자가 두 번 결제된다.**
+     * (웹훅 라우트가 런타임에도 409 로 거절하지만, 설정 단계에서 먼저 알려 준다)
+     */
+    if (env.mo.provider !== 'mock') {
+      problems.push(
+        `EMMA_ENABLED=true 인데 MO_PROVIDER 가 '${env.mo.provider}' 입니다. 수신 경로가 둘이면 같은 문자가 두 번 결제될 수 있습니다. 하나만 쓰십시오.`,
+      );
+    }
     // 대표번호가 비면 어떤 번호로 들어온 문자든 전부 받아들인다. 한 EMMA 에 여러 서비스의
     // 번호가 물린 구성에서 남의 서비스 후원까지 우리 쪽에 쌓이므로 운영에서는 필수로 둔다.
     if (!env.emma.baseNumber.replace(/\D/g, '')) {

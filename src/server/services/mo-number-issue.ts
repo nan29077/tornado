@@ -134,9 +134,12 @@ function isCurrentScheme(phoneNumber: string, baseNumber: string): boolean {
  * - 크리에이터 상태가 APPROVED 가 아니면 발급하지 않는다.
  *
  * 동시 호출 안전성
- *   `creator_mo_number_base_sub_uniq` 부분 유니크 인덱스가 최종 방어선이다. 후보를 뽑아
- *   INSERT 하다 충돌하면 다음 후보로 넘어간다(낙관적 채번). 미리 조회한 목록만 믿으면
- *   동시에 승인된 두 크리에이터가 같은 번호를 받을 수 있다.
+ *   부분 유니크 인덱스 두 개가 최종 방어선이다.
+ *     - `creator_mo_number_base_sub_uniq`        : 같은 번호를 두 사람이 받는 것을 막는다
+ *     - `creator_mo_number_creator_assigned_uniq`: 한 사람이 번호를 두 개 받는 것을 막는다
+ *   후보를 뽑아 INSERT 하다 충돌하면 다음 후보로 넘어간다(낙관적 채번). 미리 조회한 목록만
+ *   믿으면 동시에 승인된 두 크리에이터가 같은 번호를 받을 수 있다. 크리에이터당 1개 제약에
+ *   걸린 경우는 다음 후보로 넘어가도 소용없으므로 먼저 발급된 번호를 그대로 돌려준다.
  */
 /**
  * 대표번호 안에서 쓸 수 있는 서브번호를 뽑아 크리에이터에게 붙인다.
@@ -144,6 +147,38 @@ function isCurrentScheme(phoneNumber: string, baseNumber: string): boolean {
  * 발급·재발급이 같은 채번 규칙(난수·예약번호 제외·냉각기간)을 쓰도록 한 곳에 모아 둔다.
  * 두 경로가 갈라지면 재발급 쪽만 순번 채번이 되는 식의 사고가 난다.
  */
+/**
+ * 크리에이터당 1개 제약에 걸렸을 때, 먼저 발급된 번호를 읽어 돌려준다.
+ *
+ * 다음 후보 서브번호로 넘어가 봐야 영원히 같은 이유로 실패하고, 시도 횟수를 다 쓴 뒤
+ * "번호가 소진됐다"는 엉뚱한 오류가 난다. 경쟁에서 이긴 쪽의 번호가 정답이다.
+ * 제약 위반이 아니거나 행을 못 찾으면 null 을 돌려주어 호출부가 판단하게 한다.
+ */
+async function resolveConcurrentIssue(
+  e: unknown,
+  creatorId: string,
+  baseNumber: string,
+): Promise<IssuedMoNumber | null> {
+  if (!isCreatorAssignedConflict(e)) return null;
+  const winner = await prisma.creatorMoNumber.findFirst({
+    where: { creatorId, status: 'ASSIGNED' },
+    orderBy: [{ assignedAt: 'asc' }, { createdAt: 'asc' }],
+    select: { id: true, phoneNumber: true, baseNumber: true, subCode: true },
+  });
+  if (!winner) return null;
+  logger.info('MO 번호 동시 발급 감지 — 먼저 발급된 번호를 사용합니다.', {
+    creatorId,
+    phoneNumber: winner.phoneNumber,
+  });
+  return {
+    id: winner.id,
+    phoneNumber: winner.phoneNumber,
+    baseNumber: winner.baseNumber ?? baseNumber,
+    subCode: winner.subCode ?? '',
+    reused: true,
+  };
+}
+
 async function allocateSubCode(creatorId: string, baseNumber: string, memo: string): Promise<IssuedMoNumber> {
   const { blocked, reusable } = await loadSubCodeState(baseNumber, prisma);
 
@@ -163,20 +198,36 @@ async function allocateSubCode(creatorId: string, baseNumber: string, memo: stri
      */
     const reuseId = reusable.get(subCode);
     if (reuseId) {
-      const claimed = await prisma.creatorMoNumber.updateMany({
-        where: { id: reuseId, creatorId: null, status: { in: ['RECLAIMED', 'DISABLED'] } },
-        data: {
-          phoneNumber,
-          keyword: null,
-          mode: 'DEDICATED',
-          status: 'ASSIGNED',
-          creatorId,
-          assignedAt: new Date(),
-          releasedAt: null,
-          memo,
-        },
-      });
-      if (claimed.count === 0) {
+      // 되살리는 경로도 크리에이터당 1개 제약에 걸릴 수 있다(동시 발급). create 경로와
+      // 같은 방식으로 처리하지 않으면 이 예외가 그대로 위로 새어 나간다.
+      let claimedCount = 0;
+      try {
+        const claimed = await prisma.creatorMoNumber.updateMany({
+          where: { id: reuseId, creatorId: null, status: { in: ['RECLAIMED', 'DISABLED'] } },
+          data: {
+            phoneNumber,
+            keyword: null,
+            mode: 'DEDICATED',
+            status: 'ASSIGNED',
+            creatorId,
+            assignedAt: new Date(),
+            releasedAt: null,
+            memo,
+          },
+        });
+        claimedCount = claimed.count;
+      } catch (e) {
+        const winner = await resolveConcurrentIssue(e, creatorId, baseNumber);
+        if (winner) return winner;
+        if (isCreatorAssignedConflict(e)) continue;
+        if (isUniqueViolation(e)) {
+          reusable.delete(subCode);
+          blocked.add(subCode);
+          continue;
+        }
+        throw e;
+      }
+      if (claimedCount === 0) {
         // 다른 실행이 먼저 선점했다. 다음 후보로 넘어간다.
         reusable.delete(subCode);
         blocked.add(subCode);
@@ -206,7 +257,16 @@ async function allocateSubCode(creatorId: string, baseNumber: string, memo: stri
       logger.info('MO 서브번호 발급', { creatorId, phoneNumber, subCode });
       return { id: created.id, phoneNumber, baseNumber, subCode, reused: false };
     } catch (e) {
-      // 유니크 충돌이면 다음 후보로. 그 외 오류는 그대로 올린다.
+      /**
+       * 크리에이터당 1개 제약에 걸렸다면 **다른 실행이 방금 이 크리에이터에게 번호를 발급한
+       * 것**이다. 다음 후보로 넘어가 봐야 영원히 같은 이유로 실패하고, 40회를 다 쓴 뒤
+       * "번호가 소진됐다"는 엉뚱한 오류가 난다. 이미 배정된 행을 읽어 그대로 돌려준다.
+       */
+      const winner = await resolveConcurrentIssue(e, creatorId, baseNumber);
+      if (winner) return winner;
+      // 제약에 걸렸는데 행이 안 보이면(경쟁 상대가 롤백) 다음 후보로 재시도한다.
+      if (isCreatorAssignedConflict(e)) continue;
+      // 그 밖의 유니크 충돌은 서브번호 경쟁이므로 다음 후보로. 그 외 오류는 그대로 올린다.
       if (isUniqueViolation(e)) {
         blocked.add(subCode);
         continue;
@@ -227,15 +287,25 @@ async function allocateSubCode(creatorId: string, baseNumber: string, memo: stri
  * - 크리에이터 상태가 APPROVED 가 아니면 발급하지 않는다.
  *
  * 동시 호출 안전성
- *   `creator_mo_number_base_sub_uniq` 부분 유니크 인덱스가 최종 방어선이다. 후보를 뽑아
- *   INSERT 하다 충돌하면 다음 후보로 넘어간다(낙관적 채번). 미리 조회한 목록만 믿으면
- *   동시에 승인된 두 크리에이터가 같은 번호를 받을 수 있다.
+ *   부분 유니크 인덱스 두 개가 최종 방어선이다.
+ *     - `creator_mo_number_base_sub_uniq`        : 같은 번호를 두 사람이 받는 것을 막는다
+ *     - `creator_mo_number_creator_assigned_uniq`: 한 사람이 번호를 두 개 받는 것을 막는다
+ *   후보를 뽑아 INSERT 하다 충돌하면 다음 후보로 넘어간다(낙관적 채번). 미리 조회한 목록만
+ *   믿으면 동시에 승인된 두 크리에이터가 같은 번호를 받을 수 있다. 크리에이터당 1개 제약에
+ *   걸린 경우는 다음 후보로 넘어가도 소용없으므로 먼저 발급된 번호를 그대로 돌려준다.
  */
 export async function issueMoNumberForCreator(creatorId: string): Promise<IssuedMoNumber> {
   const baseNumber = requireBaseNumber();
 
+  /**
+   * 정렬을 명시한다. 예전에는 orderBy 가 없어 같은 크리에이터에게 배정 행이 둘 이상일 때
+   * 실행할 때마다 다른 번호가 뽑혔고, 스튜디오에 표시되는 번호가 새로고침마다 바뀌었다.
+   * 가장 먼저 배정된 번호가 시청자에게 안내됐을 가능성이 가장 높으므로 그것을 정본으로 삼는다.
+   * (중복 자체는 `creator_mo_number_creator_assigned_uniq` 인덱스가 앞으로 막는다)
+   */
   const existing = await prisma.creatorMoNumber.findFirst({
     where: { creatorId, status: 'ASSIGNED' },
+    orderBy: [{ assignedAt: 'asc' }, { createdAt: 'asc' }],
     select: { id: true, phoneNumber: true, baseNumber: true, subCode: true },
   });
 
@@ -579,4 +649,25 @@ function isUniqueViolation(e: unknown): boolean {
   const code = (e as { code?: string }).code;
   // Prisma P2002 / PostgreSQL 23505
   return code === 'P2002' || code === '23505';
+}
+
+/**
+ * 어떤 유니크 제약에 걸렸는지. 부분 유니크 인덱스는 Prisma 가 `meta.target` 에 인덱스 이름을
+ * 담아 주고, raw 경로에서는 PostgreSQL 이 `constraint` 에 담아 준다. 둘 다 본다.
+ *
+ * 서브번호 충돌(다음 후보로 넘어가면 되는 것)과 **크리에이터당 1개 제약 충돌**
+ * (다음 후보로 넘어가 봐야 영원히 같은 이유로 실패하는 것)을 구분하기 위해 필요하다.
+ */
+function uniqueViolationTarget(e: unknown): string {
+  const meta = (e as { meta?: { target?: unknown } }).meta;
+  const target = meta?.target;
+  const raw = (e as { constraint?: string }).constraint;
+  if (Array.isArray(target)) return target.join(',');
+  if (typeof target === 'string') return target;
+  return raw ?? '';
+}
+
+/** 크리에이터당 배정 전용번호 1개 제약에 걸렸는가 */
+function isCreatorAssignedConflict(e: unknown): boolean {
+  return isUniqueViolation(e) && uniqueViolationTarget(e).includes('creator_assigned_uniq');
 }

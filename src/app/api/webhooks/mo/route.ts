@@ -5,6 +5,7 @@ import { logger, scrub } from '@/lib/logger';
 import { getMoAdapter } from '@/server/adapters/mo';
 import { handleMoInbound } from '@/server/services/donation-flow';
 import { clientIpFromRequest } from '@/server/rate-limit';
+import { env } from '@/lib/env';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,25 @@ const MAX_BODY_BYTES = 64 * 1024;
 
 export async function POST(req: Request) {
   const started = Date.now();
+  /**
+   * **EMMA 폴링이 켜져 있으면 이 웹훅은 받지 않는다.**
+   *
+   * 수신 문자의 중복 방지는 `mo_inbound_message.provider_message_id` 유니크 하나에 걸려 있는데,
+   * 그 값이 경로마다 다른 네임스페이스다.
+   *   - EMMA 폴링   → `moKey`      (EMMA 테이블의 행 키)
+   *   - MTONET 웹훅 → `messageId`  (통신사 메시지 id)
+   * 두 경로가 동시에 살아 있으면 **같은 문자 한 통이 서로 다른 두 값으로 두 번 들어와**
+   * 후원이 두 건 만들어지고 후원자가 두 번 결제된다. 유니크 제약은 이것을 잡지 못한다.
+   *
+   * 어느 한쪽만 쓰도록 강제한다. EMMA 를 쓰는 구성에서는 이 경로가 필요 없다.
+   */
+  if (env.emma.enabled) {
+    logger.warn('EMMA 폴링이 켜져 있어 MO 웹훅을 거절했습니다. (수신 경로는 하나만 사용합니다)');
+    return NextResponse.json(
+      { ok: false, message: '이 서비스는 EMMA 폴링으로 수신합니다. MO 웹훅은 사용하지 않습니다.' },
+      { status: 409 },
+    );
+  }
   const declared = Number(req.headers.get('content-length') ?? 0);
   if (declared > MAX_BODY_BYTES) {
     return NextResponse.json({ ok: false, message: '요청 본문이 너무 큽니다.' }, { status: 413 });
