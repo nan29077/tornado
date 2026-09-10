@@ -257,25 +257,36 @@ export function GameOverlayClient({
 
   const standalone = useStandalone();
 
-  // 부모(스튜디오 통합 미리보기)에 게임 레이어 상태를 알린다.
+  /**
+   * 부모(스튜디오 통합 미리보기)에 게임 레이어 상태를 알린다.
+   *
+   * **샘플 모드에서도 반드시 보낸다.** 예전에는 `sampleMode` 면 아무 보고도 하지 않아서,
+   * 게임 카드의 [미리보기]로 샘플이 정상적으로 그려지고 있는데도 툴바 배지는 영원히
+   * `게임 연결 중` 이었다. 진단 줄만 이 경우를 알고 배지는 몰라서 둘이 서로 다른 말을 했다.
+   *
+   * 그리고 **마운트 직후 한 번은 무조건 나간다**(phase='connecting'). 부모는 이 첫 보고를
+   * 받았는지로 "게임 화면이 아예 안 떴다" 와 "떴는데 아직 연결 중이다" 를 구분한다.
+   * 이 구분이 없어서 그동안 원인을 좁히지 못했다.
+   */
   React.useEffect(() => {
-    if (!preview || sampleMode || typeof window === 'undefined' || window.parent === window) return;
+    if (!preview || typeof window === 'undefined' || window.parent === window) return;
+    const source = sampleMode ? sample : state;
     try {
       window.parent.postMessage(
         {
           type: 'donaido-game-status',
           creatorId,
-          phase,
-          live: Boolean(state),
-          status: state?.status ?? '',
-          participantCount: state?.participantCount ?? 0,
+          phase: sampleMode ? 'sample' : phase,
+          live: Boolean(source),
+          status: source?.status ?? '',
+          participantCount: source?.participantCount ?? 0,
         },
         window.location.origin,
       );
     } catch {
       /* ignore */
     }
-  }, [preview, sampleMode, creatorId, phase, state]);
+  }, [preview, sampleMode, creatorId, phase, state, sample]);
 
   return (
     <div className="pointer-events-none fixed inset-0 bg-transparent">

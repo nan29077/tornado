@@ -213,10 +213,32 @@ function ConnectionBadge({ link, game }: { link: LinkState | null; game: GameLay
    * 화면만 봐서는 알 수 없었다. 실제로 그 상태를 진단하는 데 오래 걸렸다.
    * 두 레이어가 각각 어떤 상태인지 항상 보이게 한다.
    */
-  const gamePhase = !game ? 'connecting' : game.phase || 'connecting';
-  const gameTone = gamePhase === 'connected' ? 'success' : gamePhase === 'retrying' ? 'warning' : 'neutral';
+  /**
+   * `game` 이 null 인 것과 phase 가 'connecting' 인 것은 **원인이 다르다.**
+   *   null        = 게임 오버레이가 한 번도 보고하지 않았다 → 화면 자체가 안 떴을 수 있다
+   *   'connecting'= 화면은 떴고 실시간 연결을 여는 중이다
+   * 예전에는 둘을 똑같이 `게임 연결 중` 으로 표시해서, 페이지가 안 뜬 것·연결이 안 붙은 것·
+   * 메시지가 안 닿은 것이 한 글자도 다르지 않게 보였다. 원인을 좁히지 못한 주된 이유였다.
+   */
+  const gamePhase = !game ? 'silent' : game.phase || 'connecting';
+  const gameTone =
+    gamePhase === 'connected' || gamePhase === 'sample'
+      ? 'success'
+      : gamePhase === 'retrying' || gamePhase === 'silent'
+        ? 'warning'
+        : 'neutral';
   const gameLabel =
-    gamePhase === 'connected' ? (game?.live ? '게임 재생 중' : '게임 대기') : gamePhase === 'retrying' ? '게임 재연결' : '게임 연결 중';
+    gamePhase === 'sample'
+      ? '게임 샘플'
+      : gamePhase === 'connected'
+        ? game?.live
+          ? '게임 재생 중'
+          : '게임 대기'
+        : gamePhase === 'retrying'
+          ? '게임 재연결'
+          : gamePhase === 'silent'
+            ? '게임 응답 없음'
+            : '게임 연결 중';
 
   return (
     <span className="inline-flex h-7 shrink-0 items-center gap-1">
@@ -247,6 +269,8 @@ function ConnectionBadge({ link, game }: { link: LinkState | null; game: GameLay
 export interface PreviewDiagnosisInput {
   /** 게임 샘플 미리보기 중. SSE 를 열지 않으므로 게임 연결 상태를 진단하지 않는다. */
   sampleGameId?: string | null;
+  /** 후원 오버레이 표시 스위치. false 면 실제 후원이 미리보기에도 뜨지 않는다. */
+  overlayEnabled?: boolean;
   link: LinkState | null;
   game: GameLayerState | null;
   meta: MetaState | null;
@@ -267,6 +291,7 @@ export function previewDiagnosisLines({
   showDonation,
   showGame,
   sampleGameId,
+  overlayEnabled,
 }: PreviewDiagnosisInput): string[] {
   const lines: string[] = [];
 
@@ -292,15 +317,36 @@ export function previewDiagnosisLines({
   // 샘플 미리보기 중에는 SSE 를 열지 않으므로 게임 연결 상태 진단을 건너뛴다.
   if (sampleGameId) {
     lines.push('게임 미리보기 중입니다 — 실제 라이브 상태와 다를 수 있습니다.');
+  } else if (!game) {
+    /**
+     * 게임 오버레이는 마운트 직후 한 번은 무조건 보고한다. 그 보고조차 없다는 것은
+     * **게임 화면이 아예 뜨지 않았다**는 뜻이다(권한 오류로 401 화면이 떴거나, iframe 이
+     * 로드되지 않았거나, 로그인 세션이 끊겼거나). 연결이 늦는 것과는 완전히 다른 원인이다.
+     */
+    lines.push(
+      '게임 오버레이에서 아직 아무 응답이 없습니다 — 게임 화면 자체가 뜨지 않았을 수 있습니다(로그인 만료·권한 오류 등). [다시 연결]을 눌러 보시고, 그래도 같으면 새로고침해 주세요.',
+    );
   } else {
-    const gamePhase = game?.phase || 'connecting';
-    if (gamePhase !== 'connected') {
+    const gamePhase = game.phase || 'connecting';
+    if (gamePhase === 'sample') {
+      lines.push('게임 샘플을 보여 주는 중입니다 — 실제 라이브 상태와 다를 수 있습니다.');
+    } else if (gamePhase !== 'connected') {
       lines.push(
         gamePhase === 'retrying' ? '게임 연결이 끊겨 다시 붙는 중입니다.' : '게임 연결을 여는 중입니다.',
       );
-    } else if (!game?.live) {
+    } else if (!game.live) {
       lines.push('게임 연결은 정상입니다 — 지금 방송 화면에 띄운 게임이 없어서 비어 있습니다.');
     }
+  }
+
+  /**
+   * 오버레이 표시 스위치가 꺼져 있으면 **실제 후원은 이벤트 자체가 만들어지지 않는다**
+   * (`sendOverlay` 가 overlayStatus='SKIPPED' 로 끝낸다). [테스트 후원 보내기]는 그 검사를
+   * 타지 않아 뜨기 때문에, "테스트는 되는데 진짜 후원만 안 뜬다" 가 되고 화면에는 그 이유가
+   * 어디에도 없었다.
+   */
+  if (overlayEnabled === false) {
+    lines.push('후원 오버레이 스위치가 꺼져 있어 실제 후원은 표시되지 않습니다. (테스트 후원은 그대로 뜹니다)');
   }
 
   // 후원 알림은 "지금 재생 중인 것"이 없는 게 정상이라, 대기열이 밀려 있을 때만 알린다.
@@ -818,10 +864,13 @@ export function BroadcastPreview({
   creatorId,
   donationLayout: savedDonationLayout = DEFAULT_OVERLAY_LAYOUT,
   gameLayout: savedGameLayout = DEFAULT_OVERLAY_LAYOUT,
+  overlayEnabled,
 }: {
   creatorId: string;
   donationLayout?: OverlayLayout;
   gameLayout?: OverlayLayout;
+  /** 후원 오버레이 표시 스위치. 꺼져 있으면 실제 후원이 미리보기에도 뜨지 않는다. */
+  overlayEnabled?: boolean;
 }) {
   const [tab, setTab] = React.useState<PreviewTab>('pc');
   const [showDonation, setShowDonation] = React.useState(true);
@@ -1446,6 +1495,7 @@ export function BroadcastPreview({
             showDonation={showDonation}
             showGame={showGame}
             sampleGameId={sampleGameId}
+            overlayEnabled={overlayEnabled}
           />
         </div>
 

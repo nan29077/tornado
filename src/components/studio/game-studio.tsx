@@ -228,13 +228,19 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
     [],
   );
 
-  /** 닫을 때 작성 중이던 내용도 함께 정리한다. 다음에 열었을 때 옛 입력이 남아 있으면 헷갈린다. */
+  /**
+   * 닫을 때 작성 중이던 내용도 함께 정리한다. 다음에 열었을 때 옛 입력이 남아 있으면 헷갈린다.
+   *
+   * **미리보기(previewGameId)는 건드리지 않는다.** 예전에는 여기서 null 로 되돌렸는데,
+   * 미리보기는 팝업에 가려 보이지 않는 위쪽 [방송 화면] 에 그려지므로 결과가 이랬다.
+   *   [미리보기] 클릭 → 팝업에 가려 안 보임 → 팝업 닫기 → 그 순간 미리보기도 꺼짐
+   * 사용자에게는 "눌렀는데 아무것도 안 보인다" 로만 보였다. 닫아도 유지해야 볼 수 있다.
+   */
   const closeManage = React.useCallback(() => {
     setManageTab(null);
     setForm(null);
     setEditingId(null);
     setProblem(null);
-    setPreviewGameId(null);
   }, []);
 
   const toastTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -682,6 +688,26 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
           게임 오버레이가 사용 안 함 상태입니다. 크리에이터 관리자에서 게임 오버레이를 먼저 켜 주세요.
         </Notice>
       ) : null}
+
+      {/*
+        샘플 미리보기를 켜 둔 상태 표시 + 끄는 곳.
+
+        [미리보기] 는 이제 팝업을 닫고 위쪽 [방송 화면] 으로 데려가므로, 끄는 버튼이 팝업
+        안에만 있으면 팝업을 다시 열어야 끌 수 있다. 켜 둔 사실 자체도 잊기 쉬워서
+        "방송 화면에 왜 이 게임이 떠 있지?" 가 된다. 켜져 있는 동안 여기에 계속 보여 준다.
+      */}
+      {previewGameId ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand-200 bg-brand-50/60 px-3 py-2.5">
+          <span className="text-[12.5px] font-bold text-ink-700">
+            <Eye size={14} strokeWidth={1.8} className="mr-1 inline-block align-[-2px] text-brand-700" />
+            {games.find((g) => g.id === previewGameId)?.title ?? '게임'} 미리보기를 방송 화면에 띄우는 중입니다
+            <span className="ml-1 font-semibold text-ink-400">— 실제 방송에는 나가지 않습니다</span>
+          </span>
+          <Button size="sm" variant="secondary" onClick={() => setPreviewGameId(null)}>
+            <EyeOff size={15} strokeWidth={1.8} /> 미리보기 끄기
+          </Button>
+        </div>
+      ) : null}
       {/*
         진행 컨트롤에서 난 오류만 여기에 띄운다. 목록·폼에서 난 오류는 그 자리에 띄운다.
         단 팝아웃 창(compact)은 목록·폼 자체가 없으므로 모든 오류를 여기서 받는다.
@@ -1042,11 +1068,25 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
                           <Button
                             size="sm"
                             variant="secondary"
-                            onClick={() => setPreviewGameId((cur) => (cur === g.id ? null : g.id))}
+                            onClick={() => {
+                              if (previewGameId === g.id) {
+                                setPreviewGameId(null);
+                                return;
+                              }
+                              /*
+                                미리보기는 위쪽 [방송 화면] 한 곳에서만 본다. 이 팝업이 화면을
+                                덮고 있으므로, 띄우는 즉시 팝업을 닫고 그 자리로 데려간다.
+                                (예전에는 팝업 안에 작은 iframe 을 하나 더 그렸는데, 같은 화면이
+                                 두 곳에 생기고 카드 아래에 끼어들어 접힌 영역에 묻히곤 했다)
+                              */
+                              setPreviewGameId(g.id);
+                              closeManage();
+                              showBroadcast();
+                            }}
                           >
                             {previewGameId === g.id ? (
                               <>
-                                <EyeOff size={15} strokeWidth={1.8} /> 미리보기 닫기
+                                <EyeOff size={15} strokeWidth={1.8} /> 미리보기 끄기
                               </>
                             ) : (
                               <>
@@ -1093,24 +1133,9 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
                         ) : null}
 
                         {previewGameId === g.id ? (
-                          <div className="mt-3">
-                            <p className="mb-1.5 text-[12px] font-semibold text-ink-500">
-                              띄우면 이렇게 보입니다 — 참여자 0명 기준의 고정 화면입니다.
-                            </p>
-                            <div className="overflow-hidden rounded-xl border border-ink-100" style={CHECKER_STYLE}>
-                              <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
-                                <iframe
-                                  title={`${g.title} 미리보기`}
-                                  src={`/overlay/${encodeURIComponent(creatorId)}/game?preview=1&sample=${encodeURIComponent(g.id)}`}
-                                  className="absolute inset-0 h-full w-full"
-                                />
-                              </div>
-                            </div>
-                            <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-400">
-                              회차를 만들지 않는 확인용 화면이라 방송에는 나가지 않고 [지난 게임 결과]에도 남지
-                              않습니다. QR 은 자리만 보여 주는 것이라 찍어도 참여되지 않습니다.
-                            </p>
-                          </div>
+                          <p className="mt-2 text-[12px] font-semibold text-brand-700">
+                            위 [방송 화면] 에서 미리보기 중입니다.
+                          </p>
                         ) : null}
                       </Card>
                     );

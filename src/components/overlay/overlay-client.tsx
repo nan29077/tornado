@@ -562,6 +562,20 @@ export function OverlayClient({
 
     return () => {
       disposed = true;
+      /**
+       * **재생 잠금을 반드시 푼다.**
+       *
+       * `busy` 는 `useRef` 라 effect 가 다시 실행돼도 값이 그대로 살아남는다. 알림 한 건이
+       * 재생되는 도중에 이 정리 함수가 돌면, 진행 중이던 `Promise.all(...).then()` 은
+       * `if (disposed) return;` 에서 빠져나가면서 **`busy.current = false` 에 닿지 못한다.**
+       * 그러면 새로 만들어진 `playNext` 는 첫 줄(`if (disposed || busy.current) return;`)에서
+       * 그대로 되돌아오고, 그 뒤로는 [테스트 후원 보내기]를 몇 번을 눌러도 화면에 아무것도
+       * 뜨지 않는다. 오류도 안 나고 대기 수만 올라간다.
+       *
+       * 대기열도 함께 비운다. 남겨 두면 다음 인스턴스가 이미 지나간 옛 알림부터 재생한다.
+       */
+      busy.current = false;
+      queue.current = [];
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         try {
           window.speechSynthesis.cancel();

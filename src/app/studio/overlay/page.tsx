@@ -362,6 +362,7 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
               <Card>
                 <BroadcastPreview
                   creatorId={creatorId}
+                  overlayEnabled={setting.enabled}
                   donationLayout={clampOverlayLayout(setting)}
                   gameLayout={clampOverlayLayout({
                     offsetX: setting.gameOffsetX,
