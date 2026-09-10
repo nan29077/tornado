@@ -4,6 +4,7 @@ import { encrypt, decrypt, maskResident, normalizeResident } from '@/lib/crypto'
 import { applyRate, formatWon } from '@/lib/money';
 import { env } from '@/lib/env';
 import { calculateWithholding } from '@/lib/withholding';
+import { normalizeTaxType, taxTypeLabel } from '@/lib/labels';
 import { kstMonthKey } from '@/lib/datetime';
 import { logger } from '@/lib/logger';
 import { addDaysKey, fromDateKey, settlementDateFor, toDateKey } from '@/lib/business-day';
@@ -539,8 +540,17 @@ export async function createSettlementRequest(
       const account = await tx.settlementAccount.findUnique({ where: { creatorId } });
       if (!account || !account.verified) throw new Error('정산 계좌 인증이 완료되지 않았습니다.');
 
+      // 크리에이터의 과세유형 확인. 사업자(일반과세/간이과세/면세)는 원천징수하지 않는다.
+      const creator = await tx.creatorProfile.findUnique({
+        where: { id: creatorId },
+        select: { taxType: true },
+      });
+      const taxType = normalizeTaxType(creator?.taxType);
+      const shouldWithhold = taxTypeLabel[taxType].withholding;
+
       // 사업소득 원천징수: 소득세 3%(10원절사) + 지방소득세 10%(10원절사), 소액부징수 적용.
-      const wh = calculateWithholding(amount);
+      // 사업자(withholding: false)는 원천징수 없이 전액 지급.
+      const wh = shouldWithhold ? calculateWithholding(amount) : { total: 0n, incomeTax: 0n, localTax: 0n };
 
       return tx.settlementRequest.create({
         data: {

@@ -109,6 +109,7 @@ export async function updateSettlementRequestStatus(
       after: { status, memo, payoutAmount: before.payoutAmount },
     });
     revalidatePath('/admin/settlements');
+    revalidatePath('/studio/settlement');
     return status === 'PAID'
       ? '지급 완료로 처리했습니다. 원장에 PAYOUT / 원천징수 분개가 추가되었습니다.'
       : status === 'PAYOUT_FAILED'
@@ -204,6 +205,7 @@ export async function bulkUpdateSettlementAction(
       after: { done, total: ids.length },
     });
     revalidatePath('/admin/settlements');
+    revalidatePath('/studio/settlement');
 
     const base = `${done}건을 처리했습니다.`;
     return errors.length ? `${base} (건너뜀 ${errors.length}건: ${errors.slice(0, 3).join(' / ')}${errors.length > 3 ? ' …' : ''})` : base;
@@ -301,6 +303,7 @@ export async function applyPayoutResultsAction(
       after: { ok, failed, lines: lines.length },
     });
     revalidatePath('/admin/settlements');
+    revalidatePath('/studio/settlement');
     const base = `지급 완료 ${ok}건, 지급 실패 ${failed}건 반영했습니다.`;
     return errors.length ? `${base} (오류 ${errors.length}건: ${errors.slice(0, 3).join(' / ')})` : base;
   });
@@ -422,6 +425,7 @@ export async function createAdjustmentEntryAction(
     }).catch(() => undefined);
 
     revalidatePath('/admin/settlements');
+    revalidatePath('/studio/settlement');
     revalidatePath(`/admin/creators/${creatorId}`);
     return `${creator.displayName} 님의 정산 원장에 조정 분개 ${formatWon(amount)}을(를) 추가했습니다. 원장은 되돌릴 수 없습니다.`;
   });
