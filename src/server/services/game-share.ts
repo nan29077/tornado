@@ -3,7 +3,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { getYouTubeAdapter } from '@/server/adapters/youtube';
 import { findActiveRound } from '@/server/services/game-state';
-import { reserveYouTubeQuota, releaseYouTubeQuota } from '@/server/services/youtube-quota';
+import { reserveYouTubeQuota, releaseYouTubeQuota, type QuotaReserveInput } from '@/server/services/youtube-quota';
 import { ensureYouTubeAccessToken, resolveActiveBroadcast } from '@/server/services/youtube-connection';
 import { getPublicBaseUrl } from '@/server/public-base-url';
 import { consumeRateLimit } from '@/server/rate-limit';
@@ -92,7 +92,8 @@ export async function shareGameLinkToChat(creatorId: string): Promise<GameShareR
   const live = await resolveActiveBroadcast(creatorId, token.accessToken, adapter);
   if (!live.ok) return fail(live.reason);
 
-  const quota = { cost: env.youtube.insertQuotaCost, creatorId, purpose: 'share' as const };
+  // 선점·반납에 같은 객체를 넘겨 PT 날짜를 일치시킨다(youtube-quota 의 dayKey 주석 참고).
+  const quota: QuotaReserveInput = { cost: env.youtube.insertQuotaCost, creatorId, purpose: 'share' };
   if (!(await reserveYouTubeQuota(quota))) {
     logger.warn('게임 참여 링크 — 유튜브 할당량 초과', { creatorId });
     return fail('QUOTA_EXCEEDED');

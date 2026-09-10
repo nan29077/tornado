@@ -123,7 +123,15 @@ export async function ensureYouTubeAccessToken(
   if (!needsRefresh) return { ok: true, accessToken: decrypt(conn.accessTokenEnc) };
 
   const lockKey = `yt:refresh:${conn.creatorId}`;
-  const gotLock = await kv.setnx(lockKey, '1', REFRESH_LOCK_SEC).catch(() => true);
+  /**
+   * 저장소 오류는 **락을 얻지 못한 것으로 본다.**
+   *
+   * 예전에는 `.catch(() => true)` 였다. Redis 가 잠깐 흔들리면 모든 인스턴스가 "내가 락을
+   * 잡았다"고 판단해 동시에 `adapter.refresh()` 를 호출했고, 구글이 refresh token 을
+   * 회전시키는 계정에서는 서로가 방금 발급받은 토큰을 무효화했다 — 이 락이 막으려던
+   * 바로 그 경쟁이다. 못 얻은 쪽으로 기울면 아래 대기 경로를 타므로 최악이라야 잠깐 늦어진다.
+   */
+  const gotLock = await kv.setnx(lockKey, '1', REFRESH_LOCK_SEC).catch(() => false);
 
   if (!gotLock) {
     // 다른 요청이 갱신 중이다. 그 결과를 기다렸다가 DB 에서 다시 읽는다.

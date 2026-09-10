@@ -30,6 +30,15 @@ export interface QuotaReserveInput {
   cost: number;
   creatorId?: string | null;
   purpose?: QuotaPurpose;
+  /**
+   * 선점할 때 쓴 PT 날짜 키. 되돌릴 때 **같은 날짜의 카운터**를 내리기 위해 필요하다.
+   *
+   * 예전에는 선점과 반납이 각각 `ptDateKey()` 를 새로 계산했다. PT 자정을 걸치면
+   * (한국 시간 오후 4~5시경) 선점은 D일 카운터를 올리고 반납은 D+1일 카운터를 내려서,
+   * D일은 쓰지도 않은 분량이 남아 있고 D+1일은 음수가 되어 하루치 상한이 헐거워졌다.
+   * 이 모듈이 지키려는 값이 바로 그 상한이라 그냥 두면 안 된다.
+   */
+  dayKey?: string;
 }
 
 interface Bucket {
@@ -38,7 +47,7 @@ interface Bucket {
 }
 
 function buckets(input: QuotaReserveInput): Bucket[] {
-  const day = ptDateKey();
+  const day = input.dayKey ?? ptDateKey();
   const list: Bucket[] = [{ key: `yt:quota:${day}`, limit: env.youtube.dailyQuota }];
   if (input.purpose === 'share' && env.youtube.shareDailyQuota > 0) {
     list.push({ key: `yt:quota:share:${day}`, limit: env.youtube.shareDailyQuota });
@@ -60,6 +69,8 @@ export async function reserveYouTubeQuota(input: number | QuotaReserveInput): Pr
   const req: QuotaReserveInput = typeof input === 'number' ? { cost: input } : input;
   if (req.cost <= 0) return true;
 
+  // 이 시점의 PT 날짜를 고정해 호출부에 돌려준다(아래 quotaDayKey). 반납도 같은 날짜를 쓴다.
+  if (!req.dayKey) req.dayKey = ptDateKey();
   const list = buckets(req);
   const applied: Bucket[] = [];
   try {
@@ -82,7 +93,17 @@ export async function reserveYouTubeQuota(input: number | QuotaReserveInput): Pr
   }
 }
 
-/** 선점한 할당량을 되돌린다. 전송이 실제로 실패했을 때만 호출한다. */
+/** 지금 시점의 PT 날짜 키. 선점과 반납을 같은 날짜로 묶을 때 쓴다. */
+export function quotaDayKey(): string {
+  return ptDateKey();
+}
+
+/**
+ * 선점한 할당량을 되돌린다. 전송이 실제로 실패했을 때만 호출한다.
+ *
+ * **선점할 때 쓴 `dayKey` 를 그대로 넘겨야 한다.** 넘기지 않으면 지금 시각의 PT 날짜로
+ * 계산해, PT 자정을 걸친 경우 엉뚱한 날의 카운터를 내린다.
+ */
 export async function releaseYouTubeQuota(input: number | QuotaReserveInput): Promise<void> {
   const req: QuotaReserveInput = typeof input === 'number' ? { cost: input } : input;
   if (req.cost <= 0) return;

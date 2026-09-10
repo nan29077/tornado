@@ -13,7 +13,7 @@ import {
   upsertBroadcastRow,
   invalidateBroadcastCache,
 } from './youtube-connection';
-import { reserveYouTubeQuota, releaseYouTubeQuota, getYouTubeQuotaUsage } from './youtube-quota';
+import { reserveYouTubeQuota, releaseYouTubeQuota, getYouTubeQuotaUsage, type QuotaReserveInput } from './youtube-quota';
 import { normalizeTtsProvider } from './tts/naver';
 import { clampOverlayLayout } from '@/lib/overlay-layout';
 import { textAnimOf } from '@/lib/overlay-text-anim';
@@ -326,7 +326,18 @@ export function isRetryableYouTubeFailure(code: string | null | undefined): bool
  * 조회 실패·토큰 갱신 실패 같은 **진짜 오류는 ok:false** 여야 한다.
  * (예전에는 오류도 ok:true 였고, 유튜브 장애가 나도 관리자 화면의 실패 건수가 0으로 보였다)
  */
-export async function sendYouTube(donationId: string): Promise<{ ok: boolean; reason?: string }> {
+export async function sendYouTube(
+  donationId: string,
+  /**
+   * 재시도에서만 넘긴다. 처음 실패했을 때 겨냥했던 방송의 id.
+   *
+   * 지금 살아 있는 방송이 이것과 다르면 **보내지 않는다.** 방송이 끊겼다 다시 켜지면
+   * 새 방송·새 liveChatId 가 만들어지는데, 재시도는 "지금 켜져 있는 방송"을 다시 찾아
+   * 올리기 때문에 A 방송에서 실패한 후원 문구가 최대 1시간 뒤 **B 방송 채팅에 뜬다.**
+   * 시청자에게는 방금 들어온 후원처럼 보인다.
+   */
+  expectedBroadcastId?: string | null,
+): Promise<{ ok: boolean; reason?: string }> {
   const donation = await prisma.donation.findUnique({
     where: { id: donationId },
     include: { creator: { include: { youtubeConnection: true } } },
@@ -386,9 +397,26 @@ export async function sendYouTube(donationId: string): Promise<{ ok: boolean; re
   }
 
   const broadcast = await upsertBroadcastRow(donation.creatorId, live.broadcast);
+
+  // 재시도인데 그 사이 방송이 바뀌었으면 올리지 않는다. (위 expectedBroadcastId 주석 참고)
+  if (expectedBroadcastId && broadcast.id !== expectedBroadcastId) {
+    logger.info('유튜브 재시도 건너뜀 — 그 사이 방송이 바뀌었습니다.', {
+      donationId,
+      expectedBroadcastId,
+      currentBroadcastId: broadcast.id,
+    });
+    return skip('BROADCAST_CHANGED');
+  }
+
   const liveChatId = live.broadcast.liveChatId!;
 
-  const quota = { cost: env.youtube.insertQuotaCost, creatorId: donation.creatorId, purpose: 'donation' as const };
+  // 같은 객체를 선점·반납에 함께 넘긴다. 선점할 때 정해진 PT 날짜(dayKey)가 이 객체에 남아
+  // 반납이 같은 날짜의 카운터를 내린다(PT 자정을 걸쳐도 어긋나지 않는다).
+  const quota: QuotaReserveInput = {
+    cost: env.youtube.insertQuotaCost,
+    creatorId: donation.creatorId,
+    purpose: 'donation',
+  };
   if (!(await reserveYouTubeQuota(quota))) {
     await prisma.youTubeChatDelivery.update({
       where: { id: delivery.id },
@@ -468,7 +496,8 @@ export async function retryFailedYouTubeDeliveries(now = new Date()): Promise<nu
       attempts: { lt: MAX_ATTEMPTS },
       createdAt: { lt: new Date(now.getTime() - RETRY_AFTER_MS), gt: new Date(now.getTime() - GIVE_UP_AFTER_MS) },
     },
-    select: { id: true, donationId: true, errorCode: true },
+    // 처음 겨냥했던 방송을 함께 읽는다. 재시도가 다른 방송에 올라가지 않게 하려면 필요하다.
+    select: { id: true, donationId: true, errorCode: true, broadcastId: true },
     orderBy: { createdAt: 'asc' },
     take: 50,
   });
@@ -477,7 +506,7 @@ export async function retryFailedYouTubeDeliveries(now = new Date()): Promise<nu
   for (const d of candidates) {
     if (!isRetryableYouTubeFailure(d.errorCode)) continue;
     try {
-      const res = await sendYouTube(d.donationId);
+      const res = await sendYouTube(d.donationId, d.broadcastId);
       if (res.ok) count += 1;
     } catch (e) {
       logger.warn('유튜브 전송 재시도 실패', { donationId: d.donationId, message: (e as Error).message });

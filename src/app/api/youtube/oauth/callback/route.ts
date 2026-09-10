@@ -73,7 +73,6 @@ export async function GET(req: Request) {
       channelTitle: channel.title,
       channelThumb: channel.thumbnailUrl ?? null,
       accessTokenEnc: encrypt(tokens.accessToken),
-      refreshTokenEnc: encrypt(tokens.refreshToken),
       scope: tokens.scope,
       expiresAt: tokens.expiresAt,
       status: 'CONNECTED' as const,
@@ -81,10 +80,35 @@ export async function GET(req: Request) {
       lastCheckedAt: new Date(),
     };
 
+    /**
+     * **refresh token 이 비어 있으면 기존 값을 덮어쓰지 않는다.**
+     *
+     * 구글은 refresh token 을 **최초 동의 때만** 내려준다. 크리에이터가 "다른 채널로 다시
+     * 연결" 하면 재동의라 refresh token 이 오지 않는 것이 정상이다. 예전에는 그것을 그대로
+     * `encrypt('')` 로 덮어써서, 다시 연결한 순간 멀쩡하던 갱신 수단이 사라지고
+     * 액세스 토큰이 만료되는 약 1시간 뒤에 연결이 영구히 죽었다(복구 방법은 재연결뿐인데
+     * 재연결이 또 같은 결과를 낳는다). 갱신 경로(`ensureYouTubeAccessToken`)는 이미
+     * 같은 방식으로 보존하고 있었는데 이 경로만 빠져 있었다.
+     *
+     * 최초 연결(create)에는 refresh token 이 반드시 있어야 한다. 없으면 연결을 만들지 않고
+     * 되돌려 보낸다 — 만들어 봐야 1시간짜리 연결이다.
+     */
+    const refreshTokenEnc = tokens.refreshToken ? encrypt(tokens.refreshToken) : null;
+
+    const before = await prisma.youTubeConnection.findUnique({
+      where: { creatorId },
+      select: { id: true },
+    });
+
+    if (!before && !refreshTokenEnc) {
+      logger.warn('유튜브 최초 연결에 refresh token 이 없습니다.', { creatorId });
+      return back('youtube=no_refresh_token');
+    }
+
     await prisma.youTubeConnection.upsert({
       where: { creatorId },
-      create: { id: newId(), creatorId, ...common },
-      update: common,
+      create: { id: newId(), creatorId, ...common, refreshTokenEnc: refreshTokenEnc as string },
+      update: { ...common, ...(refreshTokenEnc ? { refreshTokenEnc } : {}) },
     });
 
     return back('youtube=connected');
