@@ -47,6 +47,23 @@ export interface EmmaMoRow {
   date_mo: Date | string;
   /** 인포뱅크로부터 수신한 시각. date_mo 와 같은 이유로 두 형태를 모두 받는다. */
   date_mo_recv: Date | string;
+  /**
+   * 이 행이 들어온 뒤 흐른 시간(초). **DB 가 계산해서 내려 준다.**
+   *
+   * 시각을 앱으로 가져와 비교하지 않는 이유
+   * --------------------------------------
+   * `date_mo_recv` 는 시간대가 없는 TIMESTAMP 라 "이 벽시계가 어느 시간대인가"를
+   * 누군가는 정해야 한다. 예전에는 SELECT 에서 `AT TIME ZONE 'UTC'` 로 UTC 라고 단정했는데,
+   * EMMA 와 이 표의 기본값(`DEFAULT now()`)은 **DB 세션 시간대의 벽시계**를 넣는다.
+   * 한국 시간대 세션에서는 그 값을 UTC 로 읽는 순간 **9시간 미래**가 되고,
+   * "얼마나 기다렸나" 가 항상 0 이 되어 장문 조각 대기 상한이 영영 발동하지 않았다.
+   *
+   * `LOCALTIMESTAMP - date_mo_recv` 는 양쪽 모두 같은 세션 시간대의 벽시계라
+   * 시간대를 어떻게 잡든 차이가 정확하다. 해석이 개입할 여지를 없앤다.
+   *
+   * 드라이버에 따라 문자열로 올 수 있어 number 와 string 을 모두 받는다.
+   */
+  waited_sec?: number | string | null;
   /** 착신망. 10001(SKT) 10002(KT) 10003(LGU+) 10008(NGM) 10000(ETC) */
   carrier: number | null;
   rs_id: string | null;

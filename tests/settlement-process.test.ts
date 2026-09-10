@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
-import { resetDb, seedBasics, seedRegisteredDonor, moPayload, type Fixture } from './helpers';
+import { resetDb, seedBasics, seedRegisteredDonor, moPayload, matureDonations, type Fixture } from './helpers';
 import { handleMoInbound } from '@/server/services/donation-flow';
 import { mockMoAdapter } from '@/server/adapters/mo';
 import {
@@ -34,6 +34,8 @@ async function accumulate(times = 4) {
   for (let i = 0; i < times; i += 1) {
     await inbound(moPayload({ to: fx.moNumber, text: `적립 ${i}` }));
   }
+  // 보류 기간을 지난 상태로 만든다(정산일 규칙 자체는 settlement-schedule 테스트가 본다).
+  await matureDonations(fx.creatorId);
 }
 
 describe('정산 프로세스 — 요청부터 지급까지', () => {

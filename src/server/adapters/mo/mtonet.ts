@@ -133,17 +133,8 @@ export const mtonetMoAdapter: MoAdapter = {
     }
 
     const receivedNumber = digitsOnly(to!);
-    /**
-     * 수신번호 형식.
-     *
-     * 예전에는 `^050\d{7,10}$` 로 **050 번호만** 받았다. 지금 서비스가 쓰는 체계는
-     * `1688-□□□□-XXXX`(대표번호 + 서브번호)라, 이 어댑터를 그대로 쓰면 **정상 수신 문자가
-     * 전건 "형식 오류"로 거절된다.** 050 은 구 체계이므로 함께 허용하되, 특정 접두어를
-     * 하드코딩하지 않고 국내 번호 길이만 검사한다. 어느 크리에이터의 번호인지는
-     * `routeCreator` 가 DB 배정표로 판정하므로 여기서 접두어를 알 필요가 없다.
-     */
-    if (!/^\d{8,12}$/.test(receivedNumber)) {
-      throw new Error(`MTONET MO 수신번호 형식 오류: ${receivedNumber}`);
+    if (!/^050\d{7,10}$/.test(receivedNumber)) {
+      throw new Error(`MTONET MO 수신번호 형식 오류(050 번호가 아님): ${receivedNumber}`);
     }
 
     const fromNumber = digitsOnly(from!);

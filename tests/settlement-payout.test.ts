@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
-import { resetDb, seedBasics, seedRegisteredDonor, moPayload, type Fixture } from './helpers';
+import { resetDb, seedBasics, seedRegisteredDonor, moPayload, matureDonations, type Fixture } from './helpers';
 import { handleMoInbound } from '@/server/services/donation-flow';
 import { mockMoAdapter } from '@/server/adapters/mo';
 import {
@@ -47,6 +47,8 @@ async function fund(creatorId: string) {
     // 금액은 본문이 아니라 크리에이터 고정 금액(3000원)으로 결정된다.
     await inbound(moPayload({ to: fx.moNumber, messageId: `FUND-${i}-${Date.now()}`, text: `응원 ${i}` }));
   }
+  // 보류 기간을 지난 상태로 만든다(아래 흐름은 보류 규칙이 아니라 그 다음 단계를 본다).
+  await matureDonations(creatorId);
   const s = await getSettlementSummary(creatorId);
   return s.available;
 }

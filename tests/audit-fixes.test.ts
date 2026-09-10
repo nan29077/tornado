@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
-import { resetDb, seedBasics, seedRegisteredDonor, moPayload, type Fixture } from './helpers';
+import { resetDb, seedBasics, seedRegisteredDonor, moPayload, matureDonations, type Fixture } from './helpers';
 import { handleMoInbound, routeCreator } from '@/server/services/donation-flow';
 import { mockMoAdapter } from '@/server/adapters/mo';
 import {
@@ -190,6 +190,8 @@ describe('정산 지급 안전장치', () => {
       await prisma.donationLimitPolicy.updateMany({ data: { velocityMaxCount: 100, cooldownAfterCount: 100 } });
       await inbound(moPayload({ to: fx.moNumber, text: `적립 ${i}` }));
     }
+    // 보류 기간을 지난 상태로 만든다. 아래 검증은 지급 안전장치이지 보류 규칙이 아니다.
+    await matureDonations(fx.creatorId);
   });
 
   it('이체파일 발급 이력이 남고, 재발급 건은 재발급으로 표시된다', async () => {

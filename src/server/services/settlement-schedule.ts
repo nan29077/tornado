@@ -17,9 +17,25 @@ import {
  * 코드 상수로 두면 그때마다 배포해야 하고, 배포가 늦으면 정산일이 통째로 틀어진다.
  */
 
+/**
+ * 공휴일 조회에 쓸 수 있는 최소 클라이언트.
+ *
+ * **트랜잭션 안에서 부를 때는 그 tx 를 반드시 넘겨야 한다.**
+ * 전역 `prisma` 로 읽으면 트랜잭션이 이미 커넥션 하나를 쥔 채 **풀에서 또 하나를 달라고
+ * 기다리게 된다.** 그 커넥션은 트랜잭션이 끝나야 반납되는데 트랜잭션은 이 조회를 기다리므로
+ * 서로를 기다리다 `timeout exceeded when trying to connect` 로 죽는다.
+ * (정산 요청은 `withAdvisoryLock` 트랜잭션 안에서 `computeHoldingAmount` 를 부르므로
+ *  정확히 이 경로를 탄다 — 커넥션 풀이 작은 환경에서 정산 요청이 통째로 실패했다)
+ */
+type HolidayClient = Pick<typeof prisma, 'publicHoliday'>;
+
 /** 조회 구간에 걸치는 공휴일 집합을 읽는다. */
-export async function loadHolidays(fromDateKey: string, toDateKeyStr: string): Promise<Set<string>> {
-  const rows = await prisma.publicHoliday.findMany({
+export async function loadHolidays(
+  fromDateKey: string,
+  toDateKeyStr: string,
+  client: HolidayClient = prisma,
+): Promise<Set<string>> {
+  const rows = await client.publicHoliday.findMany({
     where: { active: true, date: { gte: fromDateKey, lte: toDateKeyStr } },
     select: { date: true },
   });
@@ -30,8 +46,12 @@ export async function loadHolidays(fromDateKey: string, toDateKeyStr: string): P
  * 정산일 계산에 필요한 여유 구간까지 포함해 공휴일을 읽는다.
  * 월 마지막 날 후원의 정산일은 다음 달로 넘어가므로 뒤쪽을 넉넉히 잡는다.
  */
-export async function loadHolidaysAround(fromDateKey: string, toDateKeyStr: string): Promise<Set<string>> {
-  return loadHolidays(addDaysKey(fromDateKey, -40), addDaysKey(toDateKeyStr, 40));
+export async function loadHolidaysAround(
+  fromDateKey: string,
+  toDateKeyStr: string,
+  client: HolidayClient = prisma,
+): Promise<Set<string>> {
+  return loadHolidays(addDaysKey(fromDateKey, -40), addDaysKey(toDateKeyStr, 40), client);
 }
 
 /** 공휴일이 하나도 등록되지 않은 연도를 찾아낸다(정산일 오계산 조기 경보). */

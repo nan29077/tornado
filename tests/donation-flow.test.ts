@@ -14,7 +14,7 @@ import {
   assertPayable,
 } from '@/server/services/settlement';
 import { issueSecureLink } from '@/server/services/secure-link';
-import { resetDb, seedBasics, seedRegisteredDonor, moPayload, type Fixture } from './helpers';
+import { resetDb, seedBasics, seedRegisteredDonor, moPayload, matureDonations, type Fixture } from './helpers';
 import { newId } from '@/lib/id';
 import { generateToken, tokenHash, phoneHash } from '@/lib/crypto';
 
@@ -317,6 +317,8 @@ describe('MO 수신 → 후원 → 결제 → 방송 흐름', () => {
   it('[17] 정산 요청은 가능 금액을 초과할 수 없고, 지급 시 원장에 반영된다', async () => {
     await seedRegisteredDonor(fx.donorPhone);
     await inbound(moPayload({ to: fx.moNumber }));
+    // 보류 기간을 지난 상태로 만든다. 이 검사는 "가능 금액 초과 거절"이지 보류 규칙이 아니다.
+    await matureDonations(fx.creatorId);
 
     await expect(createSettlementRequest(fx.creatorId, 999999n)).rejects.toThrow(/초과/);
 

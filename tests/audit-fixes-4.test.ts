@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '@/server/db';
-import { moPayload, resetDb, seedBasics, seedRegisteredDonor, type Fixture } from './helpers';
+import { moPayload, resetDb, seedBasics, seedRegisteredDonor, matureDonations, type Fixture } from './helpers';
 import { createGame, spinRound, startRound } from '@/server/services/games';
 import { buildStudioStateShared } from '@/server/services/game-state';
 import {
@@ -337,6 +337,8 @@ describe('DB 검사', () => {
           ),
         );
       }
+      // 보류 기간을 지난 상태로 만든다(이 검사는 지급 실패 되돌리기이지 보류 규칙이 아니다).
+      await matureDonations(fx.creatorId);
       const available = (await getSettlementSummary(fx.creatorId)).available;
       expect(available).toBeGreaterThan(0n);
       const req = await createSettlementRequest(fx.creatorId, available, {

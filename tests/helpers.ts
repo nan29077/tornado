@@ -142,6 +142,25 @@ export async function seedRegisteredDonor(phone = '01012345678') {
   return donor;
 }
 
+/**
+ * 후원을 **정산 보류 기간이 지난 상태**로 만든다.
+ *
+ * `getSettlementSummary` 는 결제일 기준 영업일 5일이 지나야 정산 가능액에 넣는다
+ * (`computeHoldingAmount`). 그래서 방금 만든 후원은 전액 보류되어 `available` 이 0 이다.
+ * 정산 요청·승인·이체·지급 흐름을 검증하는 테스트는 보류 규칙을 확인하려는 것이 아니라
+ * 그 다음 단계를 보려는 것이므로, 결제일을 충분히 과거로 돌려 "정산일이 지난 후원"을 만든다.
+ *
+ * 보류 규칙 자체(영업일 5일·주말·공휴일 병합)는 `settlement-schedule.test.ts` 가 따로 검증한다.
+ * 되돌리는 기간은 조회 창(HOLDING_LOOKBACK_DAYS=40일) 안쪽으로 잡아, 보류 계산이
+ * 이 후원을 **실제로 훑고도** 성숙했다고 판정하는 경로를 지나게 한다.
+ */
+export async function matureDonations(creatorId: string, daysAgo = 30) {
+  await prisma.donation.updateMany({
+    where: { creatorId, paidAt: { not: null } },
+    data: { paidAt: new Date(Date.now() - daysAgo * 86_400_000) },
+  });
+}
+
 let seq = 0;
 export function moPayload(input: {
   to: string;

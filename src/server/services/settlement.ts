@@ -386,7 +386,7 @@ export interface SettlementSummary {
 }
 
 /** 요약 집계에 쓰는 클라이언트 (전역 prisma 또는 트랜잭션 tx) */
-type SummaryClient = Pick<typeof prisma, 'settlementLedger' | 'settlementRequest' | 'donation'>
+type SummaryClient = Pick<typeof prisma, 'settlementLedger' | 'settlementRequest' | 'donation' | 'publicHoliday'>
   | Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 /**
@@ -421,7 +421,12 @@ export async function computeHoldingAmount(
   });
   if (donations.length === 0) return 0n;
 
-  const holidays = await loadHolidaysAround(fromKey, todayKey);
+  /**
+   * **같은 client 로 읽는다.** 이 함수는 `createSettlementRequest` 의 advisory lock
+   * 트랜잭션 안에서 불린다. 전역 prisma 로 공휴일을 읽으면 트랜잭션이 커넥션을 쥔 채
+   * 풀에서 또 하나를 기다려 교착에 빠진다(`timeout exceeded when trying to connect`).
+   */
+  const holidays = await loadHolidaysAround(fromKey, todayKey, client);
   const immature = donations
     .filter((d) => d.paidAt && settlementDateFor(toDateKey(d.paidAt), holidays) > todayKey)
     .map((d) => d.id);

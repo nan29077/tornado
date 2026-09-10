@@ -58,6 +58,7 @@ const MO_COLUMNS = `mo_key, service_type, mo_recipient, emo_recipient, mo_origin
                     mo_callback, msg_status, subject, content,
                     (date_mo AT TIME ZONE 'UTC') AS date_mo,
                     (date_mo_recv AT TIME ZONE 'UTC') AS date_mo_recv,
+                    EXTRACT(EPOCH FROM (LOCALTIMESTAMP - date_mo_recv))::int AS waited_sec,
                     carrier, rs_id, ems_id, ems_total, ems_seq, emma_id`;
 
 /** 같은 행에서 예외가 반복될 때 재시도를 포기하는 횟수. */
@@ -113,53 +114,17 @@ async function clearAttempts(moKey: string): Promise<void> {
  * **EMMA 가 행을 넣은 시각(date_mo_recv)** 을 기준으로 오래된 것만 되살린다.
  * (정상 처리는 1초 안에 끝나므로 기본 5분이면 진행 중인 건을 건드리지 않는다)
  */
-/**
- * 우리 대표번호가 아닌 것으로 확인돼 건너뛴 mo_key 와 그 만료 시각.
- *
- * 왜 필요한가 — 대표번호가 다른 행은 **남의 것일 수 있으므로 상태를 바꾸지 않고 NEW 로
- * 되돌린다**(한 EMMA 에 여러 서비스가 물린 구성 대비). 그런데 조회가
- * `WHERE msg_status = NEW ... ORDER BY date_mo ASC LIMIT n` 이라, 이런 행은 매 폴링마다
- * 다시 뽑혀 **배치 앞자리를 영구히 차지한다.** 그 뒤에 줄 서 있는 진짜 후원 문자가 굶는다.
- * (스팸이나 대표번호로 바로 온 답장이 몇 건만 쌓여도 폴링이 통째로 막힌다)
- *
- * EMMA 쪽 데이터는 그대로 두고, **우리 쪽에서만** 잠시 건너뛴다. 만료되면 다시 확인하므로
- * 설정이 바뀌어 우리 번호가 된 경우에도 결국 처리된다.
- */
-const foreignSkip = new Map<string, number>();
-const FOREIGN_SKIP_MS = 30 * 60_000;
-
-function rememberForeign(moKey: string): void {
-  foreignSkip.set(moKey, Date.now() + FOREIGN_SKIP_MS);
-  // 만료된 항목은 그때그때 걷어낸다. 폴러는 오래 사는 프로세스라 무한히 쌓이면 안 된다.
-  if (foreignSkip.size > 2000) {
-    const now = Date.now();
-    for (const [k, exp] of foreignSkip) if (exp <= now) foreignSkip.delete(k);
-  }
-}
-
-function foreignKeys(): string[] {
-  const now = Date.now();
-  const keys: string[] = [];
-  for (const [k, exp] of foreignSkip) {
-    if (exp > now) keys.push(k);
-    else foreignSkip.delete(k);
-  }
-  return keys;
-}
-
 async function fetchCandidates(suffix: string, limit: number, staleSec: number): Promise<EmmaMoRow[]> {
   assertSafeSuffix(suffix);
   const q = getEmmaQuerier();
-  const skip = foreignKeys();
   return q.query<EmmaMoRow>(
     `SELECT ${MO_COLUMNS}
        FROM em_mo_log_${suffix}
-      WHERE (msg_status = $1
-         OR (msg_status = $2 AND date_mo_recv < NOW() - MAKE_INTERVAL(secs => $3)))
-        AND NOT (mo_key = ANY($4::text[]))
+      WHERE msg_status = $1
+         OR (msg_status = $2 AND date_mo_recv < NOW() - MAKE_INTERVAL(secs => $3))
       ORDER BY date_mo ASC
       LIMIT ${Number(limit)}`,
-    [EMMA_MO_STATUS.NEW, EMMA_MO_STATUS.CLAIMED, staleSec, skip],
+    [EMMA_MO_STATUS.NEW, EMMA_MO_STATUS.CLAIMED, staleSec],
   );
 }
 
@@ -235,11 +200,17 @@ interface AssemblyResult {
  * 그래서 조립이 두 번 일어나도 `mo_inbound_message.provider_message_id` UNIQUE 가 걸려
  * 후원은 한 번만 생성된다.
  */
-async function assembleFragments(
-  suffix: string,
-  row: EmmaMoRow,
-  now: number,
-): Promise<AssemblyResult> {
+/**
+ * 이 행이 들어온 뒤 흐른 시간(초). DB 가 계산한 값을 그대로 쓴다.
+ * 값이 없거나(옛 경로) 음수면 0 으로 본다 — "아직 기다리는 중" 쪽으로 안전하게 기운다.
+ */
+function waitedSecOf(row: EmmaMoRow): number {
+  const raw = row.waited_sec;
+  const n = typeof raw === 'string' ? Number(raw) : typeof raw === 'number' ? raw : NaN;
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+async function assembleFragments(suffix: string, row: EmmaMoRow): Promise<AssemblyResult> {
   const emsId = Number(row.ems_id);
   const total = Number(row.ems_total ?? 0);
   const fragments = await fetchFragments(suffix, emsId);
@@ -255,13 +226,15 @@ async function assembleFragments(
 
   if (!complete) {
     /**
-     * 아직 다 오지 않았다. 가장 먼저 들어온 조각을 기준으로 기다린 시간을 잰다.
-     * (date_mo_recv = EMMA 가 행을 넣은 시각)
+     * 아직 다 오지 않았다. **가장 먼저 들어온 조각**을 기준으로 기다린 시간을 잰다.
+     * (= 조각들 중 가장 오래 기다린 값)
+     *
+     * 시각을 앱으로 가져와 `Date.now()` 와 빼지 않는다. `date_mo_recv` 는 시간대가 없는
+     * 컬럼이라 해석이 한 번이라도 어긋나면 이 비교가 통째로 무의미해진다(types.ts 의
+     * `waited_sec` 주석 참고 — 실제로 그래서 이 상한이 영영 발동하지 않았다).
+     * DB 안에서 같은 시간대의 벽시계끼리 뺀 값을 그대로 믿는다.
      */
-    const firstSeenAt = ordered
-      .map((f) => parseEmmaTimestamp(f.date_mo_recv)?.getTime() ?? now)
-      .reduce((a, b) => Math.min(a, b), now);
-    const waitedSec = Math.max(0, Math.floor((now - firstSeenAt) / 1000));
+    const waitedSec = ordered.reduce((longest, f) => Math.max(longest, waitedSecOf(f)), 0);
 
     if (waitedSec < MMS_ASSEMBLY_TIMEOUT_SEC) {
       return {
@@ -412,8 +385,6 @@ export async function pollEmmaMo(handler: EmmaMoHandler): Promise<EmmaPollResult
       // (한 EMMA 에 여러 서비스의 번호가 물린 구성에서 서로의 후원을 가로채는 사고를 막는다)
       if (expectedBase && single.baseNumber !== expectedBase) {
         await setStatus(suffix, moKey, EMMA_MO_STATUS.NEW).catch(() => undefined);
-        // 다음 폴링에서 이 행이 다시 배치 앞자리를 차지하지 않게 한다(위 foreignSkip 주석 참고).
-        rememberForeign(moKey);
         result.skipped++;
         result.details.push({
           moKey,
@@ -441,7 +412,7 @@ export async function pollEmmaMo(handler: EmmaMoHandler): Promise<EmmaPollResult
       if (isMultipart(row)) {
         let assembly: AssemblyResult;
         try {
-          assembly = await assembleFragments(suffix, row, Date.now());
+          assembly = await assembleFragments(suffix, row);
         } catch (e) {
           // 조립 조회가 실패하면 이 행만 되돌려 다음 폴링에서 다시 본다.
           await setStatus(suffix, moKey, EMMA_MO_STATUS.NEW).catch(() => undefined);
