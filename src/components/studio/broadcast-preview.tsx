@@ -1287,6 +1287,7 @@ export function BroadcastPreview({
     const handler = (e: Event) => {
       const gameId = (e as CustomEvent<{ gameId: string | null }>).detail?.gameId ?? null;
       setSampleGameId(gameId);
+      if (gameId) setShowGame(true);
     };
     window.addEventListener('donaido-preview-game', handler);
     return () => window.removeEventListener('donaido-preview-game', handler);
@@ -1338,6 +1339,29 @@ export function BroadcastPreview({
   }, []);
 
   const pip = offscreen && !wide && !pipClosed && !editing;
+
+  React.useEffect(() => {
+    let frame = 0;
+    const focus = (event: Event) => {
+      const target = (event as CustomEvent<{ target?: LayoutTarget }>).detail?.target;
+      if (target === 'game') setShowGame(true);
+      if (target === 'donation') setShowDonation(true);
+      // 고정된 작은 창은 scrollIntoView로 이동하지 않는다. 먼저 원래 크기로 복원한다.
+      setPipClosed(true);
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const root = rootRef.current;
+        const box = root && Array.from(root.querySelectorAll<HTMLElement>('[data-scroll-target]'))
+          .find((el) => el.getBoundingClientRect().height > 0);
+        (box ?? root)?.scrollIntoView({ behavior: 'instant', block: 'center' });
+      });
+    };
+    window.addEventListener('donaido-preview-focus', focus);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('donaido-preview-focus', focus);
+    };
+  }, []);
 
   // 작은 창으로 떠 있는 동안 원래 자리가 무너지지 않도록 높이를 기억해 둔다.
   React.useEffect(() => {

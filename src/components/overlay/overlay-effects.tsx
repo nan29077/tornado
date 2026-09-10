@@ -449,7 +449,9 @@ export function ParticleBurst({
     let last = performance.now();
 
     const frame = (now: number) => {
-      const dt = Math.min(0.05, (now - last) / 1000);
+      // 첫 RAF의 시각은 effect에서 읽은 performance.now()보다 앞설 수 있다.
+      // 음수 시간이 입자 크기로 전파되면 arc()가 예외를 던져 재생이 멈춘다.
+      const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
       last = now;
       ctx.clearRect(0, 0, w, h);
 

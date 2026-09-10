@@ -71,6 +71,10 @@ export function ActionForm({
     if (!scrollToId || !state.ok || typeof document === 'undefined') return;
     const root = document.getElementById(scrollToId);
     if (!root) return;
+    if (scrollToId === 'broadcast-preview') {
+      window.dispatchEvent(new CustomEvent('donaido-preview-focus', { detail: { target: 'donation' } }));
+      return;
+    }
     /**
      * 대상 안에 실제로 보여 줄 상자(`data-scroll-target`)가 있으면 그쪽을 가운데로 맞춘다.
      * 방송 화면 미리보기처럼 **안쪽에서 따로 스크롤되는 고정 열**에 들어 있으면, 바깥 섹션을
@@ -89,6 +93,10 @@ export function ActionForm({
       action={formAction}
       onSubmit={(e) => {
         if (confirmMessage) confirm.onSubmit(e);
+        // 서버 응답을 기다리는 동안 짧은 후원 효과가 지나가지 않도록 먼저 화면을 펼친다.
+        if (!confirmMessage && scrollToId === 'broadcast-preview') {
+          window.dispatchEvent(new CustomEvent('donaido-preview-focus', { detail: { target: 'donation' } }));
+        }
       }}
       className={cx('space-y-3.5', className)}
     >
