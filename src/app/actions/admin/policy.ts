@@ -5,7 +5,7 @@ import { prisma } from '@/server/db';
 import { writeAudit } from '@/server/auth';
 import { newId } from '@/lib/id';
 import type { AdminActionState } from '@/components/admin/state';
-import { run, text, optText, money, int, bool, enumValue, requiredId, optDate } from './shared';
+import { run, text, optText, money, int, bool, enumValue, requiredId, optDate, assertFinanceAdmin, assertOperationAdmin } from './shared';
 import { bannedNeedle } from '@/server/services/content-filter';
 
 /**
@@ -49,6 +49,13 @@ function readLimitFields(fd: FormData) {
 
 export async function saveLimitPolicy(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
+    /**
+     * 한도 정책은 **이상거래 방어선**이다. 일일·월 한도, 속도 제한, 수동검토 기준,
+     * 실패 잠금 임계값이 모두 여기서 정해진다. 예전에는 write 등급이면 누구나 —
+     * 즉 고객지원(SUPPORT)도 — 이 값을 올리거나 정책을 통째로 끌 수 있었다.
+     * 같은 성격의 수수료 정책이 이미 재무 권한을 요구하고 있어 기준도 어긋나 있었다.
+     */
+    assertFinanceAdmin(admin, '한도 정책 변경');
     const id = optText(fd, 'id');
     const values = readLimitFields(fd);
     const active = bool(fd, 'active');
@@ -135,6 +142,8 @@ export async function saveLimitPolicy(_prev: AdminActionState, fd: FormData): Pr
 
 export async function toggleLimitPolicy(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
+    // 정책을 끄는 것은 방어선을 통째로 내리는 것이다. 저장과 같은 등급을 요구한다.
+    assertFinanceAdmin(admin, '한도 정책 사용 여부 변경');
     const id = requiredId(fd, 'id', '한도 정책');
     const before = await prisma.donationLimitPolicy.findUnique({
       where: { id },
@@ -225,6 +234,11 @@ export async function updateReportStatus(_prev: AdminActionState, fd: FormData):
   return run(async (admin) => {
     const reportId = requiredId(fd, 'reportId', '신고');
     const status = enumValue(fd, 'status', ['OPEN', 'REVIEWING', 'RESOLVED', 'DISMISSED'] as const, '처리 상태');
+    /**
+     * 접수·검토 이동은 고객지원의 일이지만, **기각(DISMISSED)은 신고를 없던 일로 만드는
+     * 조치**다. 낮은 등급이 조용히 신고를 묻을 수 있으면 안 된다.
+     */
+    if (status === 'DISMISSED') assertOperationAdmin(admin, '신고 기각');
 
     const before = await prisma.report.findUnique({
       where: { id: reportId },

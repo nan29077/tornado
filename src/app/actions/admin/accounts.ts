@@ -15,7 +15,7 @@ import { issueMoNumberForCreator, reclaimMoNumberForCreator } from '@/server/ser
 import { issueTemporaryPassword } from '@/server/services/password-reset';
 import { hasDirectTriggerWrittenApproval } from '@/server/services/financial-approval';
 import { resolvePolicy } from '@/server/services/limits';
-import { run, text, optText, money, optMoney, enumValue, requiredId, assertOperationAdmin } from './shared';
+import { run, text, optText, money, optMoney, enumValue, requiredId, assertOperationAdmin, assertFinanceAdmin } from './shared';
 
 /**
  * 회원 / 후원자 / 크리에이터 / 코드 / 관리자 권한 관련 서버 액션.
@@ -45,6 +45,18 @@ export async function updateUserStatus(_prev: AdminActionState, fd: FormData): P
      */
     if (before.role === 'ADMIN' && admin.adminPermission !== 'SUPER_ADMIN') {
       throw new Error('관리자 계정의 상태 변경은 SUPER_ADMIN 만 수행할 수 있습니다.');
+    }
+    /**
+     * 크리에이터 계정의 정지·탈퇴는 **운영 권한** 이상만 가능하다.
+     *
+     * 바로 아래 `updateCreatorStatus` 는 "크리에이터의 수입이 그날로 끊기는 조치" 라는
+     * 이유로 이미 운영 권한을 요구한다. 그런데 이쪽(회원 상태)으로 들어오면 같은 결과를
+     * 낮은 등급으로 낼 수 있었다 — 상태를 내리면 세션이 전부 폐기되고 재로그인도 막히므로
+     * 채널 운영이 그대로 멈춘다. 두 문을 같은 등급으로 맞춘다.
+     * (일반 후원자 계정은 고객지원 업무 범위이므로 그대로 둔다)
+     */
+    if (before.role === 'CREATOR' && status !== 'ACTIVE') {
+      assertOperationAdmin(admin, '크리에이터 계정 정지·탈퇴');
     }
 
     await prisma.user.update({ where: { id: userId }, data: { status } });
@@ -283,7 +295,25 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
           ? { status, suspendedAt: now, rejectReason: reasonInput }
           : { status, rejectReason: reasonInput ?? null };
 
-    await prisma.creatorProfile.update({ where: { id: creatorId }, data });
+    /**
+     * 상태 전이를 **원자적으로** 한다.
+     *
+     * 예전에는 위에서 읽은 `before.status` 로만 검사하고 무조건 update 했다. 읽기와 쓰기
+     * 사이가 비어 있어서, 관리자가 [승인]을 두 번 빠르게 누르거나 두 관리자가 동시에
+     * 처리하면 **두 요청이 모두 가드를 통과**했다. 승인 경로는 그 뒤에 MO 번호를 발급하므로
+     * 한 크리에이터에게 전용번호가 두 개 붙고(각각 다른 서브번호라 번호 유니크 제약에도
+     * 걸리지 않는다), 매월 회선 비용이 두 배로 나가며 스튜디오에 표시되는 번호가
+     * 실행할 때마다 달라진다.
+     *
+     * `where` 에 이전 상태를 함께 걸어 **먼저 도착한 요청만 통과**시킨다.
+     */
+    const moved = await prisma.creatorProfile.updateMany({
+      where: { id: creatorId, status: before.status },
+      data,
+    });
+    if (moved.count === 0) {
+      throw new Error('다른 관리자가 방금 이 크리에이터의 상태를 바꿨습니다. 새로고침 후 다시 확인해 주세요.');
+    }
 
     /**
      * 정지·반려는 **즉시** 효력이 있어야 한다.
@@ -539,9 +569,8 @@ export async function setSettlementAccountVerified(
   fd: FormData,
 ): Promise<AdminActionState> {
   return run(async (admin) => {
-    if (admin.adminPermission === 'SUPPORT') {
-      throw new Error('정산 계좌 실명확인은 재무/운영 권한에서만 가능합니다.');
-    }
+    // 거부목록이 아니라 허용목록으로. (shared.ts 의 설계 원칙)
+    assertFinanceAdmin(admin, '정산 계좌 실명확인');
     const creatorId = requiredId(fd, 'creatorId', '크리에이터');
     const verified = text(fd, 'verified') === 'true';
 

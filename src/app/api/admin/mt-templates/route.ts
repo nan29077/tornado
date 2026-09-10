@@ -5,6 +5,7 @@ import { isRecord } from '@/lib/json-body';
 import {
   MT_TEMPLATE_CODES,
   MT_TEMPLATE_META,
+  SECURE_LINK_TEMPLATES,
   clearMtTemplateOverrideCache,
   validateMtTemplateBody,
   type MtTemplateCode,
@@ -81,6 +82,26 @@ export async function POST(req: Request) {
 
   const code = String(payload.code ?? '') as MtTemplateCode;
   if (!MT_TEMPLATE_META[code]) return json({ ok: false, message: '알 수 없는 문자 템플릿 코드입니다.' }, 400);
+
+  /**
+   * **코드별 등급 검사.** 화면 액션(`assertMtTemplateAdmin`)은 보안링크가 들어가는 문자
+   * (최초 등록 안내 · 후원 확인 · PIN 입력)를 최고관리자 전용으로 막는다. 결제 흐름 자체를
+   * 좌우하는 문구라 운영 권한에도 열지 않는다는 판단이었다.
+   *
+   * 그런데 같은 일을 하는 이 HTTP 경로는 위에서 평평한 등급 검사만 하고 끝나서,
+   * 운영 권한 계정이 `POST {code: <보안링크 문자>, body: ...}` 로 **후원자 휴대폰에 찍히는
+   * 결제 안내 문구를 그대로 고쳐 쓸 수 있었다.** 액션과 같은 규칙을 적용한다.
+   * (`{보안링크}` 치환자는 validateMtTemplateBody 가 계속 강제하므로 링크 자체는 못 뺀다)
+   */
+  if (SECURE_LINK_TEMPLATES.has(code) && String(admin.adminPermission) !== 'SUPER_ADMIN') {
+    return json(
+      {
+        ok: false,
+        message: `"${MT_TEMPLATE_META[code].label}" 문자는 결제 흐름에 직접 관여하므로 최고관리자만 수정할 수 있습니다.`,
+      },
+      403,
+    );
+  }
 
   // 되돌리기: 커스텀 본문을 지우면 코드 기본 문구가 다시 쓰인다.
   if (payload.reset === true) {

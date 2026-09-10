@@ -312,9 +312,9 @@ export async function reissueCreatorMoNumberAction(
  */
 export async function reconcilePaymentAction(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
-    if (admin.adminPermission === 'SUPPORT') {
-      throw new Error('결제 수동 확정은 재무/운영 권한에서만 가능합니다.');
-    }
+    // 허용목록으로 검사한다. `!== 'SUPPORT'` 같은 거부목록은 write 등급이 하나 추가되는
+    // 순간 이 재무 액션만 조용히 열린다(shared.ts 의 설계 원칙과도 어긋난다).
+    assertFinanceAdmin(admin, '결제 수동 확정');
     const transactionId = requiredId(fd, 'transactionId', '결제 거래');
     const decision = enumValue(fd, 'decision', ['APPROVE', 'CANCEL'] as const, '처리 구분');
     const memo = optText(fd, 'memo');
@@ -462,6 +462,8 @@ export async function createAdminRefund(_prev: AdminActionState, fd: FormData): 
 
 export async function resolveRiskDetection(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
+    // 이상거래 탐지를 종결하는 것은 방어 신호를 지우는 일이다. 고객지원 업무 범위가 아니다.
+    assertOperationAdmin(admin, '이상거래 탐지 종결');
     const riskId = requiredId(fd, 'riskId', '탐지 건');
     const before = await prisma.riskDetection.findUnique({
       where: { id: riskId },
