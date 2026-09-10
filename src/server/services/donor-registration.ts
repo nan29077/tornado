@@ -197,6 +197,31 @@ export async function completeRegistration(input: {
   if (!owned) throw new Error('등록 요청 정보가 올바르지 않습니다. 처음부터 다시 진행해 주세요.');
   if (owned.status === 'COMPLETED') throw new Error('이미 완료된 등록 요청입니다.');
 
+  /**
+   * **사업자를 부르기 전에 이 등록 건을 원자적으로 선점한다.**
+   *
+   * 위의 `owned.status === 'COMPLETED'` 검사는 읽기일 뿐이라, 같은 토큰·registrationId 로
+   * 동시에 두 번 들어오면 **둘 다 통과해 둘 다 `completeRegistration` 을 호출**했다.
+   * 그러면 결제사에 빌키가 두 개 발급되고, 뒤에 오는 `updateMany` 가 먼저 만들어진 쪽의
+   * ACTIVE 토큰을 REVOKED 로 덮어써 **DB 에는 없는데 사업자 쪽에는 살아 있는 빌키**가 남는다.
+   * (같은 파일의 PIN 승인 경로는 이미 조건부 selectMany 로 선점하고 있다 — 이쪽만 빠져 있었다)
+   *
+   * `completedAt` 을 선점 표식으로 쓴다. 열이 이미 있고 NULL 이어야만 통과하므로
+   * 스키마를 바꾸지 않고도 DB 수준에서 단 한 명만 이긴다.
+   */
+  const claimed = await prisma.paymentRegistration.updateMany({
+    where: {
+      id: input.registrationId,
+      donorId: ctx.donorId,
+      status: { in: ['STARTED', 'AUTH_DONE'] },
+      completedAt: null,
+    },
+    data: { completedAt: new Date() },
+  });
+  if (claimed.count === 0) {
+    throw new Error('이미 처리 중이거나 완료된 등록 요청입니다. 잠시 후 결제수단을 확인해 주세요.');
+  }
+
   const adapter = getPaymentAdapter();
   // 결제수단 종류는 결제창 응답이 아니라 우리가 시작할 때 기록한 값이 기준이다.
   // registrationId 를 함께 주입한다. 카카오 등 partner_order_id/partner_user_id 를
@@ -206,7 +231,13 @@ export async function completeRegistration(input: {
   if (!res.ok || !res.data) {
     await prisma.paymentRegistration.update({
       where: { id: input.registrationId },
-      data: { status: 'FAILED', resultCode: res.code ?? null, resultMessage: res.message != null ? scrubText(res.message) : null },
+      data: {
+        status: 'FAILED',
+        // 선점 표식을 되돌린다. 실패한 건은 완료 시각을 갖고 있으면 안 된다.
+        completedAt: null,
+        resultCode: res.code ?? null,
+        resultMessage: res.message != null ? scrubText(res.message) : null,
+      },
     });
     throw new Error(res.message ?? '계좌 등록에 실패했습니다.');
   }

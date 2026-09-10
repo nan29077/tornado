@@ -107,8 +107,24 @@ export async function completeRegistrationAction(input: {
           select: { id: true },
         });
         if (!alreadyLinked) {
+          /**
+           * **재사용 번호는 이어받지 않는다.**
+           *
+           * `previousUserId` 가 있고 그게 지금 로그인한 사람이 아니라면, 그 프로필은
+           * **다른 사람이 쓰다 놓은 번호**다(탈퇴·연결 해제). 통신사가 번호를 재배정한
+           * 상황에서 그대로 연결하면 이전 이용자의 후원·결제 이력과 환불 요청 권한이
+           * 새 사용자에게 통째로 넘어간다. `confirmPhoneVerification` 은 이미 같은
+           * 검사를 하고 있는데(`recycled`), 이 경로만 빠져 있었다.
+           *
+           * 계정에 연결된 적이 없는 프로필(문자후원만 하던 번호)은 지금 결제수단 등록까지
+           * 마친 사람이 그 번호의 현재 사용자이므로 그대로 이어받는다 — 기존 동작 유지.
+           */
           await prisma.donorProfile.updateMany({
-            where: { id: res.donorId, userId: null },
+            where: {
+              id: res.donorId,
+              userId: null,
+              OR: [{ previousUserId: null }, { previousUserId: user.id }],
+            },
             data: { userId: user.id },
           });
         }

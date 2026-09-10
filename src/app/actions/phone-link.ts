@@ -56,6 +56,16 @@ interface VerifyRecord {
 }
 
 const stateKey = (userId: string) => `phonelink:state:${userId}`;
+/**
+ * 인증번호 오입력 횟수. **상태 레코드와 분리된 원자적 카운터**로 센다.
+ *
+ * 예전에는 `VerifyRecord.at` 을 읽어서 -1 한 값을 다시 쓰는 방식이었다(read-modify-write).
+ * 동시에 들어온 요청이 모두 같은 값을 읽고 같은 값을 되쓰기 때문에, 병렬로 때리면
+ * 5회 제한이 사실상 무력화되고 6자리(10^6) 코드를 대량으로 추측할 수 있었다.
+ * 성공 시 얻는 것이 **계정에 연결되지 않은 남의 후원 이력**이라 실제 피해로 이어진다.
+ * `kv.incr` 는 단일 연산이라 경쟁 상황에서도 정확히 센다.
+ */
+const attemptKey = (userId: string) => `phonelink:attempt:${userId}`;
 const sendUserKey = (userId: string) => `phonelink:send:user:${userId}`;
 const sendPhoneKey = (ph: string) => `phonelink:send:phone:${ph}`;
 
@@ -117,6 +127,8 @@ export async function requestPhoneVerification(
 
   const record: VerifyRecord = { ph, pe: encrypt(phone), pm: masked, ch: codeDigest(code), at: MAX_ATTEMPTS };
   await kv.set(stateKey(user.id), JSON.stringify(record), TTL_SEC);
+  // 새 인증번호를 냈으면 오입력 카운터도 처음부터 다시 센다.
+  await kv.del(attemptKey(user.id));
   logger.info('휴대폰 인증번호 발송', { userId: user.id, phone: masked });
 
   return {
@@ -156,17 +168,32 @@ export async function confirmPhoneVerification(
   }
 
   if (!safeEqual(codeDigest(code), record.ch)) {
-    const remain = record.at - 1;
+    // 원자적으로 센다. 동시 요청이 서로의 차감을 덮어쓰지 않는다.
+    const used = await kv.incr(attemptKey(user.id), TTL_SEC);
+    const remain = MAX_ATTEMPTS - used;
     if (remain <= 0) {
       await kv.del(stateKey(user.id));
-      return { ok: false, message: '인증번호를 5회 잘못 입력했습니다. 처음부터 다시 시도해 주세요.' };
+      await kv.del(attemptKey(user.id));
+      return { ok: false, message: `인증번호를 ${MAX_ATTEMPTS}회 잘못 입력했습니다. 처음부터 다시 시도해 주세요.` };
     }
-    await kv.set(stateKey(user.id), JSON.stringify({ ...record, at: remain }), TTL_SEC);
     return { ok: false, codeSent: true, message: `인증번호가 일치하지 않습니다. (남은 시도 ${remain}회)` };
+  }
+
+  /**
+   * 맞는 코드라도 **이미 시도 횟수를 다 쓴 상태면 통과시키지 않는다.**
+   * 카운터와 상태 레코드가 분리돼 있으므로, 마지막 오입력이 상태를 지우기 직전에
+   * 끼어든 요청이 통과하는 경로를 여기서 한 번 더 막는다.
+   */
+  const usedSoFar = Number((await kv.get(attemptKey(user.id))) ?? '0');
+  if (usedSoFar >= MAX_ATTEMPTS) {
+    await kv.del(stateKey(user.id));
+    await kv.del(attemptKey(user.id));
+    return { ok: false, message: `인증번호를 ${MAX_ATTEMPTS}회 잘못 입력했습니다. 처음부터 다시 시도해 주세요.` };
   }
 
   // 성공 → 인증 상태는 즉시 폐기 (재사용 차단)
   await kv.del(stateKey(user.id));
+  await kv.del(attemptKey(user.id));
 
   // 연결 시점에 한 번 더 소유권을 검증한다 (발송~확인 사이의 상태 변화 대비).
   const existing = await prisma.donorProfile.findUnique({

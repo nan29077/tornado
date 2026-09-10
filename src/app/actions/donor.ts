@@ -370,10 +370,25 @@ export async function withdrawAccount(_prev: DonorActionState, formData: FormDat
 
   try {
     await prisma.$transaction([
-      // 후원자 프로필은 남기고 계정 연결만 끊는다 (거래 이력 보존)
+      /**
+       * 후원자 프로필은 남기고 계정 연결만 끊는다 (거래 이력 보존).
+       *
+       * **`previousUserId` 를 반드시 남긴다.** 통신사가 이 번호를 다른 사람에게 재배정하고
+       * 그 사람이 본인확인을 하면, `confirmPhoneVerification` 의 재사용 번호 방어
+       * (`recycled = !userId && previousUserId && previousUserId !== 지금 사용자`)가
+       * 이 값을 보고 프로필을 분리한다. 예전에는 탈퇴 시 이 값을 비워 둬서 방어가 통째로
+       * 무력화됐고, 번호를 물려받은 새 사용자가 탈퇴자의 후원·결제 이력과
+       * **이전 사람 후원 건의 환불 요청 권한까지** 그대로 상속했다.
+       * (`unlinkPhone` 은 처음부터 이 값을 남기고 있었다 — 탈퇴 경로만 빠져 있었다)
+       */
       prisma.donorProfile.updateMany({
         where: { userId: user.id },
-        data: { userId: null, onboardingStatus: 'WITHDRAWN' },
+        data: {
+          userId: null,
+          previousUserId: user.id,
+          unlinkedAt: new Date(),
+          onboardingStatus: 'WITHDRAWN',
+        },
       }),
       prisma.user.update({
         where: { id: user.id },
