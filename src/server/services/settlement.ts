@@ -329,6 +329,20 @@ export async function postRefundSettlement(
   },
   client: LedgerClient = prisma,
 ) {
+  /**
+   * 같은 환불에 대한 반대 분개가 이미 있으면 아무것도 하지 않는다.
+   *
+   * `postDonationSettlement` 은 처음부터 이 가드를 갖고 있었는데(위 `DONATION_GROSS` 검사)
+   * 환불 쪽만 빠져 있었다. 원장은 **추가 전용**이라 한 번 두 번 적재되면 되돌릴 방법이
+   * 보정 분개밖에 없고, `settlement_ledger` 에는 유니크 제약도 없다. 호출부(retryRefundRecovery)
+   * 에 조건부 선점을 넣어 경쟁 자체를 막았지만, 원장은 돈이 걸린 곳이라 여기서도 한 번 더 막는다.
+   */
+  const already = await client.settlementLedger.findFirst({
+    where: { refundId: input.refundId, entryType: 'REFUND' },
+    select: { id: true },
+  });
+  if (already) return;
+
   const entries: LedgerInput[] = [
     {
       creatorId: input.creatorId, entryType: 'REFUND', amount: -input.amount,

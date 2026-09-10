@@ -109,6 +109,31 @@ export async function GET(req: Request) {
     admin.id,
   );
 
+  /**
+   * **이미 이체파일이 나간 건이 섞여 있으면 파일을 내주지 않는다.**
+   *
+   * `markPayoutFileIssued` 는 조건부 갱신으로 원자적으로 선점하므로, 재무 담당 두 명이
+   * 동시에 눌러도 한 명만 `reissued: []` 를 받는다. 그런데 예전에는 그 결과를 감사로그에만
+   * 적고 **양쪽 모두에게 CSV 를 그대로 내려 줬다.** 두 파일을 다 올리면 돈이 두 번 나가고,
+   * 그 뒤 `markSettlementPaid` 는 두 번째 호출을 `status === 'PAID'` 조기 반환으로 무시하므로
+   * **원장에는 지급이 한 번만 남는다** — 실제 이체 두 번, 장부 한 번이라 사고를 눈치채기 어렵다.
+   *
+   * 그래서 선점하지 못한 쪽은 409 로 돌려보낸다. 일부러 다시 받아야 하는 경우(파일 분실 등)는
+   * `confirmReissue=1` 을 붙여 명시적으로 요청하게 한다.
+   */
+  if (issue.reissued.length > 0 && url.searchParams.get('confirmReissue') !== '1') {
+    return Response.json(
+      {
+        error: 'reissue_confirm_required',
+        message:
+          '이미 이체파일이 발급된 정산 건이 포함돼 있습니다. 다른 담당자가 방금 내려받았을 수 있습니다. 이중이체가 되지 않도록 확인한 뒤 다시 요청해 주세요.',
+        reissued: issue.reissued,
+        batchNo: issue.batchNo,
+      },
+      { status: 409, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
+
   await writeAudit({
     adminUserId: admin.id,
     action: 'SETTLEMENT_PAYOUT_FILE_EXPORT',

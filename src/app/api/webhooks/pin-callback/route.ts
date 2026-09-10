@@ -93,10 +93,23 @@ function verifyCallback(
       : { ok: false, reason: '본문 서명 불일치' };
   }
 
-  // (3) 구 방식(공유 비밀만) — 결제사 서명 규격이 확정되면 제거한다.
+  /**
+   * (3) 구 방식(공유 비밀만) — 결제사 서명 규격이 확정되면 제거한다.
+   *
+   * 이 경로는 **본문에 대해 아무것도 보증하지 않고 타임스탬프도 없다.** 캡처한 요청을
+   * 그대로 무한히 재전송할 수 있고, 비밀을 아는 쪽은 본문을 마음대로 바꿔 보낼 수 있다.
+   * (지금 당장의 피해는 제한적이다 — `completePinAuthorization` 이 PENDING→COMPLETED 를
+   *  원자적으로 선점하므로 재전송으로 이중결제가 되지는 않고, 새 결제를 위조하려면
+   *  결제사가 발급한 sessionId 가 필요하다.)
+   *
+   * 쓰일 때마다 경고를 남긴다. 로그에 이 줄이 더는 안 보이면 결제사가 서명 규격으로
+   * 넘어온 것이므로 이 분기를 지워도 된다 — 지금은 그 판단 근거가 없어 못 지우고 있다.
+   */
   const headerSecret = headers['x-pin-secret'] ?? null;
   if (!headerSecret) return { ok: false, reason: 'X-Pin-Signature 또는 X-Pin-Secret 헤더 없음' };
-  return safeEqual(expected, headerSecret) ? { ok: true } : { ok: false, reason: '공유 비밀 불일치' };
+  if (!safeEqual(expected, headerSecret)) return { ok: false, reason: '공유 비밀 불일치' };
+  logger.warn('PIN 콜백이 구 방식(공유 비밀)으로 인증되었습니다. 서명 규격 전환이 남아 있습니다.');
+  return { ok: true };
 }
 
 /**

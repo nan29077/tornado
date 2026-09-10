@@ -245,7 +245,10 @@ async function finishRefundCancel(
   await notifyUser({
     userId: refund.donation.creator.userId,
     title: '후원 1건이 환불되어 정산 잔액에서 차감되었습니다',
-    body: `${refund.donation.transactionNo} · ${formatWon(refund.amount)} 환불${refund.reason ? ` · 사유: ${refund.reason}` : ''}. 결제수수료·플랫폼수수료는 함께 환입됩니다.`,
+    // 원장은 플랫폼수수료만 환입한다(postRefundSettlement → resolveRefundFeeReturn).
+    // 예전 문구는 결제(PG)수수료도 함께 돌려주는 것처럼 읽혀, 크리에이터가 잔액을 맞춰 볼 때
+    // 딱 PG수수료만큼 어긋났다. 실제 처리에 맞춰 적는다.
+    body: `${refund.donation.transactionNo} · ${formatWon(refund.amount)} 환불${refund.reason ? ` · 사유: ${refund.reason}` : ''}. 플랫폼수수료는 환입되며, 결제(PG)수수료는 환입되지 않습니다.`,
     linkUrl: `/studio/donations/${refund.donationId}`,
   }).catch(() => undefined);
 
@@ -285,6 +288,27 @@ export async function retryRefundRecovery(refundId: string, adminUserId?: string
 
   const txn = refund.donation.transactions.find((t) => t.status === 'APPROVED');
   if (!txn) throw new Error('연결된 결제 거래를 찾을 수 없습니다.');
+
+  /**
+   * **먼저 선점하고 나서 결제사에 나간다.** (`approveRefund` 와 같은 방식)
+   *
+   * 예전에는 위의 `status !== 'PENDING_RECOVERY'` 검사만 하고 곧바로 결제사
+   * 조회·취소(느린 네트워크 호출)로 넘어갔다. 그 사이가 통째로 비어 있어서
+   * 정리 배치(retryAllPendingRefundRecoveries)와 관리자 [재시도] 버튼이 겹치면
+   * **둘 다 같은 환불을 PENDING_RECOVERY 로 읽고 둘 다 finishRefundCancel 을 불렀다.**
+   * 그러면 정산 원장에 `REFUND(-금액)` 과 `REFUND_FEE_RETURN(+수수료)` 이 두 번 적재되어
+   * 크리에이터 정산 잔액이 환불 금액만큼 영구히 과다 차감된다. 원장은 추가 전용이라
+   * 되돌리려면 보정 분개를 손으로 넣어야 한다. 관리자가 버튼을 두 번 눌러도 재현된다.
+   *
+   * 조건부 선점이 0행이면 다른 쪽이 이미 가져간 것이므로 여기서 멈춘다.
+   */
+  const claimed = await prisma.refund.updateMany({
+    where: { id: refundId, status: 'PENDING_RECOVERY' },
+    data: { status: 'APPROVED' },
+  });
+  if (claimed.count === 0) {
+    throw new Error('이미 다른 처리가 진행 중인 환불입니다. 잠시 후 상태를 다시 확인해 주세요.');
+  }
 
   const adapter = getPaymentAdapter();
 

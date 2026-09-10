@@ -45,7 +45,17 @@ export function clientIpFrom(get: (name: string) => string | null): string | nul
   if (xff) {
     const hops = xff.split(',').map((s) => s.trim()).filter(Boolean);
     if (hops.length > 0) {
-      const idx = Math.max(0, hops.length - env.trustedProxyHops);
+      /**
+       * **홉 수가 설정보다 적으면 판정을 포기한다(fail-closed).**
+       *
+       * 예전에는 `Math.max(0, ...)` 로 0 에 붙였는데, `hops[0]` 은 클라이언트가 직접 써 넣는
+       * 값이다. TRUSTED_PROXY_HOPS 가 실제 구성보다 크게 잡혀 있으면(오설정, 프록시 단수 변경)
+       * 공격자가 `X-Forwarded-For: <허용된 사업자 IP>` 한 줄로 MO·PIN 웹훅의 허용목록 검사를
+       * 그대로 통과한다. 두 겹 방어 중 한 겹이 조용히 사라지는 셈이다.
+       * 알 수 없으면 null 을 돌려주어 허용목록 검사가 실패하게 둔다.
+       */
+      const idx = hops.length - env.trustedProxyHops;
+      if (idx < 0) return null;
       return normalizeIp(hops[idx]);
     }
   }
