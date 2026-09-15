@@ -9,8 +9,8 @@
  * 🟢 You can import this file directly.
  */
 import type * as runtime from "@prisma/client/runtime/client"
-import type * as $Enums from "../enums.ts"
-import type * as Prisma from "../internal/prismaNamespace.ts"
+import type * as $Enums from "../enums"
+import type * as Prisma from "../internal/prismaNamespace"
 
 /**
  * Model CreatorProfile
@@ -68,6 +68,11 @@ export type CreatorProfileMinAggregateOutputType = {
   paymentMode: $Enums.PaymentMode | null
   thanksMtMessage: string | null
   businessNo: string | null
+  taxType: string | null
+  businessName: string | null
+  taxInvoiceEmail: string | null
+  taxMemo: string | null
+  taxUpdatedAt: Date | null
   onboardingObsLinked: boolean | null
   onboardingTestDone: boolean | null
   approvedAt: Date | null
@@ -106,6 +111,11 @@ export type CreatorProfileMaxAggregateOutputType = {
   paymentMode: $Enums.PaymentMode | null
   thanksMtMessage: string | null
   businessNo: string | null
+  taxType: string | null
+  businessName: string | null
+  taxInvoiceEmail: string | null
+  taxMemo: string | null
+  taxUpdatedAt: Date | null
   onboardingObsLinked: boolean | null
   onboardingTestDone: boolean | null
   approvedAt: Date | null
@@ -144,6 +154,11 @@ export type CreatorProfileCountAggregateOutputType = {
   paymentMode: number
   thanksMtMessage: number
   businessNo: number
+  taxType: number
+  businessName: number
+  taxInvoiceEmail: number
+  taxMemo: number
+  taxUpdatedAt: number
   onboardingObsLinked: number
   onboardingTestDone: number
   approvedAt: number
@@ -196,6 +211,11 @@ export type CreatorProfileMinAggregateInputType = {
   paymentMode?: true
   thanksMtMessage?: true
   businessNo?: true
+  taxType?: true
+  businessName?: true
+  taxInvoiceEmail?: true
+  taxMemo?: true
+  taxUpdatedAt?: true
   onboardingObsLinked?: true
   onboardingTestDone?: true
   approvedAt?: true
@@ -234,6 +254,11 @@ export type CreatorProfileMaxAggregateInputType = {
   paymentMode?: true
   thanksMtMessage?: true
   businessNo?: true
+  taxType?: true
+  businessName?: true
+  taxInvoiceEmail?: true
+  taxMemo?: true
+  taxUpdatedAt?: true
   onboardingObsLinked?: true
   onboardingTestDone?: true
   approvedAt?: true
@@ -272,6 +297,11 @@ export type CreatorProfileCountAggregateInputType = {
   paymentMode?: true
   thanksMtMessage?: true
   businessNo?: true
+  taxType?: true
+  businessName?: true
+  taxInvoiceEmail?: true
+  taxMemo?: true
+  taxUpdatedAt?: true
   onboardingObsLinked?: true
   onboardingTestDone?: true
   approvedAt?: true
@@ -397,6 +427,11 @@ export type CreatorProfileGroupByOutputType = {
   paymentMode: $Enums.PaymentMode | null
   thanksMtMessage: string | null
   businessNo: string | null
+  taxType: string
+  businessName: string | null
+  taxInvoiceEmail: string | null
+  taxMemo: string | null
+  taxUpdatedAt: Date | null
   onboardingObsLinked: boolean
   onboardingTestDone: boolean
   approvedAt: Date | null
@@ -458,6 +493,11 @@ export type CreatorProfileWhereInput = {
   paymentMode?: Prisma.EnumPaymentModeNullableFilter<"CreatorProfile"> | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
   businessNo?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
+  taxType?: Prisma.StringFilter<"CreatorProfile"> | string
+  businessName?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
+  taxInvoiceEmail?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
+  taxMemo?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
+  taxUpdatedAt?: Prisma.DateTimeNullableFilter<"CreatorProfile"> | Date | string | null
   onboardingObsLinked?: Prisma.BoolFilter<"CreatorProfile"> | boolean
   onboardingTestDone?: Prisma.BoolFilter<"CreatorProfile"> | boolean
   approvedAt?: Prisma.DateTimeNullableFilter<"CreatorProfile"> | Date | string | null
@@ -517,6 +557,11 @@ export type CreatorProfileOrderByWithRelationInput = {
   paymentMode?: Prisma.SortOrderInput | Prisma.SortOrder
   thanksMtMessage?: Prisma.SortOrderInput | Prisma.SortOrder
   businessNo?: Prisma.SortOrderInput | Prisma.SortOrder
+  taxType?: Prisma.SortOrder
+  businessName?: Prisma.SortOrderInput | Prisma.SortOrder
+  taxInvoiceEmail?: Prisma.SortOrderInput | Prisma.SortOrder
+  taxMemo?: Prisma.SortOrderInput | Prisma.SortOrder
+  taxUpdatedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   onboardingObsLinked?: Prisma.SortOrder
   onboardingTestDone?: Prisma.SortOrder
   approvedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -579,6 +624,11 @@ export type CreatorProfileWhereUniqueInput = Prisma.AtLeast<{
   paymentMode?: Prisma.EnumPaymentModeNullableFilter<"CreatorProfile"> | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
   businessNo?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
+  taxType?: Prisma.StringFilter<"CreatorProfile"> | string
+  businessName?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
+  taxInvoiceEmail?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
+  taxMemo?: Prisma.StringNullableFilter<"CreatorProfile"> | string | null
+  taxUpdatedAt?: Prisma.DateTimeNullableFilter<"CreatorProfile"> | Date | string | null
   onboardingObsLinked?: Prisma.BoolFilter<"CreatorProfile"> | boolean
   onboardingTestDone?: Prisma.BoolFilter<"CreatorProfile"> | boolean
   approvedAt?: Prisma.DateTimeNullableFilter<"CreatorProfile"> | Date | string | null
@@ -638,6 +688,11 @@ export type CreatorProfileOrderByWithAggregationInput = {
   paymentMode?: Prisma.SortOrderInput | Prisma.SortOrder
   thanksMtMessage?: Prisma.SortOrderInput | Prisma.SortOrder
   businessNo?: Prisma.SortOrderInput | Prisma.SortOrder
+  taxType?: Prisma.SortOrder
+  businessName?: Prisma.SortOrderInput | Prisma.SortOrder
+  taxInvoiceEmail?: Prisma.SortOrderInput | Prisma.SortOrder
+  taxMemo?: Prisma.SortOrderInput | Prisma.SortOrder
+  taxUpdatedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   onboardingObsLinked?: Prisma.SortOrder
   onboardingTestDone?: Prisma.SortOrder
   approvedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -684,6 +739,11 @@ export type CreatorProfileScalarWhereWithAggregatesInput = {
   paymentMode?: Prisma.EnumPaymentModeNullableWithAggregatesFilter<"CreatorProfile"> | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.StringNullableWithAggregatesFilter<"CreatorProfile"> | string | null
   businessNo?: Prisma.StringNullableWithAggregatesFilter<"CreatorProfile"> | string | null
+  taxType?: Prisma.StringWithAggregatesFilter<"CreatorProfile"> | string
+  businessName?: Prisma.StringNullableWithAggregatesFilter<"CreatorProfile"> | string | null
+  taxInvoiceEmail?: Prisma.StringNullableWithAggregatesFilter<"CreatorProfile"> | string | null
+  taxMemo?: Prisma.StringNullableWithAggregatesFilter<"CreatorProfile"> | string | null
+  taxUpdatedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"CreatorProfile"> | Date | string | null
   onboardingObsLinked?: Prisma.BoolWithAggregatesFilter<"CreatorProfile"> | boolean
   onboardingTestDone?: Prisma.BoolWithAggregatesFilter<"CreatorProfile"> | boolean
   approvedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"CreatorProfile"> | Date | string | null
@@ -721,6 +781,11 @@ export type CreatorProfileCreateInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -780,6 +845,11 @@ export type CreatorProfileUncheckedCreateInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -837,6 +907,11 @@ export type CreatorProfileUpdateInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -896,6 +971,11 @@ export type CreatorProfileUncheckedUpdateInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -954,6 +1034,11 @@ export type CreatorProfileCreateManyInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -991,6 +1076,11 @@ export type CreatorProfileUpdateManyMutationInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1029,6 +1119,11 @@ export type CreatorProfileUncheckedUpdateManyInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1077,6 +1172,11 @@ export type CreatorProfileCountOrderByAggregateInput = {
   paymentMode?: Prisma.SortOrder
   thanksMtMessage?: Prisma.SortOrder
   businessNo?: Prisma.SortOrder
+  taxType?: Prisma.SortOrder
+  businessName?: Prisma.SortOrder
+  taxInvoiceEmail?: Prisma.SortOrder
+  taxMemo?: Prisma.SortOrder
+  taxUpdatedAt?: Prisma.SortOrder
   onboardingObsLinked?: Prisma.SortOrder
   onboardingTestDone?: Prisma.SortOrder
   approvedAt?: Prisma.SortOrder
@@ -1121,6 +1221,11 @@ export type CreatorProfileMaxOrderByAggregateInput = {
   paymentMode?: Prisma.SortOrder
   thanksMtMessage?: Prisma.SortOrder
   businessNo?: Prisma.SortOrder
+  taxType?: Prisma.SortOrder
+  businessName?: Prisma.SortOrder
+  taxInvoiceEmail?: Prisma.SortOrder
+  taxMemo?: Prisma.SortOrder
+  taxUpdatedAt?: Prisma.SortOrder
   onboardingObsLinked?: Prisma.SortOrder
   onboardingTestDone?: Prisma.SortOrder
   approvedAt?: Prisma.SortOrder
@@ -1159,6 +1264,11 @@ export type CreatorProfileMinOrderByAggregateInput = {
   paymentMode?: Prisma.SortOrder
   thanksMtMessage?: Prisma.SortOrder
   businessNo?: Prisma.SortOrder
+  taxType?: Prisma.SortOrder
+  businessName?: Prisma.SortOrder
+  taxInvoiceEmail?: Prisma.SortOrder
+  taxMemo?: Prisma.SortOrder
+  taxUpdatedAt?: Prisma.SortOrder
   onboardingObsLinked?: Prisma.SortOrder
   onboardingTestDone?: Prisma.SortOrder
   approvedAt?: Prisma.SortOrder
@@ -1534,6 +1644,11 @@ export type CreatorProfileCreateWithoutUserInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -1591,6 +1706,11 @@ export type CreatorProfileUncheckedCreateWithoutUserInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -1653,6 +1773,11 @@ export type CreatorProfileCreateWithoutSignupFansInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -1711,6 +1836,11 @@ export type CreatorProfileUncheckedCreateWithoutSignupFansInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -1783,6 +1913,11 @@ export type CreatorProfileUpdateWithoutUserInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1840,6 +1975,11 @@ export type CreatorProfileUncheckedUpdateWithoutUserInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1908,6 +2048,11 @@ export type CreatorProfileUpdateWithoutSignupFansInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1966,6 +2111,11 @@ export type CreatorProfileUncheckedUpdateWithoutSignupFansInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -2022,6 +2172,11 @@ export type CreatorProfileCreateWithoutFanAccountsInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -2080,6 +2235,11 @@ export type CreatorProfileUncheckedCreateWithoutFanAccountsInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -2152,6 +2312,11 @@ export type CreatorProfileUpdateWithoutFanAccountsInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -2210,6 +2375,11 @@ export type CreatorProfileUncheckedUpdateWithoutFanAccountsInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -2266,6 +2436,11 @@ export type CreatorProfileCreateWithoutDonorLinksInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -2324,6 +2499,11 @@ export type CreatorProfileUncheckedCreateWithoutDonorLinksInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -2396,6 +2576,11 @@ export type CreatorProfileUpdateWithoutDonorLinksInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -2454,6 +2639,11 @@ export type CreatorProfileUncheckedUpdateWithoutDonorLinksInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -2510,6 +2700,11 @@ export type CreatorProfileCreateWithoutBlockedDonorsInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -2568,6 +2763,11 @@ export type CreatorProfileUncheckedCreateWithoutBlockedDonorsInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -2640,6 +2840,11 @@ export type CreatorProfileUpdateWithoutBlockedDonorsInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -2698,6 +2903,11 @@ export type CreatorProfileUncheckedUpdateWithoutBlockedDonorsInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -2754,6 +2964,11 @@ export type CreatorProfileCreateWithoutCodesInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -2812,6 +3027,11 @@ export type CreatorProfileUncheckedCreateWithoutCodesInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -2884,6 +3104,11 @@ export type CreatorProfileUpdateWithoutCodesInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -2942,6 +3167,11 @@ export type CreatorProfileUncheckedUpdateWithoutCodesInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -2998,6 +3228,11 @@ export type CreatorProfileCreateWithoutMoRoutesInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -3056,6 +3291,11 @@ export type CreatorProfileUncheckedCreateWithoutMoRoutesInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -3128,6 +3368,11 @@ export type CreatorProfileUpdateWithoutMoRoutesInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -3186,6 +3431,11 @@ export type CreatorProfileUncheckedUpdateWithoutMoRoutesInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -3242,6 +3492,11 @@ export type CreatorProfileCreateWithoutMoMessagesInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -3300,6 +3555,11 @@ export type CreatorProfileUncheckedCreateWithoutMoMessagesInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -3372,6 +3632,11 @@ export type CreatorProfileUpdateWithoutMoMessagesInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -3430,6 +3695,11 @@ export type CreatorProfileUncheckedUpdateWithoutMoMessagesInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -3486,6 +3756,11 @@ export type CreatorProfileCreateWithoutDonationsInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -3544,6 +3819,11 @@ export type CreatorProfileUncheckedCreateWithoutDonationsInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -3616,6 +3896,11 @@ export type CreatorProfileUpdateWithoutDonationsInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -3674,6 +3959,11 @@ export type CreatorProfileUncheckedUpdateWithoutDonationsInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -3730,6 +4020,11 @@ export type CreatorProfileCreateWithoutLimitPoliciesInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -3788,6 +4083,11 @@ export type CreatorProfileUncheckedCreateWithoutLimitPoliciesInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -3860,6 +4160,11 @@ export type CreatorProfileUpdateWithoutLimitPoliciesInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -3918,6 +4223,11 @@ export type CreatorProfileUncheckedUpdateWithoutLimitPoliciesInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -3974,6 +4284,11 @@ export type CreatorProfileCreateWithoutBannedWordsInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -4032,6 +4347,11 @@ export type CreatorProfileUncheckedCreateWithoutBannedWordsInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -4104,6 +4424,11 @@ export type CreatorProfileUpdateWithoutBannedWordsInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -4162,6 +4487,11 @@ export type CreatorProfileUncheckedUpdateWithoutBannedWordsInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -4218,6 +4548,11 @@ export type CreatorProfileCreateWithoutYoutubeConnectionInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -4276,6 +4611,11 @@ export type CreatorProfileUncheckedCreateWithoutYoutubeConnectionInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -4348,6 +4688,11 @@ export type CreatorProfileUpdateWithoutYoutubeConnectionInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -4406,6 +4751,11 @@ export type CreatorProfileUncheckedUpdateWithoutYoutubeConnectionInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -4462,6 +4812,11 @@ export type CreatorProfileCreateWithoutYoutubeBroadcastsInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -4520,6 +4875,11 @@ export type CreatorProfileUncheckedCreateWithoutYoutubeBroadcastsInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -4592,6 +4952,11 @@ export type CreatorProfileUpdateWithoutYoutubeBroadcastsInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -4650,6 +5015,11 @@ export type CreatorProfileUncheckedUpdateWithoutYoutubeBroadcastsInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -4706,6 +5076,11 @@ export type CreatorProfileCreateWithoutOverlaySettingInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -4764,6 +5139,11 @@ export type CreatorProfileUncheckedCreateWithoutOverlaySettingInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -4836,6 +5216,11 @@ export type CreatorProfileUpdateWithoutOverlaySettingInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -4894,6 +5279,11 @@ export type CreatorProfileUncheckedUpdateWithoutOverlaySettingInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -4950,6 +5340,11 @@ export type CreatorProfileCreateWithoutOverlayTiersInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -5008,6 +5403,11 @@ export type CreatorProfileUncheckedCreateWithoutOverlayTiersInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -5080,6 +5480,11 @@ export type CreatorProfileUpdateWithoutOverlayTiersInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -5138,6 +5543,11 @@ export type CreatorProfileUncheckedUpdateWithoutOverlayTiersInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -5194,6 +5604,11 @@ export type CreatorProfileCreateWithoutTtsSettingInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -5252,6 +5667,11 @@ export type CreatorProfileUncheckedCreateWithoutTtsSettingInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -5324,6 +5744,11 @@ export type CreatorProfileUpdateWithoutTtsSettingInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -5382,6 +5807,11 @@ export type CreatorProfileUncheckedUpdateWithoutTtsSettingInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -5438,6 +5868,11 @@ export type CreatorProfileCreateWithoutFeePoliciesInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -5496,6 +5931,11 @@ export type CreatorProfileUncheckedCreateWithoutFeePoliciesInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -5568,6 +6008,11 @@ export type CreatorProfileUpdateWithoutFeePoliciesInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -5626,6 +6071,11 @@ export type CreatorProfileUncheckedUpdateWithoutFeePoliciesInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -5682,6 +6132,11 @@ export type CreatorProfileCreateWithoutSettlementAccountInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -5740,6 +6195,11 @@ export type CreatorProfileUncheckedCreateWithoutSettlementAccountInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -5812,6 +6272,11 @@ export type CreatorProfileUpdateWithoutSettlementAccountInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -5870,6 +6335,11 @@ export type CreatorProfileUncheckedUpdateWithoutSettlementAccountInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -5926,6 +6396,11 @@ export type CreatorProfileCreateWithoutLedgerEntriesInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -5984,6 +6459,11 @@ export type CreatorProfileUncheckedCreateWithoutLedgerEntriesInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -6056,6 +6536,11 @@ export type CreatorProfileUpdateWithoutLedgerEntriesInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -6114,6 +6599,11 @@ export type CreatorProfileUncheckedUpdateWithoutLedgerEntriesInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -6170,6 +6660,11 @@ export type CreatorProfileCreateWithoutSettlementRequestsInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -6228,6 +6723,11 @@ export type CreatorProfileUncheckedCreateWithoutSettlementRequestsInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -6300,6 +6800,11 @@ export type CreatorProfileUpdateWithoutSettlementRequestsInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -6358,6 +6863,11 @@ export type CreatorProfileUncheckedUpdateWithoutSettlementRequestsInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -6414,6 +6924,11 @@ export type CreatorProfileCreateWithoutGamesInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -6472,6 +6987,11 @@ export type CreatorProfileUncheckedCreateWithoutGamesInput = {
   paymentMode?: $Enums.PaymentMode | null
   thanksMtMessage?: string | null
   businessNo?: string | null
+  taxType?: string
+  businessName?: string | null
+  taxInvoiceEmail?: string | null
+  taxMemo?: string | null
+  taxUpdatedAt?: Date | string | null
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: Date | string | null
@@ -6544,6 +7064,11 @@ export type CreatorProfileUpdateWithoutGamesInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -6602,6 +7127,11 @@ export type CreatorProfileUncheckedUpdateWithoutGamesInput = {
   paymentMode?: Prisma.NullableEnumPaymentModeFieldUpdateOperationsInput | $Enums.PaymentMode | null
   thanksMtMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessNo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxType?: Prisma.StringFieldUpdateOperationsInput | string
+  businessName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxInvoiceEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxMemo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  taxUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   onboardingObsLinked?: Prisma.BoolFieldUpdateOperationsInput | boolean
   onboardingTestDone?: Prisma.BoolFieldUpdateOperationsInput | boolean
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -6825,6 +7355,11 @@ export type CreatorProfileSelect<ExtArgs extends runtime.Types.Extensions.Intern
   paymentMode?: boolean
   thanksMtMessage?: boolean
   businessNo?: boolean
+  taxType?: boolean
+  businessName?: boolean
+  taxInvoiceEmail?: boolean
+  taxMemo?: boolean
+  taxUpdatedAt?: boolean
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: boolean
@@ -6885,6 +7420,11 @@ export type CreatorProfileSelectCreateManyAndReturn<ExtArgs extends runtime.Type
   paymentMode?: boolean
   thanksMtMessage?: boolean
   businessNo?: boolean
+  taxType?: boolean
+  businessName?: boolean
+  taxInvoiceEmail?: boolean
+  taxMemo?: boolean
+  taxUpdatedAt?: boolean
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: boolean
@@ -6924,6 +7464,11 @@ export type CreatorProfileSelectUpdateManyAndReturn<ExtArgs extends runtime.Type
   paymentMode?: boolean
   thanksMtMessage?: boolean
   businessNo?: boolean
+  taxType?: boolean
+  businessName?: boolean
+  taxInvoiceEmail?: boolean
+  taxMemo?: boolean
+  taxUpdatedAt?: boolean
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: boolean
@@ -6963,6 +7508,11 @@ export type CreatorProfileSelectScalar = {
   paymentMode?: boolean
   thanksMtMessage?: boolean
   businessNo?: boolean
+  taxType?: boolean
+  businessName?: boolean
+  taxInvoiceEmail?: boolean
+  taxMemo?: boolean
+  taxUpdatedAt?: boolean
   onboardingObsLinked?: boolean
   onboardingTestDone?: boolean
   approvedAt?: boolean
@@ -6971,7 +7521,7 @@ export type CreatorProfileSelectScalar = {
   updatedAt?: boolean
 }
 
-export type CreatorProfileOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "code" | "displayName" | "channelName" | "channelPlatform" | "avatarUrl" | "bannerUrl" | "description" | "liveOn" | "liveUrl" | "livePlatform" | "youtubeLiveUrl" | "instagramLiveUrl" | "tiktokLiveUrl" | "facebookLiveUrl" | "youtubeLive" | "instagramLive" | "tiktokLive" | "facebookLive" | "channelUrl" | "status" | "rejectReason" | "donationAmount" | "minAmount" | "maxAmount" | "paymentMode" | "thanksMtMessage" | "businessNo" | "onboardingObsLinked" | "onboardingTestDone" | "approvedAt" | "suspendedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["creatorProfile"]>
+export type CreatorProfileOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "code" | "displayName" | "channelName" | "channelPlatform" | "avatarUrl" | "bannerUrl" | "description" | "liveOn" | "liveUrl" | "livePlatform" | "youtubeLiveUrl" | "instagramLiveUrl" | "tiktokLiveUrl" | "facebookLiveUrl" | "youtubeLive" | "instagramLive" | "tiktokLive" | "facebookLive" | "channelUrl" | "status" | "rejectReason" | "donationAmount" | "minAmount" | "maxAmount" | "paymentMode" | "thanksMtMessage" | "businessNo" | "taxType" | "businessName" | "taxInvoiceEmail" | "taxMemo" | "taxUpdatedAt" | "onboardingObsLinked" | "onboardingTestDone" | "approvedAt" | "suspendedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["creatorProfile"]>
 export type CreatorProfileInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   codes?: boolean | Prisma.CreatorProfile$codesArgs<ExtArgs>
@@ -7109,6 +7659,34 @@ export type $CreatorProfilePayload<ExtArgs extends runtime.Types.Extensions.Inte
      */
     thanksMtMessage: string | null
     businessNo: string | null
+    /**
+     * 세무 과세유형. 도네이도가 이 크리에이터에게 **지급**할 때의 세무 처리를 결정한다.
+     * GENERAL    일반과세 사업자 → 크리에이터가 도네이도에 세금계산서 발행, 원천징수 없음
+     * SIMPLIFIED 간이과세 사업자 → 세금계산서 발행 불가(영수증), 원천징수 없음
+     * EXEMPT     면세사업자      → 계산서(면세) 발행, 원천징수 없음
+     * INDIVIDUAL 비사업자(개인)  → **사업소득 3.3% 원천징수 대상**, 지급명세서 제출 의무
+     * 
+     * 기본값이 INDIVIDUAL 인 이유: 세무유형을 확인하지 못한 크리에이터에게 원천징수 없이
+     * 지급하면 원천징수의무 불이행으로 **도네이도가** 가산세를 문다. 모르는 상태에서는
+     * 징수하는 쪽이 안전하다(과다 징수분은 크리에이터가 종합소득세에서 환급받는다).
+     */
+    taxType: string
+    /**
+     * 사업자등록증상 상호 (세금계산서 발행 대상 표기)
+     */
+    businessName: string | null
+    /**
+     * 세금계산서 수신 이메일. 비어 있으면 계정 이메일을 쓴다.
+     */
+    taxInvoiceEmail: string | null
+    /**
+     * 세무 담당자 메모 (관리자 전용, 크리에이터에게 노출하지 않는다)
+     */
+    taxMemo: string | null
+    /**
+     * 세무 정보 최종 확인 시각. 오래 확인하지 않은 건을 재확인 대상으로 뽑는 데 쓴다.
+     */
+    taxUpdatedAt: Date | null
     /**
      * 온보딩 체크리스트 중 자동 판별이 불가능해 크리에이터가 직접 체크하는 항목.
      * OBS/프리즘 등 방송 프로그램에 오버레이 URL 을 등록했는지 여부.
@@ -7595,6 +8173,11 @@ export interface CreatorProfileFieldRefs {
   readonly paymentMode: Prisma.FieldRef<"CreatorProfile", 'PaymentMode'>
   readonly thanksMtMessage: Prisma.FieldRef<"CreatorProfile", 'String'>
   readonly businessNo: Prisma.FieldRef<"CreatorProfile", 'String'>
+  readonly taxType: Prisma.FieldRef<"CreatorProfile", 'String'>
+  readonly businessName: Prisma.FieldRef<"CreatorProfile", 'String'>
+  readonly taxInvoiceEmail: Prisma.FieldRef<"CreatorProfile", 'String'>
+  readonly taxMemo: Prisma.FieldRef<"CreatorProfile", 'String'>
+  readonly taxUpdatedAt: Prisma.FieldRef<"CreatorProfile", 'DateTime'>
   readonly onboardingObsLinked: Prisma.FieldRef<"CreatorProfile", 'Boolean'>
   readonly onboardingTestDone: Prisma.FieldRef<"CreatorProfile", 'Boolean'>
   readonly approvedAt: Prisma.FieldRef<"CreatorProfile", 'DateTime'>

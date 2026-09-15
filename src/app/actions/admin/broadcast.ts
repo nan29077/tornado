@@ -6,8 +6,10 @@ import { writeAudit } from '@/server/auth';
 import { newId } from '@/lib/id';
 import { revokeYouTubeConnection } from '@/server/services/youtube-connection';
 import { notifyUser } from '@/server/services/notifications';
+import { getPlatformTtsRuntime, savePlatformTtsSetting } from '@/server/services/tts-platform';
+import { normalizeSpeaker, synthesizeWithNaver } from '@/server/services/tts/naver';
 import type { AdminActionState } from '@/components/admin/state';
-import { run, requiredId, bool, int, money } from './shared';
+import { run, requiredId, bool, int, money, text, optText, enumValue, assertOperationAdmin } from './shared';
 
 /**
  * 유튜브 연동 운영 액션.
@@ -61,6 +63,104 @@ export async function disconnectYouTube(_prev: AdminActionState, fd: FormData): 
     return providerRevoked
       ? '유튜브 연결을 해제하고 구글 권한 회수와 토큰 폐기를 완료했습니다. 크리에이터가 다시 연결해야 합니다.'
       : '유튜브 연결을 해제하고 저장된 토큰을 폐기했습니다. 구글 쪽 권한 회수는 실패했으니 필요하면 크리에이터가 구글 보안 설정에서 직접 해제해야 합니다.';
+  });
+}
+
+// =========================================================== 전역 TTS 연동 (플랫폼 공용)
+
+/**
+ * 플랫폼 전역 TTS 연동 저장. **전 크리에이터에게 즉시 적용된다.**
+ *
+ * 예전에는 이 설정을 넣을 화면이 없었다. 클로바를 연동하려면 `.env` 의 `NAVER_TTS_*` 를 고치고
+ * 서버를 재시작해야 했고, 관리자 TTS 화면에는 제공사를 고르는 칸조차 없어 연동이 불가능해 보였다.
+ *
+ * 키를 비워 두고 저장하면 **기존 키를 그대로 둔다.** 화면에는 마스킹 값만 보이므로,
+ * 다른 항목만 고치려던 관리자가 저장 한 번으로 키를 지워 전 채널의 음성을 끊는 일을 막는다.
+ */
+export async function updatePlatformTtsSetting(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
+  return run(async (admin) => {
+    // 전 크리에이터의 방송 음성이 한 번에 바뀐다. 운영 권한 이상에서만 허용한다.
+    assertOperationAdmin(admin, '전역 TTS 연동 변경');
+
+    const provider = enumValue(fd, 'provider', ['browser', 'naver'] as const, 'TTS 제공사');
+    const allowCreatorOverride = bool(fd, 'allowCreatorOverride');
+    const speakerRaw = text(fd, 'speaker');
+    const speaker = normalizeSpeaker(speakerRaw) || 'nara';
+    if (speakerRaw && !normalizeSpeaker(speakerRaw)) {
+      throw new Error('기본 화자는 영문 소문자·숫자 조합의 클로바 화자 이름이어야 합니다. (예: nara, vdain)');
+    }
+
+    const before = await getPlatformTtsRuntime();
+
+    const view = await savePlatformTtsSetting({
+      provider,
+      allowCreatorOverride,
+      speaker,
+      clientId: optText(fd, 'clientId'),
+      clientSecret: optText(fd, 'clientSecret'),
+      adminUserId: admin.id,
+    });
+
+    await writeAudit({
+      adminUserId: admin.id,
+      action: 'PLATFORM_TTS_UPDATE',
+      targetType: 'SystemSetting',
+      targetId: 'tts.platform',
+      // 키 원문은 어떤 경로로도 감사로그에 남기지 않는다.
+      before: {
+        provider: before.provider,
+        allowCreatorOverride: before.allowCreatorOverride,
+        speaker: before.speaker,
+        hasCredentials: Boolean(before.credentials),
+      },
+      after: {
+        provider: view.provider,
+        allowCreatorOverride: view.allowCreatorOverride,
+        speaker: view.speaker,
+        hasCredentials: view.hasCredentials,
+        clientIdMasked: view.clientIdMasked,
+      },
+    });
+
+    revalidatePath('/admin/tts');
+
+    return provider === 'naver'
+      ? `전역 TTS 를 네이버 클로바 Voice 로 설정했습니다. 기본 화자 ${view.speaker}. ` +
+          (allowCreatorOverride
+            ? '크리에이터가 개별 제공사·키를 정해 두었다면 그 값이 우선합니다.'
+            : '개별 설정을 막았으므로 전 크리에이터가 이 키로 합성합니다.')
+      : '전역 TTS 를 브라우저 내장 음성으로 설정했습니다. 서버 합성을 사용하지 않습니다.';
+  });
+}
+
+/**
+ * 전역 키로 실제 합성을 한 번 시도해 본다.
+ *
+ * 키를 저장한 것과 그 키가 실제로 동작하는 것은 다른 문제다. 방송 중에 처음 알게 되면
+ * 손쓸 수 없으므로, 저장 직후 관리자가 이 자리에서 확인할 수 있게 한다.
+ * 합성 결과는 버린다(오디오를 화면으로 돌려주지 않는다).
+ */
+// 입력값이 없는 액션이지만 서버 액션 시그니처는 (prev, formData) 로 고정이라 두 자리를 남긴다.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function testPlatformTts(_prev: AdminActionState, _fd: FormData): Promise<AdminActionState> {
+  return run(async () => {
+    const platform = await getPlatformTtsRuntime();
+    if (platform.provider !== 'naver') {
+      throw new Error('전역 제공사가 브라우저 내장 음성입니다. 서버 합성 연결을 시험할 대상이 없습니다.');
+    }
+    if (!platform.credentials) {
+      throw new Error('저장된 클로바 Voice 키가 없습니다. Client ID 와 Secret 을 먼저 저장해 주세요.');
+    }
+
+    const result = await synthesizeWithNaver(platform.credentials, {
+      text: '도네이도 음성 연결 시험입니다.',
+      speaker: platform.speaker,
+    });
+    if (!result.ok || !result.audio) {
+      throw new Error(`클로바 Voice 연결에 실패했습니다. (${result.code ?? '원인 미상'}) ${result.message ?? ''}`.trim());
+    }
+
+    return `클로바 Voice 연결 정상. 화자 ${platform.speaker} 로 ${Math.round(result.audio.byteLength / 1024)}KB 음성을 받았습니다.`;
   });
 }
 

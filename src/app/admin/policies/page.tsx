@@ -137,7 +137,7 @@ export default async function AdminPoliciesPage() {
   return (
     <>
       <PageHeader
-        title="한도 정책"
+        title="후원 한도 정책"
         description="정책 우선순위는 후원자(DONOR) → 크리에이터(CREATOR) → 전역(GLOBAL) 순으로 적용됩니다."
       />
 

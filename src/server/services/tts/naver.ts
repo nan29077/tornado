@@ -2,6 +2,7 @@ import { prisma } from '@/server/db';
 import { decrypt } from '@/lib/crypto';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { getPlatformTtsRuntime } from '@/server/services/tts-platform';
 
 /**
  * 네이버 클로바 Voice(Premium) 서버 합성 어댑터.
@@ -59,8 +60,25 @@ export function normalizeSpeaker(value: string | null | undefined): string {
   return /^[a-z][a-z0-9_-]{1,19}$/.test(v) ? v : '';
 }
 
-/** 크리에이터 설정 → 클로바 인증 정보. 없으면 플랫폼 공용 환경변수로 대체한다. */
+/**
+ * 클로바 인증 정보 결정.
+ *
+ * 우선순위는 **전역 설정의 `개별 설정 허용` 스위치**가 정한다.
+ *  - 허용 꺼짐 : 전역 키만 쓴다. 크리에이터가 넣어 둔 키가 있어도 무시한다.
+ *    (도네이도가 계약한 키 하나로 전 채널을 운영하는 기본 형태)
+ *  - 허용 켜짐 : 크리에이터 키 → 전역 키 → 환경변수 순으로 찾는다.
+ *
+ * 예전에는 크리에이터 키 → 환경변수 두 단계뿐이었다. 화면에서 설정할 수 있는 전역 키가
+ * 아예 없었기 때문에, 관리자가 클로바를 연동하려면 `.env` 를 고치고 서버를 재시작해야 했다.
+ */
 export async function resolveNaverCredentials(creatorId: string): Promise<NaverTtsCredentials | null> {
+  const platform = await getPlatformTtsRuntime();
+
+  // 개별 설정을 막아 둔 경우, 크리에이터 키는 아예 읽지 않는다.
+  if (!platform.allowCreatorOverride) {
+    return platform.credentials;
+  }
+
   const setting = await prisma.ttsSetting.findUnique({
     where: { creatorId },
     select: { naverClientIdEnc: true, naverClientSecretEnc: true },
@@ -77,14 +95,36 @@ export async function resolveNaverCredentials(creatorId: string): Promise<NaverT
     }
   }
 
+  if (platform.credentials) return platform.credentials;
+
   const { clientId, clientSecret } = env.tts.naver;
   if (clientId && clientSecret) return { clientId, clientSecret };
   return null;
 }
 
-/** 크리에이터가 고른 TTS 제공사. 값이 없거나 모르는 값이면 브라우저 합성으로 본다. */
+/** 값이 없거나 모르는 값이면 브라우저 합성으로 본다. */
 export function normalizeTtsProvider(value: string | null | undefined): 'browser' | 'naver' {
   return (value || '').toLowerCase() === 'naver' ? 'naver' : 'browser';
+}
+
+/**
+ * 이 크리에이터에게 **실제로 적용되는** TTS 제공사.
+ *
+ * 관리자 전역 설정이 개별 설정을 막아 두었으면 전역 값이 이긴다.
+ * 화면 표시와 실제 합성 경로가 같은 함수를 봐야, "관리자 화면에는 클로바인데 실제로는
+ * 브라우저 음성으로 나가는" 어긋남이 생기지 않는다.
+ */
+export async function resolveEffectiveTtsProvider(creatorId: string): Promise<'browser' | 'naver'> {
+  const platform = await getPlatformTtsRuntime();
+  if (!platform.allowCreatorOverride) return platform.provider;
+
+  const setting = await prisma.ttsSetting.findUnique({
+    where: { creatorId },
+    select: { provider: true },
+  });
+  // 크리에이터가 아직 고르지 않았으면(기본값 browser) 전역 설정을 기본값으로 삼는다.
+  if (!setting || !setting.provider || setting.provider === 'browser') return platform.provider;
+  return normalizeTtsProvider(setting.provider);
 }
 
 /** 클로바 Voice 합성. 성공하면 mp3 바이너리를 돌려준다. */

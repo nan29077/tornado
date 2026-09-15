@@ -29,7 +29,7 @@ export default async function StudioSettingsProfilePage() {
       {/* 좌측 메뉴 이름("프로필 설정")과 제목이 달라 다른 화면으로 넘어온 줄 알기 쉬웠다. 맞춘다. */}
       <PageHeader
         title="프로필 설정"
-        description="채널 프로필과 계정 정보를 관리합니다. 후원샵 꾸미기는 후원 설정 > 후원페이지 탭에 있습니다."
+        description="채널 프로필과 계정 정보를 관리합니다. 후원페이지 꾸미기는 후원 설정 > 후원페이지 탭에 있습니다."
       />
 
       <div className="space-y-5">
@@ -49,7 +49,7 @@ export default async function StudioSettingsProfilePage() {
         </section>
 
         <section>
-          <SectionTitle title="프로필 수정" description="후원샵과 후원 알림에 표시되는 정보입니다. 크리에이터 소개는 후원 설정 > 후원페이지 탭에서 수정합니다." />
+          <SectionTitle title="프로필 수정" description="후원페이지와 후원 알림에 표시되는 정보입니다. 크리에이터 소개는 후원 설정 > 후원페이지 탭에서 수정합니다." />
           <Card>
             <div className="mb-5 flex items-center gap-3 rounded-2xl border border-brand-100 bg-brand-50/60 p-4">
               <ProfileAvatar
@@ -92,7 +92,24 @@ export default async function StudioSettingsProfilePage() {
             description="비밀번호를 바꾸면 이 기기를 포함한 모든 기기에서 로그아웃됩니다. 계좌 정보가 임의로 바뀌었다면 즉시 변경해 주세요."
           />
           <Card>
-            <ActionForm action={changeCreatorPasswordAction} submitLabel="비밀번호 변경">
+            {/*
+              비밀번호를 바꾸면 **모든 기기의 세션이 끊긴다** (S-11).
+              방송 중에 무심코 눌러 오버레이 관리 화면과 스튜디오가 동시에 로그아웃되면,
+              다시 로그인하기 전까지 후원 알림 설정을 손댈 수 없다. 눌러야 아는 일이 없게 한다.
+            */}
+            <ActionForm
+              action={changeCreatorPasswordAction}
+              submitLabel="비밀번호 변경"
+              confirmTitle="비밀번호를 변경할까요?"
+              confirmVariant="danger"
+              confirmActionLabel="변경"
+              confirmMessage={
+                '변경하면 지금 보고 있는 이 기기를 포함해 모든 기기에서 로그아웃됩니다. ' +
+                '방송 중이라면 끝난 뒤에 바꾸시는 편이 안전합니다.\n\n' +
+                '변경 후에는 새 비밀번호로 다시 로그인해 주세요.'
+              }
+              doneTitle="비밀번호를 변경했습니다"
+            >
               {/* 좁은 화면에서는 한 줄씩, md 이상에서는 두 칸으로 접는다 */}
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="현재 비밀번호" required>
@@ -145,7 +162,7 @@ export default async function StudioSettingsProfilePage() {
         </section>
 
         <Notice tone="neutral">
-          표시명과 소개는 후원샵에 그대로 노출됩니다. 개인 연락처나 계좌번호 등 개인정보는 입력하지 마세요.
+          표시명과 소개는 후원페이지에 그대로 노출됩니다. 개인 연락처나 계좌번호 등 개인정보는 입력하지 마세요.
           채널 상태 변경(승인·정지)과 크리에이터 코드 변경은 통합 관리자를 통해서만 가능합니다.
         </Notice>
       </div>

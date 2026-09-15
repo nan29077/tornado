@@ -6,9 +6,9 @@ import { ActionButton, ActionForm } from '@/components/admin/action-form';
 import { createFeePolicy, deactivateFeePolicy } from '@/app/actions/admin/settlement';
 import { prisma } from '@/server/db';
 import { formatWon, formatNumber } from '@/lib/money';
-import { computeFees, feeRatesOf } from '@/server/services/settlement';
+import { computeFees, feeRatesOf, feePolicyPhase, isFeePolicyEffective, pickEffectiveFeePolicy } from '@/server/services/settlement';
 import { formatKst, kstDateKey } from '@/lib/datetime';
-import { requireAdminPage } from '@/server/admin-guard';
+import { requireAdminPage, financeDenyReason } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,11 +24,15 @@ function ratePercent(value: string): string {
 export default async function AdminFeesPage() {
   // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
   // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
-  await requireAdminPage('/admin/fees');
+  const admin = await requireAdminPage('/admin/fees');
+  // 수수료 정책 변경은 재무/운영 권한 전용이다. 액션과 같은 기준으로 버튼도 잠근다.
+  const denyReason = financeDenyReason(admin, '수수료 정책 변경');
+
+  const now = new Date();
 
   const [policies, creators] = await Promise.all([
     prisma.feePolicy.findMany({
-      orderBy: [{ active: 'desc' }, { effectiveFrom: 'desc' }],
+      orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
       take: 100,
       select: {
         id: true, scope: true, creatorId: true, pgFeeRate: true, pgFixedFee: true,
@@ -45,8 +49,16 @@ export default async function AdminFeesPage() {
     }),
   ]);
 
-  const activeGlobal = policies.find((p) => p.active && p.scope === 'GLOBAL');
-  const activeCreatorCount = policies.filter((p) => p.active && p.scope === 'CREATOR').length;
+  /**
+   * "현재 적용" 판정은 **정산과 똑같은 함수**로 한다.
+   *
+   * 예전에는 `p.active` 만 보고 판정해서, 시행일이 미래인 예약 정책을 이미 적용 중인 것처럼
+   * 보여 주고 반대로 아직 유효한 정책을 마감으로 표시했다. 화면 숫자와 실제 정산 요율이
+   * 어긋나면 관리자는 원인을 찾을 방법이 없다.
+   */
+  const activeGlobal = pickEffectiveFeePolicy(policies, null, now);
+  const activeCreatorCount = policies.filter((p) => p.scope === 'CREATOR' && isFeePolicyEffective(p, now)).length;
+  const scheduledCount = policies.filter((p) => feePolicyPhase(p, now) === 'SCHEDULED').length;
 
   /**
    * 지금 실제로 적용되는 요율.
@@ -118,7 +130,11 @@ export default async function AdminFeesPage() {
           value={formatNumber(activeCreatorCount)}
           sub="전역 정책보다 우선 적용"
         />
-        <StatTile label="전체 정책 이력" value={formatNumber(policies.length)} sub="최근 100건" />
+        <StatTile
+          label="전체 정책 이력"
+          value={formatNumber(policies.length)}
+          sub={scheduledCount > 0 ? `최근 100건 · 시행 예정 ${formatNumber(scheduledCount)}건` : '최근 100건'}
+        />
       </div>
 
       <Card className="mt-4">
@@ -164,9 +180,15 @@ export default async function AdminFeesPage() {
         <Card>
           <CardTitle>새 정책 등록</CardTitle>
           <p className="mt-1 mb-3 text-[12px] leading-relaxed text-ink-400">
-            같은 적용 범위의 기존 활성 정책은 자동으로 마감 처리됩니다.
+            같은 적용 범위의 기존 정책은 새 정책의 적용 시작일까지 그대로 적용된 뒤 종료됩니다. 시작일을 미래로 잡으면
+            그때까지는 기존 요율이 유지됩니다.
           </p>
-          <ActionForm action={createFeePolicy} submitLabel="정책 등록" confirm="새 수수료 정책을 등록하고 기존 정책을 마감합니다.">
+          <ActionForm
+            action={createFeePolicy}
+            submitLabel="정책 등록"
+            confirm="새 수수료 정책을 등록합니다. 기존 정책은 새 적용 시작일에 종료됩니다."
+            disabledReason={denyReason}
+          >
             <AdminField label="적용 범위">
               <AdminSelect name="scope" defaultValue="GLOBAL">
                 <option value="GLOBAL">전역 (GLOBAL)</option>
@@ -252,18 +274,26 @@ export default async function AdminFeesPage() {
                       <span className="block text-ink-400">~ {p.effectiveTo ? formatKst(p.effectiveTo, false) : '현재'}</span>
                     </Td>
                     <Td>
-                      <Badge tone={p.active ? 'success' : 'neutral'}>{p.active ? '활성' : '마감'}</Badge>
+                      {(() => {
+                        const phase = feePolicyPhase(p, now);
+                        return (
+                          <Badge tone={phase === 'ACTIVE' ? 'success' : phase === 'SCHEDULED' ? 'warning' : 'neutral'}>
+                            {phase === 'ACTIVE' ? '적용중' : phase === 'SCHEDULED' ? '시행 예정' : '종료'}
+                          </Badge>
+                        );
+                      })()}
                     </Td>
                     <Td>
-                      {p.active ? (
+                      {feePolicyPhase(p, now) === 'CLOSED' ? (
+                        <span className="text-[12px] text-ink-300">-</span>
+                      ) : (
                         <ActionButton
                           action={deactivateFeePolicy}
                           values={{ id: p.id }}
                           label="마감"
                           confirm="이 정책을 마감합니다. 마감 후에는 상위 범위 정책 또는 기본값이 적용됩니다."
+                          disabledReason={denyReason}
                         />
-                      ) : (
-                        <span className="text-[12px] text-ink-300">-</span>
                       )}
                     </Td>
                   </tr>

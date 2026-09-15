@@ -200,7 +200,7 @@ export default async function StudioSettingsPage({
 
   return (
     <>
-      <PageHeader title="후원 설정" description="문자 1건당 후원금과 수신번호, 후원 페이지 정보를 관리합니다." />
+      <PageHeader title="후원 설정" description="문자 1건당 후원금과 문자번호, 후원페이지 정보를 관리합니다." />
 
       <nav
         aria-label="후원 설정 메뉴"
@@ -315,11 +315,11 @@ export default async function StudioSettingsPage({
         </section> : null}
 
         {activeTab === 'number' ? <section>
-          <SectionTitle title="MO 수신번호" description="후원자가 문자를 보내는 번호입니다. 배정과 변경은 통합 관리자가 처리합니다." />
+          <SectionTitle title="문자번호" description="후원자가 문자를 보내는 번호입니다. 배정과 변경은 통합 관리자가 처리합니다." />
           <Card>
             {moNumbers.length === 0 ? (
               <Notice tone="warning">
-                배정된 수신번호가 없습니다. 번호가 배정되기 전에는 문자후원을 받을 수 없습니다. 고객센터로 배정을
+                배정된 문자번호가 없습니다. 번호가 배정되기 전에는 문자후원을 받을 수 없습니다. 고객센터로 배정을
                 요청해 주세요.
               </Notice>
             ) : (
@@ -327,7 +327,7 @@ export default async function StudioSettingsPage({
                 {moNumbers.map((mo) => (
                   <div key={mo.id} className="rounded-xl border border-ink-100 px-3 py-2">
                     <DataRow
-                      label="수신번호"
+                      label="문자번호"
                       value={<span className="font-mono">{formatMoNumber(mo.phoneNumber)}</span>}
                     />
                     <DataRow

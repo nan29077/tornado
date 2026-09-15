@@ -15,7 +15,7 @@ export interface MoNumberView {
 }
 
 /**
- * 크리에이터에게 배정된 MO 수신번호 패널.
+ * 크리에이터에게 배정된 문자번호(MO 수신번호) 패널.
  *
  * 번호의 배정·변경·회수는 통합 관리자 권한이다(잘못 바꾸면 다른 크리에이터의 후원이 섞인다).
  * 크리에이터는 여기서 번호를 확인하고 시청자 안내 문구를 복사할 수 있다.
@@ -29,7 +29,7 @@ export function MoNumberPanel({ numbers, guideText }: { numbers: MoNumberView[];
             <Phone size={18} strokeWidth={1.7} />
           </span>
           <div>
-            <p className="text-[14px] font-bold text-ink-900">배정된 수신번호가 없습니다</p>
+            <p className="text-[14px] font-bold text-ink-900">배정된 문자번호가 없습니다</p>
             <p className="mt-1 text-[12.5px] leading-relaxed text-ink-500">
               번호가 배정되기 전에는 문자후원을 받을 수 없습니다. 통합 관리자에게 번호 배정을 요청해 주세요.
             </p>

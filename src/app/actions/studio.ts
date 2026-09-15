@@ -32,6 +32,7 @@ import {
 import { getPublicBaseUrl } from '@/server/public-base-url';
 import { bankName } from '@/components/studio/banks';
 import { SNS_PLATFORMS, deriveLiveState, type SnsLinkState } from '@/lib/sns-platforms';
+import { normalizeTaxType, taxTypeLabel } from '@/lib/labels';
 
 /**
  * 크리에이터 관리자(/studio) 서버 액션.
@@ -404,6 +405,10 @@ export async function regenerateOverlayTokenAction(
   _formData: FormData,
 ): Promise<StudioActionState> {
   return withCreator(async (creatorId) => {
+    const before = await prisma.overlaySetting.findUnique({
+      where: { creatorId },
+      select: { tokenMasked: true, updatedAt: true },
+    });
     const token = generateToken(24);
     const data = { tokenHash: tokenHash(token), tokenMasked: maskSecret(token) };
 
@@ -430,6 +435,22 @@ export async function regenerateOverlayTokenAction(
      * 후원 페이지 공유 URL 은 이미 요청 호스트를 반영하고 있어 기준도 서로 달랐다.
      */
     const baseUrl = await getPublicBaseUrl().catch(() => env.baseUrl);
+
+    /**
+     * 재발급은 **되돌릴 수 없고 방송에 즉시 영향을 준다** (S-8).
+     *
+     * 기존 브라우저 소스가 전부 끊기므로, 방송 중 알림이 멈췄을 때 "누가 언제 재발급했나" 를
+     * 확인할 수단이 필요하다. 계정이 탈취돼 남이 재발급한 경우에도 이 기록이 유일한 흔적이다.
+     * 토큰 원문은 남기지 않는다(마스킹 값만). 기록 실패가 발급을 되돌리면 안 되므로 예외는 삼킨다.
+     */
+    await writeAudit({
+      // 접미사 _BY_CREATOR 로 "본인이 한 변경" 임을 표시한다. 감사로그 화면이 이 규칙을 읽는다.
+      action: 'OVERLAY_TOKEN_REGENERATE_BY_CREATOR',
+      targetType: 'OverlaySetting',
+      targetId: creatorId,
+      before: before ? { tokenMasked: before.tokenMasked, updatedAt: before.updatedAt } : null,
+      after: { tokenMasked: data.tokenMasked, closedConnections: closed },
+    }).catch(() => undefined);
 
     revalidatePath('/studio/overlay');
     return {
@@ -983,6 +1004,20 @@ export async function requestSettlementAction(
 
     const memo = text(formData, 'memo').slice(0, 200) || undefined;
 
+    /**
+     * **사업자 크리에이터에게는 주민등록번호를 받지 않는다 (R-2).**
+     *
+     * 주민등록번호를 수집할 수 있는 근거는 소득세법상 원천징수 신고 의무뿐이다.
+     * 일반과세·간이과세·면세사업자는 원천징수 대상이 아니므로(`taxTypeLabel[...].withholding === false`)
+     * 수집 근거 자체가 없고, 그럼에도 입력을 강제하면 **법적 근거 없는 고유식별정보 수집**이 된다.
+     * 정산 금액 계산(`createSettlementRequest`)도 같은 기준으로 원천징수를 건너뛴다.
+     */
+    const profileForTax = await prisma.creatorProfile.findUnique({
+      where: { id: creatorId },
+      select: { taxType: true },
+    });
+    const needResident = taxTypeLabel[normalizeTaxType(profileForTax?.taxType)].withholding;
+
     // 개인(사업소득 3.3% 원천징수) 크리에이터는 신고용 주민등록번호가 필수다.
     // 앞 6자리·뒤 7자리를 따로 받아 서버에서 합친다.
     // 화면에서 13자리를 숨은 입력칸으로 합쳐 보내면 뒤 7자리를 가린 의미가 없어진다.
@@ -994,28 +1029,33 @@ export async function requestSettlementAction(
     // 아무것도 입력하지 않았으면(변경 없이 그대로 요청) 아래에서 직전 등록분을 재사용한다.
     const isNewResident = residentTyped.length > 0;
 
-    // 이미 등록해 둔(파기 전) 주민번호가 있으면 재입력 없이 진행할 수 있다.
-    const prior = await prisma.settlementRequest.findFirst({
-      where: { creatorId, residentEnc: { not: null } },
-      orderBy: { requestedAt: 'desc' },
-      select: { residentEnc: true },
-    });
-
     let resident: string | null = null;
-    if (isNewResident) {
-      if (!agreed) return { ok: false, message: '주민등록번호 수집·이용에 동의해 주세요.' };
-      const norm = normalizeResident(residentTyped);
-      if (!norm) return { ok: false, message: '주민등록번호 13자리를 정확히 입력해 주세요.' };
-      if (!isValidResident(norm)) return { ok: false, message: '주민등록번호가 올바르지 않습니다. 다시 확인해 주세요.' };
-      resident = norm;
-    } else if (prior?.residentEnc) {
-      // 기존 등록분을 재사용한다.
-      resident = decrypt(prior.residentEnc);
+    if (!needResident) {
+      // 사업자: 주민등록번호를 저장하지 않는다. 화면이 보내오더라도 무시한다.
+      resident = null;
     } else {
-      return {
-        ok: false,
-        message: '원천징수 신고를 위해 주민등록번호를 입력하고 수집·이용에 동의해 주세요.',
-      };
+      // 이미 등록해 둔(파기 전) 주민번호가 있으면 재입력 없이 진행할 수 있다.
+      const prior = await prisma.settlementRequest.findFirst({
+        where: { creatorId, residentEnc: { not: null } },
+        orderBy: { requestedAt: 'desc' },
+        select: { residentEnc: true },
+      });
+
+      if (isNewResident) {
+        if (!agreed) return { ok: false, message: '주민등록번호 수집·이용에 동의해 주세요.' };
+        const norm = normalizeResident(residentTyped);
+        if (!norm) return { ok: false, message: '주민등록번호 13자리를 정확히 입력해 주세요.' };
+        if (!isValidResident(norm)) return { ok: false, message: '주민등록번호가 올바르지 않습니다. 다시 확인해 주세요.' };
+        resident = norm;
+      } else if (prior?.residentEnc) {
+        // 기존 등록분을 재사용한다.
+        resident = decrypt(prior.residentEnc);
+      } else {
+        return {
+          ok: false,
+          message: '원천징수 신고를 위해 주민등록번호를 입력하고 수집·이용에 동의해 주세요.',
+        };
+      }
     }
 
     const created = await createSettlementRequest(creatorId, amount, { memo, resident });

@@ -1,8 +1,10 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { prisma } from '@/server/db';
-import { writeAudit } from '@/server/auth';
+import { writeAudit, requireAdmin } from '@/server/auth';
+import { phoneHash } from '@/lib/crypto';
 import { notifyUser } from '@/server/services/notifications';
 import { newId, newCreatorCode } from '@/lib/id';
 import { env } from '@/lib/env';
@@ -132,6 +134,45 @@ export async function issueTemporaryPasswordAction(
 }
 
 // =========================================================== 후원자
+
+/**
+ * 전화번호로 후원자 정확히 찾기 (A-9).
+ *
+ * 왜 검색창(GET)과 따로 두는가
+ * ---------------------------
+ * 목록의 필터는 GET 폼이라 입력값이 그대로 주소창에 실린다. 고객센터 직원이 민원인의
+ * 전체 번호를 넣으면 `?q=01098765432` 가 되어 **웹서버 접근로그·브라우저 방문기록·
+ * 외부로 나가는 Referer 헤더**에 평문 전화번호가 남는다. 화면에서는 마스킹해 놓고
+ * 주소창으로 유출되면 마스킹은 의미가 없다.
+ *
+ * 그래서 전체 번호 조회는 POST(서버 액션)로만 받고, 찾으면 **후원자 상세로 보낸다.**
+ * 주소에는 번호가 아니라 내부 ID 만 남는다. 번호 원문은 저장하지 않으므로 HMAC 해시로 대조한다.
+ */
+export async function findDonorByPhoneAction(
+  _prev: AdminActionState,
+  fd: FormData,
+): Promise<AdminActionState> {
+  let target: string | null = null;
+  try {
+    // 조회 기능이라 읽기 전용 등급도 쓸 수 있어야 한다(변경이 아니다).
+    await requireAdmin();
+    const digits = text(fd, 'phone').replace(/[^0-9]/g, '');
+    if (!/^01[0-9]{8,9}$/.test(digits)) {
+      throw new Error('휴대전화번호 전체를 입력해 주세요. (예: 010-9876-5432)');
+    }
+    const donor = await prisma.donorProfile.findFirst({
+      where: { phoneHash: phoneHash(digits), retiredAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+    if (!donor) return { ok: false, message: '해당 번호로 등록된 후원자를 찾을 수 없습니다.' };
+    target = donor.id;
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : '조회 중 오류가 발생했습니다.' };
+  }
+  // redirect 는 내부적으로 예외를 던진다. 위 try 안에서 부르면 catch 가 삼켜 버린다.
+  redirect(`/admin/donors/${target}`);
+}
 
 export async function unlockDonor(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
@@ -389,7 +430,7 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
       title: status === 'APPROVED' ? '크리에이터 승인이 완료되었습니다' : '크리에이터 심사 상태가 변경되었습니다',
       body:
         status === 'APPROVED'
-          ? '이제 크리에이터 관리자에서 후원샵과 방송 연동을 설정할 수 있습니다.'
+          ? '이제 크리에이터 관리자에서 후원페이지와 방송 연동을 설정할 수 있습니다.'
           : `${before.displayName}님의 심사 상태가 '${creatorStatusLabel[status].text}' 로 변경되었습니다.${
               reasonInput ? ` 사유: ${reasonInput}` : ''
             }`,

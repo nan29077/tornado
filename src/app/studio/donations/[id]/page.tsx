@@ -140,7 +140,7 @@ export default async function StudioDonationDetailPage({ params }: { params: Pro
             <div className="mt-2">
               <DataRow label="유튜브 전송" value={<Badge tone={deliveryStatusLabel[donation.youtubeStatus].tone}>{deliveryStatusLabel[donation.youtubeStatus].text}</Badge>} />
               <DataRow label="오버레이" value={<Badge tone={deliveryStatusLabel[donation.overlayStatus].tone}>{deliveryStatusLabel[donation.overlayStatus].text}</Badge>} />
-              <DataRow label="MT 안내" value={<Badge tone={deliveryStatusLabel[donation.mtStatus].tone}>{deliveryStatusLabel[donation.mtStatus].text}</Badge>} />
+              <DataRow label="감사문자" value={<Badge tone={deliveryStatusLabel[donation.mtStatus].tone}>{deliveryStatusLabel[donation.mtStatus].text}</Badge>} />
             </div>
           </Card>
         </div>
@@ -351,7 +351,7 @@ export default async function StudioDonationDetailPage({ params }: { params: Pro
                 <tr>
                   <Th>시각</Th>
                   <Th>상태</Th>
-                  <Th>수신번호</Th>
+                  <Th>문자번호</Th>
                   <Th>템플릿</Th>
                   <Th>본문(마스킹)</Th>
                   <Th>결과</Th>

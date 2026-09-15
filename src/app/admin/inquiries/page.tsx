@@ -4,7 +4,7 @@ import { Badge, EmptyState, Notice, SectionTitle, StatTile, Table, Td, Th } from
 import { AdminField, AdminInput, AdminSelect, FilterBar, Pager } from '@/components/admin/controls';
 import { PAGE_SIZE, parsePage, clampPageOrRedirect } from '@/components/admin/constants';
 import { prisma } from '@/server/db';
-import { requireAdmin } from '@/server/auth';
+import { requireAdminPage } from '@/server/admin-guard';
 import { formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
 import type { Prisma } from '@/generated/prisma/client';
@@ -29,7 +29,8 @@ export default async function AdminInquiriesPage({
   searchParams: Promise<{ status?: string; page?: string; q?: string; category?: string; source?: string }>;
 }) {
   // 문의 목록에는 문의자 이름·연락처가 보인다. 메뉴와 같은 기준(최고관리자)으로만 연다.
-  const admin = await requireAdmin();
+  // 다른 관리자 화면과 동일하게 requireAdminPage 로 통일한다(미인증이면 로그인으로 보낸다).
+  const admin = await requireAdminPage('/admin/inquiries');
   if (admin.adminPermission !== 'SUPER_ADMIN') {
     return (
       <>

@@ -321,7 +321,7 @@ export function tplPhoneLinkVerify(code: string): TemplateOutput {
 
 /** 후원샵 PC 웹 결제 인증번호. */
 export function tplPaymentVerify(code: string): TemplateOutput {
-  return verifyTemplate(MT_TEMPLATE.PAYMENT_VERIFY, '후원샵 결제', code);
+  return verifyTemplate(MT_TEMPLATE.PAYMENT_VERIFY, '후원페이지 결제', code);
 }
 
 // ---------------------------------------------------------------------------
@@ -478,10 +478,10 @@ export const MT_TEMPLATE_META: Record<MtTemplateCode, MtTemplateMeta> = {
     variables: [V.verifyCode, V.ttl],
   },
   [MT_TEMPLATE.PAYMENT_VERIFY]: {
-    label: '후원샵 결제 인증번호',
-    description: 'PC 웹 후원샵에서 결제 전 본인확인을 할 때 보내는 인증번호입니다.',
+    label: '후원페이지 결제 인증번호',
+    description: 'PC 웹 후원페이지에서 결제 전 본인확인을 할 때 보내는 인증번호입니다.',
     editable: true,
-    defaultBody: '후원샵 결제 인증번호는 {인증번호} 입니다. {유효시간}분 안에 입력해 주세요.',
+    defaultBody: '후원페이지 결제 인증번호는 {인증번호} 입니다. {유효시간}분 안에 입력해 주세요.',
     variables: [V.verifyCode, V.ttl],
   },
 };

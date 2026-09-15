@@ -180,8 +180,10 @@ export function ConfirmDialog({
           <p className="mt-4 text-[17px] font-black tracking-[-0.02em] text-ink-900">
             {busy ? busyLabel : done ? doneTitle ?? '완료되었습니다' : title}
           </p>
+          {/* whitespace-pre-line: 줄바꿈(\n)을 살린다. 정산 요청 확인처럼 "요청 / 원천징수 / 실지급 / 계좌" 를
+              줄을 나눠 보여 주는 문구가 한 덩어리로 붙으면 확인하라는 뜻이 무색해진다. */}
           {(busy ? null : done ? doneDescription : description) ? (
-            <p className="mx-auto mt-2 max-w-[320px] text-[13px] leading-relaxed text-ink-500">
+            <p className="mx-auto mt-2 max-w-[320px] text-[13px] leading-relaxed whitespace-pre-line text-ink-500">
               {done ? doneDescription : description}
             </p>
           ) : null}

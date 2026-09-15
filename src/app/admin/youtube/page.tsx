@@ -92,9 +92,19 @@ export default async function AdminYouTubePage() {
       <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
         <StatTile
           label="일일 할당량 사용"
-          value={`${formatNumber(quota.used)} / ${formatNumber(quota.total)}`}
-          sub={`잔여 약 ${formatNumber(quota.remainingMessages)}건 전송 가능`}
-          tone={quota.used / Math.max(1, quota.total) > 0.8 ? 'warning' : 'brand'}
+          value={quota.usageUnavailable ? '확인 불가' : `${formatNumber(quota.used)} / ${formatNumber(quota.total)}`}
+          sub={
+            quota.usageUnavailable
+              ? '카운터 저장소를 읽지 못했습니다'
+              : `잔여 약 ${formatNumber(quota.remainingMessages)}건 전송 가능`
+          }
+          tone={
+            quota.usageUnavailable
+              ? 'warning'
+              : quota.used / Math.max(1, quota.total) > 0.8
+                ? 'warning'
+                : 'brand'
+          }
         />
         <StatTile label="오늘 전송 성공" value={formatNumber(todaySent)} tone="success" />
         <StatTile label="오늘 전송 실패" value={formatNumber(todayFailed)} tone={todayFailed > 0 ? 'danger' : 'neutral'} />

@@ -149,8 +149,8 @@ export default async function AdminMtTemplatesPage() {
   return (
     <>
       <PageHeader
-        title="MT 메시지 관리"
-        description="후원자에게 나가는 안내 문자 본문을 여기서 고칩니다. 저장하면 재배포 없이 다음 발송부터 적용됩니다. 실제 발송 이력은 'MT 발송' 화면에서 확인하세요."
+        title="문자 템플릿"
+        description="후원자에게 나가는 안내 문자 '본문'을 여기서 고칩니다. 저장하면 재배포 없이 다음 발송부터 적용됩니다. 실제로 나간 이력은 '발송 문자 (MT)' 화면에서 확인하세요."
       />
 
       <div className="mb-4">

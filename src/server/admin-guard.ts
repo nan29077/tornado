@@ -29,3 +29,34 @@ export async function requireAdminPage(next = '/admin'): Promise<SessionUser> {
   if (!admin) redirect(`/login?next=${encodeURIComponent(next)}`);
   return admin;
 }
+
+/**
+ * 화면 단위 등급 판정 (A-1 / R-3 / A-18).
+ *
+ * 서버 액션 쪽 가드(`assertFinanceAdmin` / `assertOperationAdmin`)와 **같은 등급 집합**을 쓴다.
+ * 액션만 막고 화면은 그대로 두면, 권한 없는 담당자가 폼을 채우고 제출한 뒤에야
+ * "권한이 없습니다" 를 보게 된다. 눌러 봐야 알 수 있는 버튼은 안내가 아니라 함정이다.
+ *
+ * 이 파일에 둔 이유: 페이지(서버 컴포넌트)에서 `'use server'` 모듈을 거치지 않고 부르기 위함.
+ */
+export const FINANCE_VIEW_PERMISSIONS: ReadonlySet<string> = new Set(['SUPER_ADMIN', 'FINANCE', 'OPERATION']);
+export const OPERATION_VIEW_PERMISSIONS: ReadonlySet<string> = new Set(['SUPER_ADMIN', 'OPERATION']);
+
+/** 재무 성격 변경(정산·환불·수수료·세무)을 할 수 있는 등급인가. */
+export function canWriteFinance(admin: SessionUser): boolean {
+  return Boolean(admin.adminPermission && FINANCE_VIEW_PERMISSIONS.has(admin.adminPermission));
+}
+
+/** 운영 성격 변경(승인·정지·번호 배정)과 민감 정보 열람이 가능한 등급인가. */
+export function canWriteOperation(admin: SessionUser): boolean {
+  return Boolean(admin.adminPermission && OPERATION_VIEW_PERMISSIONS.has(admin.adminPermission));
+}
+
+/** 버튼을 비활성화할 때 함께 보여 줄 사유. 권한이 있으면 undefined. */
+export function financeDenyReason(admin: SessionUser, what = '이 작업'): string | undefined {
+  return canWriteFinance(admin) ? undefined : `${what}은(는) 재무 또는 운영 권한에서만 가능합니다.`;
+}
+
+export function operationDenyReason(admin: SessionUser, what = '이 작업'): string | undefined {
+  return canWriteOperation(admin) ? undefined : `${what}은(는) 운영 권한(OPERATION) 이상에서만 가능합니다.`;
+}

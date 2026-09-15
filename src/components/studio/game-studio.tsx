@@ -1353,6 +1353,16 @@ function ControlPanel({
   const meta = GAME_TYPE_META[state.type as GameType];
   const Icon = ICONS[meta?.icon ?? 'Disc3'] ?? Disc3;
   const entry = usesEntries(state.type);
+
+  /**
+   * [게임 내리기] 확인 (S-10).
+   *
+   * 이 버튼은 **진행 중인 회차를 끝내고** 방송 화면에서 게임을 내린다. 모인 참여를
+   * 되살릴 방법이 없는데도 바로 실행돼, 방송 중 [한 판 더] 옆자리에서 잘못 누르면
+   * 시청자가 쌓아 둔 참여가 그대로 사라졌다. 같은 화면의 다른 되돌릴 수 없는 동작
+   * ([삭제], [오버레이 끄기])은 이미 확인 알림창을 쓰고 있다. 규칙을 맞춘다.
+   */
+  const [endPhase, setEndPhase] = React.useState<ConfirmPhase>('closed');
   /** 참여 주소가 이 컴퓨터 안에서만 통하는 주소인지 (휴대폰에서 QR 이 열리지 않는다) */
   const localOnlyJoinUrl = Boolean(state.joinUrl && /\/\/(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(state.joinUrl));
 
@@ -1464,7 +1474,12 @@ function ControlPanel({
           하는 일을 그대로 적는다.
         */}
         {state.status !== 'RESULT' ? (
-          <Button variant="ghost" onClick={() => void onAction('end')} disabled={busy} title="회차를 끝내고 방송 화면에서 게임을 내립니다. 라이브 방송은 그대로입니다.">
+          <Button
+            variant="ghost"
+            onClick={() => setEndPhase('ask')}
+            disabled={busy}
+            title="회차를 끝내고 방송 화면에서 게임을 내립니다. 라이브 방송은 그대로입니다."
+          >
             <X size={16} strokeWidth={1.8} /> 게임 내리기
           </Button>
         ) : (
@@ -1589,9 +1604,27 @@ function ControlPanel({
         <p className="mt-3 text-[11.5px] leading-relaxed text-ink-400">
           단축키 — <b className="text-ink-700">Enter</b> 위의 큰 버튼 · <b className="text-ink-700">Backspace</b>{' '}
           되돌리기. 진행 버튼에는 확인창이 없습니다(방송 타이밍을 놓치지 않도록). 잘못 눌러도 [마감 취소] ·
-          [발표 취소]로 되돌릴 수 있습니다.
+          [발표 취소]로 되돌릴 수 있습니다. 되돌릴 수 없는 [게임 내리기]만 한 번 물어봅니다.
         </p>
       ) : null}
+
+      <ConfirmDialog
+        phase={endPhase}
+        title="게임을 내릴까요?"
+        description={
+          '이번 회차를 끝내고 방송 화면에서 게임을 내립니다. 지금까지 모인 참여는 되살릴 수 없습니다. ' +
+          '라이브 방송 자체는 그대로 유지됩니다.'
+        }
+        confirmLabel="게임 내리기"
+        variant="danger"
+        doneOk
+        doneTitle="게임을 내렸습니다"
+        onConfirm={() => {
+          setEndPhase('busy');
+          void onAction('end').finally(() => setEndPhase('closed'));
+        }}
+        onClose={() => setEndPhase('closed')}
+      />
     </Card>
   );
 }

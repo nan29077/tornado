@@ -158,6 +158,20 @@ export function isValidResident(input: string): boolean {
   return check === Number(d[12]);
 }
 
+/**
+ * 사업자등록번호 마스킹(예: 123-45-6****).
+ *
+ * 사업자번호는 대표자 성명·업종 등과 묶이면 개인/법인을 특정하는 식별자다.
+ * 감사로그처럼 오래 남고 여러 등급이 함께 보는 기록에는 원문을 남기지 않는다.
+ * 입력이 null/빈 값이면 그대로 null 을 돌려준다(= "값 없음" 과 "가려진 값" 을 구분).
+ */
+export function maskBusinessNo(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const d = String(input).replace(/[^0-9]/g, '');
+  if (d.length !== 10) return '***-**-*****';
+  return `${d.slice(0, 3)}-${d.slice(3, 5)}-${d[5]}****`;
+}
+
 /** 빌키/토큰 등 비밀값의 화면 표기용 힌트 */
 export function maskSecret(secret: string): string {
   if (!secret) return '';

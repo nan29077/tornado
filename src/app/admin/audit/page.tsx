@@ -7,7 +7,7 @@ import { formatNumber } from '@/lib/money';
 import { formatKst, kstStartOfDay } from '@/lib/datetime';
 import type { Prisma } from '@/generated/prisma/client';
 import { adminPermissionLabel } from '@/lib/labels';
-import { requireAdminPage } from '@/server/admin-guard';
+import { requireAdminPage, canWriteOperation } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +30,27 @@ export default async function AdminAuditPage({
 }) {
   // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
   // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
-  await requireAdminPage('/admin/audit');
+  const admin = await requireAdminPage('/admin/audit');
+
+  /**
+   * 감사로그 열람은 **최고관리자 / 운영 등급으로 제한**한다.
+   *
+   * 전/후 값에는 크리에이터 세무 정보, 후원자 연락처, 정산 금액처럼 각 화면에서는
+   * 등급으로 가려 둔 값이 그대로 담긴다. 감사로그만 전 등급에 열어 두면
+   * 다른 화면의 등급 제한이 통째로 무의미해진다.
+   * (권한이 있어도 기록 자체는 마스킹된 값만 남기도록 기록하는 쪽에서 함께 막는다)
+   */
+  if (!canWriteOperation(admin)) {
+    return (
+      <>
+        <PageHeader title="감사로그" description="최고관리자 또는 운영 권한에서만 열람할 수 있습니다." />
+        <Notice tone="danger" title="권한이 없습니다">
+          감사로그에는 다른 화면에서 등급으로 가려 둔 개인정보·세무 정보의 변경 전/후 값이 담겨 있어, 최고관리자와 운영
+          권한에서만 확인할 수 있습니다.
+        </Notice>
+      </>
+    );
+  }
 
   const sp = await searchParams;
   const page = parsePage(sp.page);

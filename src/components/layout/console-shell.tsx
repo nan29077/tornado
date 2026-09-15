@@ -7,7 +7,7 @@ import {
   Activity, BadgeCheck, BookOpenText, CalendarDays, ClipboardList, CreditCard, FlaskConical,
   FilePen, Flag, Gauge, HeartHandshake, Home, Images, KeyRound, LayoutDashboard, LogOut,
   Menu, MessageCircleQuestion, MessageSquareText, PanelsTopLeft, Percent, PhoneCall,
-  ScrollText, Send, ServerCog, ShieldAlert, ShieldBan,
+  ReceiptText, ScrollText, Send, ServerCog, ShieldAlert, ShieldBan,
   SlidersHorizontal, Undo2, UserCog, CircleUserRound, UserRoundCog,
   UsersRound, Video, Volume2, WalletCards, X,
 } from 'lucide-react';
@@ -25,9 +25,24 @@ import { cx } from '@/components/ui';
  * 메뉴가 길어져도 항상 같은 자리에 있어야 하므로 메뉴 영역만 스크롤시킨다.
  */
 
+export interface NavItem {
+  href: string;
+  label: string;
+  icon?: ConsoleIconName;
+  /**
+   * 처리 대기 건수. 0 이하면 표시하지 않는다.
+   *
+   * 심사 대기·정산 요청·미답변 문의는 "들어가 보기 전에는 알 수 없는" 일이었다.
+   * 메뉴에 숫자를 띄워 두면 오늘 손댈 곳이 메뉴만 봐도 보인다.
+   */
+  badge?: number;
+  /** 배지 색조. 기본은 경고(노랑), 기한이 걸린 일은 danger 로 준다. */
+  badgeTone?: 'warning' | 'danger' | 'brand';
+}
+
 export interface NavGroup {
   title: string;
-  items: Array<{ href: string; label: string; icon?: ConsoleIconName }>;
+  items: NavItem[];
 }
 
 export type ConsoleIconName =
@@ -35,7 +50,7 @@ export type ConsoleIconName =
   | 'dashboard' | 'donations' | 'donors' | 'fees' | 'holidays' | 'inquiries' | 'messages'
   | 'moderation' | 'numbers' | 'overlay' | 'payments' | 'policies' | 'profile'
   | 'refunds' | 'reports' | 'risk' | 'settlement' | 'simulator'
-  | 'system' | 'templates' | 'terms' | 'tts' | 'users' | 'youtube' | 'settings' | 'send';
+  | 'system' | 'tax' | 'templates' | 'terms' | 'tts' | 'users' | 'youtube' | 'settings' | 'send';
 
 const CONSOLE_ICONS = {
   activity: Activity,
@@ -64,6 +79,7 @@ const CONSOLE_ICONS = {
   settlement: WalletCards,
   simulator: FlaskConical,
   system: ServerCog,
+  tax: ReceiptText,
   templates: FilePen,
   terms: ScrollText,
   tts: Volume2,
@@ -146,6 +162,13 @@ export function ConsoleShell({
                 {g.items.map((item) => {
                   const active = item.href === bestMatch;
                   const ItemIcon = CONSOLE_ICONS[item.icon ?? 'settings'];
+                  // 세 자리를 넘으면 메뉴 폭을 밀어내므로 99+ 로 자른다.
+                  const badge =
+                    item.badge && item.badge > 0
+                      ? item.badge > 99
+                        ? '99+'
+                        : String(item.badge)
+                      : null;
                   return (
                     <Link
                       key={item.href}
@@ -168,7 +191,23 @@ export function ConsoleShell({
                       >
                         <ItemIcon size={16} strokeWidth={active ? 2 : 1.7} />
                       </span>
-                      <span className="min-w-0 truncate">{item.label}</span>
+                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      {badge ? (
+                        <span
+                          // 숫자만 보이면 화면 낭독기에서 "3" 이라고만 읽힌다. 무엇이 3건인지 함께 읽어 준다.
+                          aria-label={`${item.label} 처리 대기 ${item.badge}건`}
+                          className={cx(
+                            'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold tabular-nums',
+                            item.badgeTone === 'danger'
+                              ? 'bg-danger-50 text-danger-600'
+                              : item.badgeTone === 'brand'
+                                ? 'bg-brand-100 text-brand-800'
+                                : 'bg-warning-50 text-warning-600',
+                          )}
+                        >
+                          {badge}
+                        </span>
+                      ) : null}
                     </Link>
                   );
                 })}

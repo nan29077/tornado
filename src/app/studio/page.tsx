@@ -143,15 +143,45 @@ export default async function StudioDashboardPage() {
   const ytConnected = youtube?.status === 'CONNECTED';
   const moAssigned = moNumber?.status === 'ASSIGNED';
 
-  const links: { label: string; ok: boolean; value: string; href: string }[] = [
+  /**
+   * 유튜브 어댑터가 mock 이면 **"정상" 으로 표시하지 않는다 (S-7).**
+   *
+   * mock 어댑터는 실제 유튜브 API 를 부르지 않고 성공 응답만 흉내 낸다. 연결 화면에서
+   * 성공했다고 `CONNECTED` 가 되므로, 여기서 초록 "정상" 배지를 달면 크리에이터는
+   * 라이브 채팅 전송까지 되는 줄 알고 방송에 들어간다. 실제로는 한 줄도 나가지 않는다.
+   */
+  const ytMock = env.youtube.provider === 'mock';
+
+  const links: {
+    label: string;
+    ok: boolean;
+    value: string;
+    href: string;
+    /** 선택 연동. 끝내지 않아도 문자후원·오버레이는 정상 동작한다. */
+    optional?: boolean;
+    /** 배지 문구/색을 직접 지정할 때 (mock 연결 등) */
+    badge?: { text: string; tone: 'success' | 'warning' | 'neutral' };
+  }[] = [
     {
       label: '유튜브 채널',
       ok: ytConnected,
-      value: ytConnected ? (youtube?.channelTitle ?? '연결됨') : youtube ? '연결 상태 확인 필요' : '연결되지 않음',
+      value: ytConnected
+        ? ytMock
+          ? `${youtube?.channelTitle ?? '연결됨'} · 모의 어댑터라 실제 채팅은 전송되지 않습니다`
+          : (youtube?.channelTitle ?? '연결됨')
+        : youtube
+          ? '연결 상태 확인 필요'
+          : '연결되지 않음 (선택 사항)',
       href: '/studio/youtube',
+      optional: true,
+      badge: ytConnected
+        ? ytMock
+          ? { text: '모의 연결', tone: 'warning' }
+          : { text: '정상', tone: 'success' }
+        : { text: '선택 연동', tone: 'neutral' },
     },
     {
-      label: 'MO 수신번호',
+      label: '문자번호',
       ok: moAssigned,
       value: moNumber
         ? `${moNumber.phoneNumber}${moNumber.keyword ? ` (${moNumber.keyword})` : ''} · ${moNumberStatusLabel[moNumber.status].text}`
@@ -161,7 +191,8 @@ export default async function StudioDashboardPage() {
   ];
 
   // 연동 미완료 항목이 있으면 최상단에 '다음 할 일' 로 안내한다 (온보딩 완주 유도)
-  const nextStep = links.find((l) => !l.ok) ?? null;
+  // 선택 연동(유튜브)은 제외한다 — 유튜브를 쓰지 않는 크리에이터에게 영원히 남는 안내가 된다.
+  const nextStep = links.find((l) => !l.ok && !l.optional) ?? null;
   const { mocked, live } = mockNotice();
 
   return (
@@ -259,7 +290,7 @@ export default async function StudioDashboardPage() {
                   className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-ink-50"
                 >
                   <span className="flex min-w-0 items-center gap-2.5">
-                    <span className={l.ok ? 'text-success-600' : 'text-warning-600'}>
+                    <span className={l.ok && l.badge?.tone !== 'warning' ? 'text-success-600' : l.optional && !l.ok ? 'text-ink-300' : 'text-warning-600'}>
                       {l.ok ? <CircleCheck size={16} strokeWidth={1.8} /> : <CircleAlert size={16} strokeWidth={1.8} />}
                     </span>
                     <span className="min-w-0">
@@ -268,7 +299,9 @@ export default async function StudioDashboardPage() {
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
-                    <Badge tone={l.ok ? 'success' : 'warning'}>{l.ok ? '정상' : '설정 필요'}</Badge>
+                    <Badge tone={l.badge?.tone ?? (l.ok ? 'success' : 'warning')}>
+                      {l.badge?.text ?? (l.ok ? '정상' : '설정 필요')}
+                    </Badge>
                     <ChevronRight size={15} strokeWidth={1.8} className="text-ink-300" />
                   </span>
                 </Link>

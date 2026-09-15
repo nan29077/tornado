@@ -161,8 +161,8 @@ async function RegisterScreen({ token }: { token: string }) {
       : Promise.resolve(null),
     prisma.feePolicy.findFirst({
       where: {
+        // 적용 여부는 `active` 가 아니라 시행 기간으로만 판정한다. (정산 계산과 같은 기준)
         scope: 'GLOBAL',
-        active: true,
         effectiveFrom: { lte: nowForPolicy },
         OR: [{ effectiveTo: null }, { effectiveTo: { gt: nowForPolicy } }],
       },

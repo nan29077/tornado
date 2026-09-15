@@ -26,6 +26,7 @@ export function ActionForm({
   confirm,
   className,
   disabled,
+  disabledReason,
   compact = false,
 }: {
   action: AdminServerAction;
@@ -36,10 +37,16 @@ export function ActionForm({
   confirm?: string;
   className?: string;
   disabled?: boolean;
+  /**
+   * 버튼을 잠그는 사유. 값이 있으면 `disabled` 로도 취급하고 버튼 아래에 그대로 보여 준다.
+   * 권한 등급 때문에 잠긴 버튼은 **왜 눌리지 않는지**를 그 자리에서 알려야 한다.
+   */
+  disabledReason?: string;
   /** true 이면 버튼과 메시지를 한 줄 크기로 압축해 표/목록 안에서 사용한다. */
   compact?: boolean;
 }) {
   const [state, formAction, pending] = React.useActionState(action, initialAdminState);
+  const locked = Boolean(disabled || disabledReason);
 
   return (
     <form
@@ -54,9 +61,20 @@ export function ActionForm({
       className={cx(compact ? 'flex flex-col items-start gap-1' : 'space-y-3', className)}
     >
       {children}
-      <Button type="submit" variant={variant} size={compact ? 'sm' : 'md'} disabled={pending || disabled}>
+      <Button
+        type="submit"
+        variant={variant}
+        size={compact ? 'sm' : 'md'}
+        disabled={pending || locked}
+        title={disabledReason}
+      >
         {pending ? pendingLabel : submitLabel}
       </Button>
+      {disabledReason ? (
+        <span className={cx('block leading-tight text-ink-400', compact ? 'max-w-[220px] text-[11px]' : 'text-[12px]')}>
+          {disabledReason}
+        </span>
+      ) : null}
       {state.message ? (
         compact ? (
           <span
@@ -85,6 +103,7 @@ export function ActionButton({
   variant = 'secondary',
   confirm,
   disabled,
+  disabledReason,
   className,
 }: {
   action: AdminServerAction;
@@ -93,10 +112,20 @@ export function ActionButton({
   variant?: Variant;
   confirm?: string;
   disabled?: boolean;
+  disabledReason?: string;
   className?: string;
 }) {
   return (
-    <ActionForm action={action} submitLabel={label} variant={variant} confirm={confirm} disabled={disabled} compact className={className}>
+    <ActionForm
+      action={action}
+      submitLabel={label}
+      variant={variant}
+      confirm={confirm}
+      disabled={disabled}
+      disabledReason={disabledReason}
+      compact
+      className={className}
+    >
       {Object.entries(values).map(([k, v]) => (
         <input key={k} type="hidden" name={k} value={v} />
       ))}
@@ -209,6 +238,7 @@ export function SelectActionForm({
   confirm,
   hint,
   disabled,
+  disabledReason,
   ariaLabel,
   extra,
 }: {
@@ -221,6 +251,8 @@ export function SelectActionForm({
   confirm?: string;
   hint?: string;
   disabled?: boolean;
+  /** 등급 등으로 잠긴 사유. 값이 있으면 잠그고 사유를 함께 보여 준다. */
+  disabledReason?: string;
   /**
    * 선택 상자 위에 함께 보낼 추가 입력(사유 등).
    * 반려·정지처럼 사유가 필수인 액션을 표 안에서 처리하려면 선택 상자 하나로는 부족하다.
@@ -234,6 +266,7 @@ export function SelectActionForm({
   ariaLabel?: string;
 }) {
   const [state, formAction, pending] = React.useActionState(action, initialAdminState);
+  const locked = Boolean(disabled || disabledReason);
 
   return (
     <form
@@ -256,7 +289,7 @@ export function SelectActionForm({
           name={name}
           aria-label={ariaLabel ?? name}
           defaultValue={defaultValue}
-          disabled={disabled}
+          disabled={locked}
           className="h-9 rounded-lg border border-ink-200 bg-white px-2 text-[13px] text-ink-900 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-ink-50 disabled:text-ink-400"
         >
           {options.map((o) => (
@@ -265,10 +298,13 @@ export function SelectActionForm({
             </option>
           ))}
         </select>
-        <Button type="submit" size="sm" variant="secondary" disabled={pending || disabled}>
+        <Button type="submit" size="sm" variant="secondary" disabled={pending || locked} title={disabledReason}>
           {pending ? '처리 중' : submitLabel}
         </Button>
       </div>
+      {disabledReason ? (
+        <span className="max-w-[240px] text-[11px] leading-tight text-ink-400">{disabledReason}</span>
+      ) : null}
       {hint ? <span className="text-[11px] leading-tight text-ink-400">{hint}</span> : null}
       {state.message ? (
         <span

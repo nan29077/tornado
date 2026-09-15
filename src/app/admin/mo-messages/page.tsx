@@ -88,7 +88,7 @@ export default async function AdminMoMessagesPage({
   return (
     <>
       <PageHeader
-        title="수신 문자 관리"
+        title="수신 문자 (MO)"
         description="MO 사업자로부터 수신한 원문은 암호화 보관되며 관리자 화면에서도 복호화하지 않습니다. 필터링된 노출용 문구만 표시합니다."
       />
 

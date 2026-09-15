@@ -1,17 +1,23 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, EmptyState, Notice, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminInput, AdminSelect, FilterBar, Pager } from '@/components/admin/controls';
 import { ActionButton, ActionForm } from '@/components/admin/action-form';
 import { PAGE_SIZE, parsePage, PAID_DONATION_STATUSES, clampPageOrRedirect } from '@/components/admin/constants';
 import { bankLabel } from '@/components/admin/mask';
-import { unlockDonor, setDonorBlock, updateDonorLimitsByAdmin } from '@/app/actions/admin/accounts';
+import {
+  unlockDonor,
+  setDonorBlock,
+  updateDonorLimitsByAdmin,
+  findDonorByPhoneAction,
+} from '@/app/actions/admin/accounts';
 import { prisma } from '@/server/db';
 import { formatWon, formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
 import type { Prisma } from '@/generated/prisma/client';
 import { donorOnboardingStatusLabel } from '@/lib/labels';
-import { phoneHash } from '@/lib/crypto';
+import { maskPhone } from '@/lib/crypto';
 import { requireAdminPage } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
@@ -36,23 +42,25 @@ export default async function AdminDonorsPage({
 
   const now = new Date();
   /**
-   * 검색 입력이 **전화번호 형태이면 해시로 정확 조회**한다.
+   * **주소창에 평문 전화번호를 남기지 않는다 (A-9).**
    *
-   * `phoneMasked` 는 `010-****-5678` 형태라, 고객센터에 들어온 번호(`010-9876-5432`)를
-   * 그대로 넣으면 0건이 나왔다. 뒤 4자리만 따로 입력해야 찾을 수 있다는 걸 아는 사람만
-   * 쓸 수 있는 검색이었다. 번호를 넣으면 번호로 찾히게 한다.
-   * (원문은 저장하지 않으므로 HMAC 해시로 대조한다)
+   * 목록 필터는 GET 폼이라 입력값이 그대로 `?q=` 에 실리고, 웹서버 접근로그·브라우저
+   * 방문기록·Referer 헤더에 전체 번호가 남는다. 화면은 마스킹해 두고 주소창으로 새면
+   * 마스킹이 무의미하다.
+   *
+   * 그래서 전체 번호가 GET 으로 들어오면 **조회하지 않고 곧바로 마스킹 형태로 주소를 바꾼다.**
+   * 전체 번호로 한 명을 찾는 일은 아래 POST 폼(`findDonorByPhoneAction`)이 맡는다.
+   * `q` 에는 `010-****-5432` 같은 마스킹 값만 남으므로, 뒤 4자리 부분 검색은 그대로 동작한다.
    */
   const digits = q.replace(/[^0-9]/g, '');
-  const searchByPhone = /^01[0-9]{8,9}$/.test(digits);
+  if (/^01[0-9]{8,9}$/.test(digits)) {
+    redirect(`/admin/donors?${new URLSearchParams({ q: maskPhone(digits), ...(state ? { state } : {}) }).toString()}`);
+  }
+
   const where: Prisma.DonorProfileWhereInput = {
     // 번호 재사용으로 분리된(은퇴) 프로필은 기본 목록에서 감춘다.
     retiredAt: null,
-    ...(q
-      ? searchByPhone
-        ? { phoneHash: phoneHash(digits) }
-        : { phoneMasked: { contains: q } }
-      : {}),
+    ...(q ? { phoneMasked: { contains: q } } : {}),
     ...(state === 'LOCKED' ? { lockedUntil: { gt: now } } : {}),
     ...(state === 'BLOCKED' ? { blockedAt: { not: null } } : {}),
     ...(state === 'REGISTERED' ? { registeredAt: { not: null } } : {}),
@@ -114,9 +122,30 @@ export default async function AdminDonorsPage({
         <StatTile label="이용 제한" value={formatNumber(blockedCount)} tone={blockedCount > 0 ? 'danger' : 'neutral'} />
       </div>
 
+      {/*
+        전체 번호 조회는 POST 로만 받는다. 주소창·접근로그에 평문 번호를 남기지 않기 위함이다.
+        찾으면 후원자 상세로 바로 이동한다.
+      */}
+      <div className="mb-3 max-w-md">
+        <ActionForm
+          action={findDonorByPhoneAction}
+          submitLabel="번호로 찾기"
+          variant="secondary"
+          compact
+        >
+          <AdminField
+            label="전화번호로 정확히 찾기"
+            hint="전체 번호는 주소창에 남지 않습니다. 찾으면 해당 후원자 상세로 이동합니다."
+            className="w-60"
+          >
+            <AdminInput name="phone" inputMode="tel" placeholder="010-9876-5432" autoComplete="off" />
+          </AdminField>
+        </ActionForm>
+      </div>
+
       <FilterBar action="/admin/donors" resetHref="/admin/donors">
-        <AdminField label="연락처 검색" className="w-60">
-          <AdminInput name="q" defaultValue={q} placeholder="010-9876-5432 또는 010-****-5432" />
+        <AdminField label="마스킹 번호 검색" className="w-60">
+          <AdminInput name="q" defaultValue={q} placeholder="010-****-5432" />
         </AdminField>
         <AdminField label="상태" className="w-44">
           <AdminSelect name="state" defaultValue={state}>

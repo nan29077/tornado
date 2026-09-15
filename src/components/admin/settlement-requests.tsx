@@ -52,7 +52,7 @@ interface PayoutPreview {
  * 유일한 경로인데 화면 어디에서도 호출되지 않아, "검토중" 상태를 만들 방법이 아예 없었다.
  * 일괄 툴바는 여러 건을 한 번에 밀 때 쓰고, 여기서는 한 건을 신중히 다룬다.
  */
-function RowActions({ row }: { row: SettlementRow }) {
+function RowActions({ row, denyReason }: { row: SettlementRow; denyReason?: string }) {
   const [state, formAction, pending] = React.useActionState(updateSettlementRequestStatus, initialAdminState);
   const [memo, setMemo] = React.useState('');
 
@@ -110,7 +110,8 @@ function RowActions({ row }: { row: SettlementRow }) {
             key={b.value}
             name="status"
             value={b.value}
-            disabled={pending}
+            disabled={pending || Boolean(denyReason)}
+            title={denyReason}
             className={cx(
               'h-7 rounded-lg px-2 text-[11.5px] font-bold disabled:opacity-50',
               b.tone === 'brand' && 'bg-brand-400 text-ink-900',
@@ -135,7 +136,19 @@ function RowActions({ row }: { row: SettlementRow }) {
   );
 }
 
-export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
+export function SettlementRequestsPanel({
+  rows,
+  denyReason,
+}: {
+  rows: SettlementRow[];
+  /**
+   * 등급 때문에 정산 처리가 막힌 사유 (A-1).
+   * 액션 쪽 `assertFinanceAdmin` 과 같은 기준으로 버튼도 잠근다.
+   * 눌러 본 뒤에야 "권한이 없습니다" 를 보게 되는 일을 없앤다.
+   */
+  denyReason?: string;
+}) {
+  const locked = Boolean(denyReason);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [bulkState, bulkAction, bulkPending] = React.useActionState(bulkUpdateSettlementAction, initialAdminState);
   const [resultState, resultAction, resultPending] = React.useActionState(applyPayoutResultsAction, initialAdminState);
@@ -255,7 +268,8 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
             <button
               name="bulkAction"
               value="APPROVE"
-              disabled={bulkPending || selectedIds.length === 0}
+              disabled={locked || bulkPending || selectedIds.length === 0}
+              title={denyReason}
               className="h-8 rounded-lg bg-brand-400 px-3 text-[12px] font-bold text-ink-900 disabled:opacity-50"
             >
               일괄 승인
@@ -263,7 +277,8 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
             <button
               name="bulkAction"
               value="REJECT"
-              disabled={bulkPending || selectedIds.length === 0}
+              disabled={locked || bulkPending || selectedIds.length === 0}
+              title={denyReason}
               className="h-8 rounded-lg border border-danger-500 px-3 text-[12px] font-bold text-danger-600 disabled:opacity-50"
             >
               일괄 반려
@@ -271,7 +286,7 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
             <button
               name="bulkAction"
               value="PAY"
-              disabled={bulkPending || approvedSelected.length === 0}
+              disabled={locked || bulkPending || approvedSelected.length === 0}
               className="h-8 rounded-lg bg-ink-900 px-3 text-[12px] font-bold text-white disabled:opacity-50"
               title="승인 상태만 지급 완료됩니다"
             >
@@ -285,7 +300,7 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
           <button
             type="button"
             onClick={loadPreview}
-            disabled={!payoutUrl || previewPending}
+            disabled={locked || !payoutUrl || previewPending}
             className="h-8 rounded-lg border border-ink-200 px-3 text-[12px] font-bold text-ink-700 disabled:opacity-50"
           >
             {previewPending ? '확인 중' : `지급대행 파일 받기 (${approvedSelected.length})`}
@@ -312,7 +327,7 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
           >
             {hidden(paidSelected)}
             <button
-              disabled={filePending || paidSelected.length === 0}
+              disabled={locked || filePending || paidSelected.length === 0}
               className="h-8 rounded-lg border border-ink-200 px-3 text-[12px] font-bold text-ink-700 disabled:opacity-50"
               title="지급완료 건의 주민등록번호를 파기합니다"
             >
@@ -326,6 +341,7 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
             {anyMsg}
           </p>
         ) : null}
+        {denyReason ? <p className="mt-2 text-[12px] font-semibold text-ink-400">{denyReason}</p> : null}
         {previewError ? <p className="mt-2 text-[12px] text-danger-600">{previewError}</p> : null}
       </div>
 
@@ -544,7 +560,7 @@ export function SettlementRequestsPanel({ rows }: { rows: SettlementRow[] }) {
                 {r.paidAt ? <span className="mt-0.5 block text-[11px] text-success-600">지급 {r.paidAt}</span> : null}
               </Td>
               <Td>
-                <RowActions row={r} />
+                <RowActions row={r} denyReason={denyReason} />
               </Td>
             </tr>
           ))}

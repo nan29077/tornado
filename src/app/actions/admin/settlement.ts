@@ -15,6 +15,7 @@ import {
 import { notifyUser } from '@/server/services/notifications';
 import { formatWon } from '@/lib/money';
 import type { AdminActionState } from '@/components/admin/state';
+import type { Prisma } from '@/generated/prisma/client';
 import { run, text, optText, money, rate, enumValue, requiredId, optDate, assertFinanceAdmin } from './shared';
 
 /**
@@ -458,16 +459,31 @@ export async function createFeePolicy(_prev: AdminActionState, fd: FormData): Pr
       if (!creator) throw new Error('크리에이터를 찾을 수 없습니다.');
     }
 
+    /**
+     * 마감 대상: 같은 범위에서 **새 정책 시행일 시점에 아직 살아 있는** 정책.
+     *
+     * 예전에는 `active: true` 인 정책을 전부 즉시 `active:false` 로 바꿨다.
+     * 시행일을 미래로 잡으면 오늘부터 그 시행일까지 적용 가능한 정책이 한 건도 남지 않아
+     * 그 구간의 결제가 코드 기본값 요율로 정산됐다. `active` 는 손대지 않고
+     * **종료일(effectiveTo)만** 새 시행일로 맞춰 기간이 끊기지 않게 잇는다.
+     */
+    const closeWhere: Prisma.FeePolicyWhereInput = {
+      scope,
+      creatorId,
+      effectiveFrom: { lte: effectiveFrom },
+      OR: [{ effectiveTo: null }, { effectiveTo: { gt: effectiveFrom } }],
+    };
+
     const previous = await prisma.feePolicy.findMany({
-      where: { active: true, scope, creatorId },
+      where: closeWhere,
       select: { id: true, pgFeeRate: true, platformFeeRate: true },
     });
 
     const created = await prisma.$transaction(async (tx) => {
-      // 이력 보존: 기존 정책은 삭제하지 않고 마감한다.
+      // 이력 보존: 기존 정책은 삭제하지 않고 종료일만 새 시행일로 맞춘다.
       await tx.feePolicy.updateMany({
-        where: { active: true, scope, creatorId },
-        data: { active: false, effectiveTo: effectiveFrom },
+        where: closeWhere,
+        data: { effectiveTo: effectiveFrom },
       });
       return tx.feePolicy.create({
         data: {
@@ -494,7 +510,8 @@ export async function createFeePolicy(_prev: AdminActionState, fd: FormData): Pr
       after: { scope, creatorId, pgFeeRate, pgFixedFee, platformFeeRate, smsCost, vatIncluded, effectiveFrom },
     });
     revalidatePath('/admin/fees');
-    return '새 수수료 정책을 등록했습니다. 기존 정책은 마감 처리되었습니다.';
+    const fromText = effectiveFrom.getTime() > Date.now() ? '예약 등록했습니다' : '등록했습니다';
+    return `새 수수료 정책을 ${fromText}. 기존 정책은 새 시행일까지 그대로 적용된 뒤 종료됩니다.`;
   });
 }
 
@@ -504,16 +521,22 @@ export async function deactivateFeePolicy(_prev: AdminActionState, fd: FormData)
     const id = requiredId(fd, 'id', '수수료 정책');
     const before = await prisma.feePolicy.findUnique({ where: { id } });
     if (!before) throw new Error('수수료 정책을 찾을 수 없습니다.');
-    if (!before.active) throw new Error('이미 마감된 정책입니다.');
+    // 마감 여부는 `active` 플래그가 아니라 종료일로 판정한다. (적용 판정과 같은 기준)
+    const now = new Date();
+    if (before.effectiveTo && before.effectiveTo.getTime() <= now.getTime()) {
+      throw new Error('이미 종료된 정책입니다.');
+    }
 
-    await prisma.feePolicy.update({ where: { id }, data: { active: false, effectiveTo: new Date() } });
+    // 아직 시행 전(예약) 정책을 마감하면 시작도 못 한 채 끝난 구간이 되므로 시작일과 맞춘다.
+    const effectiveTo = before.effectiveFrom.getTime() > now.getTime() ? before.effectiveFrom : now;
+    await prisma.feePolicy.update({ where: { id }, data: { active: false, effectiveTo } });
     await writeAudit({
       adminUserId: admin.id,
       action: 'FEE_POLICY_DEACTIVATE',
       targetType: 'FeePolicy',
       targetId: id,
-      before: { active: true, scope: before.scope, creatorId: before.creatorId },
-      after: { active: false },
+      before: { active: before.active, scope: before.scope, creatorId: before.creatorId, effectiveTo: before.effectiveTo },
+      after: { active: false, effectiveTo },
     });
     revalidatePath('/admin/fees');
     return '수수료 정책을 마감했습니다.';

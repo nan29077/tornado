@@ -209,6 +209,47 @@ export const userRoleLabel: Record<UserRole, string> = {
   ADMIN: '관리자',
 };
 
+/**
+ * 크리에이터 세무 과세유형 (`creator_profile.tax_type`).
+ *
+ * `withholding` 이 true 인 유형만 지급 시 사업소득 3.3% 원천징수 대상이다.
+ * 화면과 계산이 같은 사전을 보게 해서, 라벨만 바꾸고 계산은 안 바뀌는 사고를 막는다.
+ */
+export const TAX_TYPES = ['GENERAL', 'SIMPLIFIED', 'EXEMPT', 'INDIVIDUAL'] as const;
+export type TaxType = (typeof TAX_TYPES)[number];
+
+export const taxTypeLabel: Record<TaxType, { text: string; tone: Tone; hint: string; withholding: boolean }> = {
+  GENERAL: {
+    text: '일반과세',
+    tone: 'success',
+    hint: '세금계산서 발행 가능 · 원천징수 없음',
+    withholding: false,
+  },
+  SIMPLIFIED: {
+    text: '간이과세',
+    tone: 'brand',
+    hint: '세금계산서 발행 불가(영수증) · 원천징수 없음',
+    withholding: false,
+  },
+  EXEMPT: {
+    text: '면세사업자',
+    tone: 'neutral',
+    hint: '계산서(면세) 발행 · 원천징수 없음',
+    withholding: false,
+  },
+  INDIVIDUAL: {
+    text: '비사업자(개인)',
+    tone: 'warning',
+    hint: '사업소득 3.3% 원천징수 대상 · 지급명세서 제출 의무',
+    withholding: true,
+  },
+};
+
+/** 모르는 값이 들어와도 화면이 깨지지 않게 한다. 확인 못 한 값은 원천징수 대상으로 본다. */
+export function normalizeTaxType(value: string | null | undefined): TaxType {
+  return (TAX_TYPES as readonly string[]).includes(value ?? '') ? (value as TaxType) : 'INDIVIDUAL';
+}
+
 /** 수수료 정책 적용 범위. 크리에이터 상세가 `GLOBAL` 원문을 그대로 보여 주고 있었다. */
 export const policyScopeLabel: Record<PolicyScope, string> = {
   GLOBAL: '전체 공통',

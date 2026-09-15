@@ -114,13 +114,32 @@ export async function releaseYouTubeQuota(input: number | QuotaReserveInput): Pr
 
 export async function getYouTubeQuotaUsage() {
   const key = `yt:quota:${ptDateKey()}`;
-  const used = Number((await kv.get(key)) ?? 0);
+  /**
+   * 카운터 저장소(Redis) 장애로 **관리자 화면 전체가 500 이 되면 안 된다.**
+   *
+   * 이 값은 "오늘 얼마나 썼는가" 를 보여 주는 참고 수치일 뿐이라, 못 읽으면 못 읽었다고
+   * 표시하면 된다. 전송을 막는 fail-closed 판정은 `reserveYouTubeQuota` 쪽에 따로 있다.
+   * 읽기 실패와 "사용량 0" 은 구분해야 하므로 `usageUnavailable` 로 알린다.
+   */
+  let raw: Awaited<ReturnType<typeof kv.get>> = null;
+  let usageUnavailable = false;
+  try {
+    raw = await kv.get(key);
+  } catch (e) {
+    // 키가 없어서 null 인 것(= 오늘 사용량 0)과 읽지 못한 것을 구분한다.
+    usageUnavailable = true;
+    logger.warn('유튜브 할당량 사용량 조회 실패', { message: (e as Error)?.message });
+  }
+  const used = Number(raw ?? 0);
+  const safeUsed = Number.isFinite(used) ? used : 0;
   return {
-    used,
+    used: safeUsed,
+    /** true 이면 카운터 저장소를 읽지 못한 것이다. (사용량 0 과 다르다) */
+    usageUnavailable,
     total: env.youtube.dailyQuota,
     insertCost: env.youtube.insertQuotaCost,
     /** 리셋 기준 시간대. 화면에서 "KST 자정"으로 오해하지 않도록 함께 노출한다. */
     resetTimezone: 'America/Los_Angeles' as const,
-    remainingMessages: Math.max(0, Math.floor((env.youtube.dailyQuota - used) / env.youtube.insertQuotaCost)),
+    remainingMessages: Math.max(0, Math.floor((env.youtube.dailyQuota - safeUsed) / env.youtube.insertQuotaCost)),
   };
 }

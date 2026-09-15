@@ -254,7 +254,7 @@ export default async function RegistrationCompletePage({
         {creator ? (
           <LinkButton href={`/c/${creator.code}`} size="lg" variant="secondary">
             <MessageSquare size={17} strokeWidth={1.7} />
-            {creator.displayName} 후원샵 보기
+            {creator.displayName} 후원페이지 보기
           </LinkButton>
         ) : null}
 

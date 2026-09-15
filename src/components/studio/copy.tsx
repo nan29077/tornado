@@ -38,17 +38,29 @@ export function CopyButton({
   value,
   label = '복사',
   className,
+  disabled = false,
+  disabledTitle,
 }: {
   value: string;
   label?: string;
   className?: string;
+  /**
+   * 복사할 실제 값이 아직 없을 때 잠근다.
+   * 자리표시자(`<발급된 토큰>`)가 그대로 복사되면, 크리에이터는 복사에 성공한 줄 알고
+   * 방송 프로그램에 붙여넣은 뒤 "화면이 안 뜬다" 고 문의하게 된다.
+   */
+  disabled?: boolean;
+  disabledTitle?: string;
 }) {
   const [done, setDone] = React.useState(false);
 
   return (
     <button
       type="button"
+      disabled={disabled}
+      title={disabled ? disabledTitle : undefined}
       onClick={async () => {
+        if (disabled) return;
         const ok = await writeClipboard(value);
         if (ok) {
           setDone(true);
@@ -56,7 +68,8 @@ export function CopyButton({
         }
       }}
       className={cx(
-        'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 text-[12.5px] font-semibold text-ink-700 hover:bg-ink-50',
+        'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 text-[12.5px] font-semibold text-ink-700',
+        disabled ? 'cursor-not-allowed border-ink-100 bg-ink-50 text-ink-300' : 'hover:bg-ink-50',
         className,
       )}
     >
@@ -72,12 +85,19 @@ export function CopyField({
   value,
   hint,
   mono = true,
+  disabledReason,
 }: {
   label: string;
   value: string;
   hint?: string;
   mono?: boolean;
+  /**
+   * 값이 아직 실제 주소가 아닐 때(자리표시자) 주는 사유.
+   * 주면 복사 버튼을 잠그고 사유를 그 자리에 보여 준다.
+   */
+  disabledReason?: string;
 }) {
+  const locked = Boolean(disabledReason);
   return (
     <div>
       <p className="mb-1.5 text-[13px] font-semibold text-ink-700">{label}</p>
@@ -87,12 +107,16 @@ export function CopyField({
           value={value}
           onFocus={(e) => e.currentTarget.select()}
           className={cx(
-            'h-11 w-full min-w-0 rounded-xl border border-ink-200 bg-ink-50 px-3 text-[13px] text-ink-900',
+            'h-11 w-full min-w-0 rounded-xl border border-ink-200 px-3 text-[13px]',
+            locked ? 'bg-ink-50 text-ink-400' : 'bg-ink-50 text-ink-900',
             mono && 'font-mono',
           )}
         />
-        <CopyButton value={value} />
+        <CopyButton value={value} disabled={locked} disabledTitle={disabledReason} />
       </div>
+      {disabledReason ? (
+        <p className="mt-1.5 text-[12px] leading-relaxed font-semibold text-warning-600">{disabledReason}</p>
+      ) : null}
       {hint ? <p className="mt-1.5 text-[12px] leading-relaxed text-ink-400">{hint}</p> : null}
     </div>
   );

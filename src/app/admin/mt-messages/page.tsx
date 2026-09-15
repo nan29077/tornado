@@ -85,8 +85,8 @@ export default async function AdminMtMessagesPage({
   return (
     <>
       <PageHeader
-        title="MT 발송 관리"
-        description="후원자에게 나가는 안내 문자 이력입니다. 본문은 보안링크 토큰을 제거한 마스킹 버전만 저장·표시합니다."
+        title="발송 문자 (MT)"
+        description="후원자에게 실제로 나간 안내 문자 이력입니다(조회 전용). 본문은 보안링크 토큰을 제거한 마스킹 버전만 저장·표시합니다. 문구 자체를 고치려면 '문자 템플릿' 화면을 쓰세요."
       />
 
       <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
@@ -175,6 +175,14 @@ export default async function AdminMtMessagesPage({
         </>
       )}
 
+      {/*
+        모의 발송함은 **mock 어댑터일 때만** 그린다.
+        운영(실제 MT 사업자 연동) 에서는 이 목록이 언제나 비어 있는데, 카드가 그대로 보이면
+        "문자가 한 건도 안 나갔다" 로 읽혀 실제 발송 이력(위 표)과 모순된 인상을 준다.
+        조건은 위 outbox 적재 조건(73행)과 **같아야** 한다. SAFE_MODE 로 실발송을 막아 둔
+        상태에서는 실제 provider 라도 이 발송함에 쌓이므로 그때는 보여 준다.
+      */}
+      {env.mt.provider === 'mock' || env.safety.safeMode ? (
       <section className="mt-6">
         <SectionTitle
           title="개발용 모의 발송함"
@@ -211,6 +219,7 @@ export default async function AdminMtMessagesPage({
           </Card>
         </div>
       </section>
+      ) : null}
     </>
   );
 }

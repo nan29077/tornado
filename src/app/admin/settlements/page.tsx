@@ -13,7 +13,7 @@ import { formatKst, kstMonthKey } from '@/lib/datetime';
 import { settlementStatusLabel, ledgerEntryLabel, creatorStatusLabel } from '@/lib/labels';
 import type { Prisma } from '@/generated/prisma/client';
 import type { SettlementRequestStatus } from '@/generated/prisma/enums';
-import { requireAdminPage } from '@/server/admin-guard';
+import { requireAdminPage, financeDenyReason } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +33,9 @@ export default async function AdminSettlementsPage({
 }) {
   // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
   // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
-  await requireAdminPage('/admin/settlements');
+  const admin = await requireAdminPage('/admin/settlements');
+  // 정산 처리·조정 분개는 재무/운영 권한 전용이다. 액션과 같은 기준으로 버튼도 잠근다.
+  const denyReason = financeDenyReason(admin, '정산 처리');
 
   const sp = await searchParams;
   const page = parsePage(sp.page);
@@ -318,6 +320,7 @@ export default async function AdminSettlementsPage({
             submitLabel="조정 분개 추가"
             variant="danger"
             confirm="정산 원장에 조정 분개를 추가합니다. append-only 이므로 되돌릴 수 없고, 다시 정정하려면 또 하나의 반대 분개가 필요합니다. 계속할까요?"
+            disabledReason={denyReason}
           >
             {/* 모바일에서는 한 줄씩, md 이상에서는 4열로 늘어놓는다 */}
             <div className="grid gap-2.5 md:grid-cols-4">
@@ -436,7 +439,7 @@ export default async function AdminSettlementsPage({
           </datalist>
         </FilterBar>
 
-        <SettlementRequestsPanel rows={requestRows} />
+        <SettlementRequestsPanel rows={requestRows} denyReason={denyReason} />
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {/* Link 는 화면에 보이면 prefetch 로 GET 을 미리 호출해 주민번호 복호화·감사로그가 클릭 없이 쌓인다. */}

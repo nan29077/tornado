@@ -1,11 +1,17 @@
 import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle, EmptyState, Notice, SectionTitle, StatTile } from '@/components/ui';
 import { ActionForm } from '@/components/admin/action-form';
-import { AdminInput } from '@/components/admin/controls';
-import { updateCreatorTtsSetting } from '@/app/actions/admin/broadcast';
+import { AdminField, AdminInput, AdminSelect } from '@/components/admin/controls';
+import {
+  updateCreatorTtsSetting,
+  updatePlatformTtsSetting,
+  testPlatformTts,
+} from '@/app/actions/admin/broadcast';
 import { prisma } from '@/server/db';
 import { env } from '@/lib/env';
 import { formatNumber, formatWon } from '@/lib/money';
+import { formatKst } from '@/lib/datetime';
+import { getPlatformTtsView } from '@/server/services/tts-platform';
 import { requireAdminPage } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
@@ -14,11 +20,17 @@ export const dynamic = 'force-dynamic';
 const CREATOR_OPTION_LIMIT = 300;
 
 /**
- * TTS 연동 관리 (통합 관리자 전용).
+ * TTS·음성 연동 관리 (통합 관리자 전용).
  *
- * **소유권 경계** — 음성·속도·제공사는 크리에이터가 `/studio/overlay` 간편 설정에서 정한다.
- * 이 화면은 운영 정책에 해당하는 읽기 옵션(사용 여부·최소 후원금·최대 글자 수·볼륨)만 다루고,
- * 크리에이터가 고른 음성 값은 읽기 전용으로 보여 준다.
+ * 화면은 두 층으로 나뉜다.
+ *
+ * 1) **전역 연동** — 도네이도가 계약한 음성 서비스(클로바 Voice)를 여기서 연결한다.
+ *    저장하면 전 크리에이터에게 즉시 적용되고 서버 재시작이 필요 없다.
+ *    예전에는 이 칸이 아예 없어서 `.env` 를 고치고 서버를 다시 띄우는 방법밖에 없었다.
+ *
+ * 2) **크리에이터별 읽기 옵션** — 사용 여부·최소 후원금·최대 글자 수·볼륨.
+ *    화자·속도는 크리에이터가 `/studio/overlay` 에서 정하는 값이라 여기서는 읽기 전용이다.
+ *    다만 전역 설정에서 [개별 설정 허용]을 끄면 제공사는 전역 값이 이긴다.
  */
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -31,59 +43,163 @@ export default async function AdminTtsPage() {
   // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
   await requireAdminPage('/admin/tts');
 
-  const creators = await prisma.creatorProfile.findMany({
-    // 승인된 채널만, 상한을 두고 읽는다. 예전에는 미승인·반려·정지 채널까지 전부 불러와
-    // 각각 입력 8개짜리 카드를 렌더해 크리에이터가 늘면 페이지가 열리지 않았다.
-    where: { status: 'APPROVED' },
-    orderBy: { displayName: 'asc' },
-    take: CREATOR_OPTION_LIMIT,
-    select: {
-      id: true,
-      displayName: true,
-      code: true,
-      status: true,
-      ttsSetting: true,
-    },
-  });
+  const [platform, creators] = await Promise.all([
+    getPlatformTtsView(),
+    prisma.creatorProfile.findMany({
+      // 승인된 채널만, 상한을 두고 읽는다. 예전에는 미승인·반려·정지 채널까지 전부 불러와
+      // 각각 입력 8개짜리 카드를 렌더해 크리에이터가 늘면 페이지가 열리지 않았다.
+      where: { status: 'APPROVED' },
+      orderBy: { displayName: 'asc' },
+      take: CREATOR_OPTION_LIMIT,
+      select: { id: true, displayName: true, code: true, status: true, ttsSetting: true },
+    }),
+  ]);
 
-  const isMock = env.tts.provider === 'mock';
   const enabledCount = creators.filter((c) => c.ttsSetting?.enabled ?? true).length;
+  const serverSynthesis = platform.provider === 'naver' && platform.hasCredentials;
+  // 개별 키를 따로 넣어 둔 크리에이터. 개별 설정을 막으면 이 키들은 더 이상 쓰이지 않는다.
+  const ownKeyCount = creators.filter((c) => Boolean(c.ttsSetting?.naverClientIdEnc)).length;
 
   return (
     <>
       <PageHeader
-        title="TTS 연동"
-        description="음성 합성 서비스 연동 상태와 크리에이터별 읽기 옵션(사용 여부·최소 후원금·최대 글자 수·볼륨)을 관리합니다. 음성·속도·제공사는 크리에이터가 오버레이 설정에서 직접 고릅니다."
+        title="TTS·음성 연동"
+        description="도네이도가 계약한 음성 서비스를 전역으로 연결하고, 크리에이터별 읽기 옵션을 관리합니다. 전역 설정은 저장 즉시 전 크리에이터에게 적용되며 서버 재시작이 필요 없습니다."
       />
 
       <div className="space-y-5">
         <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-          <StatTile label="TTS provider" value={env.tts.provider} tone={isMock ? 'warning' : 'success'} />
-          <StatTile label="API 키 등록" value={env.tts.apiKey ? '등록됨' : '미등록'} tone={env.tts.apiKey ? 'success' : 'warning'} />
-          <StatTile label="크리에이터 수" value={formatNumber(creators.length)} />
-          <StatTile label="TTS 사용 중" value={`${formatNumber(enabledCount)}명`} tone="brand" />
+          <StatTile
+            label="전역 제공사"
+            value={PROVIDER_LABEL[platform.provider] ?? platform.provider}
+            sub={platform.configured ? '이 화면에서 설정됨' : '.env 기본값 사용 중'}
+            tone={serverSynthesis ? 'success' : 'warning'}
+          />
+          <StatTile
+            label="전역 API 키"
+            value={platform.hasCredentials ? '등록됨' : '미등록'}
+            sub={platform.clientIdMasked ?? undefined}
+            tone={platform.hasCredentials ? 'success' : 'warning'}
+          />
+          <StatTile
+            label="개별 설정"
+            value={platform.allowCreatorOverride ? '허용' : '차단(전역 강제)'}
+            sub={ownKeyCount > 0 ? `개별 키 보유 ${formatNumber(ownKeyCount)}명` : undefined}
+            tone={platform.allowCreatorOverride ? 'neutral' : 'brand'}
+          />
+          <StatTile
+            label="TTS 사용 중"
+            value={`${formatNumber(enabledCount)}명`}
+            sub={`전체 ${formatNumber(creators.length)}명`}
+            tone="brand"
+          />
         </div>
 
-        {isMock ? (
-          <Notice tone="warning" title="현재 TTS 는 모의(mock) 상태입니다">
-            상용 음성 합성 서비스와 계약되어 있지 않아, 오버레이 브라우저 소스가 브라우저 내장 음성 합성(Web Speech
-            API)으로 대신 읽습니다. 음성·속도·볼륨은 브라우저와 운영체제에 따라 결과가 달라질 수 있습니다.
-            <span className="mt-1.5 block">
-              실연동 전환은 <span className="font-mono">.env</span> 의 <span className="font-mono">TTS_PROVIDER</span>
-              와 <span className="font-mono">TTS_API_KEY</span> 를 설정한 뒤 서버를 재시작하면 적용됩니다. 키는 화면에
-              저장하지 않고 서버 환경변수로만 관리합니다.
-            </span>
-          </Notice>
-        ) : (
-          <Notice tone="success" title={`TTS provider: ${env.tts.provider}`}>
-            실연동 상태입니다. 아래 크리에이터별 설정이 실제 음성 합성에 그대로 적용됩니다.
-          </Notice>
-        )}
+        {/* ───────────────────────────────────── 전역 연동 */}
+        <section>
+          <SectionTitle
+            title="전역 음성 연동"
+            description="도네이도 계정으로 계약한 음성 서비스를 연결합니다. 저장하면 전 크리에이터에게 즉시 적용됩니다."
+          />
 
+          {serverSynthesis ? (
+            <div className="mb-3">
+              <Notice tone="success" title="서버 음성 합성이 켜져 있습니다">
+                네이버 클로바 Voice 로 합성합니다. 기본 화자는 <strong>{platform.speaker}</strong> 이며, 크리에이터가
+                화자를 따로 고르지 않았거나 클로바에 없는 이름을 쓰고 있으면 이 화자로 읽습니다.
+                {platform.updatedAt ? ` (최종 변경 ${formatKst(new Date(platform.updatedAt), false)})` : null}
+              </Notice>
+            </div>
+          ) : (
+            <div className="mb-3">
+              <Notice tone="warning" title="지금은 브라우저 내장 음성으로 읽고 있습니다">
+                서버 합성이 연결되어 있지 않아 오버레이 브라우저 소스가 Web Speech API 로 대신 읽습니다.
+                <strong> OBS 의 브라우저 소스에는 한국어 음성이 없는 경우가 많아 실제로는 무음이 되기 쉽습니다.</strong>{' '}
+                아래에 클로바 Voice 의 Client ID·Secret 을 넣으면 곧바로 서버 합성으로 전환됩니다.
+              </Notice>
+            </div>
+          )}
+
+          <Card>
+            <ActionForm
+              action={updatePlatformTtsSetting}
+              submitLabel="전역 설정 저장"
+              confirm="전 크리에이터의 음성 합성 방식이 즉시 바뀝니다. 계속할까요?"
+            >
+              <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+                <AdminField label="음성 제공사">
+                  <AdminSelect name="provider" defaultValue={platform.provider}>
+                    <option value="browser">브라우저 내장 음성 (서버 합성 안 함)</option>
+                    <option value="naver">네이버 클로바 Voice (서버 합성)</option>
+                  </AdminSelect>
+                </AdminField>
+                <AdminField label="기본 화자" hint="클로바 화자 이름 (예: nara, vdain, nminyoung)">
+                  <AdminInput name="speaker" defaultValue={platform.speaker} placeholder="nara" />
+                </AdminField>
+                <AdminField
+                  label="Client ID"
+                  hint={platform.hasCredentials ? '비워 두면 기존 키를 그대로 둡니다.' : 'NCP 콘솔의 Client ID'}
+                >
+                  <AdminInput name="clientId" autoComplete="off" placeholder={platform.clientIdMasked ?? '입력'} />
+                </AdminField>
+                <AdminField label="Client Secret" hint="저장 후에는 다시 표시되지 않습니다.">
+                  <AdminInput name="clientSecret" type="password" autoComplete="new-password" placeholder="입력" />
+                </AdminField>
+              </div>
+
+              <label className="flex items-start gap-2.5 rounded-xl border border-ink-100 px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  name="allowCreatorOverride"
+                  defaultChecked={platform.allowCreatorOverride}
+                  className="mt-0.5 h-4 w-4"
+                />
+                <span className="text-[13px] leading-relaxed text-ink-900">
+                  크리에이터의 개별 제공사·키 설정을 허용
+                  <span className="mt-0.5 block text-[11.5px] text-ink-400">
+                    끄면 크리에이터가 스튜디오에서 무엇을 골랐든 <strong>전역 설정이 이깁니다.</strong> 크리에이터에게
+                    남는 선택지는 화자·속도뿐입니다. 도네이도 키 하나로 전 채널을 운영한다면 꺼 두는 편이 안전합니다.
+                  </span>
+                </span>
+              </label>
+            </ActionForm>
+          </Card>
+
+          <div className="mt-3">
+            <Card>
+              <CardTitle>연결 시험</CardTitle>
+              <p className="mt-1 mb-3 text-[12.5px] leading-relaxed text-ink-500">
+                저장된 전역 키로 실제 합성을 한 번 요청해 봅니다. 키가 저장된 것과 그 키가 동작하는 것은 다른
+                문제입니다. 방송 중에 처음 알게 되면 손쓸 수 없으니 저장 직후 확인해 주세요. (합성 결과는 버립니다)
+              </p>
+              <ActionForm action={testPlatformTts} submitLabel="클로바 Voice 연결 시험" variant="secondary" />
+            </Card>
+          </div>
+
+          {!platform.allowCreatorOverride && ownKeyCount > 0 ? (
+            <div className="mt-3">
+              <Notice tone="warning" title={`개별 키를 등록해 둔 크리에이터가 ${ownKeyCount}명 있습니다`}>
+                개별 설정을 막아 두었으므로 이 키들은 더 이상 사용되지 않습니다(삭제되지는 않습니다). 해당
+                크리에이터의 클로바 사용량은 도네이도 계정으로 옮겨 갑니다.
+              </Notice>
+            </div>
+          ) : null}
+
+          {env.tts.provider === 'mock' && platform.configured ? (
+            <div className="mt-3">
+              <Notice tone="neutral" title="참고: .env 의 TTS_PROVIDER 는 아직 mock 입니다">
+                서버 합성 경로는 이 화면의 전역 설정이 결정하므로 동작에는 문제가 없습니다.
+                <span className="font-mono"> TTS_PROVIDER</span> 는 어댑터 진단용 표기로만 남아 있습니다.
+              </Notice>
+            </div>
+          ) : null}
+        </section>
+
+        {/* ───────────────────────────────────── 크리에이터별 옵션 */}
         <section>
           <SectionTitle
             title="크리에이터별 읽기 옵션"
-            description="TTS 는 오버레이에 표시되는 필터링된 메시지만 읽습니다. 금칙어·마스킹이 적용된 문장이 사용됩니다. 저장해도 크리에이터가 고른 음성·속도·제공사는 바뀌지 않습니다."
+            description="TTS 는 오버레이에 표시되는 필터링된 메시지만 읽습니다. 금칙어·마스킹이 적용된 문장이 사용됩니다. 저장해도 크리에이터가 고른 화자·속도는 바뀌지 않습니다."
           />
           {creators.length === 0 ? (
             <EmptyState title="등록된 크리에이터가 없습니다" />
@@ -91,6 +207,15 @@ export default async function AdminTtsPage() {
             <div className="space-y-2.5">
               {creators.map((c) => {
                 const s = c.ttsSetting;
+                const chosen = s?.provider === 'naver' ? 'naver' : 'browser';
+                // 실제로 적용되는 제공사. 개별 설정을 막아 두었으면 전역 값이 이긴다.
+                const effectiveProvider = platform.allowCreatorOverride
+                  ? chosen === 'naver'
+                    ? 'naver'
+                    : platform.provider
+                  : platform.provider;
+                const overridden = !platform.allowCreatorOverride && chosen !== effectiveProvider;
+
                 return (
                   <Card key={c.id}>
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -121,12 +246,17 @@ export default async function AdminTtsPage() {
                         </label>
                       </div>
 
-                      {/* 음성·속도·제공사는 크리에이터 소유값이라 읽기 전용으로만 보여 준다. */}
+                      {/* 화자·속도는 크리에이터 소유값이라 읽기 전용으로만 보여 준다. */}
                       <div className="rounded-xl border border-ink-100 bg-ink-50/60 px-3 py-2.5 text-[12px] text-ink-500">
-                        <span className="font-semibold text-ink-700">크리에이터 설정(읽기 전용)</span>
+                        <span className="font-semibold text-ink-700">현재 적용 값 (읽기 전용)</span>
                         <span className="mt-1 block">
-                          제공사 {PROVIDER_LABEL[s?.provider ?? 'browser'] ?? (s?.provider ?? 'browser')} · 음성{' '}
-                          <span className="font-mono">{s?.voice ?? '기본값'}</span> · 속도{' '}
+                          제공사 <strong>{PROVIDER_LABEL[effectiveProvider] ?? effectiveProvider}</strong>
+                          {overridden ? (
+                            <span className="text-warning-600">
+                              {' '}· 전역 설정이 크리에이터 선택({PROVIDER_LABEL[chosen]})을 덮어씀
+                            </span>
+                          ) : null}
+                          {' · '}화자 <span className="font-mono">{s?.voice ?? '기본값'}</span> · 속도{' '}
                           {Math.round((s?.speed ?? 1) * 100)}%
                         </span>
                       </div>

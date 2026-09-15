@@ -220,7 +220,7 @@ export default async function StudioDonationsPage({
                 <Th>결제 상태</Th>
                 <Th>유튜브</Th>
                 <Th>오버레이</Th>
-                <Th>MT 안내</Th>
+                <Th>감사문자</Th>
                 <Th>환불</Th>
               </tr>
             </thead>

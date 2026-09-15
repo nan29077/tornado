@@ -246,14 +246,30 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
                 />
               </div>
               <div className="mt-3 space-y-3">
+                {/*
+                  토큰은 해시로만 저장되어 다시 꺼낼 수 없다. 그래서 여기 값은 언제나
+                  `<발급된 토큰>` 자리표시자다. 복사 버튼을 열어 두면 그 문자열이 그대로
+                  복사되고, 크리에이터는 복사에 성공한 줄 알고 방송 프로그램에 붙여넣은 뒤
+                  "화면이 안 뜬다" 고 문의하게 된다. 실제 주소는 발급 직후 한 번만 나온다.
+                */}
                 <CopyField
                   label="후원 알림 연결 주소"
                   value={`${urlBase}<발급된 토큰>`}
+                  disabledReason={
+                    setting
+                      ? '토큰은 다시 확인할 수 없어 여기서는 복사할 수 없습니다. 주소를 잃어버렸다면 오른쪽에서 재발급해 주세요.'
+                      : '아직 연결 주소가 발급되지 않았습니다. 오른쪽에서 먼저 발급해 주세요.'
+                  }
                   hint="후원이 들어올 때 감사 애니메이션이 뜨는 소스입니다."
                 />
                 <CopyField
                   label="게임 연결 주소"
                   value={`${gameUrlBase}<발급된 토큰>`}
+                  disabledReason={
+                    setting
+                      ? '토큰은 다시 확인할 수 없어 여기서는 복사할 수 없습니다. 주소를 잃어버렸다면 오른쪽에서 재발급해 주세요.'
+                      : '아직 연결 주소가 발급되지 않았습니다. 오른쪽에서 먼저 발급해 주세요.'
+                  }
                   hint="시청자 참여 게임이 뜨는 소스입니다. 토큰은 위와 같은 값을 씁니다. 게임을 쓰지 않는다면 등록하지 않아도 됩니다."
                 />
                 <p className="text-[12px] leading-relaxed text-ink-400">

@@ -15,7 +15,7 @@ import { env } from '@/lib/env';
 import { formatKst, kstDateKey, kstMonthKey, kstMonthRange } from '@/lib/datetime';
 import { settlementDateFor, toDateKey, formatDateKeyKo, SETTLEMENT_BUSINESS_DAYS } from '@/lib/business-day';
 import { loadHolidaysAround, buildScheduleNotice } from '@/server/services/settlement-schedule';
-import { ledgerEntryLabel, settlementStatusLabel } from '@/lib/labels';
+import { ledgerEntryLabel, settlementStatusLabel, normalizeTaxType, taxTypeLabel } from '@/lib/labels';
 import { DISPLAY_PAID_STATUSES } from '@/components/studio/shared';
 
 export const dynamic = 'force-dynamic';
@@ -45,9 +45,14 @@ export default async function StudioSettlementPage({
   const activeTab: SettlementTab = TABS.some((t) => t.key === sp.tab) ? (sp.tab as SettlementTab) : 'overview';
   const range = kstMonthRange(sp.month ?? kstMonthKey());
 
-  const [summary, feePolicy, ledger, requests, account, monthDonations, monthPayouts, priorResident] = await Promise.all([
+  const [summary, feePolicy, profile, ledger, requests, account, monthDonations, monthPayouts, priorResident] = await Promise.all([
     getSettlementSummary(creatorId),
     resolveFeePolicy(creatorId),
+    /**
+     * 과세유형. 원천징수 대상(비사업자)인지에 따라 이 화면이 달라진다.
+     * 사업자에게는 주민등록번호를 받지 않고, 원천징수 미리보기도 보여 주지 않는다.
+     */
+    prisma.creatorProfile.findUnique({ where: { id: creatorId }, select: { taxType: true } }),
     prisma.settlementLedger.findMany({
       where: { creatorId },
       orderBy: { occurredAt: 'desc' },
@@ -193,12 +198,48 @@ export default async function StudioSettlementPage({
   ];
   while (cells.length % 7 !== 0) cells.push(null);
 
+  /**
+   * 모바일 세로 목록용 (S-12). 기록이 있는 날만 추린다.
+   * 격자와 **같은 자료**를 쓰므로 두 화면의 숫자가 갈라지지 않는다.
+   */
+  const activeDays = cells
+    .map((cell, i) => {
+      if (!cell) return null;
+      const stat = byDay.get(cell.key);
+      const scheduled = scheduledByDay.get(cell.key);
+      const payout = payoutByDay.get(cell.key);
+      if (!stat && !scheduled && !payout) return null;
+      return {
+        key: cell.key,
+        day: cell.day,
+        dow: i % 7,
+        isHoliday: holidays.has(cell.key),
+        stat,
+        scheduled,
+        payout,
+      };
+    })
+    .filter((d): d is NonNullable<typeof d> => d !== null);
+
   // 원천징수 미리보기는 실제 요청 시 계산과 **같은 함수**를 써야 한다.
   // 화면은 3.3% 단일 절사, 서버는 2단계 계산이면 요청 직후 금액이 달라져
   // 크리에이터가 "표시된 금액과 다르다"고 느끼게 된다.
   const minSettlement = env.settlement.minRequestAmount;
-  const previewWithholding = calculateWithholding(summary.available);
+
+  /**
+   * 원천징수는 **비사업자(개인)에게만** 적용된다 (R-2).
+   * 사업자(일반과세·간이과세·면세)는 3.3% 를 떼지 않고 전액 지급되므로,
+   * 미리보기에 3.3% 를 그려 주면 실제 입금액보다 적은 금액을 안내하게 된다.
+   */
+  const taxType = normalizeTaxType(profile?.taxType);
+  const taxInfo = taxTypeLabel[taxType];
+  const withholds = taxInfo.withholding;
+  const zeroWithholding = { total: 0n, incomeTax: 0n, localTax: 0n, exempt: false };
+  const previewWithholding = withholds ? calculateWithholding(summary.available) : zeroWithholding;
   const isCurrentMonth = range.key === kstMonthKey();
+
+  /** 정산 요청 확인 문구에 쓸 계좌 표기. 끝 4자리만 남긴다. */
+  const accountSummary = account ? `${account.bankName} ****${account.accountTail4}` : '미등록';
 
   return (
     <>
@@ -326,7 +367,68 @@ export default async function StudioSettlementPage({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-7 border-b border-ink-100 pb-2">
+                {/*
+                  좁은 화면에서는 7열 격자 대신 **세로 목록**으로 보여 준다 (S-12).
+                  가로 375px 을 7로 나누면 칸 하나가 50px 남짓이라 "정산예정 1,234,000원" 이
+                  전부 잘려 아무것도 읽을 수 없었다. 기록이 있는 날만 큰 글씨로 나열한다.
+                */}
+                <div className="sm:hidden">
+                  {activeDays.length === 0 ? (
+                    <p className="py-6 text-center text-[12.5px] text-ink-400">
+                      이 달에는 후원·정산 기록이 없습니다.
+                    </p>
+                  ) : (
+                    <ul className="divide-y divide-ink-50">
+                      {activeDays.map((d) => (
+                        <li
+                          key={d.key}
+                          className={cx('flex items-start gap-3 py-2.5', d.key === todayKey && 'bg-brand-50/60')}
+                        >
+                          <div className="w-16 shrink-0">
+                            <p
+                              className={cx(
+                                'text-[13px] font-extrabold tabular-nums',
+                                d.isHoliday || d.dow === 0 ? 'text-danger-600' : d.dow === 6 ? 'text-brand-700' : 'text-ink-900',
+                              )}
+                            >
+                              {d.day}일 ({WEEKDAYS[d.dow]})
+                            </p>
+                            {d.key === todayKey ? (
+                              <span className="mt-0.5 inline-block rounded bg-brand-400 px-1.5 py-px text-[10px] font-bold text-ink-900">
+                                오늘
+                              </span>
+                            ) : d.isHoliday ? (
+                              <span className="mt-0.5 block text-[10.5px] font-semibold text-danger-600">공휴일</span>
+                            ) : null}
+                          </div>
+                          <div className="min-w-0 flex-1 space-y-1">
+                            {d.stat ? (
+                              <p className="text-[12.5px] leading-snug text-ink-700">
+                                후원 <strong className="tabular-nums text-ink-900">{formatWon(d.stat.amount)}</strong>
+                                <span className="text-ink-400"> · {d.stat.count}건</span>
+                                <span className="block text-[11px] font-semibold text-brand-700">
+                                  → {formatDateKeyKo(d.stat.settlementDate, false)} 정산 예정
+                                </span>
+                              </p>
+                            ) : null}
+                            {d.scheduled ? (
+                              <p className="inline-block rounded bg-brand-50 px-1.5 py-0.5 text-[11.5px] font-bold text-brand-700 ring-1 ring-inset ring-brand-200">
+                                정산예정 {formatWon(d.scheduled.amount)}
+                              </p>
+                            ) : null}
+                            {d.payout ? (
+                              <p className="inline-block rounded bg-[#e8f7f0] px-1.5 py-0.5 text-[11.5px] font-bold text-[#0b7d59]">
+                                지급완료 {formatWon(d.payout)}
+                              </p>
+                            ) : null}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="hidden grid-cols-7 border-b border-ink-100 pb-2 sm:grid">
                   {WEEKDAYS.map((w, i) => (
                     <p
                       key={w}
@@ -340,7 +442,7 @@ export default async function StudioSettlementPage({
                   ))}
                 </div>
 
-                <div className="grid grid-cols-7">
+                <div className="hidden grid-cols-7 sm:grid">
                   {cells.map((cell, i) => {
                     if (!cell) return <div key={`e${i}`} className="min-h-[72px] border-b border-ink-50 sm:min-h-[84px]" />;
                     const stat = byDay.get(cell.key);
@@ -468,14 +570,19 @@ export default async function StudioSettlementPage({
                       value={`${formatWon(summary.holding)} · 후원일 기준 영업일 ${SETTLEMENT_BUSINESS_DAYS}일 미도래`}
                     />
                   ) : null}
-                  <DataRow
-                    label="전액 요청 시 원천징수"
-                    value={
-                      previewWithholding.exempt
-                        ? '0원 (소액부징수)'
-                        : formatWon(previewWithholding.total)
-                    }
-                  />
+                  <DataRow label="과세유형" value={<Badge tone={taxInfo.tone}>{taxInfo.text}</Badge>} />
+                  {withholds ? (
+                    <DataRow
+                      label="전액 요청 시 원천징수"
+                      value={
+                        previewWithholding.exempt
+                          ? '0원 (소액부징수)'
+                          : formatWon(previewWithholding.total)
+                      }
+                    />
+                  ) : (
+                    <DataRow label="원천징수" value={`없음 · ${taxInfo.text}는 전액 지급됩니다`} />
+                  )}
                   <DataRow
                     label="전액 요청 시 실지급"
                     value={formatWon(summary.available - previewWithholding.total)}
@@ -500,13 +607,45 @@ export default async function StudioSettlementPage({
                     {summary.holding > 0n ? ` (정산 예정 ${formatWon(summary.holding)} 별도)` : null}
                   </Notice>
                 ) : (
-                  <ActionForm action={requestSettlementAction} submitLabel="정산 요청">
+                  <ActionForm
+                    action={requestSettlementAction}
+                    submitLabel="정산 요청"
+                    /*
+                      정산 요청은 사람이 확인한 뒤에 눌러야 한다 (S-1).
+                      금액은 확정 잔액 전액이 기본값이라 무심코 누르기 쉽고, 접수되면
+                      그 금액이 보류로 잠겨 다른 요청을 낼 수 없다. 얼마가 어느 계좌로
+                      가는지 마지막으로 보여 준다. (실제 금액은 서버가 다시 계산한다)
+                    */
+                    confirmTitle="정산을 요청할까요?"
+                    confirmMessage={
+                      `요청 가능 금액 ${formatWon(summary.available)} 기준으로 안내합니다.\n` +
+                      (withholds
+                        ? `전액 요청 시 원천징수 ${previewWithholding.exempt ? '0원 (소액부징수)' : formatWon(previewWithholding.total)} / ` +
+                          `실지급 ${formatWon(summary.available - previewWithholding.total)}\n`
+                        : `${taxInfo.text}라 원천징수 없이 전액 지급됩니다.\n`) +
+                      `입금 계좌 ${accountSummary} (${account?.holderMasked ?? '예금주 미확인'})\n\n` +
+                      '입력한 금액이 요청 금액이며, 접수된 금액은 처리될 때까지 보류됩니다.'
+                    }
+                    confirmActionLabel="정산 요청"
+                    doneTitle="정산 요청을 접수했습니다"
+                  >
                     <SettlementAmountField
                       available={summary.available.toString()}
                       minAmount={env.settlement.minRequestAmount.toString()}
                     />
 
-                    <ResidentField priorMasked={priorResident?.residentMasked ?? null} />
+                    {/*
+                      주민등록번호는 원천징수 신고 의무가 있는 비사업자에게만 받는다 (R-2).
+                      사업자는 수집 근거가 없다.
+                    */}
+                    {withholds ? (
+                      <ResidentField priorMasked={priorResident?.residentMasked ?? null} />
+                    ) : (
+                      <Notice tone="neutral" title="주민등록번호를 받지 않습니다">
+                        {taxInfo.text}로 등록되어 있어 원천징수 대상이 아닙니다. 요청 금액 전액이 그대로 지급됩니다.
+                        과세유형이 실제와 다르면 고객센터로 알려 주세요.
+                      </Notice>
+                    )}
 
                     <Field label="메모 (선택)" hint="200자 이내">
                       <Textarea name="memo" rows={2} maxLength={200} placeholder="정산 담당자에게 전달할 내용" />
@@ -515,12 +654,19 @@ export default async function StudioSettlementPage({
                 )}
 
                 <div className="mt-3">
-                  <Notice tone="neutral" title="원천징수 계산 방식">
-                    사업소득 기준으로 <strong>소득세 3%(10원 미만 절사)</strong> 와{' '}
-                    <strong>지방소득세(소득세의 10%, 10원 미만 절사)</strong> 를 각각 산출해 더합니다. 소득세가
-                    1,000원 미만이면 <strong>소액부징수</strong>로 원천징수하지 않습니다(정산액 33,334원 미만).
-                    최종 세율은 세무 검토 후 확정되며, 사업자 등록 여부와 소득 구분에 따라 달라질 수 있습니다.
-                  </Notice>
+                  {withholds ? (
+                    <Notice tone="neutral" title="원천징수 계산 방식">
+                      사업소득 기준으로 <strong>소득세 3%(10원 미만 절사)</strong> 와{' '}
+                      <strong>지방소득세(소득세의 10%, 10원 미만 절사)</strong> 를 각각 산출해 더합니다. 소득세가
+                      1,000원 미만이면 <strong>소액부징수</strong>로 원천징수하지 않습니다(정산액 33,334원 미만).
+                      최종 세율은 세무 검토 후 확정되며, 사업자 등록 여부와 소득 구분에 따라 달라질 수 있습니다.
+                    </Notice>
+                  ) : (
+                    <Notice tone="neutral" title={`${taxInfo.text} — 원천징수 없음`}>
+                      {taxInfo.hint}. 요청 금액에서 세금을 떼지 않고 전액 지급하며, 부가세 신고와 소득 신고는
+                      크리에이터가 직접 하셔야 합니다. 과세유형 변경이 필요하면 고객센터로 문의해 주세요.
+                    </Notice>
+                  )}
                 </div>
               </Card>
             </section>
@@ -628,7 +774,27 @@ export default async function StudioSettlementPage({
               <Card>
                 <CardTitle>{account ? '계좌 변경' : '계좌 등록'}</CardTitle>
                 <div className="mt-3">
-                  <ActionForm action={saveSettlementAccountAction} submitLabel={account ? '계좌 변경' : '계좌 등록'}>
+                  {/*
+                    계좌를 바꾸면 인증 상태가 초기화되어 **관리자 확인 전까지 정산 요청이 막힌다** (S-2).
+                    지급일을 앞둔 크리에이터가 오타를 고치려다 그 회차 지급을 통째로 놓칠 수 있어,
+                    저장 전에 무엇이 달라지는지 분명히 알린다.
+                  */}
+                  <ActionForm
+                    action={saveSettlementAccountAction}
+                    submitLabel={account ? '계좌 변경' : '계좌 등록'}
+                    confirmTitle={account ? '정산 계좌를 변경할까요?' : '정산 계좌를 등록할까요?'}
+                    confirmVariant={account ? 'danger' : 'primary'}
+                    confirmActionLabel={account ? '변경' : '등록'}
+                    confirmMessage={
+                      account
+                        ? `현재 계좌: ${account.bankName} ****${account.accountTail4} (${account.holderMasked})\n\n` +
+                          '저장하면 실명확인 인증이 초기화되어, 관리자 확인이 끝날 때까지 정산을 요청할 수 없습니다. ' +
+                          '이미 요청해 둔 건도 지급이 미뤄질 수 있습니다.'
+                        : '등록한 계좌는 관리자 실명확인을 거친 뒤에야 정산 요청에 사용할 수 있습니다. ' +
+                          '예금주와 계좌번호를 다시 확인해 주세요.'
+                    }
+                    doneTitle={account ? '계좌를 변경했습니다' : '계좌를 등록했습니다'}
+                  >
                     <div className="grid gap-3 md:grid-cols-2">
                       <Field label="은행" required>
                         <Select name="bankCode" defaultValue={account?.bankCode ?? '004'}>

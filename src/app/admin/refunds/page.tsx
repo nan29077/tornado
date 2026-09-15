@@ -16,7 +16,7 @@ import { formatKst } from '@/lib/datetime';
 import { refundStatusLabel, donationStatusLabel } from '@/lib/labels';
 import type { Prisma } from '@/generated/prisma/client';
 import type { RefundStatus } from '@/generated/prisma/enums';
-import { requireAdminPage } from '@/server/admin-guard';
+import { requireAdminPage, financeDenyReason } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +29,9 @@ export default async function AdminRefundsPage({
 }) {
   // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
   // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
-  await requireAdminPage('/admin/refunds');
+  const admin = await requireAdminPage('/admin/refunds');
+  // 환불 승인·거절·직접환불은 모두 재무/운영 권한 전용이다. 액션과 같은 기준으로 버튼도 잠근다.
+  const denyReason = financeDenyReason(admin, '환불 처리');
 
   const sp = await searchParams;
   const page = parsePage(sp.page);
@@ -106,6 +108,7 @@ export default async function AdminRefundsPage({
             submitLabel="즉시 환불 처리"
             variant="danger"
             confirm="입력한 거래를 즉시 환불합니다. 되돌릴 수 없습니다."
+            disabledReason={denyReason}
           >
             <AdminField label="거래번호" hint="예: TRD-20260819-XXXXXXXX">
               <AdminInput name="transactionNo" placeholder="TRD-20260819-XXXXXXXX" required />
@@ -207,15 +210,29 @@ export default async function AdminRefundsPage({
                             values={{ refundId: r.id }}
                             label="승인"
                             variant="primary"
-                            confirm="환불을 승인하고 결제를 취소합니다. 되돌릴 수 없습니다."
+                            confirm={`환불 ${formatWon(r.amount)}을 승인하고 결제를 취소합니다. 되돌릴 수 없습니다.`}
+                            disabledReason={denyReason}
                           />
                           <details>
                             <summary className="cursor-pointer text-[12px] text-ink-500">거절</summary>
                             <div className="mt-1.5 w-48">
-                              <ActionForm action={rejectRefundAction} submitLabel="거절 처리" variant="secondary" compact>
+                              {/*
+                                거절도 후원자에게는 되돌릴 수 없는 결과다(재요청 기간이 지나면 끝).
+                                승인과 같은 수준으로 확인을 받고, 사유는 입력 단계에서 강제한다.
+                                서버(rejectRefundAction)도 2자 이상을 요구하지만, 제출한 뒤 오류로
+                                알려 주면 이미 눌러 본 뒤다.
+                              */}
+                              <ActionForm
+                                action={rejectRefundAction}
+                                submitLabel="거절 처리"
+                                variant="secondary"
+                                compact
+                                confirm={`이 환불 요청(${formatWon(r.amount)})을 거절합니다. 후원자에게 거절 사유가 그대로 전달됩니다.`}
+                                disabledReason={denyReason}
+                              >
                                 <input type="hidden" name="refundId" value={r.id} />
-                                <AdminField label="거절 사유">
-                                  <AdminInput name="memo" placeholder="예: 정상 후원 확인" />
+                                <AdminField label="거절 사유" hint="2자 이상. 후원자에게 그대로 전달됩니다.">
+                                  <AdminInput name="memo" placeholder="예: 정상 후원 확인" required minLength={2} />
                                 </AdminField>
                               </ActionForm>
                             </div>
@@ -228,6 +245,7 @@ export default async function AdminRefundsPage({
                           label="재시도"
                           variant="primary"
                           confirm="PG 취소 결과를 다시 확인하고 재시도합니다."
+                          disabledReason={denyReason}
                         />
                       ) : (
                         <span className="text-[12px] text-ink-300">처리 완료</span>

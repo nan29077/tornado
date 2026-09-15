@@ -3,10 +3,12 @@ import { authorizeOverlay } from '@/server/services/overlay-access';
 import { findOverlayTtsGrant } from '@/server/services/overlay-bus';
 import { consumeRateLimit } from '@/server/rate-limit';
 import {
-  normalizeTtsProvider,
+  normalizeSpeaker,
+  resolveEffectiveTtsProvider,
   resolveNaverCredentials,
   synthesizeWithNaver,
 } from '@/server/services/tts/naver';
+import { getPlatformTtsRuntime } from '@/server/services/tts-platform';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -99,11 +101,12 @@ export async function GET(req: Request) {
     return new Response('unknown event', { status: 404 });
   }
 
-  const setting = await prisma.ttsSetting.findUnique({
-    where: { creatorId },
-    select: { provider: true },
-  });
-  const provider = normalizeTtsProvider(setting?.provider);
+  /**
+   * 제공사는 **관리자 전역 설정을 반영한 실효값**으로 판단한다.
+   * 크리에이터 설정만 보면, 관리자가 전역으로 클로바를 켜 두어도 아직 자기 화면에서
+   * 브라우저를 고른 크리에이터는 서버 합성이 400 으로 막혀 혼자만 음성이 다르게 나간다.
+   */
+  const provider = await resolveEffectiveTtsProvider(creatorId);
   if (provider !== 'naver') {
     return new Response('server tts disabled', { status: 400 });
   }
@@ -113,9 +116,18 @@ export async function GET(req: Request) {
     return new Response('tts credentials missing', { status: 503 });
   }
 
+  /**
+   * 화자 결정.
+   * `grant.voice` 에는 브라우저 음성 이름(예: "Microsoft Heami")이 들어 있을 수 있다.
+   * 그대로 speaker 로 보내면 합성이 통째로 실패하므로, 클로바 화자 형식이 아니면
+   * 관리자가 정한 전역 기본 화자를 쓴다.
+   */
+  const platform = await getPlatformTtsRuntime();
+  const speaker = normalizeSpeaker(grant.voice) || platform.speaker;
+
   const result = await synthesizeWithNaver(cred, {
     text: grant.text,
-    speaker: grant.voice,
+    speaker,
     speed: grant.speed,
     volume: grant.volume,
     pitch: grant.pitch,

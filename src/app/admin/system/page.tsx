@@ -12,7 +12,7 @@ import { formatKst } from '@/lib/datetime';
 import { getYouTubeQuotaUsage } from '@/server/services/broadcast-dispatch';
 import { readEmmaPollHealth, readEmmaMtQueueHealth, MT_QUEUE_STUCK_MINUTES } from '@/server/emma';
 import { moResultLabel } from '@/lib/labels';
-import { requireAdminPage } from '@/server/admin-guard';
+import { requireAdminPage, canWriteOperation } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,7 +46,14 @@ async function checkCache(): Promise<{ ok: boolean; detail: string; latencyMs: n
 export default async function AdminSystemPage() {
   // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
   // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
-  await requireAdminPage('/admin/system');
+  const admin = await requireAdminPage('/admin/system');
+  /**
+   * 서비스 주소(APP_BASE_URL)와 MO 허용 IP 는 **공격 표면 정보**다.
+   * 허용 IP 목록을 알면 어디를 위장해야 MO 수신 엔드포인트를 통과하는지가 드러난다.
+   * 상태 점검(정상/오류) 자체는 모든 관리자가 봐야 하므로 화면은 열어 두고,
+   * 이 두 줄만 최고관리자/운영 등급에 한정해 노출한다.
+   */
+  const canSeeEndpoints = canWriteOperation(admin);
 
   /**
    * **이 화면은 장애 중에도 반드시 열려야 한다.**
@@ -136,13 +143,19 @@ export default async function AdminSystemPage() {
           />
           <StatTile
             label="유튜브 할당량"
-            value={quota ? `${formatNumber(quota.used)} / ${formatNumber(quota.total)}` : '확인 불가'}
+            value={quota && !quota.usageUnavailable ? `${formatNumber(quota.used)} / ${formatNumber(quota.total)}` : '확인 불가'}
             sub={
-              quota
+              quota && !quota.usageUnavailable
                 ? `전송 1건당 ${formatNumber(quota.insertCost)} · 잔여 약 ${formatNumber(quota.remainingMessages)}건 · 태평양시 자정 초기화`
                 : '카운터 저장소(Redis)에 연결하지 못했습니다.'
             }
-            tone={!quota ? 'danger' : quota.used / Math.max(1, quota.total) > 0.8 ? 'warning' : 'neutral'}
+            tone={
+              !quota || quota.usageUnavailable
+                ? 'danger'
+                : quota.used / Math.max(1, quota.total) > 0.8
+                  ? 'warning'
+                  : 'neutral'
+            }
           />
           <StatTile
             label="Webhook 서명 실패"
@@ -166,8 +179,25 @@ export default async function AdminSystemPage() {
                 }
               />
             ))}
-            <DataRow label="APP_BASE_URL" value={env.baseUrl} />
-            <DataRow label="MO 허용 IP" value={env.mo.allowedIps.length > 0 ? env.mo.allowedIps.join(', ') : '미설정'} />
+            {canSeeEndpoints ? (
+              <>
+                <DataRow label="APP_BASE_URL" value={env.baseUrl} />
+                <DataRow
+                  label="MO 허용 IP"
+                  value={env.mo.allowedIps.length > 0 ? env.mo.allowedIps.join(', ') : '미설정'}
+                />
+              </>
+            ) : (
+              <DataRow
+                label="서비스 주소 · MO 허용 IP"
+                value={
+                  <span className="text-[12px] text-ink-400">
+                    최고관리자 또는 운영 권한에서만 확인할 수 있습니다
+                    {env.mo.allowedIps.length > 0 ? ` (허용 IP ${env.mo.allowedIps.length}개 설정됨)` : ' (허용 IP 미설정)'}
+                  </span>
+                }
+              />
+            )}
             <DataRow
               label="EMMA MO 폴링"
               value={

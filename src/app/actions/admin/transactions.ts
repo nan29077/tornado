@@ -7,6 +7,7 @@ import { newId } from '@/lib/id';
 import { formatMoNumber, splitMoNumber } from '@/server/emma';
 import {
   describeLegacyReissue,
+  issueMoNumberForCreator,
   reissueLegacyMoNumbers,
   reissueMoNumberForCreator,
 } from '@/server/services/mo-number-issue';
@@ -264,6 +265,68 @@ export async function reissueLegacyMoNumbersAction(_prev: AdminActionState, _fd:
     }
 
     return { message: describeLegacyReissue(result), detail };
+  });
+}
+
+/**
+ * 크리에이터 한 명에게 **MO 번호를 부여한다** (없으면 발급, 있으면 그대로 둔다).
+ *
+ * 왜 별도 액션인가
+ * ----------------
+ * 승인 시 자동 발급이 원칙이지만, 실제로는 번호가 없는 크리에이터가 생긴다.
+ *  - 대표번호(EMMA_MO_BASE_NUMBER) 계약 전에 승인된 크리에이터
+ *  - 자동 발급이 일시적으로 실패한 경우
+ *  - 번호를 회수한 뒤 다시 부여해야 하는 경우
+ * 예전에는 이 상황을 MO 번호 화면에서 **재고를 먼저 등록하고 → 목록에서 찾아 → 배정**하는
+ * 세 단계로만 풀 수 있었다. 담당자는 어느 번호를 만들어야 하는지도 알아야 했다.
+ * 서브번호 4자리는 도네이도가 직접 정하므로 사람이 번호를 고를 이유가 없다. 버튼 하나면 된다.
+ *
+ * 이미 현재 체계의 번호를 쓰고 있으면 아무것도 바꾸지 않고 그 번호를 알려 준다(멱등).
+ */
+export async function issueCreatorMoNumberAction(
+  _prev: AdminActionState,
+  fd: FormData,
+): Promise<AdminActionState> {
+  return run(async (admin) => {
+    // 번호 부여는 문자후원 라우팅 그 자체다.
+    assertOperationAdmin(admin, 'MO 번호 부여');
+    const creatorId = requiredId(fd, 'creatorId', '크리에이터');
+
+    const creator = await prisma.creatorProfile.findUnique({
+      where: { id: creatorId },
+      select: { displayName: true, status: true },
+    });
+    if (!creator) throw new Error('크리에이터를 찾을 수 없습니다.');
+    if (creator.status !== 'APPROVED') {
+      throw new Error(
+        '승인된 크리에이터에게만 번호를 부여할 수 있습니다. 크리에이터 심사 화면에서 먼저 승인해 주세요.',
+      );
+    }
+
+    const issued = await issueMoNumberForCreator(creatorId);
+
+    if (issued.reused) {
+      // 아무것도 바꾸지 않았으므로 감사로그를 남기지 않는다(로그가 의미 없이 불어난다).
+      return `${creator.displayName} 님은 이미 ${formatMoNumber(issued.phoneNumber)} 번호를 쓰고 있습니다.`;
+    }
+
+    await writeAudit({
+      adminUserId: admin.id,
+      action: 'MO_NUMBER_ISSUE',
+      targetType: 'CreatorProfile',
+      targetId: creatorId,
+      before: issued.replaced ? { phoneNumber: issued.replaced } : undefined,
+      after: { phoneNumber: issued.phoneNumber },
+    });
+
+    revalidatePath('/admin/users');
+    revalidatePath('/admin/creators');
+    revalidatePath('/admin/mo-numbers');
+    revalidatePath(`/admin/creators/${creatorId}`);
+
+    return issued.replaced
+      ? `${creator.displayName} 님의 번호를 ${formatMoNumber(issued.replaced)} 에서 ${formatMoNumber(issued.phoneNumber)} 으로 교체했습니다. 방송 안내 문구 교체를 알려 주세요.`
+      : `${creator.displayName} 님에게 ${formatMoNumber(issued.phoneNumber)} 번호를 부여했습니다.`;
   });
 }
 

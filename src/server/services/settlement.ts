@@ -147,11 +147,59 @@ export function feeRatesOf(policy: FeeRates | null | undefined): FeeRates {
   };
 }
 
+/** 수수료 정책 유효성 판정에 필요한 최소 필드. FeePolicy 행을 그대로 넘길 수 있다. */
+export interface FeePolicyPeriod {
+  effectiveFrom: Date;
+  effectiveTo: Date | null;
+}
+
+/**
+ * 이 정책이 `now` 시점에 실제로 적용되는가.
+ *
+ * **`active` 플래그는 보지 않는다.** 예전에는 새 정책을 등록할 때 기존 정책을 즉시
+ * `active:false` 로 마감했다. 그런데 새 정책의 시행일이 미래이면, 오늘부터 그 시행일까지는
+ * 기존 정책도(active=false) 새 정책도(시행 전) 걸리지 않아 정책이 **한 건도 없는 구간**이
+ * 생겼고, 그 사이 결제는 코드 기본값(FALLBACK_FEE_RATES)으로 정산됐다.
+ * 요율은 시행 기간으로만 판정하고, `active` 는 "사람이 수동으로 마감했는지" 표시로만 쓴다.
+ */
+export function isFeePolicyEffective(policy: FeePolicyPeriod, now: Date = new Date()): boolean {
+  if (policy.effectiveFrom.getTime() > now.getTime()) return false;
+  if (policy.effectiveTo && policy.effectiveTo.getTime() <= now.getTime()) return false;
+  return true;
+}
+
+/** 화면 표시용 정책 상태. 배지 문구가 곳곳에서 갈라지지 않도록 한 곳에서 판정한다. */
+export type FeePolicyPhase = 'ACTIVE' | 'SCHEDULED' | 'CLOSED';
+
+export function feePolicyPhase(policy: FeePolicyPeriod, now: Date = new Date()): FeePolicyPhase {
+  if (policy.effectiveFrom.getTime() > now.getTime()) return 'SCHEDULED';
+  if (policy.effectiveTo && policy.effectiveTo.getTime() <= now.getTime()) return 'CLOSED';
+  return 'ACTIVE';
+}
+
+/**
+ * 후보 목록에서 지금 적용되는 정책 하나를 고른다.
+ * 크리에이터 개별 정책이 전역 정책보다 우선한다.
+ *
+ * 관리자 화면의 "현재 적용 요율" 판정도 이 함수를 재사용해야
+ * 화면에 적힌 요율과 실제 정산 요율이 어긋나지 않는다.
+ */
+export function pickEffectiveFeePolicy<
+  T extends FeePolicyPeriod & { scope: string; creatorId?: string | null },
+>(rows: readonly T[], creatorId: string | null = null, now: Date = new Date()): T | null {
+  const usable = rows
+    .filter((r) => isFeePolicyEffective(r, now))
+    .filter((r) => r.scope === 'GLOBAL' || (creatorId != null && r.creatorId === creatorId))
+    .slice()
+    .sort((a, b) => b.effectiveFrom.getTime() - a.effectiveFrom.getTime());
+  return usable.find((r) => r.scope === 'CREATOR') ?? usable.find((r) => r.scope === 'GLOBAL') ?? null;
+}
+
 export async function resolveFeePolicy(creatorId: string, now: Date = new Date()) {
   const rows = await prisma.feePolicy.findMany({
     // 시행일 전/종료 후 정책은 적용하지 않는다. (예약 수수료가 즉시 반영돼 정산액이 틀어지는 것을 막는다)
+    // `active` 는 조건에 넣지 않는다 — 위 isFeePolicyEffective 주석 참고.
     where: {
-      active: true,
       effectiveFrom: { lte: now },
       OR: [{ scope: 'GLOBAL' }, { scope: 'CREATOR', creatorId }],
       AND: [{ OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }] }],

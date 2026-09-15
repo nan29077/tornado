@@ -72,7 +72,24 @@ function CreatorRows({
           <Td className="text-right tabular-nums">{formatWon(c.donationAmount)}</Td>
           <Td>
             {c.moRoutes.length === 0 ? (
-              <Badge tone="warning">미배정</Badge>
+              /*
+                예전에는 여기가 "미배정" 배지 하나로 끝나 막다른 길이었다.
+                번호가 없다는 사실만 알려 주고 어디서 부여하는지는 알려 주지 않았다.
+                승인된 채널이면 회원 관리 화면에서 버튼 한 번으로 부여할 수 있으므로 그리로 보낸다.
+              */
+              <div className="flex flex-col items-start gap-1">
+                <Badge tone="warning">미부여</Badge>
+                {c.status === 'APPROVED' ? (
+                  <Link
+                    href={`/admin/users?q=${encodeURIComponent(c.code)}`}
+                    className="text-[11px] font-bold text-brand-700 underline"
+                  >
+                    번호 부여하기
+                  </Link>
+                ) : (
+                  <span className="text-[11px] text-ink-400">승인 후 부여</span>
+                )}
+              </div>
             ) : (
               c.moRoutes.map((m) => (
                 <span key={`${m.phoneNumber}-${m.keyword ?? ''}`} className="block text-[12px]">
@@ -223,9 +240,29 @@ export default async function AdminCreatorsPage({
   return (
     <>
       <PageHeader
-        title="크리에이터 심사"
-        description="심사 대기 건을 먼저 처리합니다. 승인하면 MO 번호가 자동으로 배정되어 곧바로 문자후원을 받을 수 있습니다."
+        title="크리에이터 심사·관리"
+        description="크리에이터 가입 신청(/creator-apply)을 승인·반려·정지하는 화면입니다. 승인하면 MO 번호가 자동 발급되고 후원 페이지가 열립니다. 반려·정지 사유는 크리에이터에게 그대로 전달됩니다."
       />
+
+      <div className="mb-4">
+        <Notice tone="neutral" title="이 화면이 하는 일">
+          크리에이터가 <span className="font-mono">/creator-apply</span> 에서 낸 신청을 처리하는 곳입니다. 처리 결과에 따라
+          다음이 자동으로 일어납니다.
+          <span className="mt-1.5 block">
+            <strong>승인</strong> → 후원 코드 활성화 · <strong>MO 번호 자동 발급</strong> · 후원 페이지 공개 · 스튜디오 접근 허용
+          </span>
+          <span className="block">
+            <strong>반려</strong> → 신청 거절, 입력한 사유가 크리에이터에게 전달 (재신청 가능)
+          </span>
+          <span className="block">
+            <strong>정지</strong> → 이미 운영 중인 채널을 즉시 중단. 후원 페이지가 닫히고 문자후원이 끊깁니다.
+          </span>
+          <span className="mt-1.5 block text-ink-500">
+            계정 자체의 정지·탈퇴와 MO 번호 부여는 <Link href="/admin/users" className="font-bold text-brand-700 underline">회원 관리</Link> 에서,
+            수수료·정산 조건은 각 크리에이터 상세에서 다룹니다.
+          </span>
+        </Notice>
+      </div>
 
       <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
         <StatTile label="심사대기" value={formatNumber(count('PENDING'))} sub="전체 기준" tone={count('PENDING') > 0 ? 'warning' : 'neutral'} />

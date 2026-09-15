@@ -7,7 +7,7 @@ import { ActionButton, ActionForm } from '@/components/admin/action-form';
 import { replyInquiry, setInquiryStatus } from '@/app/actions/admin/inquiries';
 import { markInquiryRead } from '@/server/services/inquiry';
 import { prisma } from '@/server/db';
-import { requireAdmin } from '@/server/auth';
+import { requireAdminPage } from '@/server/admin-guard';
 import { formatKst } from '@/lib/datetime';
 import { formatNumber } from '@/lib/money';
 import { SUPPORT_CATEGORIES } from '@/components/public/support-options';
@@ -27,7 +27,7 @@ const STATUS_LABEL: Record<InquiryStatus, { text: string; tone: 'warning' | 'suc
 export default async function AdminInquiryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   // 레이아웃과 페이지는 병렬로 렌더링되므로, 읽음 처리(쓰기)를 하는 이 페이지는 직접 관리자 인증을 확인한다.
-  const admin = await requireAdmin();
+  const admin = await requireAdminPage(`/admin/inquiries/${id}`);
   // 문의에는 문의자 연락처가 포함된다. 메뉴와 같은 기준(최고관리자)으로만 연다.
   if (admin.adminPermission !== 'SUPER_ADMIN') {
     return (

@@ -29,6 +29,15 @@ interface ChecklistItem {
   linkLabel: string;
   /** 크리에이터가 직접 체크하는 항목이면 서버 액션에 넘길 step 값 */
   manualStep?: string;
+  /**
+   * 선택 항목 (S-3).
+   *
+   * 유튜브 연결은 **문자후원이 동작하는 데 필요하지 않다.** 치지직·SOOP 등 다른 곳에서
+   * 방송하거나 유튜브를 쓰지 않는 크리에이터에게는 영원히 끝나지 않는 항목이라,
+   * 준비를 다 마쳐도 "방송 시작 준비" 카드가 대시보드에 계속 남아 있었다.
+   * 선택 항목은 진행률의 분모에서 빼고, 카드가 사라질지 판단할 때도 보지 않는다.
+   */
+  optional?: boolean;
 }
 
 export async function OnboardingChecklist({ creatorId }: { creatorId: string }) {
@@ -59,10 +68,11 @@ export async function OnboardingChecklist({ creatorId }: { creatorId: string }) 
     {
       key: 'youtube',
       label: '유튜브 채널 연결',
-      hint: '후원 메시지를 라이브 채팅으로 보내려면 채널 연결이 필요합니다.',
+      hint: '후원 메시지를 유튜브 라이브 채팅에도 보내고 싶을 때만 연결하면 됩니다. 연결하지 않아도 문자후원과 오버레이는 정상 동작합니다.',
       done: youtube?.status === 'CONNECTED',
       href: '/studio/youtube',
       linkLabel: '연결하러 가기',
+      optional: true,
     },
     {
       key: 'moNumber',
@@ -124,8 +134,16 @@ export async function OnboardingChecklist({ creatorId }: { creatorId: string }) 
     linkLabel: account ? '계좌 확인하기' : '계좌 등록하기',
   });
 
-  const doneCount = items.filter((i) => i.done).length;
-  if (doneCount === items.length) return null;
+  /**
+   * 진행률과 카드 노출 여부는 **필수 항목만** 본다 (S-3).
+   * 선택 항목(유튜브)은 끝내지 않아도 준비 완료로 보고, 필수가 모두 끝나면 카드를 감춘다.
+   */
+  const requiredItems = items.filter((i) => !i.optional);
+  const doneCount = requiredItems.filter((i) => i.done).length;
+  if (doneCount === requiredItems.length) return null;
+
+  // 필수가 남아 있는 동안에만 선택 항목도 함께 안내한다(안 끝난 것을 숨기지는 않는다).
+  const visibleItems = [...requiredItems, ...items.filter((i) => i.optional && !i.done)];
 
   return (
     <Card padded={false}>
@@ -138,19 +156,19 @@ export async function OnboardingChecklist({ creatorId }: { creatorId: string }) 
           </span>
         </p>
         <span className="shrink-0 text-[12px] font-extrabold tabular-nums text-brand-700">
-          {doneCount}/{items.length} 완료
+          {doneCount}/{requiredItems.length} 완료
         </span>
       </div>
 
       <div className="h-1 w-full bg-ink-100">
         <div
           className="h-full bg-brand-700 transition-[width]"
-          style={{ width: `${Math.round((doneCount / items.length) * 100)}%` }}
+          style={{ width: `${Math.round((doneCount / requiredItems.length) * 100)}%` }}
         />
       </div>
 
       <ul>
-        {items.map((item) => (
+        {visibleItems.map((item) => (
           <li
             key={item.key}
             className="flex items-start justify-between gap-3 border-b border-ink-100 px-4 py-3 last:border-0"
@@ -169,6 +187,11 @@ export async function OnboardingChecklist({ creatorId }: { creatorId: string }) 
                   )}
                 >
                   {item.label}
+                  {item.optional ? (
+                    <span className="ml-1.5 rounded bg-ink-100 px-1.5 py-px align-middle text-[10.5px] font-bold text-ink-500">
+                      선택
+                    </span>
+                  ) : null}
                 </span>
                 {item.done ? null : (
                   <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-500">{item.hint}</span>

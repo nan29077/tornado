@@ -114,8 +114,8 @@ export default async function AdminMoNumbersPage({
   return (
     <>
       <PageHeader
-        title="MO 번호 재고·배정"
-        description="수신번호는 전용번호(DEDICATED) 또는 대표번호 공유(SHARED_PREFIX + 키워드) 두 가지 방식으로 운영합니다."
+        title="MO 번호 관리"
+        description="번호 재고와 배정 상태를 다루는 화면입니다. 크리에이터에게 번호를 부여하는 것은 '회원 관리' 목록에서 버튼 한 번으로 할 수 있고, 여기서는 특정 번호를 직접 지정하거나 옛 번호를 정리할 때 씁니다."
       />
 
       <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-6">

@@ -62,8 +62,8 @@ export default async function AdminOverlayPage() {
   return (
     <>
       <PageHeader
-        title="오버레이·TTS 관리"
-        description="크리에이터별 방송 노출 설정과 최근 오버레이 이벤트 상태를 확인합니다. 오버레이 접근 토큰은 마스킹 값만 표시합니다."
+        title="오버레이 현황"
+        description="크리에이터별 방송 노출 설정과 최근 오버레이 이벤트 상태를 확인하는 조회 화면입니다. 오버레이 접근 토큰은 마스킹 값만 표시합니다. 음성 연동과 읽기 옵션은 'TTS·음성 연동' 화면에서 관리합니다."
       />
 
       <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
