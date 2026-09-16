@@ -430,6 +430,7 @@ function Layers({
   showDonation,
   showGame,
   frameKey,
+  sampleGameId,
   donationRef,
 }: {
   frame: string;
@@ -438,12 +439,13 @@ function Layers({
   showDonation: boolean;
   showGame: boolean;
   frameKey: number;
+  sampleGameId?: string | null;
   donationRef?: React.RefObject<HTMLIFrameElement | null>;
 }) {
   return (
     <>
       <iframe
-        key={`game-${frameKey}`}
+        key={`game-${frameKey}-${sampleGameId ?? 'live'}`}
         title="게임 레이어"
         src={gameUrl}
         data-frame={frame}
@@ -1652,6 +1654,7 @@ export function BroadcastPreview({
               showDonation={showDonation}
               showGame={showGame}
               frameKey={pcKey}
+              sampleGameId={sampleGameId}
               donationRef={pcFrame}
             />
             {isPc && editing ? (
@@ -1704,6 +1707,7 @@ export function BroadcastPreview({
                 showDonation={showDonation}
                 showGame={showGame}
                 frameKey={mobileKey}
+                sampleGameId={sampleGameId}
                 donationRef={mobileFrame}
               />
               {!isPc && editing ? (
@@ -1760,6 +1764,7 @@ export function BroadcastPreview({
                 showDonation={showDonation}
                 showGame={showGame}
                 frameKey={0}
+                sampleGameId={sampleGameId}
               />
             </div>
 

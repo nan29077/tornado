@@ -1073,6 +1073,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
                                  두 곳에 생기고 카드 아래에 끼어들어 접힌 영역에 묻히곤 했다)
                               */
                               setPreviewGameId(g.id);
+                              window.dispatchEvent(new CustomEvent('donaido-preview-game', { detail: { gameId: g.id } }));
                               closeManage();
                               showBroadcast();
                             }}

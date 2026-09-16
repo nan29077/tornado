@@ -629,7 +629,7 @@ function PreviewModal({
                   <button
                     key={t.key}
                     type="button"
-                    disabled={sending}
+                    disabled={sending || !ready}
                     onClick={() => {
                       setAmount(t.minAmount);
                       void send(t.minAmount);
