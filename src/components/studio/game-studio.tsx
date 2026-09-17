@@ -269,21 +269,27 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
   const load = React.useCallback(async () => {
     try {
       const res = await fetch('/api/studio/games', { cache: 'no-store' });
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        fail('list', data.error || messageForStatus(res.status));
+        return;
+      }
       setGames(data.games ?? []);
       setHistory(data.history ?? []);
       setState(data.state ?? null);
       setOverlayConfigured(Boolean(data.overlayConfigured));
       setGameEnabled(Boolean(data.gameEnabled));
       setYoutubeConnected(Boolean(data.youtubeConnected));
+    } catch {
+      fail('list', NETWORK_ERROR);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fail]);
 
   React.useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   // 참여자 유입·집계는 SSE 로 흘러온다. 화면을 새로 고칠 일이 없다.
@@ -352,13 +358,14 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
   );
 
   /** 이 페이지 위쪽 [방송 화면] 으로 옮겨 준다. 미리보기는 한 곳에만 둔다. */
-  const showBroadcast = React.useCallback(() => {
+  const showBroadcast = React.useCallback((sampleGameId?: string) => {
     if (typeof document === 'undefined') return;
     const el = document.getElementById('broadcast-preview');
     if (el) {
       window.dispatchEvent(new CustomEvent('donaido-preview-focus', { detail: { target: 'game' } }));
     } else {
-      window.open(`/overlay/${encodeURIComponent(creatorId)}/game?preview=1&debug=1`, '_blank', 'noopener');
+      const sample = sampleGameId ? `&sample=${encodeURIComponent(sampleGameId)}` : '';
+      window.open(`/overlay/${encodeURIComponent(creatorId)}/game?preview=1&debug=1${sample}`, '_blank', 'noopener');
     }
   }, [creatorId]);
 
@@ -1075,7 +1082,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
                               setPreviewGameId(g.id);
                               window.dispatchEvent(new CustomEvent('donaido-preview-game', { detail: { gameId: g.id } }));
                               closeManage();
-                              showBroadcast();
+                              showBroadcast(g.id);
                             }}
                           >
                             {previewGameId === g.id ? (

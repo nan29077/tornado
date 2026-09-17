@@ -366,31 +366,32 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
           (BroadcastPreview 안에서 처리).
         */}
         <div className="gap-5 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(0,600px)] xl:items-start">
-          {setting ? (
-            <section
-              id="broadcast-preview"
-              className="mb-6 scroll-mt-20 xl:sticky xl:top-[calc(var(--console-header-h)+0.75rem)] xl:mb-0 xl:max-h-[calc(100dvh-var(--console-header-h)-1.5rem)] xl:overflow-y-auto xl:pb-2"
-            >
-              <SectionTitle
-                title="방송 화면"
-                description="후원 알림과 게임이 실제로 겹쳐 보이는 모습입니다. [테스트 후원 보내기]나 게임 [방송에 시작]을 누르면 이 화면에서 바로 재생됩니다. [배치 조정]으로 위치와 크기도 여기서 바로 잡을 수 있습니다."
+          <section
+            id="broadcast-preview"
+            className="mb-6 scroll-mt-20 xl:sticky xl:top-[calc(var(--console-header-h)+0.75rem)] xl:mb-0 xl:max-h-[calc(100dvh-var(--console-header-h)-1.5rem)] xl:overflow-y-auto xl:pb-2"
+          >
+            <SectionTitle
+              title="방송 화면"
+              description="후원 알림과 게임이 실제로 겹쳐 보이는 모습입니다. [테스트 후원 보내기]나 게임 [방송에 시작]을 누르면 이 화면에서 바로 재생됩니다. [배치 조정]으로 위치와 크기도 여기서 바로 잡을 수 있습니다."
+            />
+            <Card>
+              <BroadcastPreview
+                creatorId={creatorId}
+                overlayEnabled={setting?.enabled ?? false}
+                donationLayout={clampOverlayLayout(setting)}
+                gameLayout={clampOverlayLayout({
+                  offsetX: setting?.gameOffsetX,
+                  offsetY: setting?.gameOffsetY,
+                  scalePct: setting?.gameScalePct,
+                })}
               />
-              <Card>
-                <BroadcastPreview
-                  creatorId={creatorId}
-                  overlayEnabled={setting.enabled}
-                  donationLayout={clampOverlayLayout(setting)}
-                  gameLayout={clampOverlayLayout({
-                    offsetX: setting.gameOffsetX,
-                    offsetY: setting.gameOffsetY,
-                    scalePct: setting.gameScalePct,
-                  })}
-                />
-              </Card>
-            </section>
-          ) : (
-            <div className="hidden xl:block" />
-          )}
+              {!setting ? (
+                <div className="mt-3">
+                  <Notice tone="neutral">미리보기는 바로 사용할 수 있습니다. 방송 프로그램에 연결하려면 위에서 연결 주소를 먼저 발급해 주세요.</Notice>
+                </div>
+              ) : null}
+            </Card>
+          </section>
 
           {/*
             오른쪽 열을 **행 높이만큼 늘린다**(self-stretch).

@@ -757,12 +757,20 @@ export async function joinFromDonation(donationId: string): Promise<void> {
         amount: true,
         displayName: true,
         isTest: true,
+        paidAt: true,
       },
     });
-    if (!donation || donation.isTest) return;
+    if (!donation || donation.isTest || !donation.paidAt) return;
 
     const round = await prisma.gameRound.findFirst({
-      where: { creatorId: donation.creatorId, status: 'OPEN' },
+      where: {
+        creatorId: donation.creatorId,
+        status: 'OPEN',
+        // 처리 시각이 아니라 실제 결제 시각이 이 회차의 참여 구간 안에 있어야 한다.
+        openedAt: { lte: donation.paidAt },
+        OR: [{ closesAt: null }, { closesAt: { gte: donation.paidAt } }],
+      },
+      orderBy: { openedAt: 'desc' },
       include: { game: true },
     });
     if (!round) return;

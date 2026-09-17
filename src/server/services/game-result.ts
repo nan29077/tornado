@@ -28,6 +28,11 @@ function asStringArray(v: unknown): string[] {
   return Array.isArray(v) ? v.map((x) => String(x ?? '')).filter(Boolean) : [];
 }
 
+/** 순위별 보상은 빈칸도 자리이므로 제거하지 않는다. */
+function asStringSlots(v: unknown): string[] {
+  return Array.isArray(v) ? v.map((x) => String(x ?? '')) : [];
+}
+
 /** 편향 없는 무작위 섞기 (Fisher-Yates + CSPRNG) */
 export function shuffle<T>(input: T[]): T[] {
   const a = [...input];
@@ -103,7 +108,7 @@ export function computeEntryResult(
   switch (type) {
     case 'RANKING': {
       const rankCount = Math.min(Number(config.rankCount) || 1, participants.length);
-      const prizes = asStringArray(config.prizes);
+      const prizes = asStringSlots(config.prizes);
       const picked = shuffle(participants).slice(0, Math.max(1, rankCount));
       return {
         ranks: picked.map((p, i) => ({

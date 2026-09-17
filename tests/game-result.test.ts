@@ -166,6 +166,14 @@ describe('순위 추첨', () => {
     expect(r.ranks.map((x) => x.rank)).toEqual([1, 2, 3]);
     expect(r.ranks[0].prize).toBe('1');
   });
+
+  it('빈 보상도 순위 자리로 유지한다', () => {
+    const rows = [p('a', null), p('b', null)];
+    const r = computeEntryResult('RANKING', { rankCount: 2, prizes: ['', '2등 보상'] }, rows) as {
+      ranks: { rank: number; prize: string }[];
+    };
+    expect(r.ranks.map((x) => x.prize)).toEqual(['', '2등 보상']);
+  });
 });
 
 describe('당첨자 기록', () => {

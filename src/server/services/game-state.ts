@@ -101,7 +101,22 @@ export function publicConfig(type: string, config: Record<string, unknown>, reve
 /** 스튜디오 상태에서 시청자에게 나갈 부분만 남긴다. */
 export function toPublicState(state: GameStudioState): GamePublicState {
   const { secret: _secret, recentParticipants: _p, autoCloseSec: _a, entryMode: _e, ...rest } = state;
-  return rest;
+  return {
+    ...rest,
+    result: rest.result ? (sanitizePublicValue(rest.result) as Record<string, unknown>) : null,
+  };
+}
+
+/** 결과 내부 어느 깊이에 있든 내부 식별자는 공개 응답에서 제거한다. */
+function sanitizePublicValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizePublicValue);
+  if (!value || typeof value !== 'object') return value;
+
+  const clean: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (key !== 'donorId') clean[key] = sanitizePublicValue(child);
+  }
+  return clean;
 }
 
 function asStringArray(v: unknown): string[] {
@@ -163,6 +178,15 @@ export async function buildStudioState(creatorId: string): Promise<GameStudioSta
 const SNAPSHOT_TTL_MS = 1500;
 const snapshotCache = new Map<string, { at: number; value: GameStudioState | null }>();
 const snapshotInflight = new Map<string, Promise<GameStudioState | null>>();
+const snapshotGeneration = new Map<string, number>();
+
+function currentSnapshotGeneration(creatorId: string): number {
+  return snapshotGeneration.get(creatorId) ?? 0;
+}
+
+function advanceSnapshotGeneration(creatorId: string): void {
+  snapshotGeneration.set(creatorId, currentSnapshotGeneration(creatorId) + 1);
+}
 
 export async function buildStudioStateShared(creatorId: string): Promise<GameStudioState | null> {
   const hit = snapshotCache.get(creatorId);
@@ -171,13 +195,19 @@ export async function buildStudioStateShared(creatorId: string): Promise<GameStu
   const running = snapshotInflight.get(creatorId);
   if (running) return running;
 
-  const p = buildStudioState(creatorId)
+  const generation = currentSnapshotGeneration(creatorId);
+  const p: Promise<GameStudioState | null> = buildStudioState(creatorId)
     .then((value) => {
+      // 조회 도중 상태가 바뀌었다면 옛 조회값을 캐시하거나 호출자에게 돌려주지 않는다.
+      if (generation !== currentSnapshotGeneration(creatorId)) {
+        const latest = snapshotCache.get(creatorId);
+        return latest ? latest.value : buildStudioState(creatorId);
+      }
       snapshotCache.set(creatorId, { at: Date.now(), value });
       return value;
     })
     .finally(() => {
-      snapshotInflight.delete(creatorId);
+      if (snapshotInflight.get(creatorId) === p) snapshotInflight.delete(creatorId);
     });
   snapshotInflight.set(creatorId, p);
   return p;
@@ -185,7 +215,9 @@ export async function buildStudioStateShared(creatorId: string): Promise<GameStu
 
 /** 상태를 바꾼 직후 호출한다. 다음 폴링이 새 값을 읽는다. */
 export function invalidateStudioStateCache(creatorId: string) {
+  advanceSnapshotGeneration(creatorId);
   snapshotCache.delete(creatorId);
+  snapshotInflight.delete(creatorId);
 }
 
 /**
@@ -209,6 +241,7 @@ export function invalidateStudioStateCache(creatorId: string) {
  * 정확한 값을 이미 들고 있으니 그대로 심어 두는 편이 맞다.
  */
 export function primeStudioStateCache(creatorId: string, value: GameStudioState | null) {
+  advanceSnapshotGeneration(creatorId);
   snapshotCache.set(creatorId, { at: Date.now(), value });
   // 진행 중이던 조회가 끝나면서 옛 값으로 덮어쓰지 않도록 함께 버린다.
   snapshotInflight.delete(creatorId);
