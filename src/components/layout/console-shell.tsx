@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Activity, BadgeCheck, BookOpenText, CalendarDays, ClipboardList, CreditCard, FlaskConical,
-  FilePen, Flag, Gauge, HeartHandshake, Home, Images, KeyRound, LayoutDashboard, LogOut,
+  FilePen, Flag, Gamepad2, Gauge, HeartHandshake, Home, Images, KeyRound, LayoutDashboard, LogOut,
   Menu, MessageCircleQuestion, MessageSquareText, PanelsTopLeft, Percent, PhoneCall,
   ReceiptText, ScrollText, Send, ServerCog, ShieldAlert, ShieldBan,
   SlidersHorizontal, Undo2, UserCog, CircleUserRound, UserRoundCog,
@@ -47,7 +47,7 @@ export interface NavGroup {
 
 export type ConsoleIconName =
   | 'activity' | 'admins' | 'audit' | 'banners' | 'codes' | 'contents' | 'creators'
-  | 'dashboard' | 'donations' | 'donors' | 'fees' | 'holidays' | 'inquiries' | 'messages'
+  | 'dashboard' | 'donations' | 'donors' | 'fees' | 'game' | 'holidays' | 'inquiries' | 'messages'
   | 'moderation' | 'numbers' | 'overlay' | 'payments' | 'policies' | 'profile'
   | 'refunds' | 'reports' | 'risk' | 'settlement' | 'simulator'
   | 'system' | 'tax' | 'templates' | 'terms' | 'tts' | 'users' | 'youtube' | 'settings' | 'send';
@@ -64,6 +64,7 @@ const CONSOLE_ICONS = {
   donations: HeartHandshake,
   donors: CircleUserRound,
   fees: Percent,
+  game: Gamepad2,
   holidays: CalendarDays,
   inquiries: MessageCircleQuestion,
   messages: MessageSquareText,

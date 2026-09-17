@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { Badge, EmptyState, Notice, SectionTitle, StatTile, Table, Td, Th } from '@/components/ui';
 import { PageHeader } from '@/components/layout/console-shell';
+import { PAGE_SIZE, parsePage, clampPageOrRedirect } from '@/components/admin/constants';
+import { Pager } from '@/components/admin/controls';
 import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { formatNumber } from '@/lib/money';
@@ -17,8 +19,14 @@ const REPORT_STATUS: Record<ReportStatus, { text: string; tone: 'neutral' | 'bra
   DISMISSED: { text: '반려', tone: 'neutral' },
 };
 
-export default async function StudioReportsPage() {
+export default async function StudioReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const { creatorId } = await requireCreator();
+  const sp = await searchParams;
+  const page = parsePage(sp.page);
 
   /**
    * `select` 를 명시한다.
@@ -27,11 +35,13 @@ export default async function StudioReportsPage() {
    * 화면 안내도 "신고자 정보는 표시되지 않습니다"라고 하는데, 예전에는 select 없이 조회해
    * 신고자 식별자가 렌더러 손에 들어와 있었다. 유출 한 발짝 전이었다.
    */
-  const [reports, statusGroups] = await Promise.all([
+  const [total, reports, statusGroups] = await Promise.all([
+    prisma.report.count({ where: { creatorId } }),
     prisma.report.findMany({
       where: { creatorId },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: 100,
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
       select: {
         id: true,
         category: true,
@@ -47,6 +57,9 @@ export default async function StudioReportsPage() {
     // "접수 N건"이 실제보다 작게 표시됐다.
     prisma.report.groupBy({ by: ['status'], where: { creatorId }, _count: { _all: true } }),
   ]);
+
+  const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  clampPageOrRedirect('/studio/reports', {}, page, lastPage, total);
 
   const donationIds = reports.map((r) => r.donationId).filter((v): v is string => Boolean(v));
   const donations = donationIds.length
@@ -70,7 +83,7 @@ export default async function StudioReportsPage() {
     <>
       <PageHeader
         title="신고 내역"
-        description={`내 채널과 관련해 접수된 신고 ${formatNumber(totalReports)}건 중 최근 ${formatNumber(Math.min(totalReports, 100))}건을 표시합니다. 위 통계는 전체 기준입니다.`}
+        description={`내 채널과 관련해 접수된 신고 ${formatNumber(totalReports)}건입니다. 위 통계는 전체 기준입니다.`}
       />
 
       <div className="space-y-5">
@@ -137,6 +150,10 @@ export default async function StudioReportsPage() {
             </Table>
           )}
         </section>
+
+        {lastPage > 1 && (
+          <Pager basePath="/studio/reports" params={{}} page={page} lastPage={lastPage} total={total} />
+        )}
       </div>
     </>
   );

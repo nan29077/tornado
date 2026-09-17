@@ -26,7 +26,8 @@ const groups: NavGroup[] = [
     title: '방송',
     items: [
       { href: '/studio/youtube', label: '유튜브 채널 연결', icon: 'youtube' },
-      { href: '/studio/overlay', label: '후원·게임 오버레이', icon: 'overlay' },
+      { href: '/studio/overlay', label: '후원 오버레이', icon: 'overlay' },
+      { href: '/studio/overlay?tab=game', label: '게임', icon: 'game' },
     ],
   },
   {

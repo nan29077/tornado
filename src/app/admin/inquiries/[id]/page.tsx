@@ -7,7 +7,7 @@ import { ActionButton, ActionForm } from '@/components/admin/action-form';
 import { replyInquiry, setInquiryStatus } from '@/app/actions/admin/inquiries';
 import { markInquiryRead } from '@/server/services/inquiry';
 import { prisma } from '@/server/db';
-import { requireAdminPage } from '@/server/admin-guard';
+import { requireAdminPage, OPERATION_VIEW_PERMISSIONS } from '@/server/admin-guard';
 import { formatKst } from '@/lib/datetime';
 import { formatNumber } from '@/lib/money';
 import { SUPPORT_CATEGORIES } from '@/components/public/support-options';
@@ -28,12 +28,12 @@ export default async function AdminInquiryDetailPage({ params }: { params: Promi
   const { id } = await params;
   // 레이아웃과 페이지는 병렬로 렌더링되므로, 읽음 처리(쓰기)를 하는 이 페이지는 직접 관리자 인증을 확인한다.
   const admin = await requireAdminPage(`/admin/inquiries/${id}`);
-  // 문의에는 문의자 연락처가 포함된다. 메뉴와 같은 기준(최고관리자)으로만 연다.
-  if (admin.adminPermission !== 'SUPER_ADMIN') {
+  // 문의에는 문의자 연락처가 포함된다. 최고관리자·운영 관리자만 열람 가능하다.
+  if (!admin.adminPermission || !OPERATION_VIEW_PERMISSIONS.has(admin.adminPermission)) {
     return (
       <>
-        <PageHeader title="1:1 문의" description="최고관리자 권한에서만 열람할 수 있습니다." />
-        <Notice tone="danger" title="권한이 없습니다">문의 내용은 최고관리자만 확인할 수 있습니다.</Notice>
+        <PageHeader title="1:1 문의" description="최고관리자 또는 운영 관리자 권한에서만 열람할 수 있습니다." />
+        <Notice tone="danger" title="권한이 없습니다">문의 내용은 최고관리자 또는 운영 관리자만 확인할 수 있습니다.</Notice>
       </>
     );
   }
