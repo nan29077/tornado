@@ -1087,6 +1087,29 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
       },
     });
 
+    /**
+     * 기존 결제 거래를 **한도 검사보다 먼저** 본다 (PAY-1, 2026-10-01).
+     *
+     * 고착 건 재시도는 같은 결제 거래(주문번호)를 재사용하는데, 이 건의 한도 집계는 첫 시도 때
+     * 이미 예약(commitCounters)돼 있다. 예전에는 한도 검사를 먼저 해서 **자기 예약을 한 번 더**
+     * 세었고, 한도 근처의 후원자는 LIMIT_BLOCKED 로 끝났다. 그 사이 PG 에서는 이미 출금됐을 수
+     * 있는데 원장에도, 수동 대사 큐에도 남지 않았다.
+     */
+    const prior = await tx.paymentTransaction.findFirst({
+      where: { donationId },
+      orderBy: { requestedAt: 'desc' },
+    });
+    if (prior && prior.status === 'REQUESTED') {
+      // 이미 예약된 재시도: 한도 검사를 건너뛰고 같은 거래로 이어간다(아래에서 결과조회부터 한다).
+      return {
+        limit: { ok: true } as Awaited<ReturnType<typeof checkLimits>>,
+        txn: prior,
+        alreadyApproved: false,
+        inFlight: false as const,
+        reused: true as const,
+      };
+    }
+
     const blockedNow = await tx.blockedDonor.findUnique({
       where: { creatorId_donorId: { creatorId: donation.creatorId, donorId: donor.id } },
     });
@@ -1114,7 +1137,8 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
      * 실제로 출금됐을 수 있어, 같은 주문번호로 또 요청하면 이중 출금 위험이 있다.
      * 이 건들은 관리자 수동 대사 큐(admin/payments)에서 확정한다.
      */
-    if (existing && (existing.status === 'UNKNOWN' || existing.status === 'TIMEOUT')) {
+    // 관리자가 수동 대사로 취소(CANCELED)한 거래도 자동으로 다시 승인하지 않는다.
+    if (existing && (existing.status === 'UNKNOWN' || existing.status === 'TIMEOUT' || existing.status === 'CANCELED')) {
       return { limit, txn: existing, alreadyApproved: false, inFlight: false as const, needsReview: true as const };
     }
 
@@ -1211,77 +1235,120 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
   let approved: { providerTid: string; approvedAt: Date } | null = null;
   let failure: { code?: string; message?: string } | null = null;
 
-  try {
-    const res = await adapter.approve({
-      orderNo: txn.orderNo,
-      amount: donation.amount,
-      billKey: decryptBillKey(token.billKeyEnc),
-      productName: `${donation.creator.displayName} 문자후원`,
-      buyerName: donation.displayName,
-    });
-    await prisma.paymentAttempt.create({
-      data: {
-        id: newId(), transactionId: txn.id, attemptNo, operation: 'APPROVE',
-        responseMasked: { ok: res.ok, code: res.code ?? null, message: res.message ?? null } as object,
-        latencyMs: Date.now() - started,
-        errorCode: res.ok ? null : res.code ?? null,
-        errorMessage: res.ok ? null : res.message ?? null,
-      },
-    });
-    if (res.ok && res.data) approved = { providerTid: res.data.providerTid, approvedAt: res.data.approvedAt };
-    else failure = { code: res.code, message: res.message };
-  } catch (e) {
-    // 타임아웃/네트워크 오류: 반드시 거래결과조회로 최종 상태를 확정한다.
-    const isTimeout = e instanceof MockPaymentTimeout || /timeout|ETIMEDOUT|ECONNRESET/i.test((e as Error).message);
-    await prisma.paymentAttempt.create({
-      data: {
-        id: newId(), transactionId: txn.id, attemptNo, operation: 'APPROVE',
-        latencyMs: Date.now() - started, errorCode: isTimeout ? 'TIMEOUT' : 'ERROR',
-        errorMessage: (e as Error).message,
-      },
-    });
-    attemptNo += 1;
-    await prisma.paymentTransaction.updateMany({
-      where: { id: txn.id, status: { not: 'APPROVED' } },
-      data: { status: 'TIMEOUT' },
-    });
-
-    // 거래결과조회 자체가 실패해도 예외를 밖으로 내보내지 않는다.
-    // 여기서 throw 하면 후원이 PENDING_PAYMENT 로 영구히 멈춰 아무도 복구할 수 없다.
-    // 조회 불가 = "결과 미확인(UNKNOWN)" 으로 확정하고 관리자 확인 큐로 보낸다.
-    let inq: Awaited<ReturnType<typeof adapter.inquire>> | null = null;
-    try {
-      inq = await adapter.inquire(txn.orderNo);
-    } catch (inqErr) {
-      logger.error('거래결과조회 실패', { donationId, orderNo: txn.orderNo, message: (inqErr as Error).message });
-    }
-    await prisma.paymentAttempt.create({
-      data: {
-        id: newId(), transactionId: txn.id, attemptNo, operation: 'INQUIRE',
-        responseMasked: { status: inq?.data?.status ?? 'UNKNOWN' } as object,
-        errorCode: inq ? null : 'INQUIRE_ERROR',
-      },
-    });
-    if (inq?.ok && inq.data?.status === 'APPROVED') {
-      // 조회 결과에 금액이 있으면 반드시 대조한다.
-      // 주문번호 오매칭이나 결제사 오류로 다른 금액이 승인됐는데 그대로 확정하면
-      // 원장·정산이 실제 출금액과 어긋난 채 append-only 로 굳어 되돌릴 수 없다.
-      const inquiredAmount = inq.data.amount;
-      if (inquiredAmount != null && BigInt(inquiredAmount) !== donation.amount) {
-        logger.error('거래결과조회 금액 불일치 — 수동 확인 필요', {
-          donationId,
-          orderNo: txn.orderNo,
-          expected: donation.amount.toString(),
-          inquired: String(inquiredAmount),
-        });
-        failure = { code: 'UNKNOWN', message: '결제 금액이 일치하지 않습니다. 관리자 확인이 필요합니다.' };
-      } else {
-        approved = { providerTid: inq.data.providerTid ?? txn.orderNo, approvedAt: new Date() };
+  /**
+   * 재사용 거래(이전 시도가 있었던 고착 건)는 **승인을 다시 보내기 전에 결과조회부터** 한다 (PAY-1).
+   * 같은 주문번호 재요청에 기존 결과를 돌려주는지는 PG 마다 확인되지 않았다. 이미 승인됐다면
+   * 그 결과로 마무리하고, 조회 자체가 안 되면 미확인으로 넘겨 사람이 판단하게 한다.
+   */
+  let skipApprove = false;
+  if ('reused' in decision && decision.reused) {
+    const priorAttempts = await prisma.paymentAttempt.count({ where: { transactionId: txn.id } });
+    if (priorAttempts > 0) {
+      let inq: Awaited<ReturnType<typeof adapter.inquire>> | null = null;
+      try {
+        inq = await adapter.inquire(txn.orderNo);
+      } catch (inqErr) {
+        logger.error('재시도 전 거래결과조회 실패', { donationId, orderNo: txn.orderNo, message: (inqErr as Error).message });
       }
-    } else if (inq?.ok && inq.data?.status === 'FAILED') {
-      failure = { code: 'TIMEOUT_FAILED', message: '결제가 완료되지 않았습니다.' };
-    } else {
-      failure = { code: 'UNKNOWN', message: '결제 결과를 확인할 수 없습니다. 관리자 확인이 필요합니다.' };
+      await prisma.paymentAttempt.create({
+        data: {
+          id: newId(), transactionId: txn.id, attemptNo, operation: 'INQUIRE',
+          responseMasked: { status: inq?.data?.status ?? 'UNKNOWN', stage: 'PRE_RETRY' } as object,
+          errorCode: inq ? null : 'INQUIRE_ERROR',
+        },
+      });
+      attemptNo += 1;
+      const st = inq?.ok ? inq.data?.status : undefined;
+      if (st === 'APPROVED') {
+        const inquiredAmount = inq!.data!.amount;
+        if (inquiredAmount != null && BigInt(inquiredAmount) !== donation.amount) {
+          failure = { code: 'UNKNOWN', message: '결제 금액이 일치하지 않습니다. 관리자 확인이 필요합니다.' };
+        } else {
+          approved = { providerTid: inq!.data!.providerTid ?? txn.orderNo, approvedAt: new Date() };
+        }
+        skipApprove = true;
+      } else if (st !== 'FAILED' && st !== 'NOT_FOUND') {
+        // 조회 실패·취소·알 수 없는 상태: 다시 승인하지 않고 수동 대사로 넘긴다.
+        failure = { code: 'UNKNOWN', message: '결제 결과를 확인할 수 없습니다. 관리자 확인이 필요합니다.' };
+        skipApprove = true;
+      }
+      // FAILED / NOT_FOUND: 출금되지 않았으므로 같은 주문번호로 승인을 다시 시도한다.
+    }
+  }
+
+  if (!skipApprove) {
+    try {
+      const res = await adapter.approve({
+        orderNo: txn.orderNo,
+        amount: donation.amount,
+        billKey: decryptBillKey(token.billKeyEnc),
+        productName: `${donation.creator.displayName} 문자후원`,
+        buyerName: donation.displayName,
+      });
+      await prisma.paymentAttempt.create({
+        data: {
+          id: newId(), transactionId: txn.id, attemptNo, operation: 'APPROVE',
+          responseMasked: { ok: res.ok, code: res.code ?? null, message: res.message ?? null } as object,
+          latencyMs: Date.now() - started,
+          errorCode: res.ok ? null : res.code ?? null,
+          errorMessage: res.ok ? null : res.message ?? null,
+        },
+      });
+      if (res.ok && res.data) approved = { providerTid: res.data.providerTid, approvedAt: res.data.approvedAt };
+      else failure = { code: res.code, message: res.message };
+    } catch (e) {
+      // 타임아웃/네트워크 오류: 반드시 거래결과조회로 최종 상태를 확정한다.
+      const isTimeout = e instanceof MockPaymentTimeout || /timeout|ETIMEDOUT|ECONNRESET/i.test((e as Error).message);
+      await prisma.paymentAttempt.create({
+        data: {
+          id: newId(), transactionId: txn.id, attemptNo, operation: 'APPROVE',
+          latencyMs: Date.now() - started, errorCode: isTimeout ? 'TIMEOUT' : 'ERROR',
+          errorMessage: (e as Error).message,
+        },
+      });
+      attemptNo += 1;
+      await prisma.paymentTransaction.updateMany({
+        where: { id: txn.id, status: { not: 'APPROVED' } },
+        data: { status: 'TIMEOUT' },
+      });
+
+      // 거래결과조회 자체가 실패해도 예외를 밖으로 내보내지 않는다.
+      // 여기서 throw 하면 후원이 PENDING_PAYMENT 로 영구히 멈춰 아무도 복구할 수 없다.
+      // 조회 불가 = "결과 미확인(UNKNOWN)" 으로 확정하고 관리자 확인 큐로 보낸다.
+      let inq: Awaited<ReturnType<typeof adapter.inquire>> | null = null;
+      try {
+        inq = await adapter.inquire(txn.orderNo);
+      } catch (inqErr) {
+        logger.error('거래결과조회 실패', { donationId, orderNo: txn.orderNo, message: (inqErr as Error).message });
+      }
+      await prisma.paymentAttempt.create({
+        data: {
+          id: newId(), transactionId: txn.id, attemptNo, operation: 'INQUIRE',
+          responseMasked: { status: inq?.data?.status ?? 'UNKNOWN' } as object,
+          errorCode: inq ? null : 'INQUIRE_ERROR',
+        },
+      });
+      if (inq?.ok && inq.data?.status === 'APPROVED') {
+        // 조회 결과에 금액이 있으면 반드시 대조한다.
+        // 주문번호 오매칭이나 결제사 오류로 다른 금액이 승인됐는데 그대로 확정하면
+        // 원장·정산이 실제 출금액과 어긋난 채 append-only 로 굳어 되돌릴 수 없다.
+        const inquiredAmount = inq.data.amount;
+        if (inquiredAmount != null && BigInt(inquiredAmount) !== donation.amount) {
+          logger.error('거래결과조회 금액 불일치 — 수동 확인 필요', {
+            donationId,
+            orderNo: txn.orderNo,
+            expected: donation.amount.toString(),
+            inquired: String(inquiredAmount),
+          });
+          failure = { code: 'UNKNOWN', message: '결제 금액이 일치하지 않습니다. 관리자 확인이 필요합니다.' };
+        } else {
+          approved = { providerTid: inq.data.providerTid ?? txn.orderNo, approvedAt: new Date() };
+        }
+      } else if (inq?.ok && inq.data?.status === 'FAILED') {
+        failure = { code: 'TIMEOUT_FAILED', message: '결제가 완료되지 않았습니다.' };
+      } else {
+        failure = { code: 'UNKNOWN', message: '결제 결과를 확인할 수 없습니다. 관리자 확인이 필요합니다.' };
+      }
     }
   }
 

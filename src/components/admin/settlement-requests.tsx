@@ -32,6 +32,10 @@ export interface SettlementRow {
   residentPurged: boolean;
   paidAt: string | null;
   failReason: string | null;
+  /** 이체파일 배치번호(결과 반영에 필요) — 발급되지 않았으면 null */
+  payoutBatchNo?: string | null;
+  /** 이체파일 최초 발급 시각 */
+  payoutIssuedAt?: string | null;
 }
 
 const SELECTABLE = new Set(['REQUESTED', 'REVIEWING', 'APPROVED', 'PAID']);
@@ -68,10 +72,24 @@ function RowActions({ row, denyReason }: { row: SettlementRow; denyReason?: stri
       confirm: '이 정산 요청을 반려합니다. 사유가 크리에이터에게 전달됩니다. 계속할까요?',
     });
   }
-  if (row.status === 'APPROVED') {
+  if (row.status === 'APPROVED' && !row.payoutIssuedAt) {
     buttons.push({
       value: 'PAYOUT_FAILED', label: '지급실패', tone: 'danger', needMemo: true,
       confirm: '이 건을 지급 실패로 처리합니다. 이미 지급 분개가 있었다면 잔액으로 환입됩니다. 계속할까요?',
+    });
+  }
+  /**
+   * 이체파일이 나간 승인 건(SET-2).
+   * 지급 성공·실패는 [지급대행 결과 반영]에서 배치번호와 함께 처리한다.
+   * 파일을 은행에 올리지 않은 채 잃어버린 경우 등을 위해 **발급 취소**만 여기서 허용한다.
+   */
+  if (row.status === 'APPROVED' && row.payoutIssuedAt) {
+    buttons.push({
+      value: 'CANCEL_ISSUE', label: '발급 취소', tone: 'danger', needMemo: true,
+      confirm:
+        `배치 ${row.payoutBatchNo ?? '-'} 의 이체파일 발급을 취소합니다.\n\n` +
+        '이 파일을 은행에 올리지 않은 것이 확실할 때만 진행하세요. 이미 올렸다면 이중이체가 될 수 있습니다.\n' +
+        '취소하면 승인 상태로 남아 다시 이체파일을 받을 수 있습니다. 계속할까요?',
     });
   }
   if (buttons.length === 0) return null;
@@ -86,7 +104,13 @@ function RowActions({ row, denyReason }: { row: SettlementRow; denyReason?: stri
         const picked = buttons.find((b) => b.value === submitter?.value);
         if (picked?.needMemo && !memo.trim()) {
           e.preventDefault();
-          window.alert(picked.value === 'REJECTED' ? '반려 사유를 입력해 주세요.' : '지급 실패 사유를 입력해 주세요.');
+          window.alert(
+            picked.value === 'REJECTED'
+              ? '반려 사유를 입력해 주세요.'
+              : picked.value === 'CANCEL_ISSUE'
+                ? '발급 취소 사유를 입력해 주세요.'
+                : '지급 실패 사유를 입력해 주세요.',
+          );
           return;
         }
         if (picked && !window.confirm(picked.confirm)) e.preventDefault();
@@ -99,7 +123,7 @@ function RowActions({ row, denyReason }: { row: SettlementRow; denyReason?: stri
           name="memo"
           value={memo}
           onChange={(e) => setMemo(e.target.value)}
-          placeholder="반려·실패 사유"
+          placeholder="반려·실패·취소 사유"
           aria-label={`${row.creatorName} 정산 요청 처리 사유`}
           className="h-7 w-full min-w-[110px] rounded-lg border border-ink-200 px-2 text-[11.5px] outline-none focus:border-brand-400"
         />
@@ -198,6 +222,7 @@ export function SettlementRequestsPanel({
     error: string | null;
   } | null>(null);
   const [previewPending, setPreviewPending] = React.useState(false);
+  const [downloading, setDownloading] = React.useState(false);
   const current = previewState?.key === selectionKey ? previewState : null;
   const preview = current?.data ?? null;
   const previewError = current?.error ?? null;
@@ -398,31 +423,56 @@ export function SettlementRequestsPanel({
           ) : null}
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <a
-              href={payoutUrl ? (preview.reissue.length > 0 ? `${payoutUrl}&confirmReissue=1` : payoutUrl) : '#'}
-              onClick={(e) => {
-                if (!payoutUrl || preview.included.length === 0) {
-                  e.preventDefault();
-                  return;
-                }
+            <button
+              type="button"
+              disabled={!payoutUrl || preview.included.length === 0 || downloading}
+              onClick={async () => {
+                if (!payoutUrl || preview.included.length === 0) return;
                 const reissueNote =
                   preview.reissue.length > 0
                     ? `\n\n주의: 이 중 ${preview.reissue.length}건은 이미 이체파일이 나간 건입니다. 재발급하면 이전 배치번호는 더 이상 결과 반영에 쓸 수 없습니다. 이전 파일을 은행에 올리지 않은 것이 확실할 때만 계속하세요.`
                     : '';
                 if (!window.confirm(`${preview.included.length}건 / ${formatWon(BigInt(preview.totalAmount))} 이체파일을 내려받습니다. 받는 순간 배치번호가 확정됩니다. 계속할까요?${reissueNote}`)) {
-                  e.preventDefault();
                   return;
                 }
-                // 파일을 받으면 배치가 확정되므로 확인 단계를 닫는다.
-                setPreviewState(null);
+                /**
+                 * 재발급은 **미리보기에서 확인한 건만** 허용한다(SET-14).
+                 * 확인한 ID 목록을 그대로 보내고, 서버의 실제 재발급 목록과 정확히 같을 때만 발급된다.
+                 * 미리보기 뒤에 다른 담당자가 받아 간 건이 섞이면 409 로 돌아온다.
+                 * 일반 링크 대신 fetch 로 받아, 409 가 나도 정산 화면을 벗어나지 않는다.
+                 */
+                const reissueIds = preview.reissue.map((r) => r.requestId).sort().join(',');
+                const url = reissueIds ? `${payoutUrl}&confirmReissueIds=${encodeURIComponent(reissueIds)}` : payoutUrl;
+                setDownloading(true);
+                try {
+                  const res = await fetch(url, { cache: 'no-store' });
+                  if (!res.ok) {
+                    setPreviewState({ key: selectionKey, data: null, error: await res.text() });
+                    return;
+                  }
+                  const blob = await res.blob();
+                  const cd = res.headers.get('content-disposition') ?? '';
+                  const name = /filename="([^"]+)"/.exec(cd)?.[1] ?? 'donaido-payout.csv';
+                  const href = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = href;
+                  a.download = name;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  setTimeout(() => URL.revokeObjectURL(href), 10_000);
+                  // 파일을 받으면 배치가 확정되므로 확인 단계를 닫는다.
+                  setPreviewState(null);
+                } catch {
+                  setPreviewState({ key: selectionKey, data: null, error: '이체파일을 받지 못했습니다. 잠시 후 다시 시도해 주세요.' });
+                } finally {
+                  setDownloading(false);
+                }
               }}
-              className={cx(
-                'flex h-8 items-center rounded-lg bg-ink-900 px-3 text-[12px] font-bold text-white',
-                preview.included.length === 0 && 'pointer-events-none opacity-50',
-              )}
+              className="flex h-8 items-center rounded-lg bg-ink-900 px-3 text-[12px] font-bold text-white disabled:opacity-50"
             >
-              {preview.reissue.length > 0 ? '재발급 확인 · 파일 받기' : '확인했습니다 · 파일 받기'}
-            </a>
+              {downloading ? '받는 중' : preview.reissue.length > 0 ? '재발급 확인 · 파일 받기' : '확인했습니다 · 파일 받기'}
+            </button>
             <button
               type="button"
               onClick={() => setPreviewState(null)}
@@ -562,6 +612,12 @@ export function SettlementRequestsPanel({
                   <span className="mt-0.5 block max-w-[140px] break-words text-[11px] text-ink-400">{r.adminMemo}</span>
                 ) : null}
                 {r.paidAt ? <span className="mt-0.5 block text-[11px] text-success-600">지급 {r.paidAt}</span> : null}
+                {r.payoutBatchNo ? (
+                  <span className="mt-0.5 block text-[11px] text-ink-600">
+                    이체파일 <span className="font-mono font-semibold">{r.payoutBatchNo}</span>
+                    {r.payoutIssuedAt ? <span className="block text-ink-500">{r.payoutIssuedAt} 발급</span> : null}
+                  </span>
+                ) : null}
               </Td>
               <Td>
                 <RowActions row={r} denyReason={denyReason} />

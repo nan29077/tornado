@@ -212,7 +212,7 @@ describe('정산 지급 안전장치', () => {
     expect(row.payoutBatchNo).toBe(first.batchNo);
 
     // 같은 건을 또 받으면 재발급으로 잡힌다 (이중이체 경고 근거)
-    const second = await markPayoutFileIssued([req.id], 'admin-test');
+    const second = await markPayoutFileIssued([req.id], 'admin-test', { allowReissue: true });
     expect(second.reissued).toEqual([req.id]);
     expect(second.batchNo).not.toBe(first.batchNo);
 

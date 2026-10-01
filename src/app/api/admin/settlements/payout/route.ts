@@ -109,17 +109,21 @@ export async function GET(req: Request) {
   // 눌러도 한 명만 최초 발급이 되고, 다른 한 명은 409 를 받는다. 이때 **상태는 전혀 바뀌지
   // 않는다**(2026-10-01 — 예전에는 배치번호를 덮어쓴 뒤 409 를 줘서 은행 결과 반영이 막혔다).
   // 일부러 다시 받아야 하는 경우(파일 분실 등)는 화면의 [재발급 확인] 으로 `confirmReissue=1` 을 보낸다.
-  const confirmReissue = url.searchParams.get('confirmReissue') === '1';
+  // 화면이 미리보기에서 확인한 재발급 대상 ID 목록. 서버의 실제 재발급 목록과 정확히 같아야 한다(SET-14).
+  const confirmReissueIds = (url.searchParams.get('confirmReissueIds') ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   const issue = await markPayoutFileIssued(
     rows.map((r) => r.requestId),
     admin.id,
-    { allowReissue: confirmReissue },
+    { allowReissueIds: confirmReissueIds },
   );
 
   if (issue.blocked) {
     return new Response(
-      `이미 이체파일이 발급된 정산 건 ${issue.reissued.length}건이 포함돼 있어 파일을 내려주지 않았습니다. ` +
-        '다른 담당자가 방금 내려받았을 수 있습니다. 정산 화면으로 돌아가 [지급대행 파일 받기] 를 다시 눌러 ' +
+      `확인하지 않은 재발급 건이 포함돼 있어 파일을 내려주지 않았습니다(이미 발급된 건 ${issue.reissued.length}건). ` +
+        '다른 담당자가 방금 내려받았을 수 있습니다. [지급대행 파일 받기] 를 다시 눌러 ' +
         '재발급 대상을 확인해 주세요. 상태는 바뀌지 않았습니다.',
       { status: 409, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } },
     );
@@ -134,6 +138,8 @@ export async function GET(req: Request) {
       rows: rows.length,
       totalAmount: rows.reduce((a, r) => a + r.amount, 0n).toString(),
       reissuedRequestIds: issue.reissued,
+      // 이 배치에 들어간 요청 ID 전체. 배치번호로 어느 건이 나갔는지 감사로그에서 바로 찾을 수 있다(SET-2).
+      issuedRequestIds: rows.map((r) => r.requestId),
       // 왜 빠졌는지를 감사로그에도 남긴다. 나중에 "지급된 줄 알았다" 는 분쟁의 근거가 된다.
       excluded: excluded.map((e) => ({ requestId: e.requestId, reason: e.reason })),
       permission: admin.adminPermission,

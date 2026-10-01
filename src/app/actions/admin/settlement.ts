@@ -41,14 +41,58 @@ export async function updateSettlementRequestStatus(
   return run(async (admin) => {
     assertFinanceAdmin(admin, '정산 처리');
     const requestId = requiredId(fd, 'requestId', '정산 요청');
-    const status = enumValue(fd, 'status', ['REVIEWING', 'APPROVED', 'PAID', 'PAYOUT_FAILED', 'REJECTED'] as const, '정산 상태');
+    const status = enumValue(
+      fd,
+      'status',
+      ['REVIEWING', 'APPROVED', 'PAID', 'PAYOUT_FAILED', 'REJECTED', 'CANCEL_ISSUE'] as const,
+      '정산 상태',
+    );
     const memo = optText(fd, 'memo');
 
     const before = await prisma.settlementRequest.findUnique({
       where: { id: requestId },
-      select: { id: true, status: true, amount: true, payoutAmount: true, creatorId: true, payoutIssuedAt: true },
+      select: {
+        id: true, status: true, amount: true, payoutAmount: true, creatorId: true,
+        payoutIssuedAt: true, payoutBatchNo: true,
+      },
     });
     if (!before) throw new Error('정산 요청을 찾을 수 없습니다.');
+
+    /**
+     * 이체파일 발급 취소 (SET-2).
+     *
+     * 파일을 받았지만 은행에 올리지 않은 채 잃어버렸거나, 그 사이 계좌가 바뀌어 다시 받을 수 없는
+     * 승인 건이 영구히 묶이던 문제를 푼다. 은행에 올리지 않았다는 **사람의 확인 + 사유**를 받아
+     * 발급 표시만 지우고 승인 상태로 되돌린다. 원장은 건드리지 않는다(지급 분개는 결과 반영 때만 생긴다).
+     */
+    if (status === 'CANCEL_ISSUE') {
+      if (!memo) throw new Error('발급 취소 사유를 입력해 주세요.');
+      if (before.status !== 'APPROVED' || !before.payoutIssuedAt) {
+        throw new Error('이체파일이 발급된 승인 건만 발급을 취소할 수 있습니다.');
+      }
+      const cleared = await prisma.settlementRequest.updateMany({
+        where: { id: requestId, status: 'APPROVED', payoutBatchNo: before.payoutBatchNo },
+        data: {
+          payoutIssuedAt: null,
+          payoutBatchNo: null,
+          adminId: admin.id,
+          adminMemo: `[발급 취소] ${memo}`,
+        },
+      });
+      if (cleared.count === 0) {
+        throw new Error('상태가 이미 변경되었습니다. 화면을 새로고침한 뒤 다시 확인해 주세요.');
+      }
+      await writeAudit({
+        adminUserId: admin.id,
+        action: 'SETTLEMENT_PAYOUT_ISSUE_CANCEL',
+        targetType: 'SettlementRequest',
+        targetId: requestId,
+        before: { batchNo: before.payoutBatchNo, issuedAt: before.payoutIssuedAt.toISOString() },
+        after: { memo },
+      });
+      revalidatePath('/admin/settlements');
+      return `배치 ${before.payoutBatchNo ?? '-'} 발급을 취소했습니다. 승인 상태로 남아 다시 이체파일을 받을 수 있습니다.`;
+    }
     if (before.status === 'PAID' && status !== 'PAYOUT_FAILED') throw new Error('이미 지급 완료된 요청입니다.');
     if (before.status === 'REJECTED') throw new Error('이미 반려된 요청입니다.');
     // 이체파일이 이미 발급된 건을 반려/검토로 되돌리면, 이후 지급대행 결과(SUCCESS)를 반영할 수 없어
@@ -198,7 +242,7 @@ export async function bulkUpdateSettlementAction(
         } else {
           // PAY: **승인(APPROVED) 건만** 지급 완료 (2026-10-01).
           // markSettlementPaid 는 지급실패 건의 재지급도 허용하는데, 일괄 처리로 그 경로가 열리면
-          // 실제 이체 없이 지급 분개가 생긴다. 지급실패 건 재지급은 단건 화면에서 판단한다.
+          // 실제 이체 없이 지급 분개가 생긴다. 지급실패 건의 지급완료는 은행 결과 반영으로만 한다.
           if (req.status !== 'APPROVED') {
             errors.push(`${id.slice(-6)}: 지급 완료 불가 상태(${req.status}) — 승인 건만 일괄 지급 완료할 수 있습니다`);
             continue;
@@ -293,7 +337,8 @@ export async function applyPayoutResultsAction(
 
         if (up === 'SUCCESS' || up === 'OK' || up === '성공') {
           if (req.status === 'PAID') { ok += 1; continue; } // 이미 반영됨 (멱등)
-          await markSettlementPaid(id, admin.id, reason || undefined);
+          // 은행 결과(SUCCESS)는 돈이 나갔다는 증거다. 잔액과 무관하게 반드시 기록한다(SET-1).
+          await markSettlementPaid(id, admin.id, reason || undefined, { fromBankResult: true });
           await notifySettlement(req.creatorId, '정산 지급이 완료되었습니다', `${formatWon(req.payoutAmount)}이 지급 처리되었습니다.`);
           ok += 1;
         } else if (up === 'FAIL' || up === 'ERROR' || up === '실패') {

@@ -7,6 +7,7 @@ import { calculateWithholding } from '@/lib/withholding';
 import { normalizeTaxType, taxTypeLabel } from '@/lib/labels';
 import { kstMonthKey } from '@/lib/datetime';
 import { logger } from '@/lib/logger';
+import { notifySuperAdmins } from '@/server/services/notifications';
 import { addDaysKey, fromDateKey, settlementDateFor, toDateKey } from '@/lib/business-day';
 import { loadHolidaysAround } from '@/server/services/settlement-schedule';
 import type { LedgerEntryType } from '@/generated/prisma/enums';
@@ -681,8 +682,26 @@ export async function assertPayable(
  * 실제로 보호해야 하는 자원은 그 크리에이터의 잔액이므로, 요청ID로 잠그면
  * 같은 크리에이터의 서로 다른 요청 2건이 서로 다른 락을 잡고 동시에 통과한다.
  */
-export async function markSettlementPaid(requestId: string, adminId?: string, payoutRef?: string) {
-  return prisma.$transaction(async (tx) =>
+export interface MarkPaidOptions {
+  /**
+   * 은행(지급대행) 결과 파일의 SUCCESS 를 반영하는 경로인가 (2026-10-01).
+   *
+   * 결과 파일은 "실제로 돈이 나갔다" 는 증거다. 이 경로에서 잔액 부족을 이유로 막으면
+   * 나간 돈이 원장에 남지 않고, 그 사이 재요청된 건까지 지급되면 같은 돈이 두 번 나간다.
+   * 그래서 이 경로는 **절대 막지 않고 반드시 분개를 남긴 뒤** 경고·후속 조치를 한다.
+   * (같은 크리에이터의 진행 중 요청을 검토중으로 돌리고 최고관리자에게 알린다)
+   */
+  fromBankResult?: boolean;
+}
+
+export async function markSettlementPaid(
+  requestId: string,
+  adminId?: string,
+  payoutRef?: string,
+  opts: MarkPaidOptions = {},
+) {
+  let doublePayoutSuspect: { creatorId: string; amount: bigint; held: number } | null = null;
+  const result = await prisma.$transaction(async (tx) =>
     withAdvisoryLock(tx, `settlement:creator:${await creatorIdOf(tx, requestId)}`, async () => {
       const req = await tx.settlementRequest.findUnique({ where: { id: requestId } });
       if (!req) throw new Error('정산 요청을 찾을 수 없습니다.');
@@ -705,7 +724,30 @@ export async function markSettlementPaid(requestId: string, adminId?: string, pa
        * 중이면 잔액이 충분해 보여 통과했고, 재요청 건까지 지급되면 같은 돈이 두 번 나갔다.
        * (PAYOUT_FAILED 건 자체는 pending 집계에 들어가지 않는다)
        */
-      if (req.status === 'PAYOUT_FAILED' && req.amount > summary.balance - summary.pending) {
+      if (opts.fromBankResult && req.status === 'PAYOUT_FAILED' && req.amount > summary.balance - summary.pending) {
+        /**
+         * 은행이 "성공" 이라고 알려 온 지급실패 건. 돈은 이미 나갔다.
+         * 막지 않고 기록하되, 재요청으로 같은 돈이 또 나가지 않도록 진행 중 요청을 붙잡아 둔다.
+         * (이미 이체파일이 나간 건은 은행 결과를 기다려야 하므로 건드리지 않는다)
+         */
+        const held = await tx.settlementRequest.updateMany({
+          where: {
+            creatorId: req.creatorId,
+            id: { not: req.id },
+            status: { in: ['REQUESTED', 'REVIEWING', 'APPROVED'] },
+            payoutIssuedAt: null,
+          },
+          data: {
+            status: 'REVIEWING',
+            adminMemo: `[주의] 지급실패 건(${req.id.slice(-6)})이 은행 결과로 지급완료 정정됨 — 이중지급 여부 확인 후 처리`,
+          },
+        });
+        warnings.push(
+          `지급실패 후 은행 결과로 지급완료 정정 — 진행 중 요청 ${held.count}건 검토중 전환 ` +
+            `(요청 ${req.amount.toString()}원 / 잔액 ${summary.balance.toString()}원 / 진행 중 ${summary.pending.toString()}원)`,
+        );
+        doublePayoutSuspect = { creatorId: req.creatorId, amount: req.amount, held: held.count };
+      } else if (req.status === 'PAYOUT_FAILED' && req.amount > summary.balance - summary.pending) {
         throw new Error(
           `다른 정산 요청이 잡아 둔 금액을 빼면 잔액이 부족해 다시 지급 완료로 처리할 수 없습니다. ` +
             `(요청 ${req.amount.toString()}원 / 잔액 ${summary.balance.toString()}원 / 진행 중 요청 ${summary.pending.toString()}원) ` +
@@ -723,7 +765,7 @@ export async function markSettlementPaid(requestId: string, adminId?: string, pa
          * 승인(APPROVED) 건은 사정이 다르다. 이체가 이미 끝난 뒤 기록만 맞추는 단계라
          * 여기서 막으면 나간 돈이 장부에 안 남는다. 경고만 남기고 진행한다.
          */
-        if (req.status === 'PAYOUT_FAILED') {
+        if (req.status === 'PAYOUT_FAILED' && !opts.fromBankResult) {
           throw new Error(
             `잔액이 부족해 다시 지급 완료로 처리할 수 없습니다. ` +
               `(요청 ${req.amount.toString()}원 / 잔액 ${summary.balance.toString()}원) ` +
@@ -769,6 +811,23 @@ export async function markSettlementPaid(requestId: string, adminId?: string, pa
       });
     }),
   );
+
+  if (doublePayoutSuspect) {
+    const d = doublePayoutSuspect as { creatorId: string; amount: bigint; held: number };
+    logger.error('지급실패 건이 은행 결과로 지급완료 정정됨 — 이중지급 확인 필요', {
+      requestId,
+      creatorId: d.creatorId,
+      held: d.held,
+    });
+    await notifySuperAdmins({
+      title: '이중지급 확인 필요',
+      body:
+        `지급실패로 처리했던 정산(${requestId.slice(-6)}, ${d.amount.toString()}원)이 은행 결과로 지급완료 정정되었습니다. ` +
+        `같은 크리에이터의 진행 중 요청 ${d.held}건을 검토중으로 돌렸습니다. 이중지급 여부를 확인해 주세요.`,
+      linkUrl: '/admin/settlements',
+    }).catch(() => undefined);
+  }
+  return result;
 }
 
 /** 락 키로 쓸 크리에이터 ID를 먼저 조회한다. */
@@ -793,9 +852,18 @@ async function creatorIdOf(
 export async function markPayoutFileIssued(
   requestIds: string[],
   adminId?: string,
-  opts: { allowReissue?: boolean } = {},
+  opts: {
+    /** 재발급을 통째로 허용(테스트·내부 도구용). 기본은 거부다(SET-14). */
+    allowReissue?: boolean;
+    /**
+     * 화면에서 확인한 재발급 대상 ID 목록. 실제 재발급 목록과 **정확히 같을 때만** 허용한다.
+     * 미리보기 뒤에 다른 담당자가 받아 간 건이 섞이면 거부된다.
+     */
+    allowReissueIds?: string[];
+  } = {},
 ): Promise<{ batchNo: string; reissued: string[]; blocked: boolean }> {
-  const allowReissue = opts.allowReissue ?? true;
+  const allowReissue = opts.allowReissue ?? false;
+  const confirmedIds = opts.allowReissueIds ? [...new Set(opts.allowReissueIds)].sort() : null;
   const batchNo = `B${newId().slice(-10).toUpperCase()}`;
   if (requestIds.length === 0) return { batchNo, reissued: [], blocked: false };
 
@@ -829,7 +897,14 @@ export async function markPayoutFileIssued(
       });
       const reissued = reissuedRows.map((r) => r.id);
 
-      if (reissued.length > 0 && !allowReissue) throw new ReissueBlocked();
+      if (reissued.length > 0 && !allowReissue) {
+        const actual = [...reissued].sort();
+        const matches =
+          confirmedIds !== null &&
+          confirmedIds.length === actual.length &&
+          confirmedIds.every((id, i) => id === actual[i]);
+        if (!matches) throw new ReissueBlocked();
+      }
 
       // 재발급 건은 최초 발급 시각을 보존하고 최신 배치번호만 갱신한다.
       if (reissued.length > 0) {
