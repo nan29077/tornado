@@ -915,7 +915,9 @@ export function OverlayClient({
       {/* 캐릭터 퍼레이드: 알림과 겹치지 않게 반대쪽 가장자리로, 알림과 별도 수명으로 지나간다. */}
       {parade ? (
         <CharacterParadeLayer
-          key={parade.id}
+          // 같은 부모 아래 LevelEffectStage 가 eventId 를 key 로 쓴다. 같은 key 가 겹치면 React 가
+          // 이전 행진 DOM 을 지우지 못해 캐릭터가 여러 겹으로 남는다(시뮬레이션에서 발견).
+          key={`parade-${parade.id}`}
           edge={
             (positionClass[parade.position || position] ?? positionClass.BOTTOM_CENTER)!.startsWith('items-end')
               ? 'top'

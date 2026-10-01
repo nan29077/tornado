@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useRouter } from 'next/navigation';
 import { Badge, Table, Td, Th, EmptyState, Notice, cx } from '@/components/ui';
 import { initialAdminState } from '@/components/admin/state';
 import { formatWon } from '@/lib/money';
@@ -223,6 +224,7 @@ export function SettlementRequestsPanel({
   } | null>(null);
   const [previewPending, setPreviewPending] = React.useState(false);
   const [downloading, setDownloading] = React.useState(false);
+  const router = useRouter();
   const current = previewState?.key === selectionKey ? previewState : null;
   const preview = current?.data ?? null;
   const previewError = current?.error ?? null;
@@ -461,8 +463,10 @@ export function SettlementRequestsPanel({
                   a.click();
                   a.remove();
                   setTimeout(() => URL.revokeObjectURL(href), 10_000);
-                  // 파일을 받으면 배치가 확정되므로 확인 단계를 닫는다.
+                  // 파일을 받으면 배치가 확정되므로 확인 단계를 닫고, 목록을 새로 불러와
+                  // 배치번호와 [발급 취소] 버튼이 바로 보이게 한다.
                   setPreviewState(null);
+                  router.refresh();
                 } catch {
                   setPreviewState({ key: selectionKey, data: null, error: '이체파일을 받지 못했습니다. 잠시 후 다시 시도해 주세요.' });
                 } finally {
