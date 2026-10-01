@@ -6,6 +6,7 @@ import { clientIpFromRequest, consumeRateLimit } from '@/server/rate-limit';
 import { GameError, joinByCode } from '@/server/services/games';
 import { publicConfig } from '@/server/services/game-state';
 import { needsNickname, usesChoices } from '@/lib/game-catalog';
+import { isProd } from '@/lib/env';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -63,11 +64,18 @@ export async function GET(_req: Request, ctx: { params: Promise<{ code: string }
 
 const CLIENT_ID = /^[a-zA-Z0-9_-]{8,64}$/;
 
+/** IPv4 는 그대로, IPv6 는 /64(앞 4블록) 단위로 묶는다. */
+function networkKeyOf(raw: string): string {
+  const ip = raw.toLowerCase().startsWith('::ffff:') ? raw.slice(7) : raw;
+  if (!ip.includes(':')) return `v4:${ip}`;
+  const parts = ip.split('::')[0]!.split(':').filter(Boolean);
+  return `v6:${parts.slice(0, 4).join(':')}`;
+}
+
 export async function POST(req: Request, ctx: { params: Promise<{ code: string }> }) {
   const { code } = await ctx.params;
 
   const ip = clientIpFromRequest(req);
-  const userAgent = req.headers.get('user-agent') ?? '';
   // 회차별로 나눠 센다. IP 단독으로 세면 방송에 QR 을 띄운 순간 같은 엣지·NAT 를 지나온
   // 정상 시청자들이 서로의 몫을 소진해 대량으로 429 를 맞는다.
   const limited = await consumeRateLimit(`game-join:${code.toUpperCase()}`, ip, 30, 60);
@@ -78,7 +86,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
   if (!CLIENT_ID.test(clientId)) return badRequest('참여 정보를 확인할 수 없습니다. 새로고침 후 다시 시도해 주세요.');
 
   // 서버가 아는 값으로만 만든 지문. 클라이언트가 조작할 수 없다.
-  const clientFingerprint = ip ? `${ip}|${userAgent.slice(0, 200)}` : null;
+  /**
+   * 네트워크 지문은 **서버가 아는 IP 만**으로 만든다(GM-1). User-Agent 는 요청하는 쪽이 바꿀 수 있어
+   * 넣으면 차단이 무력해진다. IPv6 는 한 사용자가 /64 대역을 통째로 쓰므로 앞 4블록으로 묶는다.
+   * 운영에서 IP 를 알 수 없으면(프록시 설정 오류 등) 속도 제한·상한이 모두 꺼지므로 참여를 막는다.
+   */
+  if (!ip && isProd) {
+    return badRequest('참여 정보를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.', 503);
+  }
+  const clientFingerprint = ip ? networkKeyOf(ip) : null;
 
   // 로그인한 후원자는 계정 기준으로 중복을 막는다(기기를 바꿔도 1회).
   let donorId: string | null = null;

@@ -54,7 +54,7 @@ import {
  *  1. 한 화면에서 끝난다 — 띄우기 → 마감 → 발표까지 페이지 이동이 없다.
  *  2. 지금 눌러야 할 버튼 하나만 크게 강조한다. 나머지는 약하게 둔다.
  *  3. 진행 버튼에는 확인 알림창을 두지 않는다. 확인창은 방송 타이밍을 죽인다.
- *     대신 되돌릴 수 있는 길을 준다(마감 취소 · 발표 취소 · 5초 실행취소).
+ *     대신 되돌릴 수 있는 길을 준다(마감 취소 · 발표 취소(회차당 1회) · 실행취소 알림).
  *  4. 되돌릴 수 없는 동작(게임 삭제)만 확인창을 띄운다.
  *  5. 시선 이동을 줄인다 — 컨트롤 옆에 실제 방송 화면 미리보기를 붙인다.
  *
@@ -81,6 +81,8 @@ interface WinnerView {
 }
 
 interface StudioState {
+  /** 이 회차의 발표(돌리기 포함) 횟수. 1 을 넘으면 재발표다(GM-2). */
+  revealCount?: number;
   creatorId: string;
   gameId: string;
   roundId: string;
@@ -397,6 +399,23 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
         fail('list', overlayConfigured ? '게임 오버레이 사용을 먼저 켜 주세요.' : '먼저 [방송 준비]에서 연결 주소를 발급해 주세요.');
         return;
       }
+      /**
+       * 참여자가 모인 회차를 결과 없이 내리게 되는 경우 한 번 묻는다(GM-6).
+       * 예전에는 다른 게임을 띄우는 순간 진행 중 회차가 확인 없이 종료돼, 모인 참여가 사라지고
+       * 되살릴 방법도 없었다.
+       */
+      if (
+        state &&
+        state.gameId !== gameId &&
+        (state.status === 'OPEN' || state.status === 'CLOSED') &&
+        state.participantCount > 0 &&
+        !window.confirm(
+          `지금 진행 중인 "${state.title}" 에 참여자 ${state.participantCount}명이 있습니다.\n` +
+            '다른 게임을 띄우면 이 회차는 결과 없이 종료되고 되돌릴 수 없습니다. 계속할까요?',
+        )
+      ) {
+        return;
+      }
       setBusy(true);
       setPendingGameId(gameId);
       setProblem(null);
@@ -425,7 +444,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
         setPendingGameId(null);
       }
     },
-    [load, showToast, fail, gameEnabled, overlayConfigured, showBroadcast],
+    [load, showToast, fail, gameEnabled, overlayConfigured, showBroadcast, state],
   );
 
   const applyGameOverlay = React.useCallback(async (next: boolean) => {
@@ -487,8 +506,11 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
     if (primary.key === 'close') {
       showToast('참여를 마감했습니다', () => void control('reopen'));
     } else if (primary.key === 'reveal' || primary.key === 'spin') {
-      // 발표는 되돌릴 수 있게 5초 실행취소를 준다. 확인창 대신이다.
-      showToast('결과를 발표했습니다', () => void control('undo'));
+      // 발표는 한 번 되돌릴 수 있게 실행취소를 준다(회차당 1회, 서버가 강제한다 — GM-2).
+      showToast(
+        '결과를 발표했습니다',
+        (state.revealCount ?? 0) >= 1 ? undefined : () => void control('undo'),
+      );
     } else if (primary.key === 'end') {
       showToast('화면에서 내렸습니다');
     }
@@ -506,8 +528,29 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
    *     겹쳐 두 가지가 한 번에 실행되는 것을 막는다.
    * 확인창이 떠 있을 때도 쉰다. 그때 Space·Enter 는 확인창의 것이다.
    */
+  /**
+   * 단축키 안전장치(GM-5).
+   *  - 키를 누르고 있을 때 생기는 반복 입력은 무시한다.
+   *  - 상태가 바뀐 직후 1초 동안은 단축키를 받지 않는다. Enter 를 연타하거나 길게 누르면
+   *    마감 → 발표 → 종료가 1초 안에 연달아 실행되던 문제를 막는다.
+   *  - 결과 화면에서 Enter(방송에서 종료)는 한 번 묻는다.
+   *  - Backspace(마감 취소·발표 취소)는 2초 안에 두 번 눌러야 실행된다.
+   */
+  const phaseChangedAt = React.useRef(0);
+  const lastStatusKey = React.useRef('');
+  const backspaceArmedAt = React.useRef(0);
+  React.useEffect(() => {
+    const key = state ? `${state.roundId}:${state.status}` : '';
+    if (key !== lastStatusKey.current) {
+      lastStatusKey.current = key;
+      phaseChangedAt.current = Date.now();
+      backspaceArmedAt.current = 0;
+    }
+  }, [state]);
+
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
       // target 이 항상 요소인 것은 아니다(window 로 들어오는 합성 이벤트 등). 먼저 좁혀 둔다.
       const el = e.target instanceof HTMLElement ? e.target : null;
       if (el && /^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(el.tagName)) return;
@@ -521,20 +564,34 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
         return;
       }
       if (!state) return;
+      if (e.key !== 'Enter' && e.key !== 'Backspace') return;
+      e.preventDefault();
+      if (Date.now() - phaseChangedAt.current < 1000) return;
       if (e.key === 'Enter') {
-        e.preventDefault();
+        if (
+          state.status === 'RESULT' &&
+          !window.confirm('게임을 방송 화면에서 내립니다. 계속할까요? (Enter 단축키)')
+        ) {
+          return;
+        }
         void runPrimary();
         return;
       }
-      if (e.key === 'Backspace') {
-        e.preventDefault();
-        if (state.status === 'CLOSED') void control('reopen');
-        else if (state.status === 'RESULT') void control('undo');
+      // Backspace: 2초 안에 두 번 눌러야 실행한다.
+      if (state.status !== 'CLOSED' && state.status !== 'RESULT') return;
+      const now = Date.now();
+      if (now - backspaceArmedAt.current > 2000) {
+        backspaceArmedAt.current = now;
+        showToast(state.status === 'CLOSED' ? 'Backspace 를 한 번 더 누르면 마감을 취소합니다' : 'Backspace 를 한 번 더 누르면 발표를 취소합니다');
+        return;
       }
+      backspaceArmedAt.current = 0;
+      if (state.status === 'CLOSED') void control('reopen');
+      else void control('undo');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [state, runPrimary, control, form, removePhase, overlayOffPhase]);
+  }, [state, runPrimary, control, form, removePhase, overlayOffPhase, showToast]);
 
   // --------------------------------------------------------------- 저장
   const saveForm = async () => {
@@ -1460,10 +1517,15 @@ function ControlPanel({
             <RotateCcw size={16} strokeWidth={1.8} /> 마감 취소
           </Button>
         ) : null}
-        {state.status === 'RESULT' ? (
+        {state.status === 'RESULT' && (state.revealCount ?? 0) <= 1 ? (
           <Button variant="secondary" onClick={() => void onAction('undo')} disabled={busy}>
             <Undo2 size={16} strokeWidth={1.8} /> 발표 취소
           </Button>
+        ) : null}
+        {(state.revealCount ?? 0) > 1 ? (
+          <span className="self-center rounded-full bg-warning-50 px-3 py-1 text-[12px] font-bold text-warning-600">
+            재발표 {(state.revealCount ?? 1) - 1}회 · 발표 취소는 회차당 한 번입니다
+          </span>
         ) : null}
         {/*
           게임 바꾸기.

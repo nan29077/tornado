@@ -320,9 +320,16 @@ export async function spinRound(creatorId: string, roundId: string, selectedInde
    */
   const claimed = await prisma.gameRound.updateMany({
     where: { id: roundId, status: 'OPEN' },
-    data: { status: 'RESULT', result: result as object, closedAt: new Date(), revealedAt: new Date() },
+    // 돌리기도 발표 횟수를 센다(GM-2). 예전에는 룰렛·사다리 재추첨이 기록 없이 반복됐다.
+    data: {
+      status: 'RESULT', result: result as object, closedAt: new Date(), revealedAt: new Date(),
+      revealCount: { increment: 1 },
+    },
   });
   if (claimed.count === 0) fail('이미 결과가 나온 회차입니다. 화면을 새로 고쳐 주세요.');
+  if (round.revealCount > 0) {
+    logger.warn('게임 결과 다시 돌리기', { creatorId, roundId, attempt: round.revealCount + 1 });
+  }
 
   await prisma.$transaction([
     // 선점에 성공한 요청만 여기 오지만, 재발표 경로와 같은 규칙으로 남은 기록을 먼저 지운다.
@@ -338,10 +345,12 @@ export async function spinRound(creatorId: string, roundId: string, selectedInde
 export async function closeRound(creatorId: string, roundId: string) {
   const round = await requireRound(creatorId, roundId);
   if (round.status !== 'OPEN') fail('참여 중인 회차가 아닙니다.');
-  await prisma.gameRound.update({
-    where: { id: roundId },
+  // 상태 조건부 갱신(GM-3): 그사이 발표·종료된 회차를 덮어쓰지 않는다.
+  const changed = await prisma.gameRound.updateMany({
+    where: { id: roundId, status: 'OPEN' },
     data: { status: 'CLOSED', closedAt: new Date(), closesAt: null },
   });
+  if (changed.count === 0) fail('회차 상태가 이미 바뀌었습니다. 화면을 새로 고쳐 주세요.');
   await publish(creatorId);
 }
 
@@ -358,10 +367,11 @@ export async function reopenRound(creatorId: string, roundId: string) {
       ? new Date(Date.now() + round.game.autoCloseSec * 1000)
       : null;
 
-  await prisma.gameRound.update({
-    where: { id: roundId },
+  const changed = await prisma.gameRound.updateMany({
+    where: { id: roundId, status: 'CLOSED' },
     data: { status: 'OPEN', closedAt: null, closesAt },
   });
+  if (changed.count === 0) fail('회차 상태가 이미 바뀌었습니다. 화면을 새로 고쳐 주세요.');
   await publish(creatorId);
 }
 
@@ -449,17 +459,27 @@ export async function undoReveal(creatorId: string, roundId: string) {
   if (!revealedAt || Date.now() - revealedAt > UNDO_WINDOW_SEC * 1000) {
     fail(`결과 발표 후 ${UNDO_WINDOW_SEC}초가 지나 되돌릴 수 없습니다. 새 회차를 시작해 주세요.`);
   }
+  /**
+   * 발표 취소는 **회차당 한 번**만 허용한다(GM-2).
+   * 예전에는 재발표 때마다 취소 가능 시간이 새로 시작돼, 원하는 결과가 나올 때까지
+   * "발표 → 취소 → 재발표" 를 무한히 반복할 수 있었다(실측 5회 연속 성공).
+   */
+  if (round.revealCount > 1) {
+    fail('발표 취소는 회차당 한 번만 할 수 있습니다. 결과를 바꾸려면 새 회차를 시작해 주세요.');
+  }
 
   const backTo = usesItems(round.game.type) || usesDonationTotal(round.game.type) ? 'OPEN' : 'CLOSED';
-  await prisma.$transaction([
-    prisma.gameWinner.deleteMany({ where: { roundId } }),
-    prisma.gameRound.update({
-      where: { id: roundId },
+  await prisma.$transaction(async (tx) => {
+    // 상태 조건부(GM-3): 그사이 종료된 회차를 되살리지 않는다.
+    const changed = await tx.gameRound.updateMany({
+      where: { id: roundId, status: 'RESULT' },
       // Json 컬럼을 SQL NULL 로 되돌리려면 Prisma.DbNull 을 써야 한다(null 은 JSON null 이 된다).
       // revealCount 는 되돌리지 않는다. 몇 번 발표했는지가 기록으로 남아야 한다.
       data: { status: backTo, result: Prisma.DbNull, revealedAt: null },
-    }),
-  ]);
+    });
+    if (changed.count === 0) fail('회차 상태가 이미 바뀌었습니다. 화면을 새로 고쳐 주세요.');
+    await tx.gameWinner.deleteMany({ where: { roundId } });
+  });
   logger.warn('게임 결과 발표 취소', { creatorId, roundId, revealCount: round.revealCount });
   await publish(creatorId);
 }
@@ -493,8 +513,8 @@ export async function traceLadder(creatorId: string, roundId: string, selectedIn
 export async function endRound(creatorId: string, roundId: string) {
   const round = await requireRound(creatorId, roundId);
   if (round.status === 'ENDED') return;
-  await prisma.gameRound.update({
-    where: { id: roundId },
+  await prisma.gameRound.updateMany({
+    where: { id: roundId, status: { not: 'ENDED' } },
     data: { status: 'ENDED', endedAt: new Date(), closesAt: null },
   });
   await publish(creatorId);
@@ -581,12 +601,16 @@ export interface JoinResult {
 }
 
 /**
- * 같은 네트워크 지문(IP + UA)에서 한 회차에 허용하는 참여 수.
+ * 같은 네트워크(IP)에서 한 회차에 허용하는 참여 수.
  *
  * 1로 두면 회사·학교·이동통신망 NAT 뒤의 시청자들이 서로를 막는다.
  * 너무 크면 조작을 막지 못한다. 가족·사무실 정도는 통과하고 대량 투입은 막는 값으로 잡는다.
+ *
+ * 2026-10-01(GM-1): 지문에서 User-Agent 를 뺐다. UA 는 요청하는 쪽이 마음대로 바꿀 수 있어
+ * 스크립트로 UA 만 바꾸면 같은 IP 에서 무제한 참여가 됐다(실측 25/25). 지문을 IP 만으로 바꾸면서
+ * NAT 뒤 정상 시청자(같은 IP)를 고려해 상한을 5 → 15 로 올렸다.
  */
-const MAX_JOIN_PER_NETWORK = Math.max(1, Number(process.env.GAME_JOIN_MAX_PER_NETWORK) || 5);
+const MAX_JOIN_PER_NETWORK = Math.max(1, Number(process.env.GAME_JOIN_MAX_PER_NETWORK) || 15);
 
 /** 결과 발표를 되돌릴 수 있는 시간(초). 이 시간이 지나면 재추첨을 막는다. */
 const UNDO_WINDOW_SEC = Math.max(10, Number(process.env.GAME_UNDO_WINDOW_SEC) || 120);
@@ -631,33 +655,44 @@ export async function joinByCode(joinCode: string, input: JoinInput): Promise<Jo
    * "브라우저 단위 유니크 + 네트워크 단위 상한" 이 두 실패를 모두 피한다.
    */
   const netHash = input.clientFingerprint ? sha256(input.clientFingerprint) : null;
-  if (netHash) {
-    const fromSameNetwork = await prisma.gameParticipant.count({
-      where: { roundId: round.id, netHash },
-    });
-    if (fromSameNetwork >= MAX_JOIN_PER_NETWORK) {
-      fail('같은 네트워크에서 참여할 수 있는 횟수를 넘었습니다.');
-    }
-  }
-
   const entryKey = input.donorId ? `donor:${input.donorId}` : `dev:${sha256(input.deviceKey)}`;
 
   try {
-    await prisma.gameParticipant.create({
-      data: {
-        id: newId(),
-        roundId: round.id,
-        gameId: game.id,
-        creatorId: round.creatorId,
-        donorId: input.donorId ?? null,
-        displayName,
-        entry,
-        source: 'LINK',
-        entryKey,
-        netHash,
-      },
-    });
+    /**
+     * 상한 확인과 참여 기록을 **한 트랜잭션 + 네트워크 단위 잠금** 안에서 처리한다(GM-1).
+     * 예전에는 "센 다음 넣기" 라 동시에 몰아 보내면 상한을 넘겨 들어갔다.
+     * 회차 상태도 잠금 안에서 다시 확인한다. 발표·마감과 겹친 참여가 결과 뒤에 끼어들지 않게 한다.
+     */
+    await prisma.$transaction(async (tx) =>
+      withAdvisoryLock(tx, `game-join:${round.id}:${netHash ?? 'none'}`, async () => {
+        const live = await tx.gameRound.findUnique({ where: { id: round.id }, select: { status: true } });
+        if (!live || live.status !== 'OPEN') fail('지금은 참여를 받지 않습니다.');
+        if (netHash) {
+          const fromSameNetwork = await tx.gameParticipant.count({
+            where: { roundId: round.id, netHash },
+          });
+          if (fromSameNetwork >= MAX_JOIN_PER_NETWORK) {
+            fail('같은 네트워크에서 참여할 수 있는 횟수를 넘었습니다.');
+          }
+        }
+        await tx.gameParticipant.create({
+          data: {
+            id: newId(),
+            roundId: round.id,
+            gameId: game.id,
+            creatorId: round.creatorId,
+            donorId: input.donorId ?? null,
+            displayName,
+            entry,
+            source: 'LINK',
+            entryKey,
+            netHash,
+          },
+        });
+      }),
+    );
   } catch (e) {
+    if (e instanceof GameError) throw e;
     // 유니크 위반 = 이미 참여함. 입력을 바꾸는 것은 허용하지 않는다(선착순 게임의 공정성).
     const message = (e as Error).message ?? '';
     if (message.includes('Unique') || message.includes('unique')) fail('이미 참여하셨습니다.');

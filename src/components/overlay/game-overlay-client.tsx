@@ -588,31 +588,91 @@ function ParticipantChips({ names }: { names: string[] }) {
   );
 }
 
-/** 당첨자 목록. 순위 카드가 한 장씩 올라온다. */
+/**
+ * 당첨자 목록. 순위 카드가 한 장씩 올라온다.
+ *
+ * 2026-10-01(GM-7): 당첨자가 많으면 1920x1080 카드 밖으로 넘쳐 제목과 1위까지 잘렸다
+ * (카드 본문 높이 약 590px, 한 줄 약 118px → 6명부터 넘침, 최대 20명).
+ * 인원에 따라 배치를 바꾼다.
+ *  - 5명 이하 : 지금처럼 한 줄에 한 명, 큰 글씨
+ *  - 6~10명  : 2단, 작은 카드
+ *  - 11명 이상: 3단, 더 작은 카드 (최대 20명 → 7줄)
+ */
 function WinnerList({ winners, compact = false }: { winners: GameWinnerView[]; compact?: boolean }) {
   if (winners.length === 0) return null;
-  return (
-    <div className="flex flex-col gap-[14px]">
-      {winners.map((w, i) => (
-        <div
-          key={`${w.rank}-${w.name}`}
-          className="animate-rank-in flex items-center gap-[20px] rounded-[24px] border-[3px] border-brand-200 bg-brand-50 px-[28px] py-[18px]"
-          style={{ animationDelay: `${i * 260}ms` }}
-        >
-          <span className="grid h-[62px] w-[62px] shrink-0 place-items-center rounded-full bg-brand-500 text-[30px] font-black text-ink-900">
-            {w.rank}
-          </span>
-          <span className={`min-w-0 flex-1 truncate font-black text-ink-900 ${compact ? 'text-[34px]' : 'text-[44px]'}`}>
-            {w.name}
-            {w.detail ? <span className="ml-[14px] text-[28px] font-bold text-ink-400">{w.detail}</span> : null}
-          </span>
-          {w.prize ? (
-            <span className="shrink-0 rounded-full bg-ink-900 px-[22px] py-[10px] text-[24px] font-black text-white">
-              {w.prize}
+  const n = winners.length;
+  const layout = n <= 5 ? 'list' : n <= 10 ? 'two' : 'three';
+
+  if (layout === 'list') {
+    return (
+      <div className="flex flex-col gap-[14px]">
+        {winners.map((w, i) => (
+          <div
+            key={`${w.rank}-${w.name}`}
+            className="animate-rank-in flex items-center gap-[20px] rounded-[24px] border-[3px] border-brand-200 bg-brand-50 px-[28px] py-[18px]"
+            style={{ animationDelay: `${i * 260}ms` }}
+          >
+            <span className="grid h-[62px] w-[62px] shrink-0 place-items-center rounded-full bg-brand-500 text-[30px] font-black text-ink-900">
+              {w.rank}
             </span>
-          ) : null}
-        </div>
-      ))}
+            <span className={`min-w-0 flex-1 truncate font-black text-ink-900 ${compact ? 'text-[34px]' : 'text-[44px]'}`}>
+              {w.name}
+              {w.detail ? <span className="ml-[14px] text-[28px] font-bold text-ink-400">{w.detail}</span> : null}
+            </span>
+            {w.prize ? (
+              <span className="shrink-0 rounded-full bg-ink-900 px-[22px] py-[10px] text-[24px] font-black text-white">
+                {w.prize}
+              </span>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const three = layout === 'three';
+  // 보상 문구가 모두 같으면 카드마다 반복하지 않고 위에 한 번만 보여 준다(좁은 카드에서 이름을 살린다).
+  const prizes = [...new Set(winners.map((w) => w.prize).filter(Boolean))];
+  const sharedPrize = prizes.length === 1 ? prizes[0] : null;
+  return (
+    <div>
+      {sharedPrize ? (
+        <p className="mb-[12px] text-[24px] font-black text-ink-700">
+          보상 <span className="ml-[8px] rounded-full bg-ink-900 px-[16px] py-[6px] text-[20px] text-white">{sharedPrize}</span>
+        </p>
+      ) : null}
+      <div className={`grid gap-[10px] ${three ? 'grid-cols-3' : 'grid-cols-2'}`}>
+        {winners.map((w, i) => (
+          <div
+            key={`${w.rank}-${w.name}`}
+            className={`animate-rank-in flex min-w-0 items-center rounded-[18px] border-2 border-brand-200 bg-brand-50 ${
+              three ? 'gap-[10px] px-[14px] py-[8px]' : 'gap-[14px] px-[18px] py-[10px]'
+            }`}
+            style={{ animationDelay: `${Math.min(i, 12) * 90}ms` }}
+          >
+            <span
+              className={`grid shrink-0 place-items-center rounded-full bg-brand-500 font-black text-ink-900 ${
+                three ? 'h-[36px] w-[36px] text-[18px]' : 'h-[44px] w-[44px] text-[22px]'
+              }`}
+            >
+              {w.rank}
+            </span>
+            <span className={`min-w-0 flex-1 truncate font-black text-ink-900 ${three ? 'text-[22px]' : 'text-[28px]'}`}>
+              {w.name}
+              {w.detail ? <span className="ml-[8px] text-[18px] font-bold text-ink-400">{w.detail}</span> : null}
+            </span>
+            {!sharedPrize && w.prize ? (
+              <span
+                className={`max-w-[40%] shrink-0 truncate rounded-full bg-ink-900 font-black text-white ${
+                  three ? 'px-[10px] py-[4px] text-[15px]' : 'px-[14px] py-[6px] text-[18px]'
+                }`}
+              >
+                {w.prize}
+              </span>
+            ) : null}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -880,15 +940,22 @@ function LadderBoard({ state }: { state: GamePublicState }) {
         </div>
 
         {state.status === 'RESULT' && result?.order ? (
-          <div className="mt-[24px] grid grid-cols-2 gap-[10px]">
+          // 항목이 많으면(최대 24) 결과표가 화면 밖으로 넘친다(GM-7). 개수에 따라 단 수와 글씨를 줄인다.
+          <div
+            className={`mt-[24px] grid gap-[8px] ${
+              starts.length > 16 ? 'grid-cols-4' : starts.length > 8 ? 'grid-cols-3' : 'grid-cols-2 gap-[10px]'
+            }`}
+          >
             {starts.map((s, i) => (
               <div
                 key={`o-${i}`}
-                className="animate-rank-in flex items-center justify-between rounded-[18px] bg-brand-50 px-[22px] py-[12px]"
-                style={{ animationDelay: `${i * 140}ms` }}
+                className={`animate-rank-in flex min-w-0 items-center justify-between rounded-[18px] bg-brand-50 ${
+                  starts.length > 8 ? 'px-[14px] py-[6px]' : 'px-[22px] py-[12px]'
+                }`}
+                style={{ animationDelay: `${Math.min(i, 12) * 110}ms` }}
               >
-                <span className="truncate text-[26px] font-black text-ink-900">{s}</span>
-                <span className="ml-[12px] shrink-0 text-[26px] font-black text-brand-700">
+                <span className={`truncate font-black text-ink-900 ${starts.length > 8 ? 'text-[20px]' : 'text-[26px]'}`}>{s}</span>
+                <span className={`ml-[12px] shrink-0 truncate font-black text-brand-700 ${starts.length > 8 ? 'text-[20px]' : 'text-[26px]'}`}>
                   {result.order?.[i] || '-'}
                 </span>
               </div>
@@ -983,6 +1050,11 @@ function RankingBoard({ state }: { state: GamePublicState }) {
 function ChoiceBoard({ state, mode }: { state: GamePublicState; mode: 'vote' | 'quiz' }) {
   const revealed = state.status === 'RESULT';
   const result = state.result as { counts?: number[]; answerIndex?: number; answerLabel?: string; topIndex?: number } | null;
+  /**
+   * 퀴즈는 참여를 받는 동안 서버가 집계를 보내지 않는다(GM-8). 그때는 막대·숫자를 숨기고
+   * 보기만 보여 준다. 다수 답을 따라 고르는 것을 막기 위해서다.
+   */
+  const hideTally = mode === 'quiz' && !result?.counts && !state.counts;
   const counts = result?.counts ?? state.counts ?? state.choices.map(() => 0);
   const total = counts.reduce((a, b) => a + b, 0);
   const answerIndex = revealed && typeof result?.answerIndex === 'number' ? result.answerIndex : null;
@@ -1011,12 +1083,14 @@ function ChoiceBoard({ state, mode }: { state: GamePublicState; mode: 'vote' | '
                     {c}
                     {isAnswer ? <span className="ml-[14px] text-[24px] font-black text-brand-600">정답</span> : null}
                   </span>
-                  <span className="text-[26px] font-bold tabular-nums text-ink-400">
-                    {value}
-                    {mode === 'vote' ? '표' : '명'} · {pct}%
-                  </span>
+                  {hideTally ? null : (
+                    <span className="text-[26px] font-bold tabular-nums text-ink-400">
+                      {value}
+                      {mode === 'vote' ? '표' : '명'} · {pct}%
+                    </span>
+                  )}
                 </div>
-                <div className="h-[26px] overflow-hidden rounded-full bg-ink-100">
+                <div className={`h-[26px] overflow-hidden rounded-full bg-ink-100 ${hideTally ? 'hidden' : ''}`}>
                   <div
                     className={`h-full rounded-full transition-[width] duration-700 ease-out ${
                       isAnswer || isTop ? 'bg-ink-900' : 'bg-brand-400'

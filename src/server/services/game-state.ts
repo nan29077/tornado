@@ -84,6 +84,8 @@ export interface GameStudioState extends GamePublicState {
   /** 자동 마감 설정(초). 0 이면 수동 */
   autoCloseSec: number;
   entryMode: string;
+  /** 이 회차에서 결과를 발표(또는 돌리기)한 횟수. 재발표 흔적을 크리에이터에게 보여 준다(GM-2). */
+  revealCount?: number;
 }
 
 /** 결과 발표 전까지 감춰야 하는 config 키를 제거한다. */
@@ -100,9 +102,23 @@ export function publicConfig(type: string, config: Record<string, unknown>, reve
 
 /** 스튜디오 상태에서 시청자에게 나갈 부분만 남긴다. */
 export function toPublicState(state: GameStudioState): GamePublicState {
-  const { secret: _secret, recentParticipants: _p, autoCloseSec: _a, entryMode: _e, ...rest } = state;
+  const {
+    secret: _secret,
+    recentParticipants: _p,
+    autoCloseSec: _a,
+    entryMode: _e,
+    revealCount: _r,
+    ...rest
+  } = state;
+  /**
+   * 퀴즈는 참여를 받는 동안 선택지별 집계를 방송에 내보내지 않는다(GM-8).
+   * 집계가 보이면 시청자가 다수 답을 보고 따라 골라 퀴즈가 성립하지 않는다.
+   * 참여 인원은 그대로 보여 주고, 막대는 마감·발표 뒤에 공개한다.
+   */
+  const hideCounts = rest.type === 'QUIZ' && rest.status === 'OPEN';
   return {
     ...rest,
+    counts: hideCounts ? null : rest.counts,
     result: rest.result ? (sanitizePublicValue(rest.result) as Record<string, unknown>) : null,
   };
 }
@@ -365,6 +381,7 @@ export async function buildStudioStateForRound(roundId: string): Promise<GameStu
     recentParticipants,
     autoCloseSec: game.autoCloseSec,
     entryMode: game.entryMode,
+    revealCount: round.revealCount ?? 0,
   };
 }
 
