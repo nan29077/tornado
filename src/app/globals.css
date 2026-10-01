@@ -720,12 +720,182 @@ a {
 .animate-sticker-dance { animation: donaido-sticker-dance 1.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
 .animate-sticker-bow { animation: donaido-sticker-bow 1.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
+/* 2026-10-01 추가 캐릭터 등장 */
+@keyframes donaido-sticker-float-in {
+  0% { opacity: 0; transform: translateY(140px) scale(0.6) rotate(-6deg); }
+  30% { opacity: 1; transform: translateY(-18px) scale(1.04) rotate(3deg); }
+  55% { transform: translateY(6px) scale(0.99) rotate(-2deg); }
+  78% { transform: translateY(-6px) scale(1.01) rotate(1deg); }
+  100% { opacity: 1; transform: translateY(0) scale(1) rotate(0deg); }
+}
+@keyframes donaido-sticker-peek {
+  0% { opacity: 0; transform: translateY(120px) scaleY(0.6) rotate(10deg); transform-origin: 50% 100%; }
+  26% { opacity: 1; transform: translateY(-16px) scaleY(1.08) rotate(-6deg); transform-origin: 50% 100%; }
+  44% { transform: translateY(0) scaleY(0.96) rotate(4deg); transform-origin: 50% 100%; }
+  64% { transform: translateY(-6px) scaleY(1.02) rotate(-2deg); transform-origin: 50% 100%; }
+  100% { opacity: 1; transform: translateY(0) scaleY(1) rotate(0deg); transform-origin: 50% 100%; }
+}
+@keyframes donaido-sticker-fly-in {
+  0% { opacity: 0; transform: translate(-420px, -120px) scale(0.4) rotate(-40deg); }
+  35% { opacity: 1; transform: translate(30px, 16px) scale(1.06) rotate(10deg); }
+  55% { transform: translate(-12px, -6px) scale(0.98) rotate(-5deg); }
+  76% { transform: translate(5px, 0) scale(1.01) rotate(2deg); }
+  100% { opacity: 1; transform: translate(0, 0) scale(1) rotate(0deg); }
+}
+@keyframes donaido-sticker-friend-pop {
+  0% { opacity: 0; transform: translateY(80px) scale(0.3); }
+  45% { opacity: 1; transform: translateY(-20px) scale(1.08); }
+  70% { transform: translateY(4px) scale(0.97); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-sticker-float-in { animation: donaido-sticker-float-in 1.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-sticker-peek { animation: donaido-sticker-peek 1.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-sticker-fly-in { animation: donaido-sticker-fly-in 1.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-sticker-friend-pop { animation: donaido-sticker-friend-pop 1s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* 등장 뒤 반복 동작 — 캐릭터가 화면에 머무는 동안 계속 살아 움직인다 */
+@keyframes donaido-sticker-idle-hop {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  12% { transform: translateY(0) scale(1.05, 0.94); }
+  40% { transform: translateY(-22px) scale(0.97, 1.04) rotate(-3deg); }
+  62% { transform: translateY(0) scale(1.04, 0.96); }
+  80% { transform: translateY(-6px) scale(1, 1) rotate(2deg); }
+}
+@keyframes donaido-sticker-idle-beat {
+  0%, 100% { transform: scale(1); }
+  14% { transform: scale(1.07); }
+  28% { transform: scale(0.99); }
+  42% { transform: scale(1.05); }
+  70% { transform: scale(1); }
+}
+@keyframes donaido-sticker-idle-sway {
+  0%, 100% { transform: rotate(-6deg) translateX(-6px); }
+  50% { transform: rotate(6deg) translateX(6px); }
+}
+@keyframes donaido-sticker-idle-nod {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  30% { transform: rotate(-4deg) translateY(4px); }
+  60% { transform: rotate(3deg) translateY(-3px); }
+}
+@keyframes donaido-sticker-idle-float {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-16px) rotate(2deg); }
+}
+.animate-sticker-idle-hop { animation: donaido-sticker-idle-hop 1.25s ease-in-out infinite; transform-origin: 50% 100%; }
+.animate-sticker-idle-beat { animation: donaido-sticker-idle-beat 1.1s ease-in-out infinite; transform-origin: 50% 60%; }
+.animate-sticker-idle-sway { animation: donaido-sticker-idle-sway 1.3s ease-in-out infinite; transform-origin: 50% 100%; }
+.animate-sticker-idle-nod { animation: donaido-sticker-idle-nod 1.6s ease-in-out infinite; transform-origin: 50% 90%; }
+.animate-sticker-idle-float { animation: donaido-sticker-idle-float 2.2s ease-in-out infinite; }
+
+@keyframes donaido-sticker-shadow {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  40% { transform: scale(0.72); opacity: 0.6; }
+}
+.animate-sticker-shadow { animation: donaido-sticker-shadow 1.25s ease-in-out infinite; }
+
+/* 캐릭터 뒤 배경 연출 */
+@keyframes donaido-backdrop-spotlight-in {
+  0% { opacity: 0; transform: scale(0.3); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes donaido-backdrop-spotlight-breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.72; transform: scale(1.06); }
+}
+.animate-backdrop-spotlight {
+  animation:
+    donaido-backdrop-spotlight-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) both,
+    donaido-backdrop-spotlight-breathe 2.4s ease-in-out 0.8s infinite;
+}
+@keyframes donaido-backdrop-rays-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes donaido-backdrop-rays-spin {
+  from { rotate: 0deg; }
+  to { rotate: 360deg; }
+}
+.animate-backdrop-rays {
+  animation:
+    donaido-backdrop-rays-in 1s ease-out 0.2s both,
+    donaido-backdrop-rays-spin 18s linear infinite;
+}
+@keyframes donaido-backdrop-ring {
+  0% { opacity: 0.95; transform: scale(0.35); }
+  100% { opacity: 0; transform: scale(1.9); }
+}
+.animate-backdrop-ring { animation: donaido-backdrop-ring 2.4s cubic-bezier(0.2, 0.7, 0.3, 1) infinite both; }
+@keyframes donaido-backdrop-bokeh {
+  0% { opacity: 0; transform: translateY(20px) scale(0.6); }
+  30% { opacity: 0.9; }
+  100% { opacity: 0; transform: translateY(-70px) scale(1.1); }
+}
+.animate-backdrop-bokeh { animation: donaido-backdrop-bokeh 4s ease-out infinite both; }
+@keyframes donaido-backdrop-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.2) rotate(0deg); }
+  45% { opacity: 1; transform: scale(1) rotate(45deg); }
+  70% { opacity: 0.6; transform: scale(0.8) rotate(70deg); }
+}
+.animate-backdrop-twinkle { animation: donaido-backdrop-twinkle 1.9s ease-in-out infinite both; }
+
+/* 캐릭터 주변 소품: 중심에서 튀어나온 뒤 둥실 떠 있는다 */
+@keyframes donaido-aura-pop {
+  0% { opacity: 0; transform: translate(0, 0) scale(0) rotate(0deg); }
+  60% { opacity: 1; transform: translate(var(--ax, 0px), var(--ay, 0px)) scale(1.15) rotate(var(--ar, 0deg)); }
+  100% { opacity: 1; transform: translate(var(--ax, 0px), var(--ay, 0px)) scale(1) rotate(var(--ar, 0deg)); }
+}
+.animate-aura-pop { animation: donaido-aura-pop 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+@keyframes donaido-aura-float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-12px) scale(1.08); }
+}
+.animate-aura-float { animation: donaido-aura-float 1.7s ease-in-out infinite; }
+
+/* 화면 전체 은은한 빛 안개 */
+@keyframes donaido-ambient-haze {
+  0% { opacity: 0; }
+  20% { opacity: 1; }
+  60% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+.animate-ambient-haze { animation: donaido-ambient-haze 3s ease-in-out both; }
+
+/* 캐릭터 퍼레이드 (기준 폭 --ovw: 방송 화면 폭, 미리보기에서는 1920px) */
+@keyframes donaido-parade-walk {
+  0% { transform: translateX(-240px); }
+  100% { transform: translateX(calc(var(--ovw, 100vw) + 60px)); }
+}
+.animate-parade-walk { animation: donaido-parade-walk 8s linear infinite both; }
+@keyframes donaido-parade-hop {
+  0%, 100% { transform: translateY(0) rotate(-5deg); }
+  50% { transform: translateY(-28px) rotate(5deg); }
+}
+.animate-parade-hop { animation: donaido-parade-hop 0.5s ease-in-out infinite; }
+
 @media (prefers-reduced-motion: reduce) {
   .animate-sticker-cheer,
   .animate-sticker-heart,
   .animate-sticker-gift,
   .animate-sticker-dance,
-  .animate-sticker-bow { animation-duration: 1ms; }
+  .animate-sticker-bow,
+  .animate-sticker-float-in,
+  .animate-sticker-peek,
+  .animate-sticker-fly-in,
+  .animate-sticker-friend-pop,
+  .animate-aura-pop,
+  .animate-backdrop-spotlight { animation-duration: 1ms; }
+  .animate-sticker-idle-hop,
+  .animate-sticker-idle-beat,
+  .animate-sticker-idle-sway,
+  .animate-sticker-idle-nod,
+  .animate-sticker-idle-float,
+  .animate-sticker-shadow,
+  .animate-backdrop-rays,
+  .animate-backdrop-ring,
+  .animate-backdrop-bokeh,
+  .animate-backdrop-twinkle,
+  .animate-aura-float,
+  .animate-parade-hop { animation: none; }
 }
 
 /* 배너 슬라이드인 */

@@ -176,6 +176,8 @@ export function OverlayCanvas({
           // 배율을 재기 전(첫 페인트)에는 1920x1080 원본이 잠깐 보이지 않도록 감춘다.
           visibility: scale > 0 ? 'visible' : 'hidden',
           ['--ovh' as string]: `${OVERLAY_CANVAS_HEIGHT}px`,
+          // 가로 이동 연출(캐릭터 퍼레이드)의 기준 폭. 뷰포트 단위를 쓰면 축소 미리보기에서 어긋난다.
+          ['--ovw' as string]: `${OVERLAY_CANVAS_WIDTH}px`,
           ['--ovs' as string]: String(scale || 1),
         }}
       >

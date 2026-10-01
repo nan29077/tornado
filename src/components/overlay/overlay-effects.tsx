@@ -3,8 +3,12 @@
 import * as React from 'react';
 import Image from 'next/image';
 import {
+  DONAIDO_CHARACTER_IMAGES,
   findCharacterSticker,
+  type CharacterStickerDefinition,
   type OverlayEffectValue,
+  type StickerAura,
+  type StickerPalette,
 } from '@/lib/overlay-effect-catalog';
 import {
   EFFECT_LEVELS,
@@ -35,7 +39,16 @@ function rand(i: number, salt: number) {
   return x - Math.floor(x);
 }
 
-export function EffectLayer({ effect, theme = 'TORNADO' }: { effect: string; theme?: string }) {
+export function EffectLayer({
+  effect,
+  theme = 'TORNADO',
+  paradeEdge = 'bottom',
+}: {
+  effect: string;
+  theme?: string;
+  /** 캐릭터 퍼레이드가 지나갈 가장자리. 알림 배너와 반대쪽을 준다. */
+  paradeEdge?: 'top' | 'bottom';
+}) {
   const name = (effect || 'DEFAULT').toUpperCase() as EffectName;
   if (name === 'NONE') return null;
 
@@ -51,9 +64,17 @@ export function EffectLayer({ effect, theme = 'TORNADO' }: { effect: string; the
         ? '[filter:drop-shadow(0_0_8px_rgba(34,211,238,0.55))]'
         : '';
 
-  // 캐릭터 스티커는 배너 바로 위에 인라인으로 붙인다(CharacterStickerInline).
-  // EffectLayer 에서는 파티클 계열 효과만 담당한다.
-  if (characterSticker) return null;
+  // 캐릭터 스티커 자체는 배너 바로 위에 인라인으로 붙인다(CharacterStickerInline).
+  // 여기서는 캐릭터 효과가 재생되는 동안 **화면 전체에 은은한 배경 연출**(반짝이·보케·소품 비)을
+  // 깔고, 퍼레이드 효과면 화면 아래 행진을 그린다 (2026-10-01).
+  if (characterSticker) {
+    return (
+      <div aria-hidden className={`pointer-events-none fixed inset-0 overflow-hidden ${themeClass}`}>
+        <CharacterAmbient sticker={characterSticker} theme={theme} />
+        {characterSticker.ensemble === 'parade' ? <CharacterParade edge={paradeEdge} /> : null}
+      </div>
+    );
+  }
 
   return (
     <div aria-hidden className={`pointer-events-none fixed inset-0 overflow-hidden ${themeClass}`}>
@@ -244,6 +265,14 @@ export function isCharacterStickerEffect(effect: string): boolean {
 /**
  * 캐릭터 스티커를 배너 바로 위에 인라인으로 렌더링한다.
  * fixed 레이어가 아니므로 배너와 자연스럽게 붙는다.
+ *
+ * 2026-10-01 풍성화
+ *  - 캐릭터 뒤 배경 연출(CharacterBackdrop): 스포트라이트·회전 빛줄기·퍼지는 고리·보케·반짝이
+ *  - 캐릭터 주변 소품(CharacterAura): 하트·음표·동전·리본·편지·별이 튀어나와 둥실 떠다닌다
+ *  - 등장 뒤 반복 동작(idleClass): 등장이 끝나면 통통·두근·흔들흔들 등 계속 살아 움직인다
+ *  - 바닥 그림자: 캐릭터가 뛸 때 함께 줄었다 늘었다 한다
+ *  - 친구들 총출동: 대표 캐릭터 양옆에 친구 둘이 시간차로 튀어나온다
+ * 모두 투명 배경 위에서 동작하도록 반투명 그라데이션만 쓴다(방송 화면을 가리지 않는다).
  */
 export function CharacterStickerInline({
   effect,
@@ -273,24 +302,400 @@ export function CharacterStickerInline({
         ? '[filter:drop-shadow(0_0_8px_rgba(34,211,238,0.55))]'
         : '';
 
+  // 1920 기준 고정 크기. 예전에는 clamp(100px,18vw,260px) 이었는데, 화면이 좁아질수록
+  // 상대적으로 커져(322px 틀에서 화면의 31%) 위쪽이 잘렸다. 1920 에서는 clamp 결과가
+  // 260px 이므로 방송 화면의 크기는 그대로다.
+  // 옆에 붙일 때는 글자 두세 줄 높이에 맞춰 200px 로 줄인다.
+  const size = placement === 'side' ? 200 : 260;
+  const friends = characterSticker.ensemble === 'friends';
+
   return (
     <div
       aria-hidden
-      // 1920 기준 고정 크기. 예전에는 clamp(100px,18vw,260px) 이었는데, 화면이 좁아질수록
-      // 상대적으로 커져(322px 틀에서 화면의 31%) 위쪽이 잘렸다. 1920 에서는 clamp 결과가
-      // 260px 이므로 방송 화면의 크기는 그대로다.
-      // 옆에 붙일 때는 글자 두세 줄 높이에 맞춰 200px 로 줄인다.
-      className={`${placement === 'side' ? 'w-[200px] shrink-0' : 'w-[260px]'} drop-shadow-[0_20px_28px_rgba(15,10,0,0.24)] ${characterSticker.animationClass} ${themeClass}`}
+      // isolate: 배경 연출(-z-10)이 이 묶음 안에서만 캐릭터 뒤로 깔리게 한다.
+      className={`relative isolate shrink-0 ${themeClass}`}
+      style={{ width: friends ? Math.round(size * 1.7) : size, height: size }}
     >
-      <Image
-        src={characterSticker.image}
-        alt=""
-        width={640}
-        height={640}
-        priority
-        unoptimized
-        className="h-auto w-full select-none object-contain"
+      <CharacterBackdrop palette={characterSticker.palette} size={size} theme={theme} />
+      {friends ? <FriendSide side="left" size={size} /> : null}
+      {friends ? <FriendSide side="right" size={size} /> : null}
+      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2" style={{ width: size }}>
+        <StickerShadow size={size} />
+        <div className={`relative h-full w-full ${characterSticker.animationClass}`}>
+          <div
+            className={`h-full w-full drop-shadow-[0_20px_28px_rgba(15,10,0,0.24)] ${characterSticker.idleClass}`}
+            // 등장이 끝난 뒤 반복 동작을 시작한다(등장 애니메이션은 1.4~1.8초).
+            style={{ animationDelay: '1.6s' }}
+          >
+            <Image
+              src={characterSticker.image}
+              alt=""
+              width={640}
+              height={640}
+              priority
+              unoptimized
+              className="h-auto w-full select-none object-contain"
+            />
+          </div>
+        </div>
+      </div>
+      <CharacterAura sticker={characterSticker} size={size} />
+    </div>
+  );
+}
+
+/** 친구들 총출동: 대표 캐릭터 양옆에서 시간차로 튀어나오는 작은 캐릭터. */
+function FriendSide({ side, size }: { side: 'left' | 'right'; size: number }) {
+  const w = Math.round(size * 0.62);
+  const image = side === 'left' ? DONAIDO_CHARACTER_IMAGES[1] : DONAIDO_CHARACTER_IMAGES[3];
+  return (
+    <div
+      className={`absolute bottom-0 ${side === 'left' ? 'left-0' : 'right-0'} animate-sticker-friend-pop`}
+      style={{ width: w, animationDelay: side === 'left' ? '0.35s' : '0.6s' }}
+    >
+      <div
+        className={side === 'left' ? 'animate-sticker-idle-beat' : 'animate-sticker-idle-sway'}
+        style={{ animationDelay: '1.8s' }}
+      >
+        <Image
+          src={image!}
+          alt=""
+          width={640}
+          height={640}
+          unoptimized
+          className="h-auto w-full select-none object-contain drop-shadow-[0_14px_20px_rgba(15,10,0,0.22)]"
+          style={{ transform: side === 'left' ? 'scaleX(-1)' : undefined }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** 캐릭터 발밑 그림자. 캐릭터가 뛰어오르면 작아지고 내려오면 커진다(반복 동작과 같은 주기). */
+function StickerShadow({ size }: { size: number }) {
+  return (
+    <div
+      className="animate-sticker-shadow absolute rounded-[50%]"
+      style={{
+        bottom: Math.round(size * 0.02),
+        left: Math.round(size * 0.25),
+        width: Math.round(size * 0.5),
+        height: Math.round(size * 0.07),
+        background: 'radial-gradient(closest-side, rgba(15,10,0,0.28), rgba(15,10,0,0))',
+        animationDelay: '1.6s',
+      }}
+    />
+  );
+}
+
+// ---------------------------------------------------------- 캐릭터 뒤 배경 연출
+
+/**
+ * 캐릭터 뒤 배경.
+ *
+ *  1) 스포트라이트 — 부드러운 원형 빛이 퍼지며 숨 쉬듯 밝아졌다 어두워진다
+ *  2) 빛줄기       — 해살처럼 퍼지는 줄기가 천천히 돈다(가장자리는 마스크로 흐리게)
+ *  3) 퍼지는 고리  — 등장 순간 동심원 두 개가 퍼져 나간다
+ *  4) 보케         — 흐린 빛 방울이 천천히 떠오른다
+ *  5) 반짝이       — 4각 별이 반짝였다 사라진다
+ *
+ * 방송 화면(게임·캠) 위에 겹치므로 불투명한 색면은 쓰지 않는다. 미니멀 테마는 빛줄기를 뺀다.
+ */
+function CharacterBackdrop({ palette, size, theme }: { palette: StickerPalette; size: number; theme: string }) {
+  const box = Math.round(size * 2.2);
+  const minimal = theme === 'MINIMAL';
+  const glow = theme === 'NEON' ? '34,211,238' : palette.glow;
+  return (
+    <div
+      className="pointer-events-none absolute left-1/2 top-1/2 -z-10"
+      style={{ width: box, height: box, marginLeft: -box / 2, marginTop: -box / 2 }}
+    >
+      {/* 1) 스포트라이트 */}
+      <div
+        className="animate-backdrop-spotlight absolute inset-0 rounded-full"
+        style={{
+          background: `radial-gradient(circle, rgba(${glow},0.55) 0%, rgba(${glow},0.24) 32%, rgba(${glow},0.08) 52%, rgba(${glow},0) 70%)`,
+        }}
       />
+      {/* 2) 빛줄기 */}
+      {minimal ? null : (
+        <div
+          className="animate-backdrop-rays absolute inset-[6%] rounded-full"
+          style={{
+            background: `repeating-conic-gradient(from 0deg, rgba(${glow},0.42) 0deg 7deg, rgba(${glow},0) 7deg 20deg)`,
+            WebkitMaskImage: 'radial-gradient(circle, rgba(0,0,0,0.9) 18%, rgba(0,0,0,0) 68%)',
+            maskImage: 'radial-gradient(circle, rgba(0,0,0,0.9) 18%, rgba(0,0,0,0) 68%)',
+          }}
+        />
+      )}
+      {/* 3) 퍼지는 고리 */}
+      {[0, 0.45].map((delay) => (
+        <div
+          key={delay}
+          className="animate-backdrop-ring absolute left-1/2 top-1/2 rounded-full"
+          style={{
+            width: size,
+            height: size,
+            marginLeft: -size / 2,
+            marginTop: -size / 2,
+            border: `${Math.max(3, Math.round(size / 70))}px solid rgba(${palette.accent},0.65)`,
+            animationDelay: `${delay}s`,
+          }}
+        />
+      ))}
+      {/* 4) 보케 */}
+      {Array.from({ length: 9 }, (_, i) => {
+        const d = Math.round(size * (0.07 + rand(i, 41) * 0.1));
+        return (
+          <span
+            key={`b${i}`}
+            className="animate-backdrop-bokeh absolute rounded-full"
+            style={{
+              left: `${12 + rand(i, 42) * 76}%`,
+              top: `${22 + rand(i, 43) * 60}%`,
+              width: d,
+              height: d,
+              background: `radial-gradient(circle, rgba(${i % 2 ? palette.soft : glow},0.7), rgba(${i % 2 ? palette.soft : glow},0) 70%)`,
+              animationDelay: `${(rand(i, 44) * 2.4).toFixed(2)}s`,
+              animationDuration: `${(3.2 + rand(i, 45) * 2).toFixed(2)}s`,
+            }}
+          />
+        );
+      })}
+      {/* 5) 반짝이 */}
+      {Array.from({ length: 10 }, (_, i) => {
+        const d = Math.round(size * (0.06 + rand(i, 51) * 0.06));
+        return (
+          <span
+            key={`s${i}`}
+            className="animate-backdrop-twinkle absolute"
+            style={{
+              left: `${10 + rand(i, 52) * 80}%`,
+              top: `${10 + rand(i, 53) * 80}%`,
+              width: d,
+              height: d,
+              animationDelay: `${(0.3 + rand(i, 54) * 2.2).toFixed(2)}s`,
+            }}
+          >
+            <AuraShape kind="sparkle" color={`rgb(${i % 3 === 0 ? palette.accent : palette.soft})`} />
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------- 캐릭터 주변 소품
+
+/**
+ * 캐릭터 주변으로 소품이 튀어나와 둥실 떠다닌다.
+ * 등장 순간 중심에서 바깥으로 퍼진 뒤(--ax, --ay) 제자리에서 위아래로 떠 있는다.
+ */
+function CharacterAura({ sticker, size }: { sticker: CharacterStickerDefinition; size: number }) {
+  const count = sticker.ensemble ? 9 : 7;
+  return (
+    <div className="pointer-events-none absolute left-1/2 top-1/2 z-10" style={{ width: 0, height: 0 }}>
+      {Array.from({ length: count }, (_, i) => {
+        // 위쪽 반원 + 양옆에 고르게 흩뿌린다(아래쪽은 배너와 겹치므로 피한다).
+        const angle = (-200 + (220 / (count - 1)) * i + (rand(i, 61) - 0.5) * 14) * (Math.PI / 180);
+        const radius = size * (0.58 + rand(i, 62) * 0.22);
+        const d = Math.round(size * (0.12 + rand(i, 63) * 0.07));
+        const color =
+          sticker.aura === 'heart'
+            ? i % 3 === 0
+              ? '#ff7d97'
+              : '#f4506b'
+            : `rgb(${i % 2 ? sticker.palette.accent : sticker.palette.glow})`;
+        return (
+          <span
+            key={i}
+            className="animate-aura-pop absolute"
+            style={{
+              width: d,
+              height: d,
+              marginLeft: -d / 2,
+              marginTop: -d / 2,
+              ['--ax' as string]: `${Math.round(Math.cos(angle) * radius)}px`,
+              ['--ay' as string]: `${Math.round(Math.sin(angle) * radius)}px`,
+              ['--ar' as string]: `${Math.round((rand(i, 64) - 0.5) * 40)}deg`,
+              animationDelay: `${(0.25 + i * 0.09).toFixed(2)}s`,
+            }}
+          >
+            <span
+              className="animate-aura-float block h-full w-full"
+              style={{ animationDelay: `${(1.4 + rand(i, 65) * 1.2).toFixed(2)}s` }}
+            >
+              <AuraShape kind={sticker.aura} color={color} />
+            </span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+/** 소품 도형. 이모지 대신 SVG 로 그린다. */
+function AuraShape({ kind, color }: { kind: StickerAura; color: string }) {
+  const stroke = 'rgba(23,22,26,0.55)';
+  switch (kind) {
+    case 'heart':
+      return (
+        <svg viewBox="0 0 24 24" className="h-full w-full drop-shadow-[0_3px_4px_rgba(0,0,0,0.18)]">
+          <path
+            d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.7 4.5c2.1 0 3.6 1.2 5.3 3.2 1.7-2 3.2-3.2 5.3-3.2 3.7 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21Z"
+            fill={color}
+          />
+          <path d="M7.2 8.2c.6-1 1.6-1.5 2.6-1.4" stroke="#fff" strokeWidth={1.6} strokeLinecap="round" fill="none" opacity={0.8} />
+        </svg>
+      );
+    case 'note':
+      return (
+        <svg viewBox="0 0 24 24" className="h-full w-full drop-shadow-[0_3px_4px_rgba(0,0,0,0.18)]">
+          <path d="M9 17.5V5.2l10-2.2v12" stroke={color} strokeWidth={2.4} fill="none" strokeLinejoin="round" />
+          <ellipse cx={6.6} cy={17.6} rx={3.2} ry={2.5} fill={color} />
+          <ellipse cx={16.6} cy={15.2} rx={3.2} ry={2.5} fill={color} />
+        </svg>
+      );
+    case 'coin':
+      return (
+        <svg viewBox="0 0 24 24" className="h-full w-full drop-shadow-[0_3px_4px_rgba(0,0,0,0.2)]">
+          <circle cx={12} cy={12} r={10} fill="#ffcc4d" stroke="#c98a00" strokeWidth={1.6} />
+          <circle cx={12} cy={12} r={6.4} fill="none" stroke="#eda600" strokeWidth={1.6} />
+          <path d="M9.5 9.5c.8-.9 1.8-1.3 2.8-1.2" stroke="#fff" strokeWidth={1.4} strokeLinecap="round" fill="none" opacity={0.85} />
+        </svg>
+      );
+    case 'ribbon':
+      return (
+        <svg viewBox="0 0 24 24" className="h-full w-full">
+          <path
+            d="M3 14c3-6 6 2 9-4s6 2 9-4"
+            stroke={color}
+            strokeWidth={3.2}
+            strokeLinecap="round"
+            fill="none"
+          />
+        </svg>
+      );
+    case 'letter':
+      return (
+        <svg viewBox="0 0 24 24" className="h-full w-full drop-shadow-[0_3px_4px_rgba(0,0,0,0.18)]">
+          <rect x={2.5} y={5.5} width={19} height={13} rx={2.2} fill="#fffaf0" stroke={stroke} strokeWidth={1.3} />
+          <path d="M3.4 6.6 12 13l8.6-6.4" stroke={stroke} strokeWidth={1.3} fill="none" strokeLinejoin="round" />
+          <path d="M12 15.4s-2.2-1.4-2.2-2.8c0-.8.6-1.4 1.3-1.4.4 0 .7.2.9.5.2-.3.5-.5.9-.5.7 0 1.3.6 1.3 1.4 0 1.4-2.2 2.8-2.2 2.8Z" fill="#f4506b" />
+        </svg>
+      );
+    case 'star':
+      return (
+        <svg viewBox="0 0 24 24" className="h-full w-full drop-shadow-[0_3px_4px_rgba(0,0,0,0.16)]">
+          <path
+            d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9L12 2.5Z"
+            fill={color}
+            stroke="rgba(23,22,26,0.25)"
+            strokeWidth={0.8}
+            strokeLinejoin="round"
+          />
+        </svg>
+      );
+    case 'sparkle':
+    default:
+      return (
+        <svg viewBox="0 0 24 24" className="h-full w-full">
+          <path d="M12 1.5c.9 5.6 4.9 9.6 10.5 10.5-5.6.9-9.6 4.9-10.5 10.5C11.1 16.9 7.1 12.9 1.5 12 7.1 11.1 11.1 7.1 12 1.5Z" fill={color} />
+        </svg>
+      );
+  }
+}
+
+// ---------------------------------------------------------- 화면 전체 배경 연출
+
+/**
+ * 캐릭터 효과가 재생되는 동안 화면 전체에 깔리는 은은한 연출.
+ *  - 위에서 천천히 내려오는 소품 비(캐릭터 소품과 같은 모양)
+ *  - 화면 곳곳에서 반짝이는 별빛
+ *  - 아래쪽 가장자리에서 퍼지는 부드러운 빛 안개
+ * 방송 화면을 가리지 않도록 개수와 투명도를 낮게 둔다.
+ */
+function CharacterAmbient({ sticker, theme }: { sticker: CharacterStickerDefinition; theme: string }) {
+  const glow = theme === 'NEON' ? '34,211,238' : sticker.palette.glow;
+  return (
+    <>
+      <div
+        className="animate-ambient-haze absolute inset-x-0 bottom-0 h-[45%]"
+        style={{
+          background: `radial-gradient(ellipse 70% 100% at 50% 100%, rgba(${glow},0.28), rgba(${glow},0) 70%)`,
+        }}
+      />
+      {Array.from({ length: 14 }, (_, i) => {
+        const d = 22 + Math.round(rand(i, 71) * 22);
+        return (
+          <span
+            key={`f${i}`}
+            className="animate-confetti-fall absolute top-0"
+            style={{
+              left: `${3 + rand(i, 72) * 94}%`,
+              width: d,
+              height: d,
+              opacity: 0.85,
+              animationDelay: `${(rand(i, 73) * 2.6).toFixed(2)}s`,
+              animationDuration: `${(3.8 + rand(i, 74) * 2.4).toFixed(2)}s`,
+              ['--drift' as string]: `${Math.round((rand(i, 75) - 0.5) * 220)}px`,
+              ['--spin' as string]: `${Math.round((rand(i, 76) - 0.5) * 540)}deg`,
+            }}
+          >
+            <AuraShape
+              kind={i % 3 === 0 ? 'sparkle' : sticker.aura}
+              color={`rgb(${i % 2 ? sticker.palette.accent : sticker.palette.soft})`}
+            />
+          </span>
+        );
+      })}
+      {Array.from({ length: 12 }, (_, i) => {
+        const d = 16 + Math.round(rand(i, 81) * 20);
+        return (
+          <span
+            key={`t${i}`}
+            className="animate-backdrop-twinkle absolute"
+            style={{
+              left: `${4 + rand(i, 82) * 92}%`,
+              top: `${6 + rand(i, 83) * 80}%`,
+              width: d,
+              height: d,
+              animationDelay: `${(rand(i, 84) * 3).toFixed(2)}s`,
+            }}
+          >
+            <AuraShape kind="sparkle" color={`rgb(${sticker.palette.soft})`} />
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * 퍼레이드: 캐릭터 8명이 화면 아래를 왼쪽에서 오른쪽으로 줄지어 행진한다.
+ * 각자 통통 튀며 걷고, 시간차로 출발한다. 이동 거리는 오버레이 기준 폭(--ovw)을 쓴다.
+ */
+function CharacterParade({ edge }: { edge: 'top' | 'bottom' }) {
+  return (
+    <div className={`absolute inset-x-0 h-[190px] ${edge === 'top' ? 'top-[3%]' : 'bottom-[2%]'}`}>
+      {DONAIDO_CHARACTER_IMAGES.map((src, i) => (
+        <div
+          key={src}
+          className="animate-parade-walk absolute bottom-0 left-0"
+          style={{ width: 170, animationDelay: `${(i * 0.42).toFixed(2)}s` }}
+        >
+          <div className="animate-parade-hop" style={{ animationDelay: `${(i * 0.13).toFixed(2)}s` }}>
+            <Image
+              src={src}
+              alt=""
+              width={640}
+              height={640}
+              unoptimized
+              className="h-auto w-full select-none object-contain drop-shadow-[0_12px_16px_rgba(15,10,0,0.25)]"
+            />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -879,7 +879,14 @@ export function OverlayClient({
     // `fixed inset-0` 만으로 방송용(화면 전체)과 캔버스 모드 양쪽 모두 올바르게 채워진다.
     <div className="pointer-events-none fixed inset-0 bg-transparent">
       {/* 파티클은 배너를 끈 구간에서도 재생된다. 캐릭터 스티커는 배너 위 인라인으로 처리. */}
-      {current && !leaving ? <EffectLayer effect={effectOf(current)} theme={themeName} /> : null}
+      {current && !leaving ? (
+        <EffectLayer
+          effect={effectOf(current)}
+          theme={themeName}
+          // 캐릭터 퍼레이드는 알림과 겹치지 않게 반대쪽 가장자리로 지나간다.
+          paradeEdge={align.startsWith('items-end') ? 'top' : 'bottom'}
+        />
+      ) : null}
 
       {/*
         금액별 차등 효과(파티클 폭발 · 캐릭터 등장 · 화면 테두리).

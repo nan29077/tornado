@@ -85,10 +85,9 @@ describe('캐릭터 스티커', () => {
   it('배경 없는 알림에서는 글자 옆에 작게 붙는다', () => {
     // 위에 크게 얹으면 세로로 길어져 방송 화면을 위아래로 가로지른다.
     const src = read(EFFECTS);
-    expect(src).toContain("placement === 'side'");
-    expect(src).toContain('w-[200px]');
-    // 카드형에서 쓰던 크기는 그대로 남는다.
-    expect(src).toContain('w-[260px]');
+    // 옆 배치는 200px, 카드형에서 쓰던 크기(260px)는 그대로 남는다.
+    // (2026-10-01 배경 연출을 붙이면서 클래스 대신 크기 값으로 계산한다)
+    expect(src).toContain("const size = placement === 'side' ? 200 : 260;");
   });
 
   it('알림 화면이 옆 배치로 넘긴다', () => {

@@ -144,6 +144,46 @@ function playCharacterSound(audio: AudioContext, name: string, t: number, peak: 
       tone(audio, { freq: 523.25, start: t + 0.26, duration: 0.8, peak: peak * 0.8 });
       return true;
 
+    case 'DONAIDO_COIN_CLOUD':
+      // 코인 구름: 동전이 찰랑이는 높은 두 음 + 구름처럼 부드러운 여운
+      sequence(audio, t, [1318.51, 1760.0, 1318.51, 2093.0], { step: 0.07, duration: 0.18, peak: peak * 0.7 });
+      tone(audio, { freq: 392.0, start: t + 0.1, duration: 0.8, peak: peak * 0.45, type: 'sine' });
+      return true;
+
+    case 'DONAIDO_HEART_PEEK':
+      // 하트 메시지: 빼꼼 올라오는 글리산도 + 두근 한 번
+      tone(audio, { freq: 330, start: t, duration: 0.28, peak: peak * 0.8, endFreq: 880, type: 'triangle' });
+      tone(audio, { freq: 146.83, start: t + 0.34, duration: 0.2, peak: peak * 0.6, type: 'sine' });
+      tone(audio, { freq: 987.77, start: t + 0.36, duration: 0.5, peak: peak * 0.6 });
+      return true;
+
+    case 'DONAIDO_LETTER_FLY':
+      // 편지 배달: 휙 날아오는 바람 소리 + 도착 알림 두 음
+      noiseBurst(audio, t, 0.32, peak * 0.45);
+      sequence(audio, t + 0.28, [880.0, 1174.66], { step: 0.12, duration: 0.3, peak: peak * 0.85 });
+      return true;
+
+    case 'DONAIDO_FRIENDS':
+      // 친구들 총출동: 세 친구가 차례로 튀어나오는 팝 세 번 + 화음
+      [0, 0.18, 0.36].forEach((d, i) =>
+        tone(audio, { freq: 200 + i * 60, start: t + d, duration: 0.09, peak: peak * 0.8, endFreq: 700 + i * 120, type: 'triangle' }),
+      );
+      sequence(audio, t + 0.5, [523.25, 659.25, 783.99], { step: 0.05, duration: 0.5, peak: peak * 0.6 });
+      return true;
+
+    case 'DONAIDO_PARADE':
+      // 퍼레이드: 행진하듯 경쾌한 리듬
+      sequence(audio, t, [392.0, 523.25, 392.0, 659.25, 523.25, 783.99], {
+        step: 0.12,
+        duration: 0.12,
+        peak: peak * 0.85,
+        type: 'triangle',
+      });
+      noiseBurst(audio, t, 0.06, peak * 0.3);
+      noiseBurst(audio, t + 0.24, 0.06, peak * 0.3);
+      noiseBurst(audio, t + 0.48, 0.06, peak * 0.3);
+      return true;
+
     default:
       return false;
   }
