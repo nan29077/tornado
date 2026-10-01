@@ -1,5 +1,9 @@
 import crypto from 'node:crypto';
 import { env } from './env';
+import { normalizePhone } from './phone-format';
+
+// 클라이언트에서도 쓰는 순수 함수는 phone-format 에 있다. 기존 import 경로를 유지한다.
+export { normalizePhone, phoneTail4 } from './phone-format';
 
 /**
  * 개인정보 / 금융정보 보호 유틸.
@@ -84,12 +88,6 @@ export function sha256(value: string): string {
 }
 
 /** 010-1234-5678 / 01012345678 / +821012345678 → 01012345678 */
-export function normalizePhone(input: string): string {
-  let v = (input || '').replace(/[^0-9+]/g, '');
-  if (v.startsWith('+82')) v = '0' + v.slice(3);
-  else if (v.startsWith('82') && v.length > 10) v = '0' + v.slice(2);
-  return v.replace(/[^0-9]/g, '');
-}
 
 export function phoneHash(phone: string): string {
   return hmac(normalizePhone(phone));
@@ -108,10 +106,6 @@ export function maskPhone(phone: string): string {
  * 마스킹된 값("010-****-1234")과 원문("01012345678") 모두 받는다.
  * 숫자가 4자리 미만이면 빈 문자열을 돌려준다.
  */
-export function phoneTail4(value: string): string {
-  const digits = (value || '').replace(/[^0-9]/g, '');
-  return digits.length >= 4 ? digits.slice(-4) : '';
-}
 
 export function maskName(name: string): string {
   if (!name) return '';

@@ -1,4 +1,5 @@
-import { normalizePhone, phoneTail4 } from '@/lib/crypto';
+// 브라우저 번들에서도 쓰이므로 node:crypto·env 를 끌고 오는 @/lib/crypto 대신 순수 모듈을 쓴다.
+import { normalizePhone, phoneTail4 } from '@/lib/phone-format';
 
 /**
  * 후원자 표시 이름(닉네임) 규칙.
