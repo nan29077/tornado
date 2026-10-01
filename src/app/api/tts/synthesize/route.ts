@@ -33,8 +33,54 @@ export const dynamic = 'force-dynamic';
 /** 한 크리에이터가 1분에 요청할 수 있는 합성 횟수. 재생 실패 재시도까지 감안한 값이다. */
 const RATE_MAX_PER_MIN = 60;
 
-/** 오버레이 이벤트 기록에서 문장을 복원할 수 있는 시간. 인메모리 허가와 같은 값으로 둔다. */
-const DB_GRANT_TTL_MS = 5 * 60 * 1000;
+/**
+ * 오버레이 이벤트 기록에서 문장을 복원할 수 있는 시간.
+ * 2026-10-01: 5분 → 30분. 후원이 몰려 대기열이 길어지면 뒤쪽 알림이 생성 5분 뒤에 재생돼
+ * 합성이 404 를 받고 브라우저 음성으로 넘어가 OBS 가 무음이 됐다.
+ */
+const DB_GRANT_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * 합성 결과 캐시 (OV-3).
+ *
+ * 같은 알림을 여러 화면(OBS + 스튜디오 미리보기 등)이 동시에 받으면 화면마다 클로바를 따로 불렀다.
+ * 비용이 배로 들고, 분당 상한에 걸리면 정작 OBS 가 429 를 받아 무음이 됐다.
+ * 같은 이벤트의 같은 문장은 한 번만 합성하고 10분간 재사용한다. 캐시 적중은 상한을 쓰지 않는다.
+ */
+const AUDIO_CACHE_TTL_MS = 10 * 60 * 1000;
+const AUDIO_CACHE_MAX = 120;
+const audioCache: Map<string, { audio: ArrayBuffer | Uint8Array; at: number }> =
+  ((globalThis as { __donaidoTtsCache?: Map<string, { audio: ArrayBuffer | Uint8Array; at: number }> }).__donaidoTtsCache ??=
+    new Map());
+
+function cacheGet(key: string) {
+  const hit = audioCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > AUDIO_CACHE_TTL_MS) {
+    audioCache.delete(key);
+    return null;
+  }
+  return hit.audio;
+}
+
+function cachePut(key: string, audio: ArrayBuffer | Uint8Array) {
+  audioCache.set(key, { audio, at: Date.now() });
+  while (audioCache.size > AUDIO_CACHE_MAX) {
+    const oldest = audioCache.keys().next().value;
+    if (oldest === undefined) break;
+    audioCache.delete(oldest);
+  }
+}
+
+function audioResponse(audio: ArrayBuffer | Uint8Array) {
+  return new Response(audio as BodyInit, {
+    headers: {
+      'Content-Type': 'audio/mpeg',
+      'Content-Length': String(audio.byteLength),
+      'Cache-Control': 'no-store',
+    },
+  });
+}
 
 /**
  * 합성해도 되는 문장을 찾는다.
@@ -89,6 +135,11 @@ export async function GET(req: Request) {
     return new Response('unauthorized', { status: 401 });
   }
 
+  // 같은 알림을 다른 화면이 이미 합성했으면 그대로 돌려준다(상한을 쓰지 않는다).
+  const cacheKey = `${creatorId}:${eventId}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return audioResponse(cached);
+
   // 토큰이 유출되더라도 과금이 폭주하지 않도록 한 겹 더 둔다.
   const rate = await consumeRateLimit('tts', creatorId, RATE_MAX_PER_MIN, 60);
   if (!rate.ok) {
@@ -137,11 +188,6 @@ export async function GET(req: Request) {
     return new Response(result.message ?? 'tts failed', { status: 502 });
   }
 
-  return new Response(result.audio, {
-    headers: {
-      'Content-Type': 'audio/mpeg',
-      'Content-Length': String(result.audio.byteLength),
-      'Cache-Control': 'no-store',
-    },
-  });
+  cachePut(cacheKey, result.audio);
+  return audioResponse(result.audio);
 }

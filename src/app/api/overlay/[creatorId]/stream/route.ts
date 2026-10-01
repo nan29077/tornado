@@ -110,6 +110,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ creatorId: stri
 
       const send = (event: string, data: unknown, id?: string) => {
         if (closed) return;
+        // 미리보기 전용 알림은 방송용(OBS) 연결에 보내지 않는다(OV-6).
+        if (event === 'donation' && !preview && (data as { previewOnly?: boolean } | null)?.previewOnly) return;
         if (event === 'donation' && id) {
           if (sentIds.has(id)) return;
           sentIds.add(id);

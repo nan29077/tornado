@@ -68,6 +68,11 @@ export interface OverlayEventPayload {
   enabled: boolean;
   occurredAt: string;
   isTest: boolean;
+  /**
+   * 스튜디오 미리보기에만 보내는 알림(OV-6). 방송용(OBS) 연결에는 전달하지 않는다.
+   * 금액 구간 [미리보기]가 경고 없이 실제 방송에 나가던 문제를 막는다.
+   */
+  previewOnly?: boolean;
 }
 
 const CHANNEL = 'tornado:overlay';
@@ -101,8 +106,12 @@ export interface OverlayTtsGrant {
   expiresAt: number;
 }
 
-/** 이벤트가 화면에 뜨고 재생될 때까지 필요한 시간. 넉넉히 잡아도 5분이면 충분하다. */
-const TTS_GRANT_TTL_MS = 5 * 60 * 1000;
+/**
+ * 이벤트가 화면에 뜨고 재생될 때까지 필요한 시간.
+ * 2026-10-01: 5분 → 30분(OV-12). 후원이 몰리면 대기열 뒤쪽 알림이 5분 넘게 기다렸다가 재생되는데,
+ * 그때 허가가 만료돼 합성이 거절되고 OBS 가 무음이 됐다.
+ */
+const TTS_GRANT_TTL_MS = 30 * 60 * 1000;
 const TTS_GRANT_MAX = 500;
 
 const ttsGrants = globalForBus.overlayTtsGrants ?? new Map<string, OverlayTtsGrant>();

@@ -527,6 +527,7 @@ export async function retryFailedYouTubeDeliveries(now = new Date()): Promise<nu
 export async function sendTestOverlay(
   creatorId: string,
   input: { donorName: string; amount: bigint; message: string },
+  opts: { previewOnly?: boolean } = {},
 ) {
   const creator = await prisma.creatorProfile.findUnique({
     where: { id: creatorId },
@@ -566,6 +567,7 @@ export async function sendTestOverlay(
     effectLevel: effectLevelOfRank(tierRank),
     occurredAt: new Date().toISOString(),
     isTest: true,
+    ...(opts.previewOnly ? { previewOnly: true } : {}),
   };
 
   // 발행이 먼저다.

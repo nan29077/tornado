@@ -750,8 +750,13 @@ export async function previewOverlayTierAction(
       return { ok: false, message: '등록한 금칙어가 들어 있어 보내지 않았습니다. 실제 후원도 같은 기준으로 차단됩니다.' };
     }
 
-    await sendTestOverlay(creatorId, { donorName: safe.donorName, amount, message: safe.message });
-    return { ok: true, message: `${formatWon(amount)} 미리보기를 오버레이로 보냈습니다.` };
+    // 구간 미리보기는 스튜디오 미리보기에만 보낸다. 방송(OBS) 화면에는 나가지 않는다(OV-6).
+    await sendTestOverlay(
+      creatorId,
+      { donorName: safe.donorName, amount, message: safe.message },
+      { previewOnly: true },
+    );
+    return { ok: true, message: `${formatWon(amount)} 미리보기를 보냈습니다. 방송 화면(OBS)에는 나가지 않습니다.` };
   });
 }
 

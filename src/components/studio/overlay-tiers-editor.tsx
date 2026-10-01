@@ -614,7 +614,8 @@ function PreviewModal({
           </div>
 
           <p className="mt-2 text-[12px] leading-relaxed text-ink-400">
-            체커보드 무늬는 투명 배경을 보여 주기 위한 것으로, OBS·PRISM 에서는 방송 화면이 그대로 비칩니다. 브라우저
+            이 미리보기는 <strong className="text-ink-600">방송(OBS·PRISM) 화면에는 나가지 않고</strong> 스튜디오에서만
+            보입니다. 체커보드 무늬는 투명 배경을 보여 주기 위한 것으로, OBS·PRISM 에서는 방송 화면이 그대로 비칩니다. 브라우저
             정책에 따라 미리보기 창에서는 음성이 나오지 않을 수 있습니다. 음성은 각 구간의 [이 목소리로 들어보기]로
             확인해 주세요.
           </p>

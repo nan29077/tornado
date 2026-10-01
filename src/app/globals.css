@@ -865,7 +865,7 @@ a {
   0% { transform: translateX(-240px); }
   100% { transform: translateX(calc(var(--ovw, 100vw) + 60px)); }
 }
-.animate-parade-walk { animation: donaido-parade-walk 8s linear infinite both; }
+.animate-parade-walk { animation: donaido-parade-walk 8s linear 1 both; }
 @keyframes donaido-parade-hop {
   0%, 100% { transform: translateY(0) rotate(-5deg); }
   50% { transform: translateY(-28px) rotate(5deg); }

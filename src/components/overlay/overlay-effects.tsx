@@ -68,10 +68,11 @@ export function EffectLayer({
   // 여기서는 캐릭터 효과가 재생되는 동안 **화면 전체에 은은한 배경 연출**(반짝이·보케·소품 비)을
   // 깔고, 퍼레이드 효과면 화면 아래 행진을 그린다 (2026-10-01).
   if (characterSticker) {
+    // 퍼레이드는 CharacterParadeLayer 가 알림과 별도 수명으로 그린다(OV-8). paradeEdge 는 호환용이다.
+    void paradeEdge;
     return (
       <div aria-hidden className={`pointer-events-none fixed inset-0 overflow-hidden ${themeClass}`}>
         <CharacterAmbient sticker={characterSticker} theme={theme} />
-        {characterSticker.ensemble === 'parade' ? <CharacterParade edge={paradeEdge} /> : null}
       </div>
     );
   }
@@ -286,10 +287,13 @@ export function CharacterStickerInline({
    * 방송 화면을 위아래로 가로지른다. 투네이션이 뱃지를 첫 줄 왼쪽에 두는 것과 같은 이유다.
    */
   placement = 'stack',
+  /** 알림이 퇴장 중이면 카드와 함께 사라진다(카드형). 배경 없는 알림은 부모가 함께 사라진다. */
+  leaving = false,
 }: {
   effect: string;
   theme?: string;
   placement?: 'stack' | 'side';
+  leaving?: boolean;
 }) {
   const name = (effect || 'DEFAULT').toUpperCase() as EffectName;
   const characterSticker = findCharacterSticker(name);
@@ -313,7 +317,7 @@ export function CharacterStickerInline({
     <div
       aria-hidden
       // isolate: 배경 연출(-z-10)이 이 묶음 안에서만 캐릭터 뒤로 깔리게 한다.
-      className={`relative isolate shrink-0 ${themeClass}`}
+      className={`relative isolate shrink-0 ${themeClass} ${leaving ? 'animate-tornado-out' : ''}`}
       style={{ width: friends ? Math.round(size * 1.7) : size, height: size }}
     >
       <CharacterBackdrop palette={characterSticker.palette} size={size} theme={theme} />
@@ -339,7 +343,7 @@ export function CharacterStickerInline({
           </div>
         </div>
       </div>
-      <CharacterAura sticker={characterSticker} size={size} />
+      <CharacterAura sticker={characterSticker} size={size} placement={placement} />
     </div>
   );
 }
@@ -491,13 +495,24 @@ function CharacterBackdrop({ palette, size, theme }: { palette: StickerPalette; 
  * 캐릭터 주변으로 소품이 튀어나와 둥실 떠다닌다.
  * 등장 순간 중심에서 바깥으로 퍼진 뒤(--ax, --ay) 제자리에서 위아래로 떠 있는다.
  */
-function CharacterAura({ sticker, size }: { sticker: CharacterStickerDefinition; size: number }) {
+function CharacterAura({
+  sticker,
+  size,
+  placement = 'stack',
+}: {
+  sticker: CharacterStickerDefinition;
+  size: number;
+  placement?: 'stack' | 'side';
+}) {
   const count = sticker.ensemble ? 9 : 7;
+  // 글자 왼쪽에 붙는 배치에서는 오른쪽(글자 쪽)으로 소품을 보내지 않는다(OV-2).
+  const fromDeg = placement === 'side' ? -215 : -200;
+  const spanDeg = placement === 'side' ? 155 : 220;
   return (
     <div className="pointer-events-none absolute left-1/2 top-1/2 z-10" style={{ width: 0, height: 0 }}>
       {Array.from({ length: count }, (_, i) => {
         // 위쪽 반원 + 양옆에 고르게 흩뿌린다(아래쪽은 배너와 겹치므로 피한다).
-        const angle = (-200 + (220 / (count - 1)) * i + (rand(i, 61) - 0.5) * 14) * (Math.PI / 180);
+        const angle = (fromDeg + (spanDeg / (count - 1)) * i + (rand(i, 61) - 0.5) * 10) * (Math.PI / 180);
         const radius = size * (0.58 + rand(i, 62) * 0.22);
         const d = Math.round(size * (0.12 + rand(i, 63) * 0.07));
         const color =
@@ -675,6 +690,22 @@ function CharacterAmbient({ sticker, theme }: { sticker: CharacterStickerDefinit
  * 퍼레이드: 캐릭터 8명이 화면 아래를 왼쪽에서 오른쪽으로 줄지어 행진한다.
  * 각자 통통 튀며 걷고, 시간차로 출발한다. 이동 거리는 오버레이 기준 폭(--ovw)을 쓴다.
  */
+/** 퍼레이드 전체가 끝나는 데 걸리는 시간(ms) — 마지막 캐릭터 출발 지연 + 걷는 시간 + 여유. */
+export const PARADE_TOTAL_MS = Math.round((DONAIDO_CHARACTER_IMAGES.length - 1) * 420 + 8000 + 400);
+
+/**
+ * 퍼레이드는 알림과 **별도의 수명**으로 끝까지 걷는다(OV-8).
+ * 예전에는 알림이 퇴장하는 순간 행진 중이던 캐릭터 8명이 한 프레임에 사라졌다.
+ * overlay-client 가 알림과 따로 들고 있다가 PARADE_TOTAL_MS 뒤에 내린다.
+ */
+export function CharacterParadeLayer({ edge }: { edge: 'top' | 'bottom' }) {
+  return (
+    <div aria-hidden className="pointer-events-none fixed inset-0 overflow-hidden">
+      <CharacterParade edge={edge} />
+    </div>
+  );
+}
+
 function CharacterParade({ edge }: { edge: 'top' | 'bottom' }) {
   return (
     <div className={`absolute inset-x-0 h-[190px] ${edge === 'top' ? 'top-[3%]' : 'bottom-[2%]'}`}>

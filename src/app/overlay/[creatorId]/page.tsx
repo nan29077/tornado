@@ -38,6 +38,8 @@ export default async function OverlayPage({
   const token = one(sp.token);
   const preview = one(sp.preview) === '1';
   const debug = one(sp.debug) === '1';
+  // 미리보기 전용: audio=0 이면 소리를 내지 않는다(여러 틀이 겹쳐 소리가 몇 겹으로 나는 것을 막는다).
+  const muted = preview && one(sp.audio) === '0';
   // 세로형(휴대폰) 미리보기 틀에서는 방송 화면을 위쪽에 붙인다.
   const align = one(sp.align) === 'top' ? 'top' : 'center';
 
@@ -71,6 +73,7 @@ export default async function OverlayPage({
       textAnim={setting?.textAnim ?? 'AUTO'}
       layout={clampOverlayLayout(setting)}
       debug={debug}
+      muted={muted}
     />
   );
 

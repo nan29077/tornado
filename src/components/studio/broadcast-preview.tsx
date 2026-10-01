@@ -1384,7 +1384,9 @@ export function BroadcastPreview({
   const donationUrl = `/overlay/${encodeURIComponent(creatorId)}?preview=1`;
   const gameUrl = `/overlay/${encodeURIComponent(creatorId)}/game?preview=1${sampleGameId ? `&sample=${encodeURIComponent(sampleGameId)}` : ''}`;
   // 세로형 틀에서는 방송 화면을 위쪽에 붙인다(유튜브 모바일 실제 배치).
-  const donationMobileUrl = `${donationUrl}&align=top`;
+  // 소리는 PC 틀 하나만 낸다. 모바일·확대 틀은 같은 알림을 동시에 받으므로 음소거한다(OV-3).
+  const donationMobileUrl = `${donationUrl}&align=top&audio=0`;
+  const donationZoomUrl = `${donationUrl}&audio=0`;
   const gameMobileUrl = `${gameUrl}&align=top`;
 
   /**
@@ -1759,7 +1761,7 @@ export function BroadcastPreview({
             >
               <Layers
                 frame="zoom"
-                donationUrl={donationUrl}
+                donationUrl={donationZoomUrl}
                 gameUrl={gameUrl}
                 showDonation={showDonation}
                 showGame={showGame}

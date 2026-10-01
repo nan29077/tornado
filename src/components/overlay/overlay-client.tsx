@@ -5,6 +5,8 @@ import { formatNumber } from '@/lib/money';
 import {
   EffectLayer,
   CharacterStickerInline,
+  CharacterParadeLayer,
+  PARADE_TOTAL_MS,
   isCharacterStickerEffect,
   LevelEffectStage,
   useTypewriter,
@@ -356,6 +358,7 @@ export function OverlayClient({
   textAnim = DEFAULT_OVERLAY_TEXT_ANIM,
   layout = DEFAULT_OVERLAY_LAYOUT,
   debug = false,
+  muted = false,
 }: {
   creatorId: string;
   token: string;
@@ -371,9 +374,26 @@ export function OverlayClient({
   /** 저장된 배치(위치 미세 조정 · 크기 배율). 이벤트에 실려 온 값이 있으면 그쪽이 우선한다. */
   layout?: OverlayLayout;
   debug?: boolean;
+  /**
+   * 소리를 내지 않는 화면(OV-3). 스튜디오 미리보기는 PC·모바일·확대 틀이 동시에 떠 있어
+   * 알림 한 건에 효과음·TTS 가 2~3겹으로 났다. 보이는 PC 틀 하나만 소리를 내고 나머지는 끈다.
+   */
+  muted?: boolean;
 }) {
   const [current, setCurrent] = React.useState<OverlayPayload | null>(null);
   const [leaving, setLeaving] = React.useState(false);
+  /**
+   * 퍼레이드는 알림과 별도 수명으로 끝까지 걷는다(OV-8).
+   * 알림이 퇴장해도 행진을 중간에 끊지 않고, PARADE_TOTAL_MS 뒤에 스스로 내린다.
+   */
+  const [parade, setParade] = React.useState<{ id: string; position?: string } | null>(null);
+  const paradeTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  React.useEffect(
+    () => () => {
+      if (paradeTimer.current) clearTimeout(paradeTimer.current);
+    },
+    [],
+  );
   const [link, setLink] = React.useState<LinkState>({ phase: 'connecting' });
   const [queueLen, setQueueLen] = React.useState(0);
 
@@ -502,6 +522,7 @@ export function OverlayClient({
       });
 
     const speak = async (payload: OverlayPayload): Promise<void> => {
+      if (muted) return;
       const tts = payload.tts;
       if (!tts || !tts.enabled || !tts.text) return;
       if (
@@ -525,9 +546,14 @@ export function OverlayClient({
       // 콤보를 먼저 센다. setCurrent 와 같은 갱신으로 묶여 첫 화면부터 올바른 배율로 그려진다.
       registerComboRef.current(next.donorName);
       setCurrent(next);
+      if (effectOf(next) === 'DONAIDO_PARADE') {
+        if (paradeTimer.current) clearTimeout(paradeTimer.current);
+        setParade({ id: next.eventId, position: next.position });
+        paradeTimer.current = setTimeout(() => setParade(null), PARADE_TOTAL_MS);
+      }
 
       // 효과음은 효과 애니메이션과 같은 시점에 시작한다. 실패해도 알림 재생에 영향을 주지 않는다.
-      if (next.soundEnabled !== false) playEffectSound(effectOf(next), next.soundVolume ?? 80);
+      if (!muted && next.soundEnabled !== false) playEffectSound(effectOf(next), next.soundVolume ?? 80);
 
       // 대기열이 밀려 있으면 표시 시간을 줄여 빠르게 소화한다.
       // 후원자가 방송을 떠난 뒤에 알림이 뜨는 것보다, 조금 짧게라도 제때 뜨는 편이 낫다.
@@ -591,7 +617,7 @@ export function OverlayClient({
         }
       }
     };
-  }, [defaultDurationMs, creatorId, token, preview]);
+  }, [defaultDurationMs, creatorId, token, preview, muted]);
 
   // --------------------------------------------------------------- SSE 구독
   React.useEffect(() => {
@@ -883,8 +909,18 @@ export function OverlayClient({
         <EffectLayer
           effect={effectOf(current)}
           theme={themeName}
-          // 캐릭터 퍼레이드는 알림과 겹치지 않게 반대쪽 가장자리로 지나간다.
-          paradeEdge={align.startsWith('items-end') ? 'top' : 'bottom'}
+        />
+      ) : null}
+
+      {/* 캐릭터 퍼레이드: 알림과 겹치지 않게 반대쪽 가장자리로, 알림과 별도 수명으로 지나간다. */}
+      {parade ? (
+        <CharacterParadeLayer
+          key={parade.id}
+          edge={
+            (positionClass[parade.position || position] ?? positionClass.BOTTOM_CENTER)!.startsWith('items-end')
+              ? 'top'
+              : 'bottom'
+          }
         />
       ) : null}
 
@@ -935,7 +971,12 @@ export function OverlayClient({
                 theme={plainTheme}
                 textAnim={activeTextAnim}
                 sticker={
-                  current && isCharacterStickerEffect(effectOf(current)) && !leaving ? (
+                  /*
+                    퇴장 중에도 캐릭터를 남겨 둔다(OV-1). 예전에는 퇴장이 시작되자마자 캐릭터가 빠져
+                    글자가 왼쪽으로 200px 넘게 순간이동했다. 캐릭터는 글자와 같은 묶음 안에 있어
+                    함께 사라진다.
+                  */
+                  current && isCharacterStickerEffect(effectOf(current)) ? (
                     <CharacterStickerInline
                       effect={effectOf(current)}
                       theme={plainTheme}
@@ -947,8 +988,9 @@ export function OverlayClient({
             ) : (
               <>
                 {/* 카드형: 캐릭터 스티커를 배너 바로 위에 얹는다 (예전 방식 그대로) */}
-                {current && isCharacterStickerEffect(effectOf(current)) && !leaving ? (
-                  <CharacterStickerInline effect={effectOf(current)} theme={themeName} />
+                {/* 퇴장 중에도 남겨 두고 카드와 함께 사라지게 한다(OV-1). */}
+                {current && isCharacterStickerEffect(effectOf(current)) ? (
+                  <CharacterStickerInline effect={effectOf(current)} theme={themeName} leaving={leaving} />
                 ) : null}
                 <DonationCard
                   key={shown.eventId}
@@ -1065,7 +1107,8 @@ function PlainDonationAlert({
       {/* 캐릭터는 첫 줄 왼쪽에 붙는다. 없는 효과(파티클 계열)면 아무것도 오지 않는다. */}
       {sticker}
 
-      <div className="min-w-0 flex-1">
+      {/* 글자 칸을 캐릭터 배경·소품보다 위에 그린다(OV-2). 소품이 첫 글자를 가리지 않는다. */}
+      <div className="relative z-10 min-w-0 flex-1">
         {payload.isTest ? (
           <span className="mb-2 inline-block rounded-lg bg-black/55 px-3 py-1 text-[26px] font-black text-white">
             테스트
