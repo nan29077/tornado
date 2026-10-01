@@ -69,3 +69,18 @@ export function quietRedisWhenUnavailable(
     if (client.status === 'end') giveUp();
   });
 }
+
+/**
+ * ioredis 재접속 정책 (2026-10-01).
+ *
+ * - 인메모리 폴백을 허용한 환경(로컬·테스트): 5번 시도 후 포기한다. Redis 가 아예 없는
+ *   로컬에서 수천 번 재시도하며 로그와 EPIPE 를 쏟아내지 않게 하기 위함이다.
+ * - 운영(폴백 없음): **포기하지 않는다.** 예전에는 운영도 5번 뒤 `null` 을 돌려
+ *   ElastiCache 장애조치(수십 초) 한 번에 클라이언트가 영구히 닫혔고, 프로세스를
+ *   재시작할 때까지 한도 검사·잠금·오버레이 전파가 모두 실패했다.
+ *   최대 10초 간격으로 계속 재접속한다. 붙으면 구독도 ioredis 가 자동으로 복구한다.
+ */
+export function redisRetryStrategy(times: number): number | null {
+  if (env.allowInMemoryFallback) return times > 5 ? null : Math.min(times * 300, 2000);
+  return Math.min(times * 500, 10_000);
+}

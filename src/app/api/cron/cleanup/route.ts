@@ -108,7 +108,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, message: '인증되지 않은 요청입니다.' }, { status: 401 });
   }
 
-  const locked = await kv.setnx(LOCK_KEY, String(Date.now()), LOCK_TTL_SEC).catch(() => true);
+  // 잠금 값에 이번 실행의 고유 토큰을 넣어, 끝날 때 **자기 잠금만** 해제한다.
+  // 예전에는 잠금 시간(55초)을 넘긴 실행이 끝나면서 다음 실행의 잠금을 지웠다.
+  // Redis 장애 시에는 그대로 실행한다 — 고착 건 복구가 멈추는 편이 더 위험하고,
+  // 결제 재시도는 executePayment 의 DB 선점(2026-10-01)으로 중복 실행이 막혀 있다.
+  const lockToken = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  const locked = await kv.setnx(LOCK_KEY, lockToken, LOCK_TTL_SEC).catch(() => true);
   if (!locked) {
     return NextResponse.json({ ok: true, skipped: true, message: '이전 실행이 아직 진행 중입니다.' });
   }
@@ -167,6 +172,7 @@ export async function GET(req: Request) {
       steps,
     });
   } finally {
-    await kv.del(LOCK_KEY).catch(() => undefined);
+    const current = await kv.get(LOCK_KEY).catch(() => null);
+    if (current === lockToken) await kv.del(LOCK_KEY).catch(() => undefined);
   }
 }

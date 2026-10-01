@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import Redis from 'ioredis';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { quietRedisWhenUnavailable } from '@/server/redis-quiet';
+import { quietRedisWhenUnavailable, redisRetryStrategy } from '@/server/redis-quiet';
 
 /**
  * 오버레이 실시간 이벤트 버스 (SSE 백엔드).
@@ -178,8 +178,8 @@ function ensureRedis() {
   try {
     // redis.ts 와 동일한 안전 설정:
     //  - enableOfflineQueue: false  → 연결 끊김 중 쌓인 명령을 flush 할 때 EPIPE 가 프로세스 예외로 터지는 것을 방지
-    //  - retryStrategy 5회 제한     → 무한 재접속 루프 차단 (Redis 미실행 환경에서 수천 번 재시도하며 EPIPE 생성)
-    const retryStrategy = (times: number) => (times > 5 ? null : Math.min(times * 300, 2000));
+    //  - retryStrategy: 로컬은 5회 제한(EPIPE 폭주 방지), 운영은 무제한 재접속 (redisRetryStrategy)
+    const retryStrategy = redisRetryStrategy;
     const pub = new Redis(env.redisUrl, { maxRetriesPerRequest: 2, enableOfflineQueue: false, retryStrategy });
     const sub = new Redis(env.redisUrl, { maxRetriesPerRequest: 2, enableOfflineQueue: false, retryStrategy });
     quietRedisWhenUnavailable(pub, '후원 알림 발행', () => {

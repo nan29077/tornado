@@ -183,6 +183,11 @@ interface AssemblyResult {
   memberKeys: string[];
   /** 로그·폴링 결과에 남길 설명 */
   detail: string;
+  /**
+   * 같은 묶음이 이미 처리(완료 '9')됐는데 늦게 도착한 조각이다.
+   * 다시 조립하면 머리 조각이 바뀌어 멱등키가 달라지고 **같은 문자에서 후원이 두 건** 생긴다.
+   */
+  alreadyProcessed?: boolean;
 }
 
 /**
@@ -222,6 +227,24 @@ async function assembleFragments(suffix: string, row: EmmaMoRow): Promise<Assemb
 
   const ordered = [...fragments].sort((a, b) => Number(a.ems_seq ?? 0) - Number(b.ems_seq ?? 0));
   const memberKeys = ordered.map((f) => f.mo_key);
+
+  /**
+   * 늦게 도착한 조각 차단 (2026-10-01).
+   *
+   * 조각이 다 오지 않은 채 대기 상한(180초)이 지나면 있는 조각만으로 후원을 만든다.
+   * 그 뒤 빠졌던 조각이 도착하면 예전에는 묶음을 다시 조립했는데, 머리 조각(=멱등키)이
+   * 달라져 같은 문자에서 후원이 한 건 더 생겼다(PIN 링크 두 번, DIRECT_TRIGGER 면 두 번 출금).
+   * 묶음 안에 이미 완료된 조각이 있으면 이번 조각은 처리하지 않고 완료로만 표시한다.
+   */
+  const alreadyDone = ordered.some((f) => f.mo_key !== row.mo_key && f.msg_status === EMMA_MO_STATUS.DONE);
+  if (alreadyDone) {
+    return {
+      ready: false,
+      alreadyProcessed: true,
+      memberKeys: [row.mo_key],
+      detail: `MMS_LATE_FRAGMENT 이미 처리된 묶음(ems_id ${emsId})의 늦은 조각`,
+    };
+  }
   const complete = ordered.length >= total;
 
   if (!complete) {
@@ -422,6 +445,18 @@ export async function pollEmmaMo(handler: EmmaMoHandler): Promise<EmmaPollResult
         }
 
         if (assembly.memberKeys.length > 0) memberKeys = assembly.memberKeys;
+
+        if (assembly.alreadyProcessed) {
+          await setStatus(suffix, moKey, EMMA_MO_STATUS.DONE);
+          await clearAttempts(moKey);
+          result.skipped++;
+          result.details.push({ moKey, outcome: 'skipped', detail: assembly.detail });
+          logger.warn('EMMA MMS 늦은 조각 — 이미 처리된 묶음이라 후원을 다시 만들지 않습니다', {
+            moKey,
+            detail: assembly.detail,
+          });
+          continue;
+        }
 
         if (!assembly.ready) {
           // 아직 조각이 다 오지 않았다. 다음 폴링에서 다시 본다.

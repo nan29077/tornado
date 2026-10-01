@@ -1,7 +1,7 @@
 import Redis from 'ioredis';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { quietRedisWhenUnavailable } from '@/server/redis-quiet';
+import { quietRedisWhenUnavailable, redisRetryStrategy } from '@/server/redis-quiet';
 
 /**
  * Redis (ElastiCache) 클라이언트.
@@ -213,7 +213,7 @@ function build(): KvStore {
       lazyConnect: false,
       // 오프라인 큐를 끄면 연결 불가 시 즉시 에러가 나므로 폴백이 빠르게 동작한다
       enableOfflineQueue: !env.allowInMemoryFallback,
-      retryStrategy: (times) => (times > 5 ? null : Math.min(times * 300, 2000)),
+      retryStrategy: redisRetryStrategy,
     });
     /**
      * 개별 연결 오류는 찍지 않는다. Redis 가 없는 로컬에서는 같은 줄이 수십 번 쌓여

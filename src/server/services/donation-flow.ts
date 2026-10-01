@@ -569,10 +569,36 @@ async function processMoRow(
   // (5) 후원 거래 생성 (멱등)
   const idem = await acquireIdempotency('donation', `${creator.id}:${inbound.providerMessageId}`);
   if (idem.status === 'DUPLICATE') {
+    /**
+     * 멱등키는 있는데 연결된 후원이 없다 = 앞선 처리가 키만 잡고 중단됐다(2026-10-01).
+     *
+     * 예전에는 이것도 "이미 생성됨" 으로 끝냈다. EMMA 폴러는 이를 완료로 받아 원본을 '9' 로
+     * 바꾸고, 그 문자는 다시는 처리되지 않았다(후원자는 문자 요금만 내고 후원은 없음).
+     * 수신 로그를 ERROR 로 남기고 "나중에 다시" 를 돌려준다. 멱등키는 정리 배치가
+     * 수신 로그 복구 기준(5분)보다 먼저 풀어 준다(releaseStaleIdempotencyKeys, 4분).
+     */
+    if (!idem.resourceId) {
+      await prisma.moInboundMessage
+        .updateMany({
+          where: { id: moRow.id, donation: null },
+          data: {
+            result: 'ERROR',
+            resultDetail: '이전 처리가 중단되어 재처리를 기다립니다(멱등키 해제 대기).',
+            processedAt: new Date(),
+          },
+        })
+        .catch(() => undefined);
+      return {
+        result: 'DUPLICATE',
+        moMessageId: moRow.id,
+        retryLater: true,
+        message: '직전 처리가 아직 끝나지 않았습니다. 잠시 후 다시 처리됩니다.',
+      };
+    }
     return {
       result: 'DUPLICATE',
       moMessageId: moRow.id,
-      donationId: idem.resourceId ?? undefined,
+      donationId: idem.resourceId,
       message: '이미 생성된 후원 거래입니다.',
     };
   }
@@ -947,6 +973,12 @@ const COMPLETED_PAYMENT_STATUSES: DonationStatus[] = [
 ];
 
 /**
+ * 결제 진행권 리스 시간. 이 시간 안에 같은 후원에 대한 두 번째 실행은 진행하지 않는다.
+ * 정리 배치의 고착 판정(5분)보다 짧아야 고착 건이 다시 잡힌다.
+ */
+const PAYMENT_CLAIM_LEASE_MS = 3 * 60_000;
+
+/**
  * 결제를 실행하면 안 되는 종료 상태 (P-1).
  * 환불·차단·실패로 끝난 건이 어떤 경로로든 다시 승인되지 않게 막는다.
  */
@@ -1020,6 +1052,41 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
   // 뒤 요청은 앞 트랜잭션이 끝날 때까지 대기했다가, 예약이 반영된 집계를 보고 한도 판정을 받는다.
   const reservedAt = new Date();
   const decision = await prisma.$transaction(async (tx) => {
+    /**
+     * **결제 진행권 선점 (2026-10-01).**
+     *
+     * 예전에는 진행 중(PENDING_PAYMENT) 상태를 막지 않아, PIN 콜백·정리 배치·관리자 재시도가
+     * 겹치면 같은 결제 트랜잭션(같은 주문번호)으로 PG 승인이 **동시에 두 번** 나갔다.
+     * PG 가 중복 주문을 거절하면 늦게 끝난 쪽이 이미 승인된 건을 실패로 덮었고,
+     * 주문번호로 중복을 막지 않는 PG 라면 실제 이중 출금이었다.
+     *
+     * 후원 행을 조건부 갱신으로 PENDING_PAYMENT 로 바꾼 쪽만 진행한다.
+     * 이미 PENDING_PAYMENT 인 건은 마지막 갱신이 리스 시간보다 오래된 경우(= 앞선 시도가
+     * 중단된 고착 건)에만 다시 잡을 수 있다. 정리 배치의 고착 기준(5분)보다 짧게 둔다.
+     */
+    const leaseCutoff = new Date(reservedAt.getTime() - PAYMENT_CLAIM_LEASE_MS);
+    const claimed = await tx.donation.updateMany({
+      where: {
+        id: donationId,
+        status: { notIn: [...COMPLETED_PAYMENT_STATUSES, ...NON_PAYABLE_STATUSES] },
+        OR: [{ status: { not: 'PENDING_PAYMENT' } }, { updatedAt: { lt: leaseCutoff } }],
+      },
+      data: { status: 'PENDING_PAYMENT', statusReason: '결제 승인 요청' },
+    });
+    if (claimed.count === 0) {
+      return { limit: null, txn: null, alreadyApproved: false, inFlight: true as const };
+    }
+    await tx.donationStatusLog.create({
+      data: {
+        id: newId(),
+        donationId,
+        fromStatus: donation.status,
+        toStatus: 'PENDING_PAYMENT',
+        reason: '결제 승인 요청',
+        actor: 'system',
+      },
+    });
+
     const blockedNow = await tx.blockedDonor.findUnique({
       where: { creatorId_donorId: { creatorId: donation.creatorId, donorId: donor.id } },
     });
@@ -1032,14 +1099,24 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
       consumeVelocity: false,
       tx,
     });
-    if (!limit.ok) return { limit, txn: null, alreadyApproved: false };
+    if (!limit.ok) return { limit, txn: null, alreadyApproved: false, inFlight: false as const };
 
     // 결제 트랜잭션은 거래당 1건만 생성한다(주문번호를 멱등키로 재사용).
     const existing = await tx.paymentTransaction.findFirst({
       where: { donationId },
       orderBy: { requestedAt: 'desc' },
     });
-    if (existing?.status === 'APPROVED') return { limit, txn: existing, alreadyApproved: true };
+    if (existing?.status === 'APPROVED') {
+      return { limit, txn: existing, alreadyApproved: true, inFlight: false as const };
+    }
+    /**
+     * 결과 미확인(UNKNOWN)·타임아웃(TIMEOUT) 건은 다시 승인하지 않는다.
+     * 실제로 출금됐을 수 있어, 같은 주문번호로 또 요청하면 이중 출금 위험이 있다.
+     * 이 건들은 관리자 수동 대사 큐(admin/payments)에서 확정한다.
+     */
+    if (existing && (existing.status === 'UNKNOWN' || existing.status === 'TIMEOUT')) {
+      return { limit, txn: existing, alreadyApproved: false, inFlight: false as const, needsReview: true as const };
+    }
 
     // 이 거래(주문번호)로 집계를 이미 예약해 뒀는지는 새 결제 트랜잭션 행을 만드는지 여부로 판단한다.
     // 기존 행을 재사용하는 경우는 이전 시도(승인 대기 중 크래시 등)가 이미 예약을 마친 뒤이므로,
@@ -1063,7 +1140,7 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
       // 이 건이 빠진 집계를 읽고 함께 통과해 한도를 넘긴다. 실패하면 아래에서 되돌린다.
       await commitCounters(donor.id, donation.creatorId, donation.amount, reservedAt, tx);
     }
-    return { limit, txn: row, alreadyApproved: false };
+    return { limit, txn: row, alreadyApproved: false, inFlight: false as const };
   }, {
     // 기본값(5초)에 기대지 않고 명시한다.
     // 이 트랜잭션은 후원자 행을 FOR UPDATE 로 잠그므로, 같은 후원자가 연속으로 누르면
@@ -1077,7 +1154,28 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
   // executePayment 를 다시 불러도 안전(재예약되지 않음)하게 했으므로, 그 상태로 멈춘 건은
   // reconcileStuckPendingPayments(정리 배치, /api/cron/cleanup) 가 주기적으로 재시도한다(M-2).
 
-  const limitNow = decision.limit;
+  if (decision.inFlight) {
+    // 다른 실행이 이 후원의 결제를 진행 중이다. 같은 주문번호로 승인을 또 보내지 않는다.
+    logger.warn('이미 결제가 진행 중인 후원에 executePayment 가 다시 호출되었습니다.', { donationId });
+    return {
+      ok: false,
+      status: 'PENDING_PAYMENT',
+      message: '결제를 처리하고 있습니다. 잠시 후 결과를 문자로 안내드립니다.',
+    };
+  }
+  if ('needsReview' in decision && decision.needsReview) {
+    logger.warn('결과 미확인 결제 건은 자동 재승인하지 않습니다(수동 대사 대기).', {
+      donationId,
+      transactionId: decision.txn?.id,
+    });
+    return {
+      ok: false,
+      status: 'PENDING_PAYMENT',
+      message: '결제 결과를 확인하는 중입니다. 확인되는 대로 문자로 안내드립니다.',
+    };
+  }
+
+  const limitNow = decision.limit!;
   if (!limitNow.ok) {
     await setStatus(donationId, 'LIMIT_BLOCKED', `${limitNow.code}: ${limitNow.message}`);
     await prisma.riskDetection.create({
@@ -1104,8 +1202,7 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
     return { ok: true, status: 'SETTLEMENT_PENDING', message: '이미 승인된 결제입니다.' };
   }
   const txn = decision.txn!;
-
-  await setStatus(donationId, 'PENDING_PAYMENT', '결제 승인 요청');
+  // 상태 전이(PENDING_PAYMENT)와 이력은 위 선점 트랜잭션에서 이미 기록했다.
 
   const adapter = getPaymentAdapter();
   const started = Date.now();
@@ -1144,7 +1241,10 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
       },
     });
     attemptNo += 1;
-    await prisma.paymentTransaction.update({ where: { id: txn.id }, data: { status: 'TIMEOUT' } });
+    await prisma.paymentTransaction.updateMany({
+      where: { id: txn.id, status: { not: 'APPROVED' } },
+      data: { status: 'TIMEOUT' },
+    });
 
     // 거래결과조회 자체가 실패해도 예외를 밖으로 내보내지 않는다.
     // 여기서 throw 하면 후원이 PENDING_PAYMENT 로 영구히 멈춰 아무도 복구할 수 없다.
@@ -1195,8 +1295,8 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
     // (4) 관리자 '확인 필요' 큐(status IN UNKNOWN,TIMEOUT)가 영구히 비어 대사 자체가 불가능해진다.
     // 따라서 UNKNOWN 은 UNKNOWN 그대로 남기고 사람이 판단하도록 넘긴다.
     if (failure?.code === 'UNKNOWN') {
-      await prisma.paymentTransaction.update({
-        where: { id: txn.id },
+      await prisma.paymentTransaction.updateMany({
+        where: { id: txn.id, status: { not: 'APPROVED' } },
         data: { status: 'UNKNOWN', resultCode: 'UNKNOWN', resultMessage: failure.message ?? null },
       });
       // 후원 상태는 PENDING_PAYMENT 로 유지한다(실패 아님). 사유만 남긴다.
@@ -1218,10 +1318,19 @@ export async function executePayment(donationId: string): Promise<PaymentOutcome
       };
     }
 
-    await prisma.paymentTransaction.update({
-      where: { id: txn.id },
+    /**
+     * 실패 확정은 **아직 승인되지 않은 경우에만** 한다(2026-10-01).
+     * 선점으로 동시 실행은 막았지만, 리스가 만료된 뒤 늦게 돌아온 응답 등 예외 경로에서
+     * 이미 승인된 거래를 실패로 덮으면 원장 3분개는 남은 채 후원만 실패가 된다.
+     */
+    const failedTxn = await prisma.paymentTransaction.updateMany({
+      where: { id: txn.id, status: { not: 'APPROVED' } },
       data: { status: 'FAILED', resultCode: failure?.code ?? null, resultMessage: failure?.message ?? null },
     });
+    if (failedTxn.count === 0) {
+      logger.error('승인된 거래에 늦은 실패 응답이 도착해 무시했습니다.', { donationId, transactionId: txn.id });
+      return { ok: true, status: 'SETTLEMENT_PENDING', message: '이미 승인된 결제입니다.' };
+    }
     await setStatus(donationId, 'PAYMENT_FAILED', failure?.message ?? '결제 실패');
     /**
      * 결제 판정 트랜잭션에서 잡아둔 집계 예약을 되돌린다(실패한 건은 한도를 쓰지 않는다).

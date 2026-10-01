@@ -71,7 +71,9 @@ export async function purgeExpiredIdempotencyKeys(now = new Date()): Promise<num
  * 자원(resourceId)도 붙지 않은 키만 지운다. 진행 중인 요청을 끊을 위험이 없다.
  */
 export async function releaseStaleIdempotencyKeys(
-  staleMinutes = 10,
+  // 수신 로그 복구 기준(recoverStuckMoMessages, 5분)보다 짧아야 한다. 길면 그 사이 재처리가
+  // 키에 막혀 문자가 유실된다(2026-10-01). 정상 처리는 수 초라 4분이면 충분히 넉넉하다.
+  staleMinutes = 4,
   now = new Date(),
 ): Promise<number> {
   const cutoff = new Date(now.getTime() - staleMinutes * 60_000);

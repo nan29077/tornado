@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import Redis from 'ioredis';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { quietRedisWhenUnavailable } from '@/server/redis-quiet';
+import { quietRedisWhenUnavailable, redisRetryStrategy } from '@/server/redis-quiet';
 import { primeStudioStateCache, type GameStudioState } from '@/server/services/game-state';
 
 /**
@@ -41,7 +41,7 @@ function ensureRedis() {
   if (!env.redisUrl) return;
   if (globalForGameBus.gamePub && globalForGameBus.gameSub) return;
   try {
-    const retryStrategy = (times: number) => (times > 5 ? null : Math.min(times * 300, 2000));
+    const retryStrategy = redisRetryStrategy;
     const pub = new Redis(env.redisUrl, { maxRetriesPerRequest: 2, enableOfflineQueue: false, retryStrategy });
     const sub = new Redis(env.redisUrl, { maxRetriesPerRequest: 2, enableOfflineQueue: false, retryStrategy });
     quietRedisWhenUnavailable(pub, '게임 상태 발행', () => {
