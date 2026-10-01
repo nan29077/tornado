@@ -2,6 +2,7 @@
 
 import { prisma } from '@/server/db';
 import { kv } from '@/server/redis';
+import { consumeIpRateLimit } from '@/server/rate-limit';
 import { newId } from '@/lib/id';
 import { generateNumericCode, hmac, maskPhone, normalizePhone, phoneHash, safeEqual } from '@/lib/crypto';
 import { getMtAdapter } from '@/server/adapters/mt';
@@ -63,6 +64,11 @@ export interface LookupResult {
 const codeKey = (ticket: string) => `lookup:code:${ticket}`;
 const sessionKey = (ticket: string) => `lookup:session:${ticket}`;
 const sendPhoneKey = (ph: string) => `lookup:send:${ph}`;
+/** 오입력 횟수. 상태 레코드와 분리해 원자적으로 센다(동시 요청 대입 방지, 2026-10-01). */
+const attemptKey = (ticket: string) => `lookup:attempt:${ticket}`;
+/** 발신 IP 기준 제한 (번호를 바꿔 가며 문자를 무제한 보내는 남용 방지) */
+const IP_SEND_MAX = 10;
+const IP_VERIFY_MAX = 30;
 
 function digest(code: string) {
   return hmac(code, env.crypto.sessionSecret);
@@ -78,6 +84,15 @@ export async function requestLookupCode(_prev: LookupState, formData: FormData):
   const phone = normalizePhone(String(formData.get('phone') ?? ''));
   if (!/^01[0-9]{8,9}$/.test(phone)) {
     return { ok: false, step: 'phone', message: '휴대전화 번호 형식을 확인해 주세요. (예: 010-1234-5678)' };
+  }
+
+  /**
+   * 발신 IP 제한 (2026-10-01). 받는 번호 기준 제한만 있으면 봇이 번호를 바꿔 가며
+   * 번호마다 3통씩 무제한 발송할 수 있다(문자 요금 펌핑·스팸).
+   */
+  const ipLimit = await consumeIpRateLimit('lookup-send', IP_SEND_MAX, SEND_WINDOW_SEC, { failClosed: true });
+  if (!ipLimit.ok) {
+    return { ok: false, step: 'phone', message: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.' };
   }
 
   const ph = phoneHash(phone);
@@ -122,6 +137,11 @@ export async function verifyAndLookup(_prev: LookupState, formData: FormData): P
   if (!ticket) return { ok: false, step: 'phone', message: '인증 정보가 만료되었습니다. 처음부터 다시 시도해 주세요.' };
   if (!/^\d{6}$/.test(code)) return { ok: false, step: 'code', message: '인증번호 6자리를 입력해 주세요.' };
 
+  const ipLimit = await consumeIpRateLimit('lookup-verify', IP_VERIFY_MAX, TTL_SEC, { failClosed: true });
+  if (!ipLimit.ok) {
+    return { ok: false, step: 'code', ticket, message: '시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.' };
+  }
+
   const raw = await kv.get(codeKey(ticket));
   if (!raw) return { ok: false, step: 'phone', message: '인증 유효시간이 지났습니다. 인증번호를 다시 요청해 주세요.' };
 
@@ -133,13 +153,18 @@ export async function verifyAndLookup(_prev: LookupState, formData: FormData): P
     return { ok: false, step: 'phone', message: '인증 정보가 손상되었습니다. 다시 시도해 주세요.' };
   }
 
+  /**
+   * 오입력 횟수는 **별도 카운터를 kv.incr 로 원자적으로** 센다 (2026-10-01).
+   * 예전에는 레코드의 남은 횟수를 읽고 1 빼서 다시 썼는데, 동시 요청끼리 서로의 차감을
+   * 덮어써 수천 건을 한꺼번에 보내도 횟수가 거의 줄지 않았다(6자리 코드 대입 가능).
+   */
   if (!safeEqual(digest(code), rec.ch)) {
-    const remain = rec.at - 1;
+    const used = await kv.incr(attemptKey(ticket), TTL_SEC);
+    const remain = MAX_ATTEMPTS - used;
     if (remain <= 0) {
       await kv.del(codeKey(ticket));
-      return { ok: false, step: 'phone', message: '인증번호를 5회 잘못 입력했습니다. 처음부터 다시 시도해 주세요.' };
+      return { ok: false, step: 'phone', message: `인증번호를 ${MAX_ATTEMPTS}회 잘못 입력했습니다. 처음부터 다시 시도해 주세요.` };
     }
-    await kv.set(codeKey(ticket), JSON.stringify({ ...rec, at: remain }), TTL_SEC);
     return {
       ok: false,
       step: 'code',
@@ -149,7 +174,15 @@ export async function verifyAndLookup(_prev: LookupState, formData: FormData): P
     };
   }
 
+  // 맞는 코드라도 이미 오입력 한도를 다 쓴 상태면 통과시키지 않는다(동시 요청 사이에 끼어든 경우).
+  const usedBefore = Number((await kv.get(attemptKey(ticket))) ?? 0);
+  if (usedBefore >= MAX_ATTEMPTS) {
+    await kv.del(codeKey(ticket));
+    return { ok: false, step: 'phone', message: `인증번호를 ${MAX_ATTEMPTS}회 잘못 입력했습니다. 처음부터 다시 시도해 주세요.` };
+  }
+
   await kv.del(codeKey(ticket));
+  await kv.del(attemptKey(ticket));
   await kv.set(sessionKey(ticket), rec.ph, SESSION_SEC);
 
   const result = await loadResult(rec.ph, rec.pm);

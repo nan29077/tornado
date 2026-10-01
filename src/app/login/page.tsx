@@ -1,3 +1,4 @@
+import { safeInternalPath } from '@/lib/auth-return-path';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { LogIn } from 'lucide-react';
@@ -67,8 +68,8 @@ export default async function LoginPage({
 
       <Card>
         <form method="post" action="/api/auth/login" className="space-y-4">
-          {sp.next && sp.next.startsWith('/') && !sp.next.startsWith('//') ? (
-            <input type="hidden" name="next" value={sp.next} />
+          {safeInternalPath(sp.next) ? (
+            <input type="hidden" name="next" value={safeInternalPath(sp.next)!} />
           ) : null}
           <Field label="이메일" required>
             <Input

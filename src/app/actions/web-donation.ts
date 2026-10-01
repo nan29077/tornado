@@ -3,6 +3,7 @@
 import { cookies } from 'next/headers';
 import { prisma } from '@/server/db';
 import { kv } from '@/server/redis';
+import { consumeIpRateLimit } from '@/server/rate-limit';
 import { newId } from '@/lib/id';
 import { decrypt, encrypt, generateNumericCode, hmac, maskPhone, normalizePhone, phoneHash, safeEqual } from '@/lib/crypto';
 import { getMtAdapter } from '@/server/adapters/mt';
@@ -34,6 +35,11 @@ const SESSION_SEC = 1800;
 const codeKey = (t: string) => `webdon:code:${t}`;
 const sessionKey = (t: string) => `webdon:session:${t}`;
 const sendPhoneKey = (ph: string) => `webdon:send:${ph}`;
+/** 오입력 횟수. 상태 레코드와 분리해 원자적으로 센다(동시 요청 대입 방지, 2026-10-01). */
+const attemptKey = (t: string) => `webdon:attempt:${t}`;
+/** 발신 IP 기준 제한 (번호를 바꿔 가며 문자를 무제한 보내는 남용 방지) */
+const IP_SEND_MAX = 10;
+const IP_VERIFY_MAX = 30;
 
 /**
  * 인증 세션 토큰은 **HttpOnly 쿠키**로만 오간다.
@@ -97,6 +103,12 @@ export async function requestWebDonateCode(_prev: WebDonateState, formData: Form
     return { ok: false, step: 'phone', message: '휴대전화 번호 형식을 확인해 주세요. (예: 010-1234-5678)' };
   }
 
+  // 발신 IP 제한 (2026-10-01): 번호를 바꿔 가며 무제한 발송하는 문자 요금 남용을 막는다.
+  const ipLimit = await consumeIpRateLimit('webdon-send', IP_SEND_MAX, SEND_WINDOW_SEC, { failClosed: true });
+  if (!ipLimit.ok) {
+    return { ok: false, step: 'phone', message: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.' };
+  }
+
   const ph = phoneHash(phone);
   const sent = await kv.incr(sendPhoneKey(ph), SEND_WINDOW_SEC);
   if (sent > SEND_MAX) {
@@ -141,6 +153,11 @@ export async function verifyWebDonateCode(_prev: WebDonateState, formData: FormD
   if (!ticket) return { ok: false, step: 'phone', message: '인증 정보가 만료되었습니다. 처음부터 다시 시도해 주세요.' };
   if (!/^\d{6}$/.test(code)) return { ok: false, step: 'code', ticket, message: '인증번호 6자리를 입력해 주세요.' };
 
+  const ipLimit = await consumeIpRateLimit('webdon-verify', IP_VERIFY_MAX, CODE_TTL_SEC, { failClosed: true });
+  if (!ipLimit.ok) {
+    return { ok: false, step: 'code', ticket, message: '시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.' };
+  }
+
   const raw = await kv.get(codeKey(ticket));
   if (!raw) return { ok: false, step: 'phone', message: '인증 유효시간이 지났습니다. 인증번호를 다시 요청해 주세요.' };
 
@@ -153,17 +170,29 @@ export async function verifyWebDonateCode(_prev: WebDonateState, formData: FormD
     return { ok: false, step: 'phone', message: '인증 정보가 손상되었습니다. 다시 시도해 주세요.' };
   }
 
+  /**
+   * 오입력 횟수는 별도 카운터를 kv.incr 로 원자적으로 센다 (2026-10-01).
+   * 예전의 "읽고 1 빼서 다시 쓰기" 는 동시 요청끼리 차감을 덮어써 코드 대입이 가능했다.
+   */
   if (!safeEqual(digest(code), rec.ch)) {
-    const remain = rec.at - 1;
+    const used = await kv.incr(attemptKey(ticket), CODE_TTL_SEC);
+    const remain = MAX_ATTEMPTS - used;
     if (remain <= 0) {
       await kv.del(codeKey(ticket));
-      return { ok: false, step: 'phone', message: '인증번호를 5회 잘못 입력했습니다. 처음부터 다시 시도해 주세요.' };
+      return { ok: false, step: 'phone', message: `인증번호를 ${MAX_ATTEMPTS}회 잘못 입력했습니다. 처음부터 다시 시도해 주세요.` };
     }
-    await kv.set(codeKey(ticket), JSON.stringify({ ...rec, at: remain }), CODE_TTL_SEC);
     return { ok: false, step: 'code', ticket, phoneMasked: rec.pm, message: `인증번호가 일치하지 않습니다. (남은 시도 ${remain}회)` };
   }
 
+  // 맞는 코드라도 이미 오입력 한도를 다 쓴 상태면 통과시키지 않는다(동시 요청 사이에 끼어든 경우).
+  const usedBefore = Number((await kv.get(attemptKey(ticket))) ?? 0);
+  if (usedBefore >= MAX_ATTEMPTS) {
+    await kv.del(codeKey(ticket));
+    return { ok: false, step: 'phone', message: `인증번호를 ${MAX_ATTEMPTS}회 잘못 입력했습니다. 처음부터 다시 시도해 주세요.` };
+  }
+
   await kv.del(codeKey(ticket));
+  await kv.del(attemptKey(ticket));
   // 세션 토큰은 HttpOnly 쿠키로만 내려보낸다. 클라이언트 상태에는 표식만 담는다.
   const sessionToken = newId();
   await kv.set(sessionKey(sessionToken), rec.ph, SESSION_SEC);

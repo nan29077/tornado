@@ -1,3 +1,4 @@
+import { safeInternalPath } from '@/lib/auth-return-path';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/server/db';
@@ -99,10 +100,10 @@ export async function POST(req: Request) {
 
 /** 같은 사이트 내부 경로만 로그인 후 이동 대상으로 허용한다 (오픈 리다이렉트 방지). */
 function safeNextPath(value: FormDataEntryValue | null | undefined): string | null {
-  if (typeof value !== 'string') return null;
-  if (!/^\/(?![\/\\])/.test(value)) return null;
-  if (value.startsWith('/api/') || value.startsWith('/login')) return null;
-  return value.length > 512 ? null : value;
+  const path = safeInternalPath(value);
+  if (!path) return null;
+  if (path.startsWith('/api/') || path.startsWith('/login')) return null;
+  return path;
 }
 
 /**
