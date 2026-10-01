@@ -11,7 +11,7 @@ import { logger } from '@/lib/logger';
 import { issueSecureLink } from '@/server/services/secure-link';
 import { createWebDonation } from '@/server/services/web-donation';
 import { sendMt } from '@/server/services/donation-flow';
-import { expirePinSessionIfStale } from '@/server/services/pin-authorization';
+import { expirePinSessionIfStale, cancelPendingPinDonation } from '@/server/services/pin-authorization';
 import * as tpl from '@/server/services/mt-templates';
 
 /**
@@ -54,6 +54,24 @@ async function setPinCookie(donationId: string) {
 async function readPinCookie(): Promise<string | null> {
   const jar = await cookies();
   return jar.get(PIN_COOKIE)?.value ?? null;
+}
+
+/**
+ * [처음부터 다시] — 이 브라우저에서 대기 중인 PIN 후원을 취소한다(UI-2).
+ * 쿠키에 담긴 후원만 다루므로 남의 후원을 취소할 수 없다. PIN 을 아직 입력하지 않은 건만 취소된다.
+ */
+export async function cancelWebPinDonation(): Promise<{ ok: boolean; canceled: boolean }> {
+  const donationId = await readPinCookie();
+  if (!donationId) return { ok: true, canceled: false };
+  let canceled = false;
+  try {
+    canceled = await cancelPendingPinDonation(donationId, '후원자가 처음부터 다시 시작해 이전 요청을 취소');
+  } catch (e) {
+    logger.warn('웹 PIN 후원 취소 실패', { message: (e as Error).message });
+  }
+  const jar = await cookies();
+  jar.delete(PIN_COOKIE);
+  return { ok: true, canceled };
 }
 
 export type WebPinStep = 'compose' | 'phone' | 'register' | 'waiting' | 'done' | 'failed';

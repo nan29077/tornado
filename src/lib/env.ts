@@ -324,6 +324,22 @@ export const env = {
     })(),
   },
 
+  /**
+   * 사업자 정보 (UI-6, 2026-10-01).
+   * 결제를 받는 서비스는 화면 하단에 상호·대표자·사업자등록번호·통신판매업 신고번호 등을 표시해야
+   * 할 수 있다(전자상거래법 — 최종 확인은 법무). 값은 코드에 적지 않고 환경변수로 넣는다.
+   * 채워진 항목만 공개 화면 하단과 후원 페이지 하단에 표시된다.
+   */
+  business: {
+    name: str('BUSINESS_NAME'),
+    ceo: str('BUSINESS_CEO'),
+    regNo: str('BUSINESS_REG_NO'),
+    ecommerceNo: str('BUSINESS_ECOMMERCE_NO'),
+    address: str('BUSINESS_ADDRESS'),
+    phone: str('BUSINESS_PHONE'),
+    email: str('BUSINESS_EMAIL'),
+  },
+
   /** 소셜 간편 로그인 (카카오 / 네이버). 키가 없으면 준비 중 상태로 표시된다. */
   social: {
     kakao: {
@@ -522,6 +538,12 @@ export function assertProductionSafety(): string[] {
  */
 export function bootWarnings(): string[] {
   const warnings: string[] = [];
+  if (isProd && (!env.business.name || !env.business.regNo)) {
+    warnings.push(
+      'BUSINESS_NAME / BUSINESS_REG_NO 가 비어 있습니다. 화면 하단 사업자 정보가 표시되지 않습니다 ' +
+        '(결제 서비스의 사업자 정보 표시 의무는 법무 확인 필요).',
+    );
+  }
   if (isProd && !env.cron.secret) {
     warnings.push(
       'CRON_SECRET 이 비어 있습니다. 정리 배치(/api/cron/cleanup)가 전건 401 로 거절되어 ' +

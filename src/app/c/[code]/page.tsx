@@ -365,7 +365,12 @@ export default async function CreatorDonationPage({ params }: Params) {
           그래서 PC 패널은 번호 배정 여부와 무관하게 항상 노출하고,
           번호가 필요한 모바일 문자후원 영역만 조건부로 바꾼다.
         */}
-        <div className="mt-6 hidden text-left sm:block">
+        {/*
+          휴대폰에서는 원래 문자후원이 기본이라 PC 패널을 숨긴다. 그런데 **번호가 아직 없으면**
+          휴대폰으로 들어온 시청자(대부분)가 후원할 방법이 전혀 없었다(UI-4). 그때는 휴대폰에도
+          웹 후원(PIN 인증) 패널을 보여 준다.
+        */}
+        <div className={`mt-6 text-left ${route ? 'hidden sm:block' : ''}`}>
           <p className="mb-4 text-center text-[15px] font-black tracking-[-0.02em] text-ink-900">
             {creator.displayName} 님에게 후원하기
           </p>
@@ -454,7 +459,7 @@ export default async function CreatorDonationPage({ params }: Params) {
             <p className="mt-3 text-[15px] font-extrabold text-ink-900">후원 번호가 아직 배정되지 않았습니다</p>
             <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-500">
               아직 문자 수신 번호가 배정되지 않아 문자후원을 접수할 수 없습니다. 번호가 배정되면 이 페이지에
-              표시됩니다. PC 에서는 지금도 후원하실 수 있습니다.
+              표시됩니다. 위의 웹 후원으로는 지금도 후원하실 수 있습니다.
             </p>
           </div>
         )}

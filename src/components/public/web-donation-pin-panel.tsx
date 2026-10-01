@@ -7,6 +7,7 @@ import { formatWon } from '@/lib/money';
 import {
   startWebPinDonation,
   checkWebPinDonationStatus,
+  cancelWebPinDonation,
   type WebPinState,
 } from '@/app/actions/web-donation-pin';
 
@@ -154,6 +155,9 @@ export function WebDonationPinPanel({
   const ss = String(Math.floor((remainMs % 60000) / 1000)).padStart(2, '0');
 
   function restart() {
+    // 대기 중인 이전 요청(PIN 문자)을 서버에서 취소한다. 화면만 초기화하면 이전 PIN 링크로도
+    // 결제할 수 있어 두 번 결제될 수 있었다(UI-2). 실패해도 화면 초기화는 진행한다.
+    void cancelWebPinDonation().catch(() => undefined);
     setMessage('');
     setCustomAmount('');
     setAmountMode('preset');

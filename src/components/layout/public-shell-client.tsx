@@ -1,5 +1,7 @@
 'use client';
 
+import { BusinessInfo, type BusinessInfoData } from '@/components/layout/business-info';
+
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -77,12 +79,15 @@ export function PublicShellClient({
   aside,
   viewer,
   mockMode = false,
+  business,
 }: {
   children: React.ReactNode;
   aside?: React.ReactNode;
   viewer: ShellViewer | null;
   /** 결제·문자 발송이 모의(mock) 상태일 때만 하단에 안내를 보여 준다. */
   mockMode?: boolean;
+  /** 하단 사업자 정보(환경변수 BUSINESS_*) */
+  business?: BusinessInfoData;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
@@ -184,7 +189,7 @@ export function PublicShellClient({
 
       <main className="public-content px-4 py-5 sm:px-6 sm:py-7">{children}</main>
 
-      <Footer mockMode={mockMode} />
+      <Footer mockMode={mockMode} business={business} />
         </div>
 
         {/* PC 우측 메뉴: 화면 세로 중앙에 붙는다 */}
@@ -333,7 +338,7 @@ export function PublicShellClient({
   );
 }
 
-function Footer({ mockMode }: { mockMode: boolean }) {
+function Footer({ mockMode, business }: { mockMode: boolean; business?: BusinessInfoData }) {
   return (
     <footer className="public-footer mt-10 border-t">
       <div className="mx-auto w-full max-w-6xl px-4 py-8 text-[12px] leading-relaxed text-ink-400">
@@ -351,6 +356,7 @@ function Footer({ mockMode }: { mockMode: boolean }) {
         {mockMode ? (
           <p className="mt-1">현재 테스트(모의) 모드로 운영 중이라 실제 결제와 문자 발송은 이루어지지 않습니다.</p>
         ) : null}
+        <BusinessInfo info={business} className="mt-2" />
       </div>
     </footer>
   );

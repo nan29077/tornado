@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { Heart, LifeBuoy, Radio, MessageCircleHeart, Bell, LogIn, LogOut, BookOpen } from 'lucide-react';
 import { getSessionUser } from '@/server/auth';
 import { prisma } from '@/server/db';
+import { env } from '@/lib/env';
+import { BusinessInfo } from '@/components/layout/business-info';
 import { ProfileAvatar } from '@/components/profile/generated-avatar';
 import { Logo } from '@/components/brand/logo';
 import { CreatorDonateBackdrop } from './creator-donate-backdrop';
@@ -314,6 +316,7 @@ export async function CreatorDonateShell({
                 이 페이지는 <span className="font-bold text-ink-500">도네이도 문자후원</span>으로 운영됩니다.
                 유튜브 공식 슈퍼챗이 아닌 외부 후원 서비스입니다.
               </p>
+              <BusinessInfo info={env.business} className="mt-2" />
             </footer>
           </main>
         </div>

@@ -5,6 +5,7 @@ import { INQUIRY_GUEST_COOKIE } from '@/server/services/inquiry';
 import { PublicShellClient, type ShellViewer } from './public-shell-client';
 import { SupportWidget } from '@/components/public/support-widget';
 import { isServiceInMockMode } from '@/server/service-mode';
+import { env } from '@/lib/env';
 
 /**
  * 공개 영역 레이아웃 (서버 래퍼).
@@ -60,7 +61,7 @@ export async function PublicShell({
 
   return (
     <>
-      <PublicShellClient aside={aside} viewer={viewer} mockMode={isServiceInMockMode()}>
+      <PublicShellClient aside={aside} viewer={viewer} mockMode={isServiceInMockMode()} business={env.business}>
         {children}
       </PublicShellClient>
       <SupportWidget faqs={faqs} loggedIn={Boolean(user)} hasThread={hasThread} />

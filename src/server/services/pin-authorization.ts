@@ -353,3 +353,31 @@ export async function recoverStalePinCompletions(now = new Date()): Promise<numb
   }
   return count;
 }
+
+/**
+ * 후원자가 [처음부터 다시]를 눌렀을 때 대기 중인 PIN 인증을 취소한다(UI-2, 2026-10-01).
+ *
+ * 예전에는 화면만 초기화되고 대기 중인 후원은 그대로 남아, 다시 제출하면 PIN 문자가 두 통 오고
+ * **둘 다 결제할 수 있었다.** 아직 PIN 을 입력하지 않은(PENDING_PIN) 건만 취소한다.
+ * 이미 결제로 넘어간 건은 건드리지 않는다. 선점(updateMany)으로 중복 실행에도 안전하다.
+ *
+ * @returns 실제로 취소했으면 true
+ */
+export async function cancelPendingPinDonation(donationId: string, reason: string): Promise<boolean> {
+  const session = await prisma.paymentPinSession.findUnique({
+    where: { donationId },
+    select: { id: true, status: true },
+  });
+  if (!session || session.status !== 'PENDING') return false;
+
+  const claimed = await prisma.paymentPinSession.updateMany({
+    where: { id: session.id, status: 'PENDING' },
+    data: { status: 'EXPIRED', resultNote: reason },
+  });
+  if (claimed.count !== 1) return false;
+
+  const d = await prisma.donation.findUnique({ where: { id: donationId }, select: { status: true } });
+  if (d?.status !== 'PENDING_PIN') return false;
+  await setStatus(donationId, 'PAYMENT_FAILED', reason);
+  return true;
+}
