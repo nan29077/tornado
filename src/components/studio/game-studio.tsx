@@ -46,6 +46,7 @@ import {
   type GameType,
   type RoundStatus,
 } from '@/lib/game-catalog';
+import { openStream, type StreamHandle } from '@/lib/shared-event-source';
 
 /**
  * 게임 오버레이 운영 화면.
@@ -297,30 +298,32 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
   // 참여자 유입·집계는 SSE 로 흘러온다. 화면을 새로 고칠 일이 없다.
   React.useEffect(() => {
     let disposed = false;
-    let source: EventSource | null = null;
+    let source: StreamHandle | null = null;
     let retry = 0;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     const connect = () => {
       if (disposed) return;
-      const es = new EventSource('/api/studio/games/stream');
-      source = es;
-      es.addEventListener('state', (ev) => {
-        try {
-          const data = JSON.parse((ev as MessageEvent).data) as StudioState | null;
-          setState(data && data.roundId ? data : null);
-          retry = 0;
-        } catch {
-          /* 무시 */
-        }
+      // 같은 주소를 여는 다른 탭·미리보기와 연결을 나눠 쓴다(로컬 http 연결 6개 한도 대응).
+      source = openStream('/api/studio/games/stream', {
+        share: true,
+        events: ['state'],
+        onEvent: (_name, message) => {
+          try {
+            const data = JSON.parse(message.data) as StudioState | null;
+            setState(data && data.roundId ? data : null);
+            retry = 0;
+          } catch {
+            /* 무시 */
+          }
+        },
+        onError: () => {
+          if (disposed) return;
+          const wait = retry === 0 ? 400 : Math.min(30000, 1000 * 2 ** retry);
+          retry += 1;
+          timer = setTimeout(connect, wait);
+        },
       });
-      es.onerror = () => {
-        es.close();
-        if (disposed) return;
-        const wait = retry === 0 ? 400 : Math.min(30000, 1000 * 2 ** retry);
-        retry += 1;
-        timer = setTimeout(connect, wait);
-      };
     };
 
     connect();

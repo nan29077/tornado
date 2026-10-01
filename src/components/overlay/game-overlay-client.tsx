@@ -11,6 +11,7 @@ import {
   overlayLayoutTransform,
   type OverlayLayout,
 } from '@/lib/overlay-layout';
+import { openStream, type StreamHandle } from '@/lib/shared-event-source';
 
 /**
  * 게임 오버레이 (OBS / PRISM 브라우저 소스).
@@ -144,7 +145,7 @@ export function GameOverlayClient({
     if (sampleMode) return;
 
     let disposed = false;
-    let source: EventSource | null = null;
+    let source: StreamHandle | null = null;
     let retry = 0;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -154,41 +155,37 @@ export function GameOverlayClient({
       if (preview) params.set('preview', '1');
       else params.set('token', token);
 
-      const es = new EventSource(`/api/overlay/${encodeURIComponent(creatorId)}/game/stream?${params.toString()}`);
-      source = es;
-
-      es.addEventListener('ready', () => {
-        retry = 0;
-        setPhase('connected');
+      // 스튜디오 미리보기는 같은 주소의 연결을 다른 화면과 나눠 쓴다(로컬 http 연결 6개 한도 대응).
+      source = openStream(`/api/overlay/${encodeURIComponent(creatorId)}/game/stream?${params.toString()}`, {
+        share: preview,
+        events: ['ready', 'layout', 'state'],
+        onEvent: (name, message) => {
+          if (name === 'ready') {
+            retry = 0;
+            setPhase('connected');
+            return;
+          }
+          try {
+            if (name === 'layout') {
+              setStreamLayout(clampOverlayLayout(JSON.parse(message.data)));
+            } else if (name === 'state') {
+              const data = JSON.parse(message.data) as GamePublicState | null;
+              setPhase('connected');
+              setState(data && data.roundId ? data : null);
+            }
+          } catch {
+            /* 무시 */
+          }
+        },
+        onError: () => {
+          if (disposed) return;
+          setPhase('retrying');
+          // 첫 재시도는 짧게. 순간적인 끊김은 대부분 바로 복구된다.
+          const wait = retry === 0 ? 300 : Math.min(MAX_BACKOFF_MS, 1000 * 2 ** retry);
+          retry += 1;
+          timer = setTimeout(connect, wait);
+        },
       });
-
-      es.addEventListener('layout', (ev) => {
-        try {
-          setStreamLayout(clampOverlayLayout(JSON.parse((ev as MessageEvent).data)));
-        } catch {
-          /* 무시 */
-        }
-      });
-
-      es.addEventListener('state', (ev) => {
-        try {
-          const data = JSON.parse((ev as MessageEvent).data) as GamePublicState | null;
-          setPhase('connected');
-          setState(data && data.roundId ? data : null);
-        } catch {
-          /* 무시 */
-        }
-      });
-
-      es.onerror = () => {
-        es.close();
-        if (disposed) return;
-        setPhase('retrying');
-        // 첫 재시도는 짧게. 순간적인 끊김은 대부분 바로 복구된다.
-        const wait = retry === 0 ? 300 : Math.min(MAX_BACKOFF_MS, 1000 * 2 ** retry);
-        retry += 1;
-        timer = setTimeout(connect, wait);
-      };
     };
 
     connect();

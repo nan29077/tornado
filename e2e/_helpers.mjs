@@ -104,7 +104,11 @@ export const bodyText = (page) => page.locator('body').innerText();
  * 클릭이 먹지 않는 경우가 있어 networkidle 을 기준으로 삼는다.
  */
 export async function gotoReady(page, url, { timeout = 45_000 } = {}) {
-  await page.goto(url, { waitUntil: 'networkidle', timeout });
+  // 스튜디오·미리보기 화면은 실시간 연결 공유기(SharedWorker, public/sse-hub.js)를 띄운다.
+  // Playwright 는 그 스크립트 요청을 끝나지 않은 요청으로 세어 networkidle 에 영영 닿지 않으므로,
+  // load 까지 기다린 뒤 networkidle 은 최대 5초만 기다린다.
+  await page.goto(url, { waitUntil: 'load', timeout });
+  await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {});
   await page.waitForTimeout(200);
 }
 
