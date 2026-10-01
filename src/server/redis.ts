@@ -53,9 +53,14 @@ class MemoryStore implements KvStore {
     this.map.set(key, { v: value, exp: ttlSec ? Date.now() + ttlSec * 1000 : 0 });
   }
 
+  /**
+   * 읽기와 쓰기 사이에 await 를 두지 않는다(2026-10-01). 예전에는 `await this.get()` 뒤에 썼기
+   * 때문에 동시 호출이 같은 값을 읽고 같은 값을 써서 카운트가 빠졌다(Redis INCR 과 달리 비원자적).
+   * 인메모리 폴백(로컬·테스트)에서도 오입력 횟수·속도 제한이 정확히 세어지게 한다.
+   */
   async incr(key: string, ttlSec?: number) {
-    const cur = Number((await this.get(key)) ?? 0) + 1;
     const existing = this.alive(key);
+    const cur = Number(existing?.v ?? 0) + 1;
     this.map.set(key, {
       v: String(cur),
       exp: existing?.exp || (ttlSec ? Date.now() + ttlSec * 1000 : 0),
@@ -64,8 +69,8 @@ class MemoryStore implements KvStore {
   }
 
   async incrBy(key: string, delta: number, ttlSec?: number) {
-    const cur = Number((await this.get(key)) ?? 0) + delta;
     const existing = this.alive(key);
+    const cur = Number(existing?.v ?? 0) + delta;
     this.map.set(key, {
       v: String(cur),
       exp: existing?.exp || (ttlSec ? Date.now() + ttlSec * 1000 : 0),

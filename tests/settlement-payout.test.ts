@@ -43,6 +43,8 @@ async function verifiedAccount(creatorId: string) {
 async function fund(creatorId: string) {
   // 결제 완료 후원 몇 건으로 정산 잔액을 만든다.
   await seedRegisteredDonor(fx.donorPhone);
+  // 최소 정산 요청 금액(10,000원, 2026-10-01) 이상이 모이도록 5건이 모두 통과하게 속도 제한을 푼다.
+  await prisma.donationLimitPolicy.updateMany({ data: { velocityMaxCount: 100, cooldownAfterCount: 100 } });
   for (let i = 0; i < 5; i += 1) {
     // 금액은 본문이 아니라 크리에이터 고정 금액(3000원)으로 결정된다.
     await inbound(moPayload({ to: fx.moNumber, messageId: `FUND-${i}-${Date.now()}`, text: `응원 ${i}` }));

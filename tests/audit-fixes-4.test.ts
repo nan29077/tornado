@@ -330,6 +330,8 @@ describe('DB 검사', () => {
         update: account,
       });
       await seedRegisteredDonor(fx.donorPhone);
+      // 최소 정산 요청 금액(10,000원) 이상이 모이도록 5건이 모두 통과하게 속도 제한을 푼다.
+      await prisma.donationLimitPolicy.updateMany({ data: { velocityMaxCount: 100, cooldownAfterCount: 100 } });
       for (let i = 0; i < 5; i += 1) {
         await handleMoInbound(
           mockMoAdapter.parse(

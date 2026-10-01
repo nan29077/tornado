@@ -26,7 +26,8 @@ import { buildOverlayPayload } from '@/server/services/broadcast-dispatch';
 let fx: Fixture;
 const inbound = (p: Record<string, unknown>) => handleMoInbound(mockMoAdapter.parse(p));
 
-async function accumulate(times = 4) {
+// 최소 정산 요청 금액(10,000원, 2026-10-01) 이상이 모이도록 기본 6건을 적립한다.
+async function accumulate(times = 6) {
   await seedRegisteredDonor(fx.donorPhone);
   await prisma.donationLimitPolicy.updateMany({
     data: { velocityMaxCount: 100, cooldownAfterCount: 100, newDonorFirstDayLimit: 10_000_000n },
@@ -89,7 +90,7 @@ describe('정산 프로세스 — 요청부터 지급까지', () => {
     const after = await getSettlementSummary(fx.creatorId);
     expect(after.pending).toBe(req.amount);
     expect(after.available).toBe(0n);
-    await expect(createSettlementRequest(fx.creatorId, 1000n)).rejects.toThrow(/초과/);
+    await expect(createSettlementRequest(fx.creatorId, 10_000n)).rejects.toThrow(/초과/);
   });
 
   it('승인 전에는 이체파일에 들어가지 않는다', async () => {

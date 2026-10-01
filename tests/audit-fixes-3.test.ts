@@ -32,10 +32,9 @@ describe('원천징수 계산은 화면과 서버가 같은 함수를 쓴다', (
    * 화면은 33,000원을 떼겠다고 하고 실제 기록은 0원(소액부징수)이 되어 숫자가 통째로 어긋났다.
    * 계산을 `@/lib/withholding` 한 곳으로 모았으므로, 여기서 검증하면 화면도 같이 지켜진다.
    */
-  it('소액부징수 구간(33,334원 미만)은 원천징수가 0원이다', () => {
-    expect(calculateWithholding(33_333n)).toMatchObject({ total: 0n, exempt: true });
-    // 33,334원부터는 소득세가 1,000원 이상이라 징수 대상이다. 경계 바로 위/아래를 함께 본다.
-    expect(calculateWithholding(33_334n).exempt).toBe(false);
+  it('소액부징수를 적용하지 않는다 (2026-10-01): 금액과 무관하게 모두 징수한다', () => {
+    expect(calculateWithholding(33_333n)).toMatchObject({ total: 1_080n, exempt: false });
+    expect(calculateWithholding(10_000n)).toMatchObject({ total: 330n, exempt: false });
     expect(calculateWithholding(50_000n).exempt).toBe(false);
   });
 
@@ -77,7 +76,7 @@ describe('원천징수 계산은 화면과 서버가 같은 함수를 쓴다', (
     const expected = calculateWithholding(30_000n);
     expect(req.withholding).toBe(expected.total);
     expect(req.payoutAmount).toBe(30_000n - expected.total);
-    expect(req.withholding).toBe(0n); // 소액부징수 — 전액 기준(33,000원)과 전혀 다르다
+    expect(req.withholding).toBe(990n); // 3만원 기준(900+90) — 전액 기준(33,000원)과 다르다
     expect(calculateWithholding(1_000_000n).total).toBe(33_000n);
   });
 });

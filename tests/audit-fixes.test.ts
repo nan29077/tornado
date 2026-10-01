@@ -36,10 +36,12 @@ describe('원천징수 계산 (사업소득 3.3%)', () => {
     expect(w.exempt).toBe(false);
   });
 
-  it('소액부징수 경계: 33,333원은 소득세 990원(<1,000) 이라 미징수된다', () => {
+  it('소액부징수를 적용하지 않는다 (2026-10-01): 33,333원도 소득세 990원 + 지방소득세 90원을 징수한다', () => {
     const w = calculateWithholding(33_333n);
-    expect(w.exempt).toBe(true);
-    expect(w.total).toBe(0n);
+    expect(w.exempt).toBe(false);
+    expect(w.incomeTax).toBe(990n);
+    expect(w.localTax).toBe(90n);
+    expect(w.total).toBe(1_080n);
   });
 
   it('세액은 항상 10원 단위로 떨어진다', () => {
@@ -57,14 +59,16 @@ describe('원천징수 계산 (사업소득 3.3%)', () => {
     expect(w.localTax).toBe(3_000n);
   });
 
-  it('소액부징수: 소득세가 1,000원 미만이면 전액 미징수한다', () => {
-    // 30,000 × 3% = 900원 < 1,000원
-    const w = calculateWithholding(30_000n);
-    expect(w.exempt).toBe(true);
-    expect(w.total).toBe(0n);
+  it('모든 지급 건에 원천징수한다: 최소 정산 금액 10,000원은 330원을 뗀다', () => {
+    // 10,000 × 3% = 300원, 300 × 10% = 30원
+    const w = calculateWithholding(10_000n);
+    expect(w.exempt).toBe(false);
+    expect(w.incomeTax).toBe(300n);
+    expect(w.localTax).toBe(30n);
+    expect(w.total).toBe(330n);
 
-    // 경계값: 34,000 × 3% = 1,020 → 1,020 ≥ 1,000 이므로 징수한다
-    expect(calculateWithholding(34_000n).exempt).toBe(false);
+    // 예전 소액부징수 구간(30,000원)도 이제 징수한다: 900원 + 90원
+    expect(calculateWithholding(30_000n).total).toBe(990n);
   });
 
   it('0원·음수는 0을 돌려준다', () => {
@@ -186,7 +190,8 @@ describe('정산 지급 안전장치', () => {
     await resetDb();
     fx = await seedBasics({ paymentMode: 'DIRECT_TRIGGER' });
     await seedRegisteredDonor(fx.donorPhone);
-    for (let i = 0; i < 3; i += 1) {
+    // 최소 정산 요청 금액(10,000원, 2026-10-01) 이상이 모이도록 5건을 적립한다.
+    for (let i = 0; i < 5; i += 1) {
       await prisma.donationLimitPolicy.updateMany({ data: { velocityMaxCount: 100, cooldownAfterCount: 100 } });
       await inbound(moPayload({ to: fx.moNumber, text: `적립 ${i}` }));
     }

@@ -316,21 +316,27 @@ describe('MO 수신 → 후원 → 결제 → 방송 흐름', () => {
 
   it('[17] 정산 요청은 가능 금액을 초과할 수 없고, 지급 시 원장에 반영된다', async () => {
     await seedRegisteredDonor(fx.donorPhone);
+    // 최소 정산 요청 금액(10,000원, 2026-10-01) 이상이 되도록 고정 금액을 올린다.
+    await prisma.creatorProfile.update({ where: { id: fx.creatorId }, data: { donationAmount: 15_000n } });
     await inbound(moPayload({ to: fx.moNumber }));
     // 보류 기간을 지난 상태로 만든다. 이 검사는 "가능 금액 초과 거절"이지 보류 규칙이 아니다.
     await matureDonations(fx.creatorId);
 
     await expect(createSettlementRequest(fx.creatorId, 999999n)).rejects.toThrow(/초과/);
+    // 최소 정산 요청 금액(10,000원) 미만은 거절한다.
+    await expect(createSettlementRequest(fx.creatorId, 9_999n)).rejects.toThrow(/최소 정산 요청 금액/);
 
-    const req = await createSettlementRequest(fx.creatorId, 2000n);
-    // 소액부징수: 소득세 2,000 × 3% = 60원 < 1,000원 이므로 원천징수하지 않는다.
-    expect(req.withholding).toBe(0n);
-    expect(req.incomeTax).toBe(0n);
-    expect(req.payoutAmount).toBe(2000n);
+    const before = await getSettlementSummary(fx.creatorId);
+    const req = await createSettlementRequest(fx.creatorId, 10_000n);
+    // 모든 지급 건에 원천징수: 소득세 300원 + 지방소득세 30원
+    expect(req.incomeTax).toBe(300n);
+    expect(req.localTax).toBe(30n);
+    expect(req.withholding).toBe(330n);
+    expect(req.payoutAmount).toBe(9_670n);
 
     const afterRequest = await getSettlementSummary(fx.creatorId);
-    expect(afterRequest.pending).toBe(2000n);
-    expect(afterRequest.available).toBe(496n);
+    expect(afterRequest.pending).toBe(10_000n);
+    expect(afterRequest.available).toBe(before.available - 10_000n);
 
     // 승인(APPROVED) 을 거치지 않은 요청은 지급할 수 없다.
     await expect(markSettlementPaid(req.id, 'admin-test')).rejects.toThrow(/APPROVED/);
@@ -348,7 +354,8 @@ describe('MO 수신 → 후원 → 결제 → 방송 흐름', () => {
 
     await markSettlementPaid(req.id, 'admin-test');
     const afterPaid = await getSettlementSummary(fx.creatorId);
-    expect(afterPaid.balance).toBe(496n);
+    // 지급(9,670) + 원천징수(330) = 요청 금액 10,000 이 잔액에서 빠진다.
+    expect(afterPaid.balance).toBe(before.balance - 10_000n);
   });
 
   it('[18] 알 수 없는 수신번호는 결제하지 않고 안내한다', async () => {
