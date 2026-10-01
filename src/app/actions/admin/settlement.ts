@@ -56,6 +56,14 @@ export async function updateSettlementRequestStatus(
     if (before.payoutIssuedAt && (status === 'REJECTED' || status === 'REVIEWING')) {
       throw new Error('이체파일이 이미 발급된 요청입니다. 지급대행 결과(성공/실패)를 먼저 반영한 뒤 처리해 주세요.');
     }
+    /**
+     * 이체파일이 발급된 건의 **지급실패**는 지급대행 결과 반영(배치번호 대조)으로만 처리한다 (2026-10-01).
+     * 버튼으로 바로 실패 처리하면 잔액이 풀려 크리에이터가 재요청·재지급받는데, 원래 이체가
+     * 실제로는 성공했다면 같은 돈이 두 번 나간다. 결과 파일 없이 판단할 수 없는 일이다.
+     */
+    if (before.payoutIssuedAt && status === 'PAYOUT_FAILED') {
+      throw new Error('이체파일이 발급된 요청은 [지급대행 결과 반영]에서 배치번호와 함께 지급 실패를 반영해 주세요.');
+    }
 
     // 반려·지급실패는 사유가 반드시 있어야 크리에이터가 원인을 안다.
     if ((status === 'REJECTED' || status === 'PAYOUT_FAILED') && !memo) {
@@ -188,7 +196,13 @@ export async function bulkUpdateSettlementAction(
           // 반려 건은 원천징수 신고 대상이 아니므로 주민등록번호를 즉시 파기한다.
           await purgeResidentIfNotFilable(id);
         } else {
-          // PAY: 승인 건만 지급 완료. 잠금·재검증은 markSettlementPaid 내부에서 처리.
+          // PAY: **승인(APPROVED) 건만** 지급 완료 (2026-10-01).
+          // markSettlementPaid 는 지급실패 건의 재지급도 허용하는데, 일괄 처리로 그 경로가 열리면
+          // 실제 이체 없이 지급 분개가 생긴다. 지급실패 건 재지급은 단건 화면에서 판단한다.
+          if (req.status !== 'APPROVED') {
+            errors.push(`${id.slice(-6)}: 지급 완료 불가 상태(${req.status}) — 승인 건만 일괄 지급 완료할 수 있습니다`);
+            continue;
+          }
           await markSettlementPaid(id, admin.id);
           await notifySettlement(req.creatorId, '정산 지급이 완료되었습니다', `${formatWon(req.payoutAmount)}이 지급 처리되었습니다.`);
         }

@@ -165,7 +165,7 @@ async function OverviewTab({ month, vatIncluded }: { month: string; vatIncluded:
         <StatTile
           label="도네이도 매출 (플랫폼 수수료)"
           value={formatWon(ledger.platformFee)}
-          sub={vatIncluded ? `공급가액 ${formatWon(ledger.platformFeeSupply)} · 부가세 ${formatWon(ledger.platformFeeVat)}` : '부가세 별도 정책'}
+          sub={`공급가액 ${formatWon(ledger.platformFeeSupply)} · 부가세 ${formatWon(ledger.platformFeeVat)} (환불 환입 차감 후)`}
           tone="brand"
         />
         <StatTile

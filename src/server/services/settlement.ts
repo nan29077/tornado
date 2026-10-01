@@ -563,7 +563,7 @@ export async function createSettlementRequest(
 ) {
   if (amount <= 0n) throw new Error('정산 요청 금액이 올바르지 않습니다.');
 
-  // 이체 1건당 은행 수수료와 확인 공수가 고정으로 드는 만큼 하한을 둔다(0 이면 하한 없음).
+  // 최소 정산 요청 금액(기본·하한 10,000원, 2026-10-01 정책).
   const minAmount = env.settlement.minRequestAmount;
   if (minAmount > 0n && amount < minAmount) {
     throw new Error(`최소 정산 요청 금액은 ${formatWon(minAmount)}입니다.`);
@@ -596,7 +596,7 @@ export async function createSettlementRequest(
       const taxType = normalizeTaxType(creator?.taxType);
       const shouldWithhold = taxTypeLabel[taxType].withholding;
 
-      // 사업소득 원천징수: 소득세 3%(10원절사) + 지방소득세 10%(10원절사), 소액부징수 적용.
+      // 사업소득 원천징수: 소득세 3%(10원절사) + 지방소득세 10%(10원절사). 소액부징수 미적용(전 건 징수).
       // 사업자(withholding: false)는 원천징수 없이 전액 지급.
       const wh = shouldWithhold ? calculateWithholding(amount) : { total: 0n, incomeTax: 0n, localTax: 0n };
 
@@ -699,6 +699,19 @@ export async function markSettlementPaid(requestId: string, adminId?: string, pa
       if (!account || !account.verified) warnings.push('계좌 인증 해제 상태에서 지급됨');
 
       const summary = await getSettlementSummary(req.creatorId, tx);
+      /**
+       * 지급실패 건을 다시 올릴 때는 **다른 요청이 잡아 둔 금액(pending)을 뺀 잔액**과 비교한다
+       * (2026-10-01). 예전에는 잔액만 봐서, 크리에이터가 같은 금액을 재요청해 아직 승인 대기
+       * 중이면 잔액이 충분해 보여 통과했고, 재요청 건까지 지급되면 같은 돈이 두 번 나갔다.
+       * (PAYOUT_FAILED 건 자체는 pending 집계에 들어가지 않는다)
+       */
+      if (req.status === 'PAYOUT_FAILED' && req.amount > summary.balance - summary.pending) {
+        throw new Error(
+          `다른 정산 요청이 잡아 둔 금액을 빼면 잔액이 부족해 다시 지급 완료로 처리할 수 없습니다. ` +
+            `(요청 ${req.amount.toString()}원 / 잔액 ${summary.balance.toString()}원 / 진행 중 요청 ${summary.pending.toString()}원) ` +
+            `이미 다른 요청으로 지급되었는지 확인해 주세요.`,
+        );
+      }
       if (req.amount > summary.balance) {
         /**
          * 지급실패 건을 다시 지급완료로 올리는 경로는 **막는다.**
@@ -780,9 +793,11 @@ async function creatorIdOf(
 export async function markPayoutFileIssued(
   requestIds: string[],
   adminId?: string,
-): Promise<{ batchNo: string; reissued: string[] }> {
+  opts: { allowReissue?: boolean } = {},
+): Promise<{ batchNo: string; reissued: string[]; blocked: boolean }> {
+  const allowReissue = opts.allowReissue ?? true;
   const batchNo = `B${newId().slice(-10).toUpperCase()}`;
-  if (requestIds.length === 0) return { batchNo, reissued: [] };
+  if (requestIds.length === 0) return { batchNo, reissued: [], blocked: false };
 
   /**
    * 읽기와 쓰기를 **한 트랜잭션 안에서** 처리한다.
@@ -793,35 +808,52 @@ export async function markPayoutFileIssued(
    *
    * 선점은 조건부 갱신(`payoutIssuedAt: null`)의 결과 건수로 판정한다.
    * 실제로 선점한 쪽만 "최초 발급"이 되고, 나머지는 재발급으로 표시된다.
+   *
+   * **재발급을 허용하지 않으면(allowReissue=false) 아무것도 바꾸지 않는다 (2026-10-01).**
+   * 예전에는 배치번호를 먼저 덮어쓴 뒤 409 를 돌려줬다. 사용자는 파일을 못 받았는데
+   * 이미 은행에 올린 건의 배치번호가 바뀌어, 그 배치의 결과파일을 반영할 수 없게 됐다
+   * (실제 나간 돈이 원장에 기록되지 않음). 이제는 트랜잭션을 통째로 되돌린다.
    */
-  return prisma.$transaction(async (tx) => {
-    const claimed = await tx.settlementRequest.updateMany({
-      where: { id: { in: requestIds }, payoutIssuedAt: null },
-      data: { payoutIssuedAt: new Date(), payoutBatchNo: batchNo },
-    });
+  class ReissueBlocked extends Error {}
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const claimed = await tx.settlementRequest.updateMany({
+        where: { id: { in: requestIds }, payoutIssuedAt: null },
+        data: { payoutIssuedAt: new Date(), payoutBatchNo: batchNo },
+      });
 
-    // 선점하지 못한 나머지가 곧 재발급 대상이다.
-    const reissuedRows = await tx.settlementRequest.findMany({
-      where: { id: { in: requestIds }, payoutBatchNo: { not: batchNo } },
+      // 선점하지 못한 나머지가 곧 재발급 대상이다.
+      const reissuedRows = await tx.settlementRequest.findMany({
+        where: { id: { in: requestIds }, payoutBatchNo: { not: batchNo } },
+        select: { id: true },
+      });
+      const reissued = reissuedRows.map((r) => r.id);
+
+      if (reissued.length > 0 && !allowReissue) throw new ReissueBlocked();
+
+      // 재발급 건은 최초 발급 시각을 보존하고 최신 배치번호만 갱신한다.
+      if (reissued.length > 0) {
+        await tx.settlementRequest.updateMany({
+          where: { id: { in: reissued } },
+          data: { payoutBatchNo: batchNo },
+        });
+        logger.warn('지급대행 이체파일 재발급', {
+          batchNo,
+          reissued,
+          claimed: claimed.count,
+          adminId: adminId ?? null,
+        });
+      }
+      return { batchNo, reissued, blocked: false };
+    });
+  } catch (e) {
+    if (!(e instanceof ReissueBlocked)) throw e;
+    const issuedRows = await prisma.settlementRequest.findMany({
+      where: { id: { in: requestIds }, payoutIssuedAt: { not: null } },
       select: { id: true },
     });
-    const reissued = reissuedRows.map((r) => r.id);
-
-    // 재발급 건은 최초 발급 시각을 보존하고 최신 배치번호만 갱신한다.
-    if (reissued.length > 0) {
-      await tx.settlementRequest.updateMany({
-        where: { id: { in: reissued } },
-        data: { payoutBatchNo: batchNo },
-      });
-      logger.warn('지급대행 이체파일 재발급', {
-        batchNo,
-        reissued,
-        claimed: claimed.count,
-        adminId: adminId ?? null,
-      });
-    }
-    return { batchNo, reissued };
-  });
+    return { batchNo, reissued: issuedRows.map((r) => r.id), blocked: true };
+  }
 }
 
 /**

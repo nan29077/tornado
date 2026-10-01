@@ -19,10 +19,17 @@ export const INCOME_TAX_RATE = 0.03;
 /** 지방소득세율 = 소득세액의 10% */
 export const LOCAL_TAX_RATE = 0.1;
 /**
- * 소액부징수 기준(소득세법 제86조). 산출된 소득세가 이 금액 미만이면 징수하지 않는다.
- * 사업소득 3% 기준으로 지급액 약 33,333원 미만이 여기 해당한다.
+ * (폐지) 소액부징수 기준.
+ *
+ * 2026-10-01 정책 변경: **모든 지급 건에 원천징수한다.** 소액부징수를 건별로 적용하면
+ * 큰 금액을 잘게 나눠 요청하는 것만으로 원천징수를 피할 수 있었고, 원천징수대상 사업소득에
+ * 대한 소액부징수 적용 여부도 법령 확인이 필요했다. 대신 최소 정산 요청 금액을 10,000원으로 둔다
+ * (`MIN_SETTLEMENT_REQUEST_AMOUNT`). 값은 과거 코드·데이터 해석을 위해서만 남겨 둔다.
  */
 export const SMALL_AMOUNT_EXEMPTION = 1_000n;
+
+/** 최소 정산(출금) 요청 금액. 환경변수로 더 높일 수는 있어도 이보다 낮출 수는 없다. */
+export const MIN_SETTLEMENT_REQUEST_AMOUNT = 10_000n;
 
 /** 국고금관리법 제47조 — 10원 미만 단수 절사 */
 function truncateTo10Won(v: bigint): bigint {
@@ -36,7 +43,7 @@ export interface WithholdingBreakdown {
   localTax: bigint;
   /** 원천징수 합계 = 소득세 + 지방소득세 */
   total: bigint;
-  /** 소액부징수로 전액 미징수된 경우 true */
+  /** (폐지) 소액부징수 여부. 2026-10-01 부터 항상 false 다 — 모든 지급 건에 원천징수한다. */
   exempt: boolean;
 }
 
@@ -49,16 +56,17 @@ export interface WithholdingBreakdown {
  *   1) 소득세      = 지급액 × 3%        → 10원 미만 절사
  *   2) 지방소득세  = 소득세 × 10%       → 10원 미만 절사
  *   3) 합계        = 소득세 + 지방소득세
- *   4) 소액부징수  : 소득세가 1,000원 미만이면 소득세·지방소득세 모두 미징수
+ *   4) 소액부징수는 적용하지 않는다(2026-10-01 정책). 금액과 무관하게 모든 지급 건에 원천징수한다.
  *
  * 예) 지급액 333,333원
  *     - 소득세     333,333 × 3% = 9,999.99 → 9,990원
  *     - 지방소득세 9,990 × 10%  = 999      → 990원
  *     - 합계 10,980원  (3.3% 단일 절사 시 10,999원 — 19원 차이)
  *
- * 예) 지급액 33,333원 이하
- *     - 소득세가 1,000원 미만이므로 **소액부징수**, 원천징수 0원
- *     - 즉 33,334원 미만 정산은 전액 지급된다
+ * 예) 지급액 10,000원 (최소 정산 요청 금액)
+ *     - 소득세     10,000 × 3% = 300원
+ *     - 지방소득세 300 × 10%   = 30원
+ *     - 합계 330원, 실지급 9,670원
  *
  * 최종 세액 확정은 세무 자문을 거치는 것을 권장한다.
  */
@@ -68,11 +76,7 @@ export function calculateWithholding(amount: bigint): WithholdingBreakdown {
   const rawIncomeTax = applyRate(amount, INCOME_TAX_RATE);
   const incomeTax = truncateTo10Won(rawIncomeTax);
 
-  // 소액부징수: 산출 소득세가 1,000원 미만이면 지방소득세까지 함께 미징수한다.
-  if (incomeTax < SMALL_AMOUNT_EXEMPTION) {
-    return { incomeTax: 0n, localTax: 0n, total: 0n, exempt: true };
-  }
-
+  // 소액부징수는 적용하지 않는다(2026-10-01). 산출 세액이 작아도 그대로 징수한다.
   const localTax = truncateTo10Won(applyRate(incomeTax, LOCAL_TAX_RATE));
   return { incomeTax, localTax, total: incomeTax + localTax, exempt: false };
 }

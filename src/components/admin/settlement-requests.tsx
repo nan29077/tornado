@@ -399,13 +399,17 @@ export function SettlementRequestsPanel({
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <a
-              href={payoutUrl ?? '#'}
+              href={payoutUrl ? (preview.reissue.length > 0 ? `${payoutUrl}&confirmReissue=1` : payoutUrl) : '#'}
               onClick={(e) => {
                 if (!payoutUrl || preview.included.length === 0) {
                   e.preventDefault();
                   return;
                 }
-                if (!window.confirm(`${preview.included.length}건 / ${formatWon(BigInt(preview.totalAmount))} 이체파일을 내려받습니다. 받는 순간 배치번호가 확정됩니다. 계속할까요?`)) {
+                const reissueNote =
+                  preview.reissue.length > 0
+                    ? `\n\n주의: 이 중 ${preview.reissue.length}건은 이미 이체파일이 나간 건입니다. 재발급하면 이전 배치번호는 더 이상 결과 반영에 쓸 수 없습니다. 이전 파일을 은행에 올리지 않은 것이 확실할 때만 계속하세요.`
+                    : '';
+                if (!window.confirm(`${preview.included.length}건 / ${formatWon(BigInt(preview.totalAmount))} 이체파일을 내려받습니다. 받는 순간 배치번호가 확정됩니다. 계속할까요?${reissueNote}`)) {
                   e.preventDefault();
                   return;
                 }
@@ -417,7 +421,7 @@ export function SettlementRequestsPanel({
                 preview.included.length === 0 && 'pointer-events-none opacity-50',
               )}
             >
-              확인했습니다 · 파일 받기
+              {preview.reissue.length > 0 ? '재발급 확인 · 파일 받기' : '확인했습니다 · 파일 받기'}
             </a>
             <button
               type="button"

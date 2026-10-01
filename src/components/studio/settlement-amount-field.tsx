@@ -80,7 +80,7 @@ export function SettlementAmountField({
           <PreviewRow label="지방소득세 (소득세의 10%)" value={formatWon(wh.localTax)} />
           <PreviewRow
             label="원천징수 합계"
-            value={wh.exempt ? '0원 (소액부징수)' : formatWon(wh.total)}
+            value={formatWon(wh.total)}
           />
           <PreviewRow label="실지급 예상" value={formatWon(target - wh.total)} strong />
         </dl>

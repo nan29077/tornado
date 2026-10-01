@@ -576,7 +576,7 @@ export default async function StudioSettlementPage({
                       label="전액 요청 시 원천징수"
                       value={
                         previewWithholding.exempt
-                          ? '0원 (소액부징수)'
+                          ? '0원'
                           : formatWon(previewWithholding.total)
                       }
                     />
@@ -620,7 +620,7 @@ export default async function StudioSettlementPage({
                     confirmMessage={
                       `요청 가능 금액 ${formatWon(summary.available)} 기준으로 안내합니다.\n` +
                       (withholds
-                        ? `전액 요청 시 원천징수 ${previewWithholding.exempt ? '0원 (소액부징수)' : formatWon(previewWithholding.total)} / ` +
+                        ? `전액 요청 시 원천징수 ${formatWon(previewWithholding.total)} / ` +
                           `실지급 ${formatWon(summary.available - previewWithholding.total)}\n`
                         : `${taxInfo.text}라 원천징수 없이 전액 지급됩니다.\n`) +
                       `입금 계좌 ${accountSummary} (${account?.holderMasked ?? '예금주 미확인'})\n\n` +
@@ -657,8 +657,8 @@ export default async function StudioSettlementPage({
                   {withholds ? (
                     <Notice tone="neutral" title="원천징수 계산 방식">
                       사업소득 기준으로 <strong>소득세 3%(10원 미만 절사)</strong> 와{' '}
-                      <strong>지방소득세(소득세의 10%, 10원 미만 절사)</strong> 를 각각 산출해 더합니다. 소득세가
-                      1,000원 미만이면 <strong>소액부징수</strong>로 원천징수하지 않습니다(정산액 33,334원 미만).
+                      <strong>지방소득세(소득세의 10%, 10원 미만 절사)</strong> 를 각각 산출해 더합니다. 요청 금액과
+                      관계없이 <strong>모든 지급 건에서 원천징수</strong>하며, 정산은 {formatWon(minSettlement)} 이상부터 요청할 수 있습니다.
                       최종 세율은 세무 검토 후 확정되며, 사업자 등록 여부와 소득 구분에 따라 달라질 수 있습니다.
                     </Notice>
                   ) : (

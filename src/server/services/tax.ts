@@ -34,6 +34,12 @@ export function splitVat(totalIncludingVat: bigint): { supply: bigint; vat: bigi
   return { supply, vat: totalIncludingVat - supply };
 }
 
+/** 수수료 차감(음수)과 수수료 환입(양수)으로 수수료 매출 순액을 구한다. 음수가 되지 않는다. */
+function netFee(platformFeeSum: bigint, feeReturnSum: bigint): bigint {
+  const net = -(platformFeeSum + feeReturnSum);
+  return net > 0n ? net : 0n;
+}
+
 export interface TaxMonthTotals {
   /** 후원 총액 — 거래대금. 도네이도 매출이 아니다. */
   donationGross: bigint;
@@ -103,9 +109,21 @@ export async function getLedgerTotals(ym: string, vatIncluded: boolean): Promise
 
   const sumOf = (t: string) => rows.find((r) => r.entryType === t)?._sum.amount ?? 0n;
 
-  const platformFee = abs(sumOf('PLATFORM_FEE'));
-  // 부가세 별도 정책이면 수수료 전액이 공급가액이고 세액은 청구 시점에 별도로 붙는다.
-  const split = vatIncluded ? splitVat(platformFee) : { supply: platformFee, vat: platformFee / 10n };
+  /**
+   * 플랫폼 수수료 매출 = 수수료 차감(PLATFORM_FEE, 음수) − 환불로 돌려준 수수료(REFUND_FEE_RETURN, 양수).
+   *
+   * 2026-10-01 이전에는 PLATFORM_FEE 만 더해, 전액 환불된 후원의 수수료가 매출로 남아
+   * 부가세가 과다 신고됐다(10만원 전액 환불 → 실제 매출 0원인데 세액 1,364원).
+   */
+  const platformFee = netFee(sumOf('PLATFORM_FEE'), sumOf('REFUND_FEE_RETURN'));
+  /**
+   * 원장의 PLATFORM_FEE 는 정책과 무관하게 **항상 부가세를 포함한 실제 차감액**이다
+   * (computeFees: 부가세 별도 정책이면 공급가액+부가세를 합쳐 차감한다).
+   * 그래서 정책과 상관없이 총액에서 공급가액과 세액을 나눈다. 예전에는 부가세 별도 정책일 때
+   * 총액 전체를 공급가액으로 보고 10% 를 또 얹어 세액이 이중으로 계산됐다.
+   */
+  void vatIncluded;
+  const split = splitVat(platformFee);
 
   return {
     donationGross: abs(sumOf('DONATION_GROSS')),
@@ -113,7 +131,8 @@ export async function getLedgerTotals(ym: string, vatIncluded: boolean): Promise
     platformFeeSupply: split.supply,
     platformFeeVat: split.vat,
     pgFee: abs(sumOf('PG_FEE')),
-    refund: abs(sumOf('REFUND')) - abs(sumOf('REFUND_FEE_RETURN')),
+    // 후원자에게 돌려준 금액(참고). 수수료 환입분은 위 수수료 매출에서 이미 차감했다.
+    refund: abs(sumOf('REFUND')),
     adjustment: sumOf('ADJUSTMENT'),
   };
 }
@@ -155,8 +174,8 @@ export async function getPayoutTotals(ym: string): Promise<TaxPayoutTotals> {
     withholding += r.withholding;
     payoutAmount += r.payoutAmount;
     if (!r.withholdingFiledAt) unfiled += 1;
-    // 원천징수액이 0원인 건(소액부징수)은 지급명세서 제출 대상이지만 주민번호가 없어도
-    // 신고서에 올릴 수는 있다. 실제로 문제가 되는 건 **징수한 건에 주민번호가 없는 경우**다.
+    // 원천징수한 건에 주민번호가 없으면 지급명세서를 낼 수 없다.
+    // (2026-10-01 부터 개인 크리에이터 지급은 금액과 무관하게 모두 징수한다)
     if (r.withholding > 0n && !r.residentEnc && !r.residentMasked) missingResident += 1;
   }
 
@@ -185,7 +204,8 @@ export interface CreatorPayoutRow {
  * `mismatch` 는 **세무유형과 실제 징수가 어긋난 상태**를 뜻한다.
  *  - 비사업자인데 원천징수가 0원 → 도네이도가 원천징수의무를 이행하지 않은 것
  *  - 사업자인데 원천징수가 있음 → 크리에이터가 과다 징수당한 것 (환급 필요)
- * 소액부징수(지급액 33,334원 미만)로 0원인 건은 정상이라 어긋남으로 보지 않는다.
+ * 2026-10-01 부터 소액부징수를 적용하지 않으므로, 비사업자 지급에 원천징수가 0원이면
+ * 금액과 무관하게 어긋남이다. (그 이전 소액부징수로 0원 처리된 과거 건도 함께 표시된다)
  */
 export async function getCreatorPayoutRows(ym: string, limit = 300): Promise<CreatorPayoutRow[]> {
   const { start, end } = kstMonthRange(ym);
@@ -212,9 +232,7 @@ export async function getCreatorPayoutRows(ym: string, limit = 300): Promise<Cre
     const amount = g._sum.amount ?? 0n;
     const withholding = g._sum.withholding ?? 0n;
     const shouldWithhold = taxTypeLabel[taxType].withholding;
-    // 소액부징수 구간(지급액 33,334원 미만)은 0원이 정상이다.
-    const smallAmountOnly = amount < 33_334n;
-    const mismatch = shouldWithhold ? withholding === 0n && !smallAmountOnly : withholding > 0n;
+    const mismatch = shouldWithhold ? amount > 0n && withholding === 0n : withholding > 0n;
 
     return {
       creatorId: g.creatorId,
@@ -257,15 +275,17 @@ export interface CreatorFeeRow {
 export async function getCreatorFeeRows(ym: string, vatIncluded: boolean, limit = 300): Promise<CreatorFeeRow[]> {
   const { start, end } = kstMonthRange(ym);
 
+  // 수수료 차감(음수)과 환불로 돌려준 수수료(양수)를 함께 더해 순액을 구한다(2026-10-01).
   const grouped = await prisma.settlementLedger.groupBy({
     by: ['creatorId'],
-    where: { entryType: 'PLATFORM_FEE', occurredAt: { gte: start, lt: end } },
+    where: { entryType: { in: ['PLATFORM_FEE', 'REFUND_FEE_RETURN'] }, occurredAt: { gte: start, lt: end } },
     _sum: { amount: true },
-    // 차감 분개라 금액이 음수다. 오름차순이 곧 "수수료가 큰 순" 이다.
+    // 순액도 음수다. 오름차순이 곧 "수수료가 큰 순" 이다.
     orderBy: { _sum: { amount: 'asc' } },
     take: limit,
   });
   if (grouped.length === 0) return [];
+  void vatIncluded;
 
   const creators = await prisma.creatorProfile.findMany({
     where: { id: { in: grouped.map((g) => g.creatorId) } },
@@ -278,8 +298,10 @@ export async function getCreatorFeeRows(ym: string, vatIncluded: boolean, limit 
 
   return grouped.map((g) => {
     const c = byId.get(g.creatorId);
-    const fee = abs(g._sum.amount ?? 0n);
-    const split = vatIncluded ? splitVat(fee) : { supply: fee, vat: fee / 10n };
+    const net = g._sum.amount ?? 0n;
+    // 순액이 0 이상(전액 환불 등)이면 이 달 수수료 매출은 없다.
+    const fee = net < 0n ? -net : 0n;
+    const split = splitVat(fee);
     return {
       creatorId: g.creatorId,
       displayName: c?.displayName ?? '(삭제된 크리에이터)',
