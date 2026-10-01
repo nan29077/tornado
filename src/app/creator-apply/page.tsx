@@ -1,3 +1,4 @@
+import { isServiceInMockMode } from '@/server/service-mode';
 import type { Metadata } from 'next';
 import { MessageSquare, MonitorPlay, Wallet, ShieldCheck } from 'lucide-react';
 import { PublicShell } from '@/components/layout/public-shell';
@@ -66,7 +67,7 @@ export default async function CreatorApplyPage() {
               전까지는 후원 페이지가 공개되지 않습니다.
             </Notice>
           </div>
-          <CreatorApplyForm loggedIn={Boolean(user)} sessionEmail={user?.email ?? null} />
+          <CreatorApplyForm loggedIn={Boolean(user)} sessionEmail={user?.email ?? null} mockMode={isServiceInMockMode()} />
         </>
       )}
     </PublicShell>

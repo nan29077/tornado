@@ -39,6 +39,13 @@ const TUNNEL_ORIGINS = [
 
 const nextConfig: NextConfig = {
   /**
+   * 화면 오류 안내(src/app/error.tsx)에서 개발자용 점검 목록을 **로컬에서만** 보이게 하는 표식.
+   * 빌드 시점 값이 번들에 들어간다. 운영 빌드(APP_ENV=prod 또는 미설정)에서는 항상 '0' 이다.
+   */
+  env: {
+    NEXT_PUBLIC_DEV_DIAGNOSTICS: (process.env.APP_ENV ?? '').trim().toLowerCase() === 'local' ? '1' : '0',
+  },
+  /**
    * 개발 모드 좌측 하단 "N Issue" 배지 비활성화.
    *
    * 배지가 보고하던 유일한 이슈는 브라우저 확장 프로그램이 Next 내부 요소에

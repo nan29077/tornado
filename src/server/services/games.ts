@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import { Prisma } from '@/generated/prisma/client';
 import { prisma, withAdvisoryLock } from '@/server/db';
 import { logger } from '@/lib/logger';
+import { broadcastDonorName } from '@/lib/donor-name';
 import { newId } from '@/lib/id';
 import { randomCodeString, sha256 } from '@/lib/crypto';
 import {
@@ -756,11 +757,23 @@ export async function joinFromDonation(donationId: string): Promise<void> {
         donorId: true,
         amount: true,
         displayName: true,
+        anonymous: true,
         isTest: true,
         paidAt: true,
+        creator: { select: { overlaySetting: { select: { anonymize: true } } } },
       },
     });
     if (!donation || donation.isTest || !donation.paidAt) return;
+
+    /**
+     * 방송에 나가는 이름은 오버레이·유튜브와 **같은 규칙**으로 정한다 (2026-10-01).
+     * 예전에는 표시명을 그대로 써서, 익명으로 후원한 사람의 닉네임이 게임 참여자 목록과
+     * 당첨자 발표로 방송에 노출됐다.
+     */
+    const publicName =
+      donation.creator?.overlaySetting?.anonymize || donation.anonymous
+        ? '익명의 후원자'
+        : broadcastDonorName(donation.displayName);
 
     const round = await prisma.gameRound.findFirst({
       where: {
@@ -804,7 +817,7 @@ export async function joinFromDonation(donationId: string): Promise<void> {
         creatorId: donation.creatorId,
         donorId: donation.donorId,
         donationId: donation.id,
-        displayName: donation.displayName.slice(0, MAX_NICKNAME_LEN),
+        displayName: publicName.slice(0, MAX_NICKNAME_LEN),
         entry: null,
         source: 'DONATION',
         entryKey,

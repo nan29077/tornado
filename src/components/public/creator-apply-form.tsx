@@ -27,14 +27,23 @@ const CHANNEL_PLATFORMS = [
 
 type ChannelPlatformValue = (typeof CHANNEL_PLATFORMS)[number]['value'];
 
-export function CreatorApplyForm({ loggedIn, sessionEmail }: { loggedIn: boolean; sessionEmail?: string | null }) {
+export function CreatorApplyForm({
+  loggedIn,
+  sessionEmail,
+  mockMode = false,
+}: {
+  loggedIn: boolean;
+  sessionEmail?: string | null;
+  /** 결제·문자 발송이 모의 상태일 때만 안내를 보여 준다. */
+  mockMode?: boolean;
+}) {
   const [state, formAction, pending] = React.useActionState(applyCreator, initial);
   const [isBusiness, setIsBusiness] = React.useState(false);
   const [channelPlatform, setChannelPlatform] = React.useState<ChannelPlatformValue | ''>('');
 
   // ------------------------------------------------------------ 신청 완료 화면
   if (state.ok && state.code) {
-    return <ApplyDone code={state.code} displayName={state.displayName} />;
+    return <ApplyDone code={state.code} displayName={state.displayName} mockMode={mockMode} />;
   }
 
   // ------------------------------------------------------------ 기신청 안내
@@ -201,7 +210,7 @@ export function CreatorApplyForm({ loggedIn, sessionEmail }: { loggedIn: boolean
   );
 }
 
-function ApplyDone({ code, displayName }: { code: string; displayName?: string }) {
+function ApplyDone({ code, displayName, mockMode }: { code: string; displayName?: string; mockMode: boolean }) {
   return (
     <div className="space-y-4">
       <Card>
@@ -255,10 +264,12 @@ function ApplyDone({ code, displayName }: { code: string; displayName?: string }
         </ol>
       </Card>
 
-      <Notice tone="warning" title="현재 준비 단계 안내">
-        도네이도는 준비 단계로 실제 문자 발송과 결제는 비활성화되어 있습니다. 승인 및 번호 배정 일정은 별도로
-        안내드립니다.
-      </Notice>
+      {mockMode ? (
+        <Notice tone="warning" title="테스트(모의) 모드 안내">
+          도네이도는 현재 테스트(모의) 모드로 실제 문자 발송과 결제는 이루어지지 않습니다. 승인 및 번호 배정 일정은
+          별도로 안내드립니다.
+        </Notice>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-2">
         <LinkButton href="/studio" variant="primary" size="md" className="w-full">

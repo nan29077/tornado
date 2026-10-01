@@ -139,6 +139,13 @@ const MAX_BACKOFF_MS = 30000;
  * 떠난 뒤다. 오래된 것부터 버리는 대신, 넘칠 때는 **표시 시간을 줄여 빠르게 소화**한다.
  */
 const MAX_QUEUE = 12;
+/**
+ * 실제 유료 후원은 버리지 않는다(2026-10-01). 예전에는 12건을 넘으면 오래된 것부터 잘라내,
+ * 재연결 재전송(최대 20건)이나 후원 폭주 때 결제된 후원의 알림·TTS 가 흔적 없이 빠졌다.
+ * 넘치면 **테스트 알림부터** 버리고, 그래도 넘치면 짧은 표시 시간으로 소화한다.
+ * 이 값은 메모리 보호용 최후 상한이다(정상 방송에서는 도달하지 않는다).
+ */
+const HARD_QUEUE_LIMIT = 200;
 /** 대기열이 밀렸을 때 적용하는 짧은 표시 시간. */
 /**
  * TTS 한 건이 붙들 수 있는 최대 시간.
@@ -694,11 +701,17 @@ export function OverlayClient({
           }
 
           queue.current.push(payload);
-          // 상한을 넘으면 가장 오래된 것부터 버린다. 무한히 쌓이면 몇 분 뒤에야 재생된다.
+          // 상한을 넘으면 테스트 알림부터 버린다. 실제 후원은 RUSH 표시 시간으로 빠르게 소화한다.
           if (queue.current.length > MAX_QUEUE) {
-            const dropped = queue.current.length - MAX_QUEUE;
+            const before = queue.current.length;
+            queue.current = queue.current.filter((p, i) => !p.isTest || i === queue.current.length - 1);
+            const droppedTests = before - queue.current.length;
+            if (droppedTests > 0) console.log(`[overlay] 대기열이 밀려 테스트 알림 ${droppedTests}건을 건너뜁니다.`);
+          }
+          if (queue.current.length > HARD_QUEUE_LIMIT) {
+            const dropped = queue.current.length - HARD_QUEUE_LIMIT;
             queue.current.splice(0, dropped);
-            console.log(`[overlay] 대기열이 가득 차 오래된 알림 ${dropped}건을 건너뜁니다.`);
+            console.warn(`[overlay] 대기열 최후 상한(${HARD_QUEUE_LIMIT})을 넘어 오래된 알림 ${dropped}건을 건너뜁니다.`);
           }
           setQueueLen(queue.current.length);
           playNextRef.current();

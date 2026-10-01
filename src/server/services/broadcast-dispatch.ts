@@ -14,7 +14,7 @@ import {
   invalidateBroadcastCache,
 } from './youtube-connection';
 import { reserveYouTubeQuota, releaseYouTubeQuota, getYouTubeQuotaUsage, type QuotaReserveInput } from './youtube-quota';
-import { normalizeTtsProvider } from './tts/naver';
+import { resolveEffectiveTtsProvider } from './tts/naver';
 import { clampOverlayLayout } from '@/lib/overlay-layout';
 import { textAnimOf } from '@/lib/overlay-text-anim';
 import { effectLevelOfRank } from '@/lib/overlay-effect-level';
@@ -265,7 +265,10 @@ export async function buildOverlayPayload(donationId: string, isTest = false): P
     banner: merged.banner,
     tierLabel: merged.tierLabel,
     tts: buildTts(tier, tts, { donorName, amount: donation.amount, message }),
-    ttsMode: normalizeTtsProvider(tts?.provider) === 'naver' ? 'server' : 'browser',
+    // 실제 합성 경로(/api/tts/synthesize)와 같은 함수로 정한다 (2026-10-01).
+    // 크리에이터 설정만 보면 관리자가 전역으로 클로바를 켜도 브라우저 음성으로 나가,
+    // 한국어 음성이 없는 OBS·PRISM 브라우저 소스에서 무음이 됐다.
+    ttsMode: (await resolveEffectiveTtsProvider(donation.creatorId)) === 'naver' ? 'server' : 'browser',
     ...soundOf(overlay),
     durationMs: merged.durationMs,
     ...displayOf(overlay),
@@ -555,7 +558,7 @@ export async function sendTestOverlay(
     banner: merged.banner,
     tierLabel: merged.tierLabel,
     tts: buildTts(tier, creator.ttsSetting, { ...input, donorName, message }),
-    ttsMode: normalizeTtsProvider(creator.ttsSetting?.provider) === 'naver' ? 'server' : 'browser',
+    ttsMode: (await resolveEffectiveTtsProvider(creatorId)) === 'naver' ? 'server' : 'browser',
     ...soundOf(overlay),
     durationMs: merged.durationMs,
     ...displayOf(overlay),

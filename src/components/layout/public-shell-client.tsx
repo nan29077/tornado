@@ -76,10 +76,13 @@ export function PublicShellClient({
   children,
   aside,
   viewer,
+  mockMode = false,
 }: {
   children: React.ReactNode;
   aside?: React.ReactNode;
   viewer: ShellViewer | null;
+  /** 결제·문자 발송이 모의(mock) 상태일 때만 하단에 안내를 보여 준다. */
+  mockMode?: boolean;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
@@ -181,7 +184,7 @@ export function PublicShellClient({
 
       <main className="public-content px-4 py-5 sm:px-6 sm:py-7">{children}</main>
 
-      <Footer />
+      <Footer mockMode={mockMode} />
         </div>
 
         {/* PC 우측 메뉴: 화면 세로 중앙에 붙는다 */}
@@ -330,7 +333,7 @@ export function PublicShellClient({
   );
 }
 
-function Footer() {
+function Footer({ mockMode }: { mockMode: boolean }) {
   return (
     <footer className="public-footer mt-10 border-t">
       <div className="mx-auto w-full max-w-6xl px-4 py-8 text-[12px] leading-relaxed text-ink-400">
@@ -345,7 +348,9 @@ function Footer() {
           도네이도 후원은 유튜브 공식 슈퍼챗이 아닌 외부 후원 서비스입니다. 방송 채팅에는 크리에이터가 연결한 계정으로
           표시됩니다.
         </p>
-        <p className="mt-1">현재 준비 단계로 실제 결제와 문자 발송은 비활성화되어 있습니다.</p>
+        {mockMode ? (
+          <p className="mt-1">현재 테스트(모의) 모드로 운영 중이라 실제 결제와 문자 발송은 이루어지지 않습니다.</p>
+        ) : null}
       </div>
     </footer>
   );

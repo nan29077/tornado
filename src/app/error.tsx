@@ -1,9 +1,19 @@
 'use client';
 
+import Link from 'next/link';
+import { CircleAlert } from 'lucide-react';
+
 /**
  * 화면 오류 안내.
- * 로컬에서 가장 흔한 원인은 데이터베이스 미실행이므로 체크리스트를 함께 보여준다.
+ *
+ * 2026-10-01: 사용자에게는 짧은 안내와 [다시 시도] 만 보여 준다. 예전에는 실서비스에서도
+ * `.bat` 실행 파일·DATABASE_URL·PostgreSQL 점검 목록을 그대로 보여 줘, 후원자·크리에이터가
+ * 개발 도구 안내를 보고 서버 구성 정보까지 드러났다. 점검 목록은 로컬(APP_ENV=local)에서만 보인다.
+ *
+ * 에러 경계에서는 훅을 쓰지 않는다(/_global-error 프리렌더 실패 방지, CLAUDE.md).
  */
+const SHOW_DEV_DIAGNOSTICS = process.env.NEXT_PUBLIC_DEV_DIAGNOSTICS === '1';
+
 export default function ErrorPage({
   error,
   reset,
@@ -16,58 +26,52 @@ export default function ErrorPage({
     /database|prisma|ECONNREFUSED|connect|P1000|P1001|P2021|authentication|can't reach|relation .* does not exist/i.test(message);
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-[#f6f5fb] p-6">
-      <div className="w-full max-w-[520px] rounded-[20px] bg-white p-6 shadow-[0_2px_8px_rgba(19,26,58,0.05),0_12px_32px_rgba(19,26,58,0.06)]">
-        <h1 className="text-[18px] font-extrabold text-[#131a3a]">화면을 불러오지 못했습니다</h1>
-        <p className="mt-2 text-[13.5px] leading-relaxed text-[#5a628c]">
-          {looksLikeDb
-            ? '데이터베이스에 연결하지 못했습니다. 아래 항목을 확인해 주세요.'
-            : '일시적인 오류일 수 있습니다. 다시 시도해 보시고, 계속되면 아래 항목을 확인해 주세요.'}
+    <div className="grid min-h-dvh place-items-center bg-ink-50 px-4 py-10">
+      <div className="w-full max-w-[460px] rounded-[22px] border border-ink-100 bg-white p-6 shadow-[0_24px_60px_rgba(23,22,26,0.08)]">
+        <span className="grid h-10 w-10 place-items-center rounded-xl bg-warning-50 text-warning-600">
+          <CircleAlert size={20} strokeWidth={1.7} />
+        </span>
+        <h1 className="mt-3 text-[19px] font-extrabold tracking-tight text-ink-900">화면을 불러오지 못했습니다</h1>
+        <p className="mt-2 text-[13.5px] leading-relaxed text-ink-600">
+          일시적인 오류일 수 있습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 고객센터로 알려 주세요.
         </p>
+        {error?.digest ? (
+          <p className="mt-2 text-[12px] text-ink-500">오류 번호: {error.digest}</p>
+        ) : null}
 
-        <ol className="mt-4 space-y-2 text-[13px] leading-relaxed text-[#2c3563]">
-          <li className="rounded-xl bg-[#f2efff] px-3 py-2.5 text-[#5836d6]">
-            <span className="font-bold">간편 미리보기 사용 시:</span> 열려 있는 도네이도 서버 창을 모두 닫고{' '}
-            <span className="font-bold">1_미리보기실행.bat</span> 하나만 다시 실행해 주세요.
-          </li>
-          <li>
-            <span className="font-bold">1.</span> 별도 PostgreSQL 방식이라면 <span className="font-bold">도구_DB시작.bat</span> 을 실행해
-            PostgreSQL 컨테이너가 켜져 있는지 확인
-          </li>
-          <li>
-            <span className="font-bold">2.</span> <span className="font-bold">도구_최초설치.bat</span> 을 실행해
-            마이그레이션과 시드가 끝났는지 확인
-          </li>
-          <li>
-            <span className="font-bold">3.</span> 직접 설치한 PostgreSQL 을 쓰신다면{' '}
-            <span className="font-bold">.env</span> 의 DATABASE_URL 확인
-          </li>
-          <li>
-            <span className="font-bold">4.</span> <span className="font-bold">도구_환경점검.bat</span> 을 실행하면
-            원인을 자동으로 점검합니다
-          </li>
-        </ol>
-
-        {process.env.NODE_ENV !== 'production' && message ? (
-          <pre className="mt-4 overflow-x-auto rounded-xl bg-[#f6f5fb] p-3 text-[11.5px] leading-relaxed text-[#5a628c]">
-            {message}
-          </pre>
+        {SHOW_DEV_DIAGNOSTICS ? (
+          <div className="mt-4 rounded-xl border border-dashed border-ink-200 bg-ink-50 p-3">
+            <p className="text-[12px] font-bold text-ink-700">
+              개발자용 점검 (로컬 환경에서만 보입니다){looksLikeDb ? ' — 데이터베이스 연결 문제로 보입니다' : ''}
+            </p>
+            <ol className="mt-2 space-y-1.5 text-[12.5px] leading-relaxed text-ink-700">
+              <li>간편 미리보기: 열려 있는 서버 창을 모두 닫고 <strong>1_미리보기실행.bat</strong> 하나만 다시 실행</li>
+              <li>별도 PostgreSQL: <strong>도구_DB시작.bat</strong> 실행 후 <strong>도구_최초설치.bat</strong> 로 마이그레이션·시드 확인</li>
+              <li>직접 설치한 PostgreSQL: <strong>.env</strong> 의 DATABASE_URL 확인</li>
+              <li><strong>도구_환경점검.bat</strong> 으로 원인 자동 점검, 상태는 <a className="underline" href="/api/health">/api/health</a></li>
+            </ol>
+            {message ? (
+              <pre className="mt-2 overflow-x-auto rounded-lg bg-white p-2.5 text-[11.5px] leading-relaxed text-ink-600">
+                {message}
+              </pre>
+            ) : null}
+          </div>
         ) : null}
 
         <div className="mt-5 flex gap-2">
           <button
             type="button"
             onClick={reset}
-            className="h-11 flex-1 rounded-xl bg-[#6c4cf1] px-4 text-[15px] font-semibold text-white hover:bg-[#5836d6]"
+            className="h-11 flex-1 rounded-xl bg-ink-900 px-4 text-[15px] font-semibold text-white hover:bg-ink-800"
           >
             다시 시도
           </button>
-          <a
-            href="/api/health"
-            className="flex h-11 items-center justify-center rounded-xl border border-[#dcdeeb] px-4 text-[15px] font-semibold text-[#131a3a]"
+          <Link
+            href="/"
+            className="flex h-11 items-center justify-center rounded-xl border border-ink-200 px-4 text-[15px] font-semibold text-ink-900"
           >
-            상태 확인
-          </a>
+            홈으로
+          </Link>
         </div>
       </div>
     </div>
