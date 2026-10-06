@@ -136,6 +136,22 @@ export function GameOverlayClient({
   /** 스튜디오가 [배치 조정]을 켠 상태. 켜지면 예시 화면을 띄우고 자리를 보고한다. */
   const [editFrame, setEditFrame] = React.useState<string | null>(null);
 
+  const reportStatus = React.useCallback(() => {
+    if (!preview || typeof window === 'undefined' || window.parent === window) return;
+    const source = sampleMode ? sample : state;
+    window.parent.postMessage(
+      {
+        type: 'donaido-game-status',
+        creatorId,
+        phase: sampleMode ? 'sample' : phase,
+        live: Boolean(source),
+        status: source?.status ?? '',
+        participantCount: source?.participantCount ?? 0,
+      },
+      window.location.origin,
+    );
+  }, [preview, sampleMode, sample, state, creatorId, phase]);
+
   React.useEffect(() => {
     /**
      * 미리보기 모드는 고정 화면이다. 실시간 연결을 열지 않는다.
@@ -205,7 +221,13 @@ export function GameOverlayClient({
       const data = e.data as
         | { type?: string; target?: string; layout?: Partial<OverlayLayout>; on?: boolean; frame?: string }
         | null;
-      if (!data || data.target !== 'game') return;
+      if (!data) return;
+      // 부모의 첫 message 리스너보다 이 iframe이 먼저 뜬 경우 현재 상태를 다시 전한다.
+      if (data.type === 'donaido-game-hello' && e.source === window.parent) {
+        reportStatus();
+        return;
+      }
+      if (data.target !== 'game') return;
       if (data.type === 'donaido-overlay-layout') {
         setDraftLayout(data.layout ? clampOverlayLayout(data.layout) : null);
       }
@@ -215,7 +237,7 @@ export function GameOverlayClient({
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [preview]);
+  }, [preview, reportStatus]);
 
   /** 조정 중에는 게임 카드가 차지하는 자리를 부모에게 계속 알려 준다(윤곽선·손잡이용). */
   const boardBoxRef = React.useRef<HTMLDivElement | null>(null);
@@ -266,24 +288,12 @@ export function GameOverlayClient({
    * 이 구분이 없어서 그동안 원인을 좁히지 못했다.
    */
   React.useEffect(() => {
-    if (!preview || typeof window === 'undefined' || window.parent === window) return;
-    const source = sampleMode ? sample : state;
     try {
-      window.parent.postMessage(
-        {
-          type: 'donaido-game-status',
-          creatorId,
-          phase: sampleMode ? 'sample' : phase,
-          live: Boolean(source),
-          status: source?.status ?? '',
-          participantCount: source?.participantCount ?? 0,
-        },
-        window.location.origin,
-      );
+      reportStatus();
     } catch {
       /* ignore */
     }
-  }, [preview, sampleMode, creatorId, phase, state, sample]);
+  }, [reportStatus]);
 
   return (
     <div className="pointer-events-none fixed inset-0 bg-transparent">

@@ -24,7 +24,6 @@ import { deliveryStatusLabel } from '@/lib/labels';
 import { findCharacterSticker } from '@/lib/overlay-effect-catalog';
 import { listOverlayTiers } from '@/server/services/overlay-tiers';
 import { countOverlayConnections, MAX_OVERLAY_CONNECTIONS } from '@/server/services/overlay-connections';
-import { findActiveRound } from '@/server/services/game-state';
 import { clampOverlayLayout } from '@/lib/overlay-layout';
 
 export const dynamic = 'force-dynamic';
@@ -139,9 +138,6 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
   const donationConnections = countOverlayConnections(creatorId, 'broadcast', 'donation');
   const gameConnections = countOverlayConnections(creatorId, 'broadcast', 'game');
   const liveConnections = donationConnections + gameConnections;
-
-  // 게임이 방송 화면에 떠 있으면 탭 라벨에 상태 점을 찍는다(다른 탭에 있어도 알 수 있게).
-  const activeRound = await findActiveRound(creatorId);
 
   /**
    * 안내에 쓰는 주소는 **발급 액션과 같은 기준**(요청 호스트)으로 만든다.
@@ -409,7 +405,7 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
           탭 바는 화면에 붙으므로 space-y 바깥에 둔다. 사이 간격을 space-y 로 주면 그 틈으로
           스크롤되는 내용이 비쳐 보인다. 간격은 탭 바 자신의 아래 여백(pb-4)으로 만든다.
         */}
-        <OverlayTabs active={tab} gameLive={Boolean(activeRound)} />
+        <OverlayTabs active={tab} />
 
         {/* 내용이 짧으면 가운데로, 길면 그대로 위에서부터. */}
         <div className="space-y-6 xl:my-auto">

@@ -11,10 +11,10 @@ import { cx } from '@/components/ui';
  * 탭 상태를 주소(?tab=)에 둔다. 새로고침·뒤로가기·즐겨찾기가 그대로 동작하고,
  * 팝아웃 창이나 다른 화면에서 바로 게임 탭으로 들어올 수 있다.
  */
-export function OverlayTabs({ active, gameLive }: { active: 'donation' | 'game'; gameLive?: boolean }) {
+export function OverlayTabs({ active }: { active: 'donation' | 'game' }) {
   const tabs = [
-    { key: 'donation' as const, label: '후원 오버레이', Icon: Heart, href: '/studio/overlay?tab=donation' },
-    { key: 'game' as const, label: '게임 오버레이', Icon: Gamepad2, href: '/studio/overlay?tab=game' },
+    { key: 'donation' as const, label: '후원 오버레이', Icon: Heart },
+    { key: 'game' as const, label: '게임 오버레이', Icon: Gamepad2 },
   ];
 
   return (
@@ -43,12 +43,6 @@ export function OverlayTabs({ active, gameLive }: { active: 'donation' | 'game';
             >
               <Icon size={17} strokeWidth={1.8} />
               {label}
-              {key === 'game' && gameLive ? (
-                <span
-                  className="ml-0.5 inline-block h-2 w-2 rounded-full bg-success-500"
-                  aria-label="게임이 방송 화면에 떠 있습니다"
-                />
-              ) : null}
             </Link>
           );
         })}

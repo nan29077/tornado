@@ -1312,6 +1312,27 @@ export function BroadcastPreview({
     };
   }, [link, pcKey, mobileKey]);
 
+  /** 게임 iframe이 먼저 상태를 보낸 경우를 대비해 현재 상태를 다시 요청한다. */
+  React.useEffect(() => {
+    if (game) return;
+    const ask = () => {
+      rootRef.current?.querySelectorAll<HTMLIFrameElement>('iframe[data-layer="game"]').forEach((frame) => {
+        try {
+          frame.contentWindow?.postMessage({ type: 'donaido-game-hello' }, window.location.origin);
+        } catch {
+          /* 아직 로드 전 */
+        }
+      });
+    };
+    ask();
+    const timer = window.setInterval(ask, 500);
+    const stop = window.setTimeout(() => window.clearInterval(timer), 15000);
+    return () => {
+      window.clearInterval(timer);
+      window.clearTimeout(stop);
+    };
+  }, [game, pcKey, mobileKey, sampleGameId]);
+
   // ── 작은 창(PiP) ─────────────────────────────────────
   const wrapRef = React.useRef<HTMLDivElement | null>(null);
   const surfaceRef = React.useRef<HTMLDivElement | null>(null);
