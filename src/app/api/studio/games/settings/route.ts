@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rejectCrossOrigin } from '@/server/request-guard';
 import { requireCreator } from '@/server/auth';
 import { readJsonObject } from '@/lib/json-body';
 import {
@@ -11,6 +12,10 @@ export const dynamic = 'force-dynamic';
 
 /** 게임 오버레이만 독립적으로 켜고 끈다. 후원 오버레이 설정은 변경하지 않는다. */
 export async function POST(req: Request) {
+  // [CSRF] 쿠키 인증 상태 변경 라우트 — 다른 출처 요청은 거절한다.
+  const crossOrigin = rejectCrossOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   let creatorId: string;
   try {
     creatorId = (await requireCreator()).creatorId;

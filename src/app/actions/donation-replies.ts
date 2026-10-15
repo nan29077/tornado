@@ -7,7 +7,17 @@ import { donationReplySchema, saveDonationReply } from '@/server/services/donati
 import type { StudioActionState } from './studio';
 
 export async function replyToDonationAction(_prev: StudioActionState, data: FormData): Promise<StudioActionState> {
-  const user = await requireCreator();
+  /**
+   * [REPLY-AUTH] requireCreator 는 미로그인·미승인·정지 상태에서 예외를 던진다. 예전에는 잡지 않아
+   * 화면이 오류 페이지로 넘어갔다(다른 스튜디오 액션은 메시지 상태로 돌려준다). 같은 방식으로 맞춘다.
+   * 안내 문구는 requireCreator 가 만든 한국어 문구(정지·심사 대기 등)를 그대로 쓴다.
+   */
+  let user: Awaited<ReturnType<typeof requireCreator>>;
+  try {
+    user = await requireCreator();
+  } catch (e) {
+    return { ok: false, message: e instanceof Error && e.message ? e.message : '크리에이터 로그인이 필요합니다.' };
+  }
   const parsed = donationReplySchema.safeParse(data.get('body'));
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message };
   const id = String(data.get('donationId') ?? '');

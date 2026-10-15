@@ -6,7 +6,8 @@ import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
 import { createSession, hashPassword } from '@/server/auth';
 import { isLocal } from '@/lib/env';
-import { consumeIpRateLimit } from '@/server/rate-limit';
+import { consumeIpRateLimit, clientIpFromHeaders } from '@/server/rate-limit';
+import { activeSignupTerms, recordSignupConsents, SignupTermsMissingError } from '@/server/services/signup-consent';
 import { authReturnPath } from '@/lib/auth-return-path';
 import { ensureDonorPreviewSeed } from '@/server/services/donor-preview-seed';
 
@@ -77,18 +78,20 @@ export async function signupDonor(_prev: SignupFormState, formData: FormData): P
 
   let userId: string;
   try {
-    const user = await prisma.user.create({
-      data: {
-        id: newId(),
-        email,
-        name: parsed.data.name,
-        role: 'DONOR',
-        passwordHash: await hashPassword(parsed.data.password),
-      },
-      select: { id: true },
+    const passwordHash = await hashPassword(parsed.data.password);
+    const ip = await clientIpFromHeaders();
+    userId = await prisma.$transaction(async (tx) => {
+      // [SEC-E] 동의 기록 없이 계정만 생기지 않도록 같은 트랜잭션에서 남긴다(소셜 가입과 같은 규칙).
+      const terms = await activeSignupTerms(tx);
+      const user = await tx.user.create({
+        data: { id: newId(), email, name: parsed.data.name, role: 'DONOR', passwordHash },
+        select: { id: true },
+      });
+      await recordSignupConsents(tx, user.id, terms, { ip });
+      return user.id;
     });
-    userId = user.id;
-  } catch {
+  } catch (e) {
+    if (e instanceof SignupTermsMissingError) return { ok: false, message: e.message, values };
     return { ok: false, message: '가입 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.', values };
   }
 

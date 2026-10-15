@@ -26,8 +26,15 @@ export type { AdminActionState };
  */
 const WRITE_PERMISSIONS = new Set(['SUPER_ADMIN', 'OPERATION', 'FINANCE', 'SUPPORT']);
 
-/** 재무 성격의 작업(정산·환불·수수료·약관)에 필요한 권한. */
-export const FINANCE_PERMISSIONS = new Set(['SUPER_ADMIN', 'FINANCE', 'OPERATION']);
+/**
+ * 재무 성격의 작업(정산·환불·수수료·조정분개·계좌 실명확인·세무·한도 정책)에 필요한 권한.
+ *
+ * [SET-H] 예전에는 OPERATION 도 포함돼 있어, 운영 담당자가 정산 원장 조정분개·일괄 지급완료·
+ * 은행 결과 반영·환불·수수료 정책 변경까지 할 수 있었다. 돈이 움직이는 작업은 직무 분리 원칙에 따라
+ * **최고관리자(SUPER_ADMIN)와 재무(FINANCE)만** 수행한다 (운영 결정 사항).
+ * 화면 쪽 `FINANCE_VIEW_PERMISSIONS`(src/server/admin-guard.ts)와 반드시 같은 집합을 유지한다.
+ */
+export const FINANCE_PERMISSIONS: ReadonlySet<string> = new Set(['SUPER_ADMIN', 'FINANCE']);
 
 export async function requireWriteAdmin(): Promise<SessionUser> {
   const user = await requireAdmin();
@@ -61,7 +68,7 @@ export function assertOperationAdmin(user: SessionUser, what = '이 작업') {
 /** 재무 성격 액션에서 호출한다. 허용목록에 없으면 거절한다. */
 export function assertFinanceAdmin(user: SessionUser, what = '이 작업') {
   if (!user.adminPermission || !FINANCE_PERMISSIONS.has(user.adminPermission)) {
-    throw new Error(`${what}은(는) 재무 또는 운영 권한에서만 가능합니다.`);
+    throw new Error(`${what}은(는) 재무 권한(FINANCE) 또는 최고관리자만 가능합니다.`);
   }
 }
 

@@ -1,6 +1,6 @@
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
-import { env, isLocal } from '@/lib/env';
+import { env, isLocal, isMailDeliveryIntegrated } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { generateToken, randomCodeString, tokenHash } from '@/lib/crypto';
 import { hashPassword } from '@/server/auth';
@@ -31,6 +31,13 @@ export interface ResetRequestResult {
    * 이메일 연동 전까지 개발·검수용으로만 노출한다.
    */
   devLink?: string;
+  /**
+   * [SEC-D] 재설정 메일이 실제로 발송되는 구성인지. 메일 어댑터가 없으면 false 이며,
+   * 화면은 "발송되지 않습니다 — 고객센터 문의"를 **모든 환경에서** 보여 줘야 한다.
+   * (예전에는 운영에서도 "보냈습니다"라고만 안내해, 사용자가 오지 않을 메일을 기다렸다)
+   * 가입 여부와 무관하게 같은 값이므로 계정 열거에 쓰이지 않는다.
+   */
+  mailDelivered: boolean;
 }
 
 function resetLink(token: string): string {
@@ -55,7 +62,7 @@ export async function requestPasswordReset(
   // 가입되지 않았거나 이용할 수 없는 계정이면 아무것도 만들지 않고 같은 응답을 돌려준다.
   if (!user || user.deletedAt || user.status !== 'ACTIVE') {
     logger.info('비밀번호 재설정 요청 - 대상 없음', { emailKnown: Boolean(user) });
-    return { accepted: true };
+    return { accepted: true, mailDelivered: isMailDeliveryIntegrated() };
   }
 
   const token = generateToken(32);
@@ -97,7 +104,7 @@ export async function requestPasswordReset(
     });
   }
 
-  return { accepted: true, devLink: isLocal ? link : undefined };
+  return { accepted: true, devLink: isLocal ? link : undefined, mailDelivered: isMailDeliveryIntegrated() };
 }
 
 export type ResetTokenState = 'VALID' | 'NOT_FOUND' | 'EXPIRED' | 'USED';

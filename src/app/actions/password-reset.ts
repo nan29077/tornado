@@ -20,6 +20,8 @@ export interface ResetRequestState {
   message?: string;
   /** 로컬(APP_ENV=local)에서만 채워지는 개발용 링크 */
   devLink?: string;
+  /** [SEC-D] false 면 재설정 메일이 실제로 발송되지 않는다(메일 미연동). */
+  mailDelivered?: boolean;
   values?: { email: string };
 }
 
@@ -52,7 +54,7 @@ export async function requestPasswordResetAction(
   }
 
   const result = await requestPasswordReset(parsed.data, ip);
-  return { submitted: result.accepted, devLink: result.devLink, values };
+  return { submitted: result.accepted, devLink: result.devLink, mailDelivered: result.mailDelivered, values };
 }
 
 export interface ResetConfirmState {

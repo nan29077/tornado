@@ -405,6 +405,13 @@ export async function withdrawAccount(_prev: DonorActionState, formData: FormDat
         },
       }),
       prisma.userSession.deleteMany({ where: { userId: user.id } }),
+      /**
+       * [SEC-C2] 소셜 연결도 끊는다.
+       * 예전에는 social_identity 가 남아 같은 카카오·네이버 계정으로 다시 가입할 수 없었고
+       * (공급자 고유 ID 가 탈퇴 계정에 묶여 "로그인할 수 없는 계정" 오류), 탈퇴자의 공급자 ID 를
+       * 이유 없이 계속 보관했다. 이메일·비밀번호와 마찬가지로 로그인 수단이므로 함께 지운다.
+       */
+      prisma.socialIdentity.deleteMany({ where: { userId: user.id } }),
     ]);
   } catch {
     return { ok: false, message: '탈퇴 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.' };

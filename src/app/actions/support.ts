@@ -35,6 +35,9 @@ export interface SupportFormState {
 // 'use server' 파일은 async 함수만 export 할 수 있으므로 상수는 내부에만 둔다.
 const RATE_WINDOW_SEC = 600;
 const RATE_MAX = 10;
+/** [SEC-G] 거래번호 안내 문구. 존재·소유 여부와 무관하게 항상 같다(거래번호 탐색 방지). */
+const SUPPORT_TRANSACTION_NOTE = (no: string) =>
+  `거래번호 ${no} 를 문의에 함께 기록했습니다. 담당자가 해당 거래를 직접 확인한 뒤 답변드립니다.`;
 
 const schema = z.object({
   category: z.string().refine((v) => SUPPORT_CATEGORY_VALUES.includes(v), '문의 유형을 선택해 주세요.'),
@@ -65,9 +68,16 @@ export async function submitSupportRequest(
   // 남용 방지: IP 단위 10분당 10건 (로그인 사용자는 계정 단위로도 함께 제한)
   const user = await getSessionUser().catch(() => null);
   const h = await headers();
-  const ip = clientIpFrom((name) => h.get(name)) ?? 'unknown';
-  const rateKeys = [`support:rate:ip:${ip}`];
+  const ip = clientIpFrom((name) => h.get(name));
+  /**
+   * [RL-UNKNOWN] IP 를 알 수 없으면 예전에는 전원이 `support:rate:ip:unknown` 한 버킷을 공유해
+   * 한 사람이 10건을 넣으면 모두의 문의 접수가 막혔다. 로그인 사용자는 계정 버킷만으로 세고,
+   * 비로그인은 IP 버킷과 이름이 겹치지 않는 별도 `noip` 버킷을 쓴다.
+   */
+  const rateKeys: string[] = [];
+  if (ip) rateKeys.push(`support:rate:ip:${ip}`);
   if (user) rateKeys.push(`support:rate:user:${user.id}`);
+  if (!ip && !user) rateKeys.push('support:rate:noip');
   for (const key of rateKeys) {
     const tries = await kv.incr(key, RATE_WINDOW_SEC);
     if (tries > RATE_MAX) {
@@ -80,17 +90,34 @@ export async function submitSupportRequest(
   let linkNote: string | undefined;
 
   if (transactionNo) {
-    const donation = await prisma.donation.findUnique({
-      where: { transactionNo },
-      select: { id: true, creatorId: true },
-    });
-    if (donation) {
-      donationId = donation.id;
-      creatorId = donation.creatorId;
-      linkNote = `거래번호 ${transactionNo} 건이 문의에 연결되었습니다.`;
-    } else {
-      linkNote = `거래번호 ${transactionNo} 에 해당하는 후원 내역을 찾지 못해 문의만 접수했습니다. 담당자가 직접 확인합니다.`;
+    /**
+     * [SEC-G] 거래번호 존재 여부를 응답으로 구분하지 않고, **본인 소유 건만** 문의에 연결한다.
+     *
+     * 예전에는 비로그인 사용자도 거래번호를 넣으면 "연결되었습니다 / 찾지 못했습니다" 로 응답이 갈려
+     * 거래번호를 대입해 존재 여부를 탐색할 수 있었고, 남의 후원 건을 자기 문의(그리고 ABUSE 신고)에
+     * 연결해 관리자 화면에서 그 후원과 크리에이터가 문의자 것으로 보이게 만들 수 있었다.
+     *
+     * 이제는 로그인한 후원자(그 후원의 donor 계정) 또는 그 후원을 받은 크리에이터일 때만 연결한다.
+     * 그 밖에는 거래번호를 문의에 **텍스트로만** 남기고(transactionNo) 담당자가 직접 확인한다.
+     * 어느 경우든 화면 안내 문구는 같다.
+     */
+    if (user) {
+      const donation = await prisma.donation.findUnique({
+        where: { transactionNo },
+        select: {
+          id: true,
+          creatorId: true,
+          donor: { select: { userId: true } },
+          creator: { select: { userId: true } },
+        },
+      });
+      const owns = donation && (donation.donor?.userId === user.id || donation.creator.userId === user.id);
+      if (donation && owns) {
+        donationId = donation.id;
+        creatorId = donation.creatorId;
+      }
     }
+    linkNote = SUPPORT_TRANSACTION_NOTE(transactionNo);
   }
 
   // 로그인 사용자는 후원자 프로필의 phoneHash 로 문의자를 식별한다 (원문은 저장하지 않음)

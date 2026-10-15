@@ -11,6 +11,7 @@ import {
   purgeOldWebhookLogs,
 } from '@/server/services/idempotency';
 import { purgeExpiredResetTokens } from '@/server/services/password-reset';
+import { purgeStaleSessions } from '@/server/services/session-cleanup';
 import { retryAllPendingRefundRecoveries } from '@/server/services/refund';
 import {
   reconcileStuckPendingPayments,
@@ -60,6 +61,7 @@ export const dynamic = 'force-dynamic';
  * 14) purgeOldWebhookLogs            — 보존 기간이 지난 웹훅 원문 로그를 지운다.
  * 15) purgeStaleFailedResidents       — 이체파일 발급 후 지급실패로 남은 정산 건의 주민등록번호를
  *                                       보관 기간(90일)이 지나면 파기한다 (SET-B).
+ * 16) purgeStaleSessions              — 만료·폐기 후 30일이 지난 로그인 세션 행을 지운다. [SESSION-CLEANUP]
  *
  * 원칙
  *  - 인증은 fail-closed. 비밀이 없으면 로컬에서만 통과한다.
@@ -140,6 +142,7 @@ export async function GET(req: Request) {
     const webhookLogs = await step('오래된 웹훅 로그 정리', () => purgeOldWebhookLogs());
     const billKeyRevokes = await step('사업자 빌키 해지 재시도', () => retryFailedBillKeyRevocations());
     const failedResidents = await step('지급실패 건 주민번호 파기', () => purgeStaleFailedResidents());
+    const staleSessions = await step('만료·폐기 세션 정리', () => purgeStaleSessions());
     /**
      * EMMA 발송 큐 적체 감시.
      *
@@ -167,6 +170,7 @@ export async function GET(req: Request) {
       webhookLogs,
       billKeyRevokes,
       failedResidents,
+      staleSessions,
       mtQueueStuck,
     };
     const allOk = Object.values(steps).every((s) => s.ok);

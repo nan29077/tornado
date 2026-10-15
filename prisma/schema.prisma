@@ -346,6 +346,7 @@ model User {
   socialIdentities SocialIdentity[]
   signupCreator    CreatorProfile? @relation("CreatorSignupFans", fields: [signupCreatorId], references: [id], onDelete: SetNull)
   fanAccounts      CreatorFanAccount[]
+  adminInvitesSent AdminInvite[]      @relation("AdminInviteInvitedBy")
 
   @@index([role, status])
   @@index([signupCreatorId])
@@ -425,6 +426,31 @@ model AdminProfile {
   auditLogs AdminAuditLog[]
 
   @@map("admin_profile")
+}
+
+/// [SEC-A] 관리자 초대. 이메일 조회만으로 즉시 승격하던 경로를 대체한다.
+/// 초대받은 사람이 **그 이메일 계정으로 로그인한 상태에서** 1회용 링크를 열어 수락해야 승격된다.
+/// 토큰 원문은 저장하지 않는다(tokenHash = SESSION_SECRET HMAC, 비밀번호 재설정 토큰과 같은 규칙).
+model AdminInvite {
+  id             String          @id
+  /// 소문자로 정규화한 초대 대상 이메일
+  email          String
+  permission     AdminPermission
+  tokenHash      String          @unique @map("token_hash")
+  invitedById    String          @map("invited_by_id")
+  expiresAt      DateTime        @map("expires_at") @db.Timestamptz(3)
+  acceptedAt     DateTime?       @map("accepted_at") @db.Timestamptz(3)
+  /// 수락한 계정. 감사 목적의 기록이라 FK 를 두지 않는다.
+  acceptedUserId String?         @map("accepted_user_id")
+  revokedAt      DateTime?       @map("revoked_at") @db.Timestamptz(3)
+  revokedById    String?         @map("revoked_by_id")
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  invitedBy User @relation("AdminInviteInvitedBy", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([expiresAt])
+  @@map("admin_invite")
 }
 
 // ===========================================================================

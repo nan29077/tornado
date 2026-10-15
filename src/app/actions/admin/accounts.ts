@@ -17,6 +17,7 @@ import { issueMoNumberForCreator, reclaimMoNumberForCreator } from '@/server/ser
 import { issueTemporaryPassword } from '@/server/services/password-reset';
 import { hasDirectTriggerWrittenApproval } from '@/server/services/financial-approval';
 import { resolvePolicy } from '@/server/services/limits';
+import { createAdminInvite, revokeAdminInvite, ADMIN_INVITE_PERMISSIONS } from '@/server/services/admin-invite';
 import { run, text, optText, money, optMoney, enumValue, requiredId, assertOperationAdmin, assertFinanceAdmin } from './shared';
 
 /**
@@ -56,9 +57,13 @@ export async function updateUserStatus(_prev: AdminActionState, fd: FormData): P
      * 낮은 등급으로 낼 수 있었다 — 상태를 내리면 세션이 전부 폐기되고 재로그인도 막히므로
      * 채널 운영이 그대로 멈춘다. 두 문을 같은 등급으로 맞춘다.
      * (일반 후원자 계정은 고객지원 업무 범위이므로 그대로 둔다)
+     *
+     * [SEC-B2] 예전에는 `status !== 'ACTIVE'` 일 때만 검사해서, 운영 권한이 정지시킨
+     * 크리에이터를 고객지원(SUPPORT)이 **다시 활성화**할 수 있었다. 정지 해제도 운영 판단이므로
+     * 크리에이터 계정의 상태 변경은 방향과 무관하게 운영 권한 이상을 요구한다.
      */
-    if (before.role === 'CREATOR' && status !== 'ACTIVE') {
-      assertOperationAdmin(admin, '크리에이터 계정 정지·탈퇴');
+    if (before.role === 'CREATOR') {
+      assertOperationAdmin(admin, '크리에이터 계정 상태 변경');
     }
 
     await prisma.user.update({ where: { id: userId }, data: { status } });
@@ -114,6 +119,14 @@ export async function issueTemporaryPasswordAction(
     // 관리자 계정 비밀번호 초기화는 최고관리자만 할 수 있게 한다(권한 상승 경로 차단).
     if (target.role === 'ADMIN' && admin.adminPermission !== 'SUPER_ADMIN') {
       throw new Error('관리자 계정의 임시 비밀번호 발급은 SUPER_ADMIN 만 수행할 수 있습니다.');
+    }
+    /**
+     * [SEC-B] 크리에이터 계정의 임시 비밀번호 발급은 운영 권한(OPERATION) 이상만 가능하다.
+     * 크리에이터 계정을 넘겨받으면 정산 계좌 변경·후원 페이지 조작까지 이어지므로
+     * 고객지원(SUPPORT) 등급의 본인확인만으로는 부족하다. (후원자 계정은 기존대로 SUPPORT 허용)
+     */
+    if (target.role === 'CREATOR') {
+      assertOperationAdmin(admin, '크리에이터 계정 임시 비밀번호 발급');
     }
 
     const { password } = await issueTemporaryPassword(userId);
@@ -625,10 +638,35 @@ export async function setSettlementAccountVerified(
     }
 
     const verifiedAt = verified ? new Date() : null;
-    await prisma.settlementAccount.update({
-      where: { creatorId },
-      data: { verified, verifiedAt },
-    });
+    if (verified) {
+      /**
+       * [SET-I] 인증은 **관리자가 화면에서 본 바로 그 계좌**에만 적용한다.
+       *
+       * 예전에는 creatorId 로 무조건 update 해서, 관리자가 증빙을 확인하는 사이 크리에이터가
+       * 계좌를 다른 것으로 바꾸면 **확인하지 않은 새 계좌**가 인증 완료로 바뀌었다.
+       * 폼이 보낸 끝 4자리 + 수정시각(updatedAt)이 지금 행과 같을 때만 갱신하고(조건부 updateMany),
+       * 0행이면 거절한다. 조회-갱신 사이의 경쟁도 같은 조건으로 막힌다.
+       */
+      const seenTail4 = text(fd, 'accountTail4');
+      const seenUpdatedAtRaw = text(fd, 'accountUpdatedAt');
+      const seenUpdatedAt = new Date(seenUpdatedAtRaw);
+      if (!seenTail4 || !seenUpdatedAtRaw || Number.isNaN(seenUpdatedAt.getTime())) {
+        throw new Error('계좌 정보가 바뀌었습니다. 새로고침 후 다시 확인해 주세요.');
+      }
+      const updated = await prisma.settlementAccount.updateMany({
+        where: { creatorId, accountTail4: seenTail4, updatedAt: seenUpdatedAt, verified: false },
+        data: { verified, verifiedAt },
+      });
+      if (updated.count === 0) {
+        throw new Error('계좌 정보가 바뀌었습니다. 새로고침 후 다시 확인해 주세요.');
+      }
+    } else {
+      // 인증 해제는 안전한 방향이므로 화면 상태와 무관하게 허용한다.
+      await prisma.settlementAccount.update({
+        where: { creatorId },
+        data: { verified, verifiedAt },
+      });
+    }
 
     await writeAudit({
       adminUserId: admin.id,
@@ -729,7 +767,7 @@ export async function updateAdminPermission(_prev: AdminActionState, fd: FormDat
     if (!before) throw new Error('관리자를 찾을 수 없습니다.');
     // 자격이 회수된 계정은 권한만 올려도 콘솔에 들어오지 못한다(role 이 USER). 오해를 막는다.
     if (before.revokedAt) {
-      throw new Error('관리자 자격이 회수된 계정입니다. 다시 부여하려면 [관리자 추가]에서 이메일로 등록해 주세요.');
+      throw new Error('관리자 자격이 회수된 계정입니다. 다시 부여하려면 [관리자 초대]로 새 초대 링크를 보내 주세요.');
     }
     if (before.userId === admin.id && permission !== before.permission) {
       throw new Error('본인의 권한은 변경할 수 없습니다. 다른 SUPER_ADMIN 에게 요청해 주세요.');
@@ -822,60 +860,71 @@ export async function revokeAdmin(_prev: AdminActionState, fd: FormData): Promis
   });
 }
 
-// =========================================================== 관리자 추가 (기존 계정 승격)
+// =========================================================== 관리자 초대 (SEC-A)
 
-export async function createAdminByEmail(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
+/**
+ * [SEC-A] 관리자 초대 생성.
+ *
+ * 예전 `createAdminByEmail` 은 이메일로 계정을 찾아 **즉시** 승격했다. 이메일 소유 확인이 없는
+ * 가입 구조라, 초대될 이메일로 먼저 가입해 둔 사람이 그대로 관리자 콘솔을 얻을 수 있었다.
+ * 이제는 1회용 초대 링크(72시간)를 만들고, 초대받은 이메일 계정으로 **로그인한 본인**이
+ * `/admin-invite/{token}` 에서 수락해야 승격된다.
+ *
+ * 이메일 발송은 연동 전이다(CLAUDE.md 규칙 2). 성공으로 위장하지 않고 링크를 이 응답에서
+ * 한 번만 보여 주며, 최고관리자가 직접 전달한다. 원문 토큰은 DB 에 남지 않는다.
+ */
+export async function createAdminInviteAction(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
     if (admin.adminPermission !== 'SUPER_ADMIN') {
-      throw new Error('관리자 추가는 SUPER_ADMIN 만 수행할 수 있습니다.');
+      throw new Error('관리자 초대는 SUPER_ADMIN 만 수행할 수 있습니다.');
     }
-    const email = text(fd, 'email').trim().toLowerCase();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('이메일 형식을 확인해 주세요.');
-    const permission = enumValue(
-      fd,
-      'permission',
-      ['SUPER_ADMIN', 'OPERATION', 'FINANCE', 'SUPPORT', 'READ_ONLY'] as const,
-      '권한',
-    );
+    const email = text(fd, 'email').toLowerCase();
+    const permission = enumValue(fd, 'permission', ADMIN_INVITE_PERMISSIONS, '권한');
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-      select: {
-        id: true, role: true, status: true,
-        adminProfile: { select: { id: true, revokedAt: true } },
-      },
-    });
-    if (!user) throw new Error('해당 이메일로 가입된 계정이 없습니다. 먼저 일반 회원가입을 완료해 주세요.');
-    // 자격을 회수했던 계정은 프로필 행이 남아 있다(감사로그 보존). 새로 만들지 말고 되살린다.
-    if (user.adminProfile && !user.adminProfile.revokedAt) {
-      throw new Error('이미 관리자로 등록된 계정입니다.');
-    }
-    if (user.role === 'CREATOR') {
-      throw new Error('크리에이터 계정은 관리자를 겸할 수 없습니다. 별도 계정으로 등록해 주세요.');
-    }
-    if (user.status !== 'ACTIVE') throw new Error('활성 상태의 계정만 관리자로 등록할 수 있습니다.');
-
-    const reinstating = !!user.adminProfile;
-    await prisma.$transaction([
-      prisma.user.update({ where: { id: user.id }, data: { role: 'ADMIN' } }),
-      user.adminProfile
-        ? prisma.adminProfile.update({
-            where: { id: user.adminProfile.id },
-            data: { permission, revokedAt: null },
-          })
-        : prisma.adminProfile.create({ data: { id: newId(), userId: user.id, permission } }),
-    ]);
+    const invite = await createAdminInvite({ invitedById: admin.id, email, permission });
 
     await writeAudit({
       adminUserId: admin.id,
-      action: reinstating ? 'ADMIN_REINSTATE' : 'ADMIN_CREATE',
-      targetType: 'User',
-      targetId: user.id,
-      before: { role: user.role },
-      after: { role: 'ADMIN', permission },
+      action: 'ADMIN_INVITE_CREATE',
+      targetType: 'AdminInvite',
+      targetId: invite.id,
+      // 토큰·링크는 감사로그에도 남기지 않는다(로그 열람자가 링크를 재사용할 수 없게).
+      after: { email: invite.email, permission, expiresAt: invite.expiresAt, replacedPrevious: invite.replaced },
     });
     revalidatePath('/admin/admins');
-    revalidatePath('/admin/users');
-    return `${email} 계정을 ${permission} 권한의 관리자로 ${reinstating ? '다시 등록' : '등록'}했습니다.`;
+    return {
+      message:
+        `${invite.email} 앞으로 ${permission} 권한 초대 링크를 만들었습니다. 메일 발송 미연동 — 링크를 직접 전달해 주세요.` +
+        (invite.replaced > 0 ? ' 같은 이메일의 이전 초대 링크는 회수했습니다.' : ''),
+      detail: { inviteLink: invite.link, inviteEmail: invite.email },
+    };
+  });
+}
+
+/** [SEC-A] 대기 중인 초대 회수. */
+export async function revokeAdminInviteAction(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
+  return run(async (admin) => {
+    if (admin.adminPermission !== 'SUPER_ADMIN') {
+      throw new Error('관리자 초대 회수는 SUPER_ADMIN 만 수행할 수 있습니다.');
+    }
+    const inviteId = requiredId(fd, 'inviteId', '초대');
+    const before = await prisma.adminInvite.findUnique({
+      where: { id: inviteId },
+      select: { id: true, email: true, permission: true, acceptedAt: true, revokedAt: true, expiresAt: true },
+    });
+    if (!before) throw new Error('초대를 찾을 수 없습니다.');
+    const ok = await revokeAdminInvite(inviteId, admin.id);
+    if (!ok) throw new Error('이미 수락되었거나 회수된 초대입니다.');
+
+    await writeAudit({
+      adminUserId: admin.id,
+      action: 'ADMIN_INVITE_REVOKE',
+      targetType: 'AdminInvite',
+      targetId: inviteId,
+      before: { email: before.email, permission: before.permission, expiresAt: before.expiresAt },
+      after: { revoked: true },
+    });
+    revalidatePath('/admin/admins');
+    return `${before.email} 초대 링크를 회수했습니다. 이 링크로는 더 이상 수락할 수 없습니다.`;
   });
 }

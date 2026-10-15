@@ -31,10 +31,24 @@ export function RequestResetForm() {
   if (state.submitted) {
     return (
       <div className="space-y-3">
-        <Notice tone="brand" title="재설정 안내를 보냈습니다">
-          가입된 이메일이라면 재설정 링크가 발송됩니다. 링크는 발급 후 1시간 동안만 사용할 수 있고, 한 번 사용하면
-          다시 쓸 수 없습니다. 메일이 오지 않으면 스팸함을 확인하거나 잠시 후 다시 요청해 주세요.
-        </Notice>
+        {state.mailDelivered ? (
+          <Notice tone="brand" title="재설정 안내를 보냈습니다">
+            가입된 이메일이라면 재설정 링크가 발송됩니다. 링크는 발급 후 1시간 동안만 사용할 수 있고, 한 번 사용하면
+            다시 쓸 수 없습니다. 메일이 오지 않으면 스팸함을 확인하거나 잠시 후 다시 요청해 주세요.
+          </Notice>
+        ) : (
+          /*
+           * [SEC-D] 메일 발송이 연동되지 않은 상태에서 "보냈습니다"라고 안내하면 사용자는 오지 않을 메일을
+           * 기다린다. 모든 환경에서 미발송 사실과 대체 경로(고객센터)를 그대로 알린다.
+           */
+          <Notice tone="warning" title="재설정 메일이 발송되지 않습니다">
+            이메일 발송이 아직 연동되지 않아 재설정 메일이 발송되지 않습니다. 고객센터로 문의해 주시면 본인 확인 후
+            임시 비밀번호를 안내해 드립니다.{' '}
+            <Link href="/support" className="font-semibold text-brand-700">
+              고객센터 문의하기
+            </Link>
+          </Notice>
+        )}
 
         {state.devLink ? (
           <Notice tone="warning" title="[MOCK] 이메일 발송은 아직 연동 전입니다">

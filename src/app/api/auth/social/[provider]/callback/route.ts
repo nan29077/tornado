@@ -4,7 +4,7 @@ import { env } from '@/lib/env';
 import { authReturnPath } from '@/lib/auth-return-path';
 import { createSession } from '@/server/auth';
 import { SOCIAL_PROVIDERS, getSocialAdapter, type SocialProvider } from '@/server/adapters/social';
-import { findSocialDonor, validSocialState, socialPendingCookie, SOCIAL_PENDING_COOKIE } from '@/server/services/social-login';
+import { findSocialUser, socialLandingPath, validSocialState, socialPendingCookie, SOCIAL_PENDING_COOKIE } from '@/server/services/social-login';
 import { attributeFanByCreatorCode } from '@/server/services/creator-fans';
 
 export const runtime = 'nodejs';
@@ -29,12 +29,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ provider: strin
   try {
     const adapter = getSocialAdapter(provider);
     const profile = await adapter.getProfile(await adapter.exchangeCode(code, expected!));
-    const user = await findSocialDonor(profile);
+    const user = await findSocialUser(profile);
     if (user) {
       await createSession(user.id);
       // 크리에이터 후원 페이지로 들어온 로그인이면 그 크리에이터의 팬으로 귀속한다.
-      if (creator) await attributeFanByCreatorCode(user.id, creator[1]);
-      return NextResponse.redirect(new URL(next, req.url), 303);
+      // [SEC-C] 크리에이터 계정은 팬 귀속 대상이 아니다(후원자 계정만).
+      if (creator && user.role === 'DONOR') await attributeFanByCreatorCode(user.id, creator[1]);
+      return NextResponse.redirect(new URL(socialLandingPath(user.role, next), req.url), 303);
     }
     jar.set(SOCIAL_PENDING_COOKIE, socialPendingCookie(profile, next), { httpOnly: true, sameSite: 'lax', secure: env.baseUrl.startsWith('https'), path: '/', maxAge: 600 });
     return NextResponse.redirect(new URL('/social-signup', req.url), 303);

@@ -5,6 +5,8 @@ import { kv } from '@/server/redis';
 import { headers } from 'next/headers';
 import { normalizeCreatorCode } from '@/lib/id';
 import { clientIpFrom } from '@/server/rate-limit';
+import { getSessionUser } from '@/server/auth';
+import { logger } from '@/lib/logger';
 
 /**
  * 크리에이터 검색 / 코드 조회.
@@ -61,9 +63,21 @@ export interface LookupResult {
 
 export async function lookupCreatorCode(input: string): Promise<LookupResult> {
   const h = await headers();
-  const ip = clientIpFrom((name) => h.get(name)) ?? 'unknown';
+  const ip = clientIpFrom((name) => h.get(name));
+  /**
+   * [RL-UNKNOWN] IP 를 알 수 없을 때 모든 요청이 `lookup:unknown` 한 버킷을 공유해, 한 명의 남용이
+   * 전원의 검색을 막았다. 로그인 사용자는 계정 단위 버킷으로 분리하고, 비로그인만 별도의
+   * `noip` 버킷을 공유한다(IP 버킷과 이름공간이 겹치지 않게). 프록시 설정 점검용 경고도 남긴다.
+   */
+  let bucket: string;
+  if (ip) bucket = `ip:${ip}`;
+  else {
+    const user = await getSessionUser().catch(() => null);
+    bucket = user ? `user:${user.id}` : 'noip';
+    logger.warn('크리에이터 검색: 클라이언트 IP 를 알 수 없습니다(프록시 설정 확인)', { bucket: user ? 'user' : 'noip' });
+  }
 
-  const tries = await kv.incr(`lookup:${ip}`, WINDOW_SEC);
+  const tries = await kv.incr(`lookup:${bucket}`, WINDOW_SEC);
   if (tries > MAX_TRIES) {
     return { ok: false, message: '조회 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.' };
   }

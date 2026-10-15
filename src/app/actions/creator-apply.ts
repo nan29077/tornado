@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { prisma } from '@/server/db';
 import { newId, newCreatorCode } from '@/lib/id';
 import { createSession, getSessionUser, hashPassword } from '@/server/auth';
-import { consumeIpRateLimit } from '@/server/rate-limit';
+import { consumeIpRateLimit, clientIpFromHeaders } from '@/server/rate-limit';
+import { activeSignupTerms, recordSignupConsents, SignupTermsMissingError } from '@/server/services/signup-consent';
 import { notifySuperAdmins } from '@/server/services/notifications';
 
 /**
@@ -128,6 +129,11 @@ export async function applyCreator(_prev: CreatorApplyState, formData: FormData)
         values,
       };
     }
+    /**
+     * [SEC-C] 알려진 한계: 로그인 상태(특히 이메일이 없는 소셜 가입 계정)에서 신청하면 입력한
+     * contactEmail 을 보관할 컬럼이 creator_profile 에 없어 저장되지 않는다. 계정 email 에 넣으면
+     * 소유 확인 없이 남의 이메일을 선점할 수 있으므로 넣지 않는다. 연락처 컬럼 추가는 별도 결정 사항.
+     */
     userId = session.id;
   } else {
     const password = data.password ?? '';
@@ -173,9 +179,14 @@ export async function applyCreator(_prev: CreatorApplyState, formData: FormData)
   const description = data.description?.trim() || null;
   const channelUrl = data.channelUrl?.trim() || null;
 
+  const ip = await clientIpFromHeaders();
   try {
     const creator = await prisma.$transaction(async (tx) => {
+      // [SEC-E] 신청 화면의 필수 동의(이용 조건·개인정보)를 consent_record 로 남긴다.
+      // 신규 계정이든 기존 계정이든 "이 신청 시점에 어느 버전에 동의했는가"를 기록한다.
+      const terms = await activeSignupTerms(tx);
       if (newUser) await tx.user.create({ data: newUser });
+      await recordSignupConsents(tx, userId, terms, { ip });
 
       const profile = await tx.creatorProfile.create({
         data: {
@@ -221,7 +232,8 @@ export async function applyCreator(_prev: CreatorApplyState, formData: FormData)
     }).catch(() => undefined);
 
     return { ok: true, code: creator.code, displayName: creator.displayName };
-  } catch {
+  } catch (e) {
+    if (e instanceof SignupTermsMissingError) return { ok: false, message: e.message, values };
     return { ok: false, message: '신청 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.', values };
   }
 }
