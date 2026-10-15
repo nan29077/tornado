@@ -59,8 +59,9 @@ try {
   r.ok('문의가 접수된다', doneText.includes('문의가 접수되었습니다'), doneText.slice(0, 160));
   r.ok('접수번호가 발급된다', doneText.includes('접수번호'));
   r.ok(
-    '없는 거래번호는 연결 실패를 안내한다',
-    doneText.includes('해당하는 후원 내역을 찾지 못해'),
+    // [SEC-G] 거래번호 존재 여부를 응답으로 구분하지 않는다(탐색 방지). 항상 같은 안내 문구.
+    '거래번호는 존재 여부와 무관하게 같은 문구로 안내한다',
+    doneText.includes('문의에 함께 기록했습니다') && !doneText.includes('찾지 못해'),
   );
   const ticket = (doneText.match(/접수번호\s*\n?\s*([0-9A-Za-z]{20,})/) ?? [])[1] ?? null;
   r.ok('접수번호 값을 읽을 수 있다', Boolean(ticket), ticket ?? doneText.slice(0, 120));

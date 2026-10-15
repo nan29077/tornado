@@ -4,7 +4,7 @@ import { Card, Notice } from '@/components/ui';
 import { PublicShell } from '@/components/layout/public-shell';
 import { PageHeader } from '@/components/public/page-header';
 import { AdminInviteAcceptForm } from '@/components/public/admin-invite-accept-form';
-import { loadAdminInvite } from '@/server/services/admin-invite';
+import { loadAdminInvite, normalizeInviteEmail } from '@/server/services/admin-invite';
 import { getSessionUser } from '@/server/auth';
 import { adminPermissionLabel } from '@/lib/labels';
 import { formatKst } from '@/lib/datetime';
@@ -60,7 +60,20 @@ export default async function AdminInvitePage({ params }: { params: Promise<{ to
               <dt className="text-ink-400">만료</dt>
               <dd className="text-ink-700">{formatKst(loaded.expiresAt ?? null)}</dd>
             </dl>
-            {me ? (
+            {/*
+              다른 계정으로 로그인한 상태면 수락 버튼 대신 안내를 보여 준다.
+              (눌러도 서버가 거절하지만, 누를 수 있는 버튼을 보여 주면 헷갈린다 — 3차 시뮬레이션에서 확인)
+            */}
+            {me && (!me.email || normalizeInviteEmail(me.email) !== loaded.email) ? (
+              <Notice tone="warning" title="초대받은 계정이 아닙니다">
+                지금 로그인한 계정으로는 이 초대를 수락할 수 없습니다. 초대받은 이메일({loaded.emailMasked}) 계정으로
+                다시 로그인한 뒤 이 링크를 열어 주세요.
+              </Notice>
+            ) : me && me.role === 'CREATOR' ? (
+              <Notice tone="warning" title="크리에이터 계정은 관리자를 겸할 수 없습니다">
+                별도 계정으로 초대를 받아 주세요.
+              </Notice>
+            ) : me ? (
               <AdminInviteAcceptForm token={token} />
             ) : (
               <Notice tone="warning" title="로그인이 필요합니다">
