@@ -97,10 +97,16 @@ export async function GET(req: Request) {
 
     const before = await prisma.youTubeConnection.findUnique({
       where: { creatorId },
-      select: { id: true },
+      select: { id: true, refreshTokenEnc: true },
     });
 
-    if (!before && !refreshTokenEnc) {
+    /**
+     * [YT-REFRESH] 기존 연결이 있어도 그 refresh token 이 **비어 있으면** 보존할 값이 없다.
+     * 연결 해제(revoke)는 행을 남기고 refreshTokenEnc 를 '' 로 비운다. 예전 조건(!before)은
+     * 이 경우를 통과시켜, 재동의라 refresh token 이 오지 않은 재연결이 "연결됨"으로 저장되고
+     * 약 1시간 뒤 갱신 실패로 끊겼다. 보존할 값이 실제로 있을 때만 refresh token 없이 진행한다.
+     */
+    if (!refreshTokenEnc && !before?.refreshTokenEnc) {
       logger.warn('유튜브 최초 연결에 refresh token 이 없습니다.', { creatorId });
       return back('youtube=no_refresh_token');
     }

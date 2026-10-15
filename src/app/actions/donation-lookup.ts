@@ -9,9 +9,7 @@ import { getMtAdapter } from '@/server/adapters/mt';
 import { applyMtTemplateOverride, tplLookupVerify } from '@/server/services/mt-templates';
 import { env, isLocal } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { formatWon } from '@/lib/money';
-import { formatKst } from '@/lib/datetime';
-import { donationStatusLabel } from '@/lib/labels';
+import { loadDonationLookupResult as loadResult, type LookupResult } from '@/server/services/donation-lookup';
 
 /**
  * 로그인 없이 휴대폰 번호로 후원 내역 조회 (후원확인 바텀시트).
@@ -44,22 +42,8 @@ export interface LookupState {
   result?: LookupResult;
 }
 
-export interface LookupResult {
-  phoneMasked: string;
-  totalCount: number;
-  totalAmount: string;
-  registered: boolean;
-  items: Array<{
-    id: string;
-    creatorName: string;
-    creatorCode: string;
-    amount: string;
-    message: string;
-    statusText: string;
-    statusTone: 'neutral' | 'brand' | 'success' | 'warning' | 'danger';
-    receivedAt: string;
-  }>;
-}
+export type { LookupResult } from '@/server/services/donation-lookup';
+
 
 const codeKey = (ticket: string) => `lookup:code:${ticket}`;
 const sessionKey = (ticket: string) => `lookup:session:${ticket}`;
@@ -187,63 +171,4 @@ export async function verifyAndLookup(_prev: LookupState, formData: FormData): P
 
   const result = await loadResult(rec.ph, rec.pm);
   return { ok: true, step: 'result', phoneMasked: rec.pm, result };
-}
-
-// ---------------------------------------------------------------- 조회 본체
-
-async function loadResult(ph: string, phoneMasked: string): Promise<LookupResult> {
-  const donor = await prisma.donorProfile.findUnique({
-    where: { phoneHash: ph },
-    select: { id: true, registeredAt: true },
-  });
-
-  if (!donor) {
-    return { phoneMasked, totalCount: 0, totalAmount: formatWon(0n), registered: false, items: [] };
-  }
-
-  const [donations, paid] = await Promise.all([
-    prisma.donation.findMany({
-      where: { donorId: donor.id },
-      orderBy: { receivedAt: 'desc' },
-      take: 30,
-      select: {
-        id: true,
-        amount: true,
-        message: true,
-        status: true,
-        receivedAt: true,
-        creator: { select: { displayName: true, code: true } },
-      },
-    }),
-    prisma.donation.aggregate({
-      where: {
-        donorId: donor.id,
-        status: {
-          in: ['PAYMENT_SUCCESS', 'BROADCAST_PENDING', 'BROADCASTED', 'PARTIAL_DELIVERY_FAILED', 'SETTLEMENT_PENDING', 'SETTLED'],
-        },
-      },
-      _sum: { amount: true },
-      _count: { _all: true },
-    }),
-  ]);
-
-  return {
-    phoneMasked,
-    totalCount: paid._count._all,
-    totalAmount: formatWon(paid._sum.amount ?? 0n),
-    registered: Boolean(donor.registeredAt),
-    items: donations.map((d) => {
-      const label = donationStatusLabel[d.status];
-      return {
-        id: d.id,
-        creatorName: d.creator.displayName,
-        creatorCode: d.creator.code,
-        amount: formatWon(d.amount),
-        message: d.message || '(내용 없음)',
-        statusText: label.text,
-        statusTone: label.tone,
-        receivedAt: formatKst(d.receivedAt, false),
-      };
-    }),
-  };
 }

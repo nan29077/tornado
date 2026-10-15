@@ -1,4 +1,5 @@
 import { getSessionUser } from '@/server/auth';
+import { rejectCrossOrigin } from '@/server/request-guard';
 import { prisma } from '@/server/db';
 
 export const runtime = 'nodejs';
@@ -29,6 +30,10 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  // [CSRF] 쿠키 인증 상태 변경 라우트 — 다른 출처 요청은 거절한다.
+  const crossOrigin = rejectCrossOrigin(request);
+  if (crossOrigin) return crossOrigin;
+
   const user = await getSessionUser();
   if (!user) return Response.json({ message: '로그인이 필요합니다.' }, { status: 401 });
 

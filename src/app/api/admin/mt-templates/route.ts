@@ -1,4 +1,5 @@
 import { prisma } from '@/server/db';
+import { rejectCrossOrigin } from '@/server/request-guard';
 import { requireAdmin, writeAudit } from '@/server/auth';
 import { newId } from '@/lib/id';
 import { isRecord } from '@/lib/json-body';
@@ -64,6 +65,10 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  // [CSRF] 쿠키 인증 상태 변경 라우트 — 다른 출처 요청은 거절한다.
+  const crossOrigin = rejectCrossOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   const admin = await requireAdmin().catch(() => null);
   if (!admin) return json({ ok: false, message: '관리자 로그인이 필요합니다.' }, 401);
   if (!WRITE_PERMISSIONS.has(String(admin.adminPermission))) {

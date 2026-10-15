@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rejectCrossOrigin } from '@/server/request-guard';
 import { requireCreator } from '@/server/auth';
 import { createGame, listGames, listRoundHistory, GameError } from '@/server/services/games';
 import { buildStudioState } from '@/server/services/game-state';
@@ -57,6 +58,10 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  // [CSRF] 쿠키 인증 상태 변경 라우트 — 다른 출처 요청은 거절한다.
+  const crossOrigin = rejectCrossOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   let creatorId: string;
   try {
     creatorId = (await requireCreator()).creatorId;

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rejectCrossOrigin } from '@/server/request-guard';
 import { requireCreator } from '@/server/auth';
 import { isRecord, readJsonObject, stringList } from '@/lib/json-body';
 import { deleteGame, updateGame, GameError } from '@/server/services/games';
@@ -13,6 +14,10 @@ function fail(e: unknown) {
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  // [CSRF] 쿠키 인증 상태 변경 라우트 — 다른 출처 요청은 거절한다.
+  const crossOrigin = rejectCrossOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   let creatorId: string;
   try {
     creatorId = (await requireCreator()).creatorId;
@@ -38,7 +43,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 }
 
-export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  // [CSRF] 쿠키 인증 상태 변경 라우트 — 다른 출처 요청은 거절한다.
+  const crossOrigin = rejectCrossOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   let creatorId: string;
   try {
     creatorId = (await requireCreator()).creatorId;

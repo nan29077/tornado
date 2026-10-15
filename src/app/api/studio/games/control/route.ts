@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rejectCrossOrigin } from '@/server/request-guard';
 import { requireCreator } from '@/server/auth';
 import {
   GameError,
@@ -27,6 +28,10 @@ export const dynamic = 'force-dynamic';
  * 되돌릴 수 없는 동작(게임 삭제)만 화면에서 확인창을 띄운다.
  */
 export async function POST(req: Request) {
+  // [CSRF] 쿠키 인증 상태 변경 라우트 — 다른 출처 요청은 거절한다.
+  const crossOrigin = rejectCrossOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   let creatorId: string;
   try {
     creatorId = (await requireCreator()).creatorId;

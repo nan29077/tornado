@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rejectCrossOrigin } from '@/server/request-guard';
 import { requireCreator } from '@/server/auth';
 import { readJsonObject } from '@/lib/json-body';
 import { prisma } from '@/server/db';
@@ -14,6 +15,10 @@ export const dynamic = 'force-dynamic';
  * 서버 액션처럼 화면 전체를 다시 그리면 미리보기 iframe 이 다시 붙으면서 화면이 깜빡인다.
  */
 export async function POST(req: Request) {
+  // [CSRF] 쿠키 인증 상태 변경 라우트 — 다른 출처 요청은 거절한다.
+  const crossOrigin = rejectCrossOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   let creatorId: string;
   try {
     creatorId = (await requireCreator()).creatorId;

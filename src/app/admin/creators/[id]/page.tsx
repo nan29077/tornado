@@ -57,7 +57,7 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
       youtubeConnection: {
         select: { channelTitle: true, channelId: true, status: true, expiresAt: true, lastError: true, lastCheckedAt: true },
       },
-      settlementAccount: { select: { bankName: true, accountTail4: true, holderMasked: true, verified: true, verifiedAt: true } },
+      settlementAccount: { select: { bankName: true, accountTail4: true, holderMasked: true, verified: true, verifiedAt: true, updatedAt: true } },
       overlaySetting: { select: { enabled: true, durationMs: true, anonymize: true, showAmount: true, showMessage: true } },
       ttsSetting: { select: { enabled: true, voice: true, minAmount: true, maxChars: true } },
     },
@@ -475,7 +475,14 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
                 ) : (
                   <ActionButton
                     action={setSettlementAccountVerified}
-                    values={{ creatorId: creator.id, verified: 'true' }}
+                    // [SET-I] 관리자가 지금 보고 있는 계좌(끝 4자리 + 수정시각)를 함께 보낸다.
+                    // 그 사이 크리에이터가 계좌를 바꿨으면 서버가 거절한다.
+                    values={{
+                      creatorId: creator.id,
+                      verified: 'true',
+                      accountTail4: creator.settlementAccount.accountTail4,
+                      accountUpdatedAt: creator.settlementAccount.updatedAt.toISOString(),
+                    }}
                     label="실명확인 완료 처리"
                     confirm="증빙 확인이 끝났습니까? 인증 완료로 처리하면 이 크리에이터가 정산을 요청할 수 있습니다."
                   />

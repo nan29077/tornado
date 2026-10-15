@@ -29,6 +29,9 @@ const connStatusText: Record<YouTubeConnectionStatus, string> = {
   ERROR: '오류',
 };
 
+/** [YT-LIST] 채널 연결 목록 최대 표시 건수 */
+const CONNECTION_LIST_LIMIT = 200;
+
 export default async function AdminYouTubePage() {
   // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
   // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
@@ -36,15 +39,21 @@ export default async function AdminYouTubePage() {
 
   const todayStart = kstStartOfDay();
 
-  const [connections, quota, recentFailures, todayDeliveries, broadcasts] = await Promise.all([
+  const [connections, connectionTotal, quota, recentFailures, todayDeliveries, broadcasts] = await Promise.all([
+    /**
+     * [YT-LIST] 예전에는 전체 연결을 한 번에 읽었다. 크리에이터 수에 비례해 화면이 무거워지므로
+     * 최근 갱신 순 CONNECTION_LIST_LIMIT 건만 보여 주고 전체 수를 함께 표시한다.
+     */
     prisma.youTubeConnection.findMany({
       orderBy: { updatedAt: 'desc' },
+      take: CONNECTION_LIST_LIMIT,
       select: {
         id: true, creatorId: true, channelId: true, channelTitle: true, scope: true,
         status: true, expiresAt: true, lastError: true, lastCheckedAt: true, updatedAt: true,
         creator: { select: { id: true, displayName: true, code: true, status: true } },
       },
     }),
+    prisma.youTubeConnection.count(),
     getYouTubeQuotaUsage(),
     prisma.youTubeChatDelivery.findMany({
       where: { status: 'FAILED' },
@@ -143,7 +152,15 @@ export default async function AdminYouTubePage() {
       </div>
 
       <div className="mt-5">
-        <SectionTitle title="채널 연결 상태" description={`전송 1건당 할당량 ${formatNumber(quota.insertCost)} 단위를 사용합니다.`} />
+        <SectionTitle
+          title="채널 연결 상태"
+          description={
+            `전송 1건당 할당량 ${formatNumber(quota.insertCost)} 단위를 사용합니다.` +
+            (connectionTotal > connections.length
+              ? ` 전체 ${formatNumber(connectionTotal)}건 중 최근 갱신 ${formatNumber(connections.length)}건만 표시합니다.`
+              : '')
+          }
+        />
         {connections.length === 0 ? (
           <EmptyState title="연결된 유튜브 채널이 없습니다" description="크리에이터 스튜디오에서 채널을 연결하면 이곳에 표시됩니다." />
         ) : (

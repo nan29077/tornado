@@ -11,6 +11,7 @@ import {
   purgeOldWebhookLogs,
 } from '@/server/services/idempotency';
 import { purgeExpiredResetTokens } from '@/server/services/password-reset';
+import { purgeStaleSessions } from '@/server/services/session-cleanup';
 import { retryAllPendingRefundRecoveries } from '@/server/services/refund';
 import {
   reconcileStuckPendingPayments,
@@ -57,6 +58,7 @@ export const dynamic = 'force-dynamic';
  *                                       1회용 링크·인증번호가 든 문자는 대상에서 제외한다.
  * 13) clearExpiredFailureLocks        — 잠금 시간이 지난 후원자의 실패 카운터를 초기화한다.
  * 14) purgeOldWebhookLogs            — 보존 기간이 지난 웹훅 원문 로그를 지운다.
+ * 15) purgeStaleSessions              — 만료·폐기 후 30일이 지난 로그인 세션 행을 지운다. [SESSION-CLEANUP]
  *
  * 원칙
  *  - 인증은 fail-closed. 비밀이 없으면 로컬에서만 통과한다.
@@ -136,6 +138,7 @@ export async function GET(req: Request) {
     const failureLocks = await step('만료된 실패 잠금 해제', () => clearExpiredFailureLocks());
     const webhookLogs = await step('오래된 웹훅 로그 정리', () => purgeOldWebhookLogs());
     const billKeyRevokes = await step('사업자 빌키 해지 재시도', () => retryFailedBillKeyRevocations());
+    const staleSessions = await step('만료·폐기 세션 정리', () => purgeStaleSessions());
     /**
      * EMMA 발송 큐 적체 감시.
      *
@@ -162,6 +165,7 @@ export async function GET(req: Request) {
       failureLocks,
       webhookLogs,
       billKeyRevokes,
+      staleSessions,
       mtQueueStuck,
     };
     const allOk = Object.values(steps).every((s) => s.ok);

@@ -39,10 +39,11 @@ export async function requireAdminPage(next = '/admin'): Promise<SessionUser> {
  *
  * 이 파일에 둔 이유: 페이지(서버 컴포넌트)에서 `'use server'` 모듈을 거치지 않고 부르기 위함.
  */
-export const FINANCE_VIEW_PERMISSIONS: ReadonlySet<string> = new Set(['SUPER_ADMIN', 'FINANCE', 'OPERATION']);
+/** [SET-H] 돈이 움직이는 작업은 최고관리자·재무만. (shared.ts FINANCE_PERMISSIONS 와 같은 집합) */
+export const FINANCE_VIEW_PERMISSIONS: ReadonlySet<string> = new Set(['SUPER_ADMIN', 'FINANCE']);
 export const OPERATION_VIEW_PERMISSIONS: ReadonlySet<string> = new Set(['SUPER_ADMIN', 'OPERATION']);
 
-/** 재무 성격 변경(정산·환불·수수료·세무)을 할 수 있는 등급인가. */
+/** 재무 성격 변경(정산·환불·수수료·세무)을 할 수 있는 등급인가. [SET-H] OPERATION 제외 */
 export function canWriteFinance(admin: SessionUser): boolean {
   return Boolean(admin.adminPermission && FINANCE_VIEW_PERMISSIONS.has(admin.adminPermission));
 }
@@ -54,7 +55,7 @@ export function canWriteOperation(admin: SessionUser): boolean {
 
 /** 버튼을 비활성화할 때 함께 보여 줄 사유. 권한이 있으면 undefined. */
 export function financeDenyReason(admin: SessionUser, what = '이 작업'): string | undefined {
-  return canWriteFinance(admin) ? undefined : `${what}은(는) 재무 또는 운영 권한에서만 가능합니다.`;
+  return canWriteFinance(admin) ? undefined : `${what}은(는) 재무 권한(FINANCE) 또는 최고관리자만 가능합니다.`;
 }
 
 export function operationDenyReason(admin: SessionUser, what = '이 작업'): string | undefined {
