@@ -824,6 +824,11 @@ export function ParticleBurst({
   multiplier?: number;
 }) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  /**
+   * [minor] 배율은 터질 때(마운트 시점) 값으로 고정한다. 알림이 떠 있는 동안 콤보 시간이 끝나면
+   * multiplier 가 1 로 돌아가는데, 그 값을 effect 의존성으로 두면 effect 가 다시 돌아 파티클이 한 번 더 터졌다.
+   */
+  const [burstMultiplier] = React.useState(multiplier);
 
   React.useEffect(() => {
     const canvas = canvasRef.current;
@@ -845,7 +850,7 @@ export function ParticleBurst({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const spec = EFFECT_LEVELS[level];
-    const count = particleCountFor(level, multiplier);
+    const count = particleCountFor(level, burstMultiplier);
     const particles: Particle[] = [];
 
     /** 한 점에서 사방으로 터뜨린다. */
@@ -937,7 +942,7 @@ export function ParticleBurst({
       cancelAnimationFrame(raf);
       ctx.clearRect(0, 0, w, h);
     };
-  }, [level, multiplier]);
+  }, [level, burstMultiplier]);
 
   return <canvas ref={canvasRef} aria-hidden className="absolute inset-0 h-full w-full" />;
 }
@@ -1121,12 +1126,15 @@ export function LevelEffectStage({
   withMascot?: boolean;
 }) {
   const lv = effectLevelOf(level);
+  // [minor] 알림(eventId) 단위로 마운트되므로 시작 시점의 콤보 배율로 고정한다. 콤보 시간이 끝나도
+  // 이 알림의 파티클이 다시 터지거나 캐릭터 크기가 줄지 않는다.
+  const [startMultiplier] = React.useState(multiplier);
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
       <ScreenGlow level={lv} theme={theme} />
-      <ParticleBurst level={lv} multiplier={multiplier} />
+      <ParticleBurst level={lv} multiplier={startMultiplier} />
       {withMascot ? (
-        <MascotEntrance level={lv} multiplier={multiplier} theme={theme} leaving={leaving} />
+        <MascotEntrance level={lv} multiplier={startMultiplier} theme={theme} leaving={leaving} />
       ) : null}
     </div>
   );

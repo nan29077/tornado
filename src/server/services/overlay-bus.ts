@@ -73,6 +73,12 @@ export interface OverlayEventPayload {
    * 금액 구간 [미리보기]가 경고 없이 실제 방송에 나가던 문제를 막는다.
    */
   previewOnly?: boolean;
+  /**
+   * [OV-B] 익명 표시 여부(후원자 익명 선택 또는 크리에이터의 익명 처리 설정).
+   * 익명 후원은 표시명이 모두 '익명의 후원자'라 이름으로 콤보를 세면 서로 다른 후원자가 하나의 콤보로
+   * 합쳐진다. 오버레이는 이 값이 true 면 콤보를 잇지 않는다. 후원자를 구분하는 정보는 싣지 않는다.
+   */
+  anonymous?: boolean;
 }
 
 const CHANNEL = 'tornado:overlay';

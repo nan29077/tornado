@@ -16,12 +16,22 @@
  *   - 'donation' 같은 일회성 이벤트는 저장하지 않는다(나중에 붙은 화면이 옛 알림을 재생하면 안 된다).
  *     'ready' · 'state' · 'layout' 처럼 "현재 상태" 이벤트만 마지막 값을 기억해 새 구독자에게 바로 준다.
  *   - 화면이 정리 신호 없이 사라질 수 있으므로(iframe 제거·탭 강제 종료) 생존 신호가 끊긴 화면은
- *     35초 뒤 구독에서 뺀다. 구독자가 0 이 되면 연결을 닫는다.
+ *     150초 뒤 구독에서 뺀다. 구독자가 0 이 되면 연결을 닫는다.
+ *   - [SSE-A] 구독을 뺄 때는 반드시 그 화면에 'error' 를 보낸다. 화면이 실제로는 살아 있었다면
+ *     (백그라운드 탭의 타이머가 늦어진 경우 등) 'error' 를 받고 다시 구독한다. 예전에는 조용히 빼서
+ *     화면은 "연결됨" 인데 이벤트가 영영 오지 않았다.
+ *   - [SSE-A] 정리된 화면에서 메시지가 다시 오면 그 화면을 새로 등록한다. 'check' 로 화면이 가진
+ *     구독 id 를 보내면 공유기가 모르는 id 에 'error' 를 돌려줘 화면이 다시 구독하게 한다.
  */
 'use strict';
 
 var STICKY = { ready: true, state: true, layout: true };
-var PORT_TIMEOUT_MS = 35000;
+/**
+ * [SSE-A] 35초 → 150초. 크롬은 5분 넘게 가려진 탭의 타이머를 1분에 1번 정도로 늦춘다.
+ * 생존 신호(10초 간격)가 1분 간격으로 늦어져도 끊기지 않도록 여유를 둔다.
+ * 실제로 사라진 화면의 연결은 그만큼 늦게 정리되지만 연결 수가 잠시 더 남는 정도라 괜찮다.
+ */
+var PORT_TIMEOUT_MS = 150000;
 var CLOSE_GRACE_MS = 1500;
 
 /** key -> { es, url, subs: Map<subKey, {port, id}>, sticky: Map, open, attached: Set, closeTimer } */
@@ -136,26 +146,56 @@ function unsubscribe(port, p, id) {
   }
 }
 
-function dropPort(port) {
+/**
+ * 화면(포트)의 구독을 모두 정리한다.
+ * notify: [SSE-A] 생존 신호가 끊겨 정리할 때는 true. 화면이 살아 있었다면 'error' 를 받고 다시 구독한다.
+ *         화면이 스스로 떠난다고 알린('bye') 경우는 받을 화면이 없으므로 false.
+ */
+function dropPort(port, notify) {
   var p = ports.get(port);
   if (!p) return;
   Array.from(p.subs.keys()).forEach(function (id) {
     unsubscribe(port, p, id);
+    if (notify) post(port, { type: 'error', id: id });
   });
   ports.delete(port);
 }
 
+/**
+ * [SSE-A] 포트 등록 정보를 꺼낸다. 정리된 뒤 다시 말을 건 포트(늦어진 백그라운드 탭,
+ * bfcache 에서 돌아온 탭)는 새로 등록한다. 예전에는 정리된 등록 정보(클로저)에 계속 구독을 붙여
+ * 다시는 정리되지 않는 연결이 남았다.
+ */
+function portEntry(port) {
+  var p = ports.get(port);
+  if (!p) {
+    p = { lastSeen: Date.now(), subs: new Map() };
+    ports.set(port, p);
+  }
+  return p;
+}
+
 self.onconnect = function (e) {
   var port = e.ports[0];
-  var p = { lastSeen: Date.now(), subs: new Map() };
-  ports.set(port, p);
+  portEntry(port);
   port.onmessage = function (m) {
     var d = m.data || {};
+    if (d.type === 'bye') {
+      dropPort(port, false);
+      return;
+    }
+    var p = portEntry(port);
     p.lastSeen = Date.now();
     if (d.type === 'hello') post(port, { type: 'hello' });
     else if (d.type === 'sub' && d.id && d.url) subscribe(port, p, String(d.id), String(d.url), d.events || []);
     else if (d.type === 'unsub' && d.id) unsubscribe(port, p, String(d.id));
-    else if (d.type === 'bye') dropPort(port);
+    else if (d.type === 'check' && Array.isArray(d.ids)) {
+      // [SSE-A] 화면이 아직 살아 있다고 믿는 구독 중 공유기가 모르는 것은 끊긴 것으로 알린다.
+      for (var i = 0; i < d.ids.length; i++) {
+        var id = String(d.ids[i]);
+        if (!p.subs.has(id)) post(port, { type: 'error', id: id });
+      }
+    }
   };
   port.start();
 };
@@ -163,6 +203,6 @@ self.onconnect = function (e) {
 setInterval(function () {
   var now = Date.now();
   ports.forEach(function (p, port) {
-    if (now - p.lastSeen > PORT_TIMEOUT_MS) dropPort(port);
+    if (now - p.lastSeen > PORT_TIMEOUT_MS) dropPort(port, true);
   });
 }, 10000);

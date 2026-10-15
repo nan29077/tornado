@@ -3,6 +3,12 @@ import { logger } from '@/lib/logger';
 import { subscribeOverlay, type OverlayEventPayload } from '@/server/services/overlay-bus';
 import { authorizeOverlay } from '@/server/services/overlay-access';
 import { registerOverlayConnection } from '@/server/services/overlay-connections';
+import {
+  SWEEP_TAKE,
+  advanceSweepCursor,
+  createSweepCursor,
+  sweepWhere,
+} from '@/server/services/overlay-sweep';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -201,8 +207,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ creatorId: stri
        *
        * 이벤트는 어느 인스턴스에서 처리되든 overlay_event 표에 남으므로,
        * 하트비트마다 그 표를 확인해 빠진 것을 채운다. Redis 가 흔들려도 20초 안에 복구된다.
+       *
+       * [OV-F] 기준 시각에서 10초를 겹쳐 읽는다(늦게 커밋된 이벤트·인스턴스 시계 차이 대응).
+       * 겹친 구간의 중복은 sentIds 가 거르고, 구간 계산은 overlay-sweep.ts 에 있다.
        */
-      let sweepFrom = new Date();
+      const sweepCursor = createSweepCursor();
       let sweeping = false;
 
       const sweepMissed = async () => {
@@ -210,15 +219,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ creatorId: stri
         sweeping = true;
         try {
           const rows = await prisma.overlayEvent.findMany({
-            where: { creatorId, createdAt: { gt: sweepFrom } },
+            where: sweepWhere(creatorId, sweepCursor),
             orderBy: { createdAt: 'asc' },
-            take: 20,
+            take: SWEEP_TAKE,
             select: { id: true, payload: true, createdAt: true },
           });
-          for (const row of rows) {
-            send('donation', row.payload, row.id);
-            if (row.createdAt > sweepFrom) sweepFrom = row.createdAt;
-          }
+          for (const row of rows) send('donation', row.payload, row.id);
+          advanceSweepCursor(sweepCursor, rows);
         } catch (e) {
           // 보충 조회 실패가 실시간 구독을 막지는 않는다.
           logger.warn('오버레이 보충 조회 실패', { creatorId, message: (e as Error).message });

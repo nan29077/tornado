@@ -108,6 +108,8 @@ export interface OverlayPayload {
   enabled?: boolean;
   occurredAt: string;
   isTest: boolean;
+  /** [OV-B] 익명 표시 후원. true 면 콤보를 잇지 않는다. 없으면(예전 이벤트) 표시명으로 판단한다. */
+  anonymous?: boolean;
 }
 
 /**
@@ -158,11 +160,35 @@ const TTS_MAX_MS = 20_000;
 
 const RUSH_DURATION_MS = 2600;
 
+/**
+ * [OV-A] TTS 안전장치의 절대 상한. 느린 속도(0.5배)로 긴 문장을 읽어도 이 시간을 넘지 않는다.
+ * 대기열 한 건이 방송을 너무 오래 붙잡지 않도록 40초로 둔다.
+ */
+const TTS_GUARD_CAP_MS = 40_000;
+
 /** 서로 다른 기기·환경에서 TTS 종료 신호가 오지 않을 때를 대비한 상한. */
-function ttsGuardMs(text: string): number {
+function ttsGuardMs(text: string, speed?: number): number {
   // 한국어 TTS 는 대략 초당 6~8자. 넉넉히 잡아도 문장 길이의 함수여야 한다.
   const estimated = 2000 + Math.ceil((text?.length ?? 0) / 5) * 1000;
-  return Math.min(15000, Math.max(3000, estimated));
+  // [OV-A] 예전에는 속도를 무시하고 15초로 잘랐다. 0.7배 속도의 긴 문장은 읽는 도중 다음 알림으로
+  // 넘어가 두 목소리가 겹쳤다. 읽는 시간은 속도에 반비례하므로 속도로 나눈다.
+  const rate = Math.min(2, Math.max(0.5, Number(speed) || 1));
+  return Math.min(TTS_GUARD_CAP_MS, Math.max(3000, Math.ceil(estimated / rate)));
+}
+
+/** [OV-A] 재생 중인 서버 음성을 완전히 멈춘다. src 를 비워 남은 다운로드·재생까지 끊는다. */
+function stopAudio(audio: HTMLAudioElement | null) {
+  if (!audio) return;
+  try {
+    audio.onended = null;
+    audio.onerror = null;
+    audio.onloadedmetadata = null;
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+  } catch {
+    /* ignore */
+  }
 }
 
 /**
@@ -408,7 +434,7 @@ export function OverlayClient({
    * **재생을 시작하는 그 자리에서** 불러야 한다. 화면에 뜬 뒤에 세면 파티클·캐릭터가
    * 직전 후원의 배율로 먼저 한 번 그려지고, 콤보가 갱신되면서 또 한 번 그려진다.
    */
-  const registerComboRef = React.useRef<(donorName: string) => number>(() => 1);
+  const registerComboRef = React.useRef<(donorName: string, anonymous?: boolean) => number>(() => 1);
   /**
    * 마지막으로 받은 이벤트 ID.
    * 재연결할 때 서버에 알려 주면 끊긴 사이에 쌓인 후원 알림을 다시 받아 재생한다.
@@ -431,6 +457,12 @@ export function OverlayClient({
     let disposed = false;
     // 파이프라인이 재구성되면 이전 재생 상태를 초기화한다(대기열 정지 방지).
     busy.current = false;
+    /** [OV-A] 지금 재생 중인 서버 음성. 알림이 끝나거나 파이프라인이 정리될 때 반드시 멈춘다. */
+    let currentAudio: HTMLAudioElement | null = null;
+    const stopCurrentAudio = () => {
+      stopAudio(currentAudio);
+      currentAudio = null;
+    };
 
     /**
      * 서버 합성(mp3) 재생. 성공하면 true.
@@ -446,22 +478,34 @@ export function OverlayClient({
           if (preview) params.set('preview', '1');
           else params.set('token', token);
 
+          stopCurrentAudio();
           const audio = new Audio(`/api/tts/synthesize?${params.toString()}`);
           audio.volume = Math.min(1, Math.max(0, Number(tts.volume ?? 1)));
+          currentAudio = audio;
 
           let done = false;
-          const finish = (ok: boolean) => {
+          const finish = (ok: boolean, stop: boolean) => {
             if (done) return;
             done = true;
             clearTimeout(guard);
+            // [OV-A] 안전장치 시간 초과·오류로 끝낼 때는 소리를 실제로 멈춘다. 예전에는 대기열만 넘기고
+            // 소리는 계속 나와 다음 알림 음성과 겹쳤다.
+            if (stop && currentAudio === audio) stopCurrentAudio();
             resolve(ok);
           };
           // 재생이 끝나지 않는 경우를 대비한 안전장치.
-          // 60초로 두면 알림 한 건이 대기열을 1분간 막는다. 문장 길이에 맞춘 상한을 쓴다.
-          const guard = setTimeout(() => finish(true), ttsGuardMs(tts.text));
-          audio.onended = () => finish(true);
-          audio.onerror = () => finish(false);
-          audio.play().catch(() => finish(false));
+          // 60초로 두면 알림 한 건이 대기열을 1분간 막는다. 문장 길이·속도에 맞춘 상한을 쓴다.
+          let guard = setTimeout(() => finish(true, true), ttsGuardMs(tts.text, tts.speed));
+          // [OV-A] 실제 길이를 알면 그 길이 + 여유로 안전장치를 다시 건다(추정보다 정확하다).
+          audio.onloadedmetadata = () => {
+            if (done || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+            clearTimeout(guard);
+            const ms = Math.min(TTS_GUARD_CAP_MS, Math.ceil(audio.duration * 1000) + 1500);
+            guard = setTimeout(() => finish(true, true), ms);
+          };
+          audio.onended = () => finish(true, false);
+          audio.onerror = () => finish(false, true);
+          audio.play().catch(() => finish(false, true));
         } catch {
           resolve(false);
         }
@@ -507,7 +551,7 @@ export function OverlayClient({
             resolve();
           };
           // onend 가 오지 않는 브라우저를 대비한 안전장치
-          const guard = setTimeout(finish, ttsGuardMs(tts.text));
+          const guard = setTimeout(finish, ttsGuardMs(tts.text, tts.speed));
           utter.onend = finish;
           utter.onerror = finish;
           // 말하기가 실제로 시작되지 않으면(음성 없음·정책 차단) 짧게 확인하고 넘어간다.
@@ -545,7 +589,7 @@ export function OverlayClient({
       busy.current = true;
       setLeaving(false);
       // 콤보를 먼저 센다. setCurrent 와 같은 갱신으로 묶여 첫 화면부터 올바른 배율로 그려진다.
-      registerComboRef.current(next.donorName);
+      registerComboRef.current(next.donorName, next.anonymous);
       setCurrent(next);
       if (effectOf(next) === 'DONAIDO_PARADE') {
         if (paradeTimer.current) clearTimeout(paradeTimer.current);
@@ -574,12 +618,19 @@ export function OverlayClient({
        * 미리보기에서 [테스트 후원 보내기]를 눌러도 아무 반응이 없어 보이는 원인이 된다.
        * 읽기가 끝나지 않아도 제한 시간이 지나면 다음으로 넘어간다.
        */
+      // [OV-A] 상한은 기본 TTS_MAX_MS 이되, 속도를 반영한 안전장치보다 짧지 않게 둔다
+      // (느린 속도의 긴 문장이 바깥 상한에 먼저 잘리지 않도록).
+      const ttsLimit = next.tts?.text
+        ? Math.max(TTS_MAX_MS, ttsGuardMs(next.tts.text, next.tts.speed) + 1000)
+        : TTS_MAX_MS;
       const spoken = Promise.race([
         speak(next).catch(() => undefined),
-        new Promise<void>((r) => setTimeout(r, TTS_MAX_MS)),
+        new Promise<void>((r) => setTimeout(r, ttsLimit)),
       ]);
 
       Promise.all([shown, spoken]).then(() => {
+        // [OV-A] 알림이 끝났는데 소리가 남아 있으면(바깥 상한에 걸린 경우) 다음 알림과 겹치지 않게 멈춘다.
+        stopCurrentAudio();
         if (disposed) return;
         setLeaving(true);
         setTimeout(() => {
@@ -610,6 +661,8 @@ export function OverlayClient({
        */
       busy.current = false;
       queue.current = [];
+      // [OV-A] 정리되는 파이프라인의 서버 음성도 멈춘다(설정 변경·음소거 전환 직후 이전 음성이 남지 않게).
+      stopCurrentAudio();
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         try {
           window.speechSynthesis.cancel();
@@ -630,6 +683,13 @@ export function OverlayClient({
     /** 이번 연결에서 서버가 재전송해 준 알림 수 (재연결 직후에만 올라간다) */
     let recovered = 0;
     let resuming = false;
+    /**
+     * [minor] '복구' 로 셀 수 있는 마감 시각. 서버는 재연결 시 'ready' 직후 놓친 알림을 몰아서 다시
+     * 보낸다. 예전에는 resuming 이 연결 내내 true 로 남아 그 뒤의 모든 후원이 "복구"로 집계됐다.
+     * 'ready' 를 받은 뒤 3초 안에 온 알림만 재전송분으로 본다(재전송은 한 번의 조회로 즉시 나간다).
+     */
+    let resumeUntil = 0;
+    const RESUME_WINDOW_MS = 3000;
 
     /** 부모에게 마지막으로 알린 연결 상태. 부모가 다시 물어보면 이 값을 그대로 돌려준다. */
     let lastStatus: Record<string, unknown> = { phase: 'connecting' };
@@ -675,6 +735,7 @@ export function OverlayClient({
       // 끊긴 사이에 쌓인 알림을 돌려받기 위해 마지막으로 받은 이벤트 ID 를 함께 보낸다.
       if (lastEventId.current) params.set('lastEventId', lastEventId.current);
       resuming = Boolean(lastEventId.current);
+      resumeUntil = 0;
 
       const url = `/api/overlay/${encodeURIComponent(creatorId)}/stream?${params.toString()}`;
 
@@ -706,7 +767,7 @@ export function OverlayClient({
           if (payload.enabled === false && !preview) return;
 
           // 재연결 직후 되돌려받은 건은 별도로 센다(디버그 배지/미리보기 표시용).
-          if (resuming) {
+          if (Date.now() < resumeUntil) {
             recovered += 1;
             setLink({ phase: 'connected', recovered });
             notifyParent('donaido-overlay-status', { phase: 'connected', recovered });
@@ -746,6 +807,9 @@ export function OverlayClient({
         },
         onEvent: (name, message) => {
           if (name === 'ready') {
+            // [minor] 재연결이면 이 시점부터 짧은 창 안의 알림만 복구분으로 센다.
+            if (resuming) resumeUntil = Date.now() + RESUME_WINDOW_MS;
+            resuming = false;
             markConnected();
             // 스튜디오 미리보기(iframe)에 구독 완료를 알린다. 구독 전에 보낸 테스트 이벤트는
             // 서버가 보관하지 않으므로, 부모 창은 이 신호를 받은 뒤에 자동 발동해야 한다.
@@ -757,6 +821,7 @@ export function OverlayClient({
         onError: () => {
           if (disposed) return;
           resuming = false;
+          resumeUntil = 0;
           // 지수 백오프 (최대 30초). 재연결 상태는 방송 화면에 표시하지 않는다.
           // 첫 재시도는 300ms 로 짧게 잡는다. 순간적인 끊김(모바일 전환·프록시 재시작)은
           // 대부분 바로 복구되는데, 1초를 기다리면 그 사이 [재연결 중] 이 눈에 띄게 뜬다.

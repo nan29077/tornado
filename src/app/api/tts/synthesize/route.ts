@@ -1,7 +1,8 @@
 import { prisma } from '@/server/db';
 import { authorizeOverlay } from '@/server/services/overlay-access';
 import { findOverlayTtsGrant } from '@/server/services/overlay-bus';
-import { consumeRateLimit } from '@/server/rate-limit';
+import { clientIpFromRequest, consumeRateLimit } from '@/server/rate-limit';
+import { dedupeInFlight } from '@/server/services/tts/inflight';
 import {
   normalizeSpeaker,
   resolveEffectiveTtsProvider,
@@ -32,6 +33,13 @@ export const dynamic = 'force-dynamic';
 
 /** 한 크리에이터가 1분에 요청할 수 있는 합성 횟수. 재생 실패 재시도까지 감안한 값이다. */
 const RATE_MAX_PER_MIN = 60;
+
+/**
+ * [OV-D] 허가 없는(모르는·만료된) 이벤트 요청의 IP 별 1분 상한.
+ * 크리에이터 상한과 따로 센다. 예전에는 크리에이터 상한을 허가 확인보다 먼저 써서, 유출된 토큰으로
+ * 엉터리 eventId 를 보내기만 해도 그 크리에이터의 상한이 바닥나 정작 OBS 가 429(무음)를 받았다.
+ */
+const MISS_RATE_MAX_PER_MIN = 20;
 
 /**
  * 오버레이 이벤트 기록에서 문장을 복원할 수 있는 시간.
@@ -71,6 +79,17 @@ function cachePut(key: string, audio: ArrayBuffer | Uint8Array) {
     audioCache.delete(oldest);
   }
 }
+
+type SynthOutcome =
+  | { ok: true; audio: ArrayBuffer | Uint8Array }
+  | { ok: false; status: number; message: string };
+
+/**
+ * [OV-C] 진행 중인 합성. 캐시와 같은 키를 쓴다. 같은 이벤트의 요청이 겹치면 뒤 요청은 앞 요청의
+ * 결과를 기다린다(제공사를 한 번만 부른다). 개발 서버 HMR 에서도 하나로 유지되게 globalThis 에 둔다.
+ */
+const inflight: Map<string, Promise<SynthOutcome>> =
+  ((globalThis as { __donaidoTtsInflight?: Map<string, Promise<SynthOutcome>> }).__donaidoTtsInflight ??= new Map());
 
 function audioResponse(audio: ArrayBuffer | Uint8Array) {
   return new Response(audio as BodyInit, {
@@ -140,18 +159,43 @@ export async function GET(req: Request) {
   const cached = cacheGet(cacheKey);
   if (cached) return audioResponse(cached);
 
-  // 토큰이 유출되더라도 과금이 폭주하지 않도록 한 겹 더 둔다.
+  /**
+   * [OV-D] 허가부터 확인한다(인메모리 → 기본키 조회 1번이라 가볍다).
+   * 서버가 발행한 문장만 합성한다. 모르는 이벤트면 클라이언트가 브라우저 음성으로 되돌아간다.
+   * 모르는 이벤트 요청은 크리에이터 상한을 쓰지 않고 IP 별 상한으로 따로 센다.
+   */
+  const grant = await resolveTtsGrant(eventId, creatorId);
+  if (!grant) {
+    const ip = clientIpFromRequest(req);
+    const miss = await consumeRateLimit('tts-miss', ip ?? `creator:${creatorId}`, MISS_RATE_MAX_PER_MIN, 60);
+    if (!miss.ok) return new Response('too many requests', { status: 429 });
+    return new Response('unknown event', { status: 404 });
+  }
+
+  // [OV-C] 같은 이벤트를 이미 합성 중이면 그 결과를 기다린다(캐시 적중과 같으므로 상한을 쓰지 않는다).
+  const pending = inflight.get(cacheKey);
+  if (pending) return outcomeResponse(await pending);
+
+  // 토큰이 유출되더라도 과금이 폭주하지 않도록 한 겹 더 둔다. 실제로 합성할 요청만 센다.
   const rate = await consumeRateLimit('tts', creatorId, RATE_MAX_PER_MIN, 60);
   if (!rate.ok) {
     return new Response('too many requests', { status: 429 });
   }
 
-  // 서버가 발행한 문장만 합성한다. 모르는 이벤트면 클라이언트가 브라우저 음성으로 되돌아간다.
-  const grant = await resolveTtsGrant(eventId, creatorId);
-  if (!grant) {
-    return new Response('unknown event', { status: 404 });
-  }
+  const outcome = await dedupeInFlight(inflight, cacheKey, () => synthesizeGrant(creatorId, grant, cacheKey));
+  return outcomeResponse(outcome);
+}
 
+function outcomeResponse(outcome: SynthOutcome) {
+  if (outcome.ok) return audioResponse(outcome.audio);
+  return new Response(outcome.message, { status: outcome.status });
+}
+
+async function synthesizeGrant(
+  creatorId: string,
+  grant: NonNullable<Awaited<ReturnType<typeof resolveTtsGrant>>>,
+  cacheKey: string,
+): Promise<SynthOutcome> {
   /**
    * 제공사는 **관리자 전역 설정을 반영한 실효값**으로 판단한다.
    * 크리에이터 설정만 보면, 관리자가 전역으로 클로바를 켜 두어도 아직 자기 화면에서
@@ -159,12 +203,12 @@ export async function GET(req: Request) {
    */
   const provider = await resolveEffectiveTtsProvider(creatorId);
   if (provider !== 'naver') {
-    return new Response('server tts disabled', { status: 400 });
+    return { ok: false, status: 400, message: 'server tts disabled' };
   }
 
   const cred = await resolveNaverCredentials(creatorId);
   if (!cred) {
-    return new Response('tts credentials missing', { status: 503 });
+    return { ok: false, status: 503, message: 'tts credentials missing' };
   }
 
   /**
@@ -185,9 +229,9 @@ export async function GET(req: Request) {
   });
 
   if (!result.ok || !result.audio) {
-    return new Response(result.message ?? 'tts failed', { status: 502 });
+    return { ok: false, status: 502, message: result.message ?? 'tts failed' };
   }
 
   cachePut(cacheKey, result.audio);
-  return audioResponse(result.audio);
+  return { ok: true, audio: result.audio };
 }

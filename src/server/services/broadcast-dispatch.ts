@@ -243,8 +243,9 @@ export async function buildOverlayPayload(donationId: string, isTest = false): P
 
   const overlay = donation.creator.overlaySetting;
   const tts = donation.creator.ttsSetting;
-  const donorName =
-    overlay?.anonymize || donation.anonymous ? '익명의 후원자' : overlayDonorName(donation.displayName);
+  // [OV-B] 익명 여부를 함께 실어 보낸다(오버레이 콤보가 익명 후원끼리 합치지 않도록).
+  const anonymous = Boolean(overlay?.anonymize || donation.anonymous);
+  const donorName = anonymous ? '익명의 후원자' : overlayDonorName(donation.displayName);
   const message = overlay?.showMessage === false ? '' : donation.message;
 
   const [tier, tierRank] = await Promise.all([
@@ -276,6 +277,7 @@ export async function buildOverlayPayload(donationId: string, isTest = false): P
     effectLevel: effectLevelOfRank(tierRank),
     occurredAt: new Date().toISOString(),
     isTest,
+    anonymous,
   };
 }
 
@@ -544,7 +546,8 @@ export async function sendTestOverlay(
 
   // 테스트는 "실제 방송에 나갈 화면"을 그대로 보여 주는 것이 목적이므로
   // 익명 처리 · 금액 표시 · 메시지 표시 설정을 실제 후원과 똑같이 적용한다.
-  const donorName = overlay?.anonymize ? '익명의 후원자' : input.donorName;
+  const anonymous = Boolean(overlay?.anonymize);
+  const donorName = anonymous ? '익명의 후원자' : input.donorName;
   const message = overlay?.showMessage === false ? '' : input.message;
 
   const payload: OverlayEventPayload = {
@@ -567,6 +570,7 @@ export async function sendTestOverlay(
     effectLevel: effectLevelOfRank(tierRank),
     occurredAt: new Date().toISOString(),
     isTest: true,
+    anonymous,
     ...(opts.previewOnly ? { previewOnly: true } : {}),
   };
 
