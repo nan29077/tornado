@@ -625,6 +625,12 @@ function ChoiceField({
           </div>
         ))}
       </div>
+      {/* GM-B: 비어 있는 칸은 저장할 때 빠지므로 정답이 될 수 없다. 서버도 같은 이유로 거절한다. */}
+      {onAnswer && answerIndex !== undefined && rows.some((r) => r.trim()) && !(rows[answerIndex] ?? '').trim() ? (
+        <p className="mt-1.5 text-[12px] font-semibold text-danger-600">
+          정답으로 고른 선택지가 비어 있습니다. 내용을 입력하거나 다른 정답을 골라 주세요.
+        </p>
+      ) : null}
       <button
         type="button"
         onClick={() => onChange([...rows, ''])}

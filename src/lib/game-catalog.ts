@@ -216,6 +216,48 @@ function cleanList(v: unknown, max = MAX_ITEMS): string[] {
 }
 
 /**
+ * 원래 목록의 번호를 cleanList 를 거친 목록의 번호로 옮긴다 (GM-B).
+ *
+ * cleanList 는 빈칸을 빼고 앞으로 당긴다. 그런데 정답 번호(answerIndex)는 **원래 목록 기준**이라
+ * 그대로 두면 정답이 조용히 다른 선택지로 옮겨간다. 예) ['가', '', '다'] 에서 '다'(2)를 정답으로
+ * 고르면 정리 후 ['가', '다'] 의 2 는 범위 밖이고, ['', '나', '다'] 에서 '나'(1)를 고르면 정리 후
+ * 1 은 '다' 가 된다.
+ *
+ * 고른 칸이 비어 있거나(빈칸은 정답이 될 수 없다) 개수 상한에 걸려 잘려 나갔으면 -1 을 돌려준다.
+ * -1 은 validateGameInput 에서 "정답 선택지를 골라 주세요" 로 거절된다.
+ */
+export function remapIndexAfterClean(v: unknown, index: number, max = MAX_ITEMS): number {
+  if (!Array.isArray(v) || !Number.isInteger(index) || index < 0 || index >= v.length) return -1;
+  const cleanOf = (x: unknown) => String(x ?? '').trim().slice(0, MAX_ITEM_LEN);
+  if (!cleanOf(v[index])) return -1;
+  let pos = 0;
+  for (let i = 0; i < index; i++) if (cleanOf(v[i])) pos += 1;
+  return pos < max ? pos : -1;
+}
+
+/**
+ * 투표 결과의 1위 표시 문구 (GM-H). 오버레이·스튜디오가 같은 규칙을 쓴다.
+ *
+ * 동점이면 첫 선택지 하나만 1위로 보여 주면 안 된다. 서버가 `topIndices` 에 동점 1위를 모두 담고,
+ * 화면은 두 개 이상이면 "공동 1위" 로 표시한다. 예전 결과(topIndices 없음)는 topIndex 로 대체한다.
+ */
+export function voteTopIndices(result: Record<string, unknown> | null | undefined): number[] {
+  if (!result) return [];
+  if (Array.isArray(result.topIndices)) {
+    return result.topIndices.map(Number).filter((n) => Number.isInteger(n) && n >= 0);
+  }
+  const top = Number(result.topIndex);
+  return Number.isInteger(top) && top >= 0 ? [top] : [];
+}
+
+export function voteTopLabel(result: Record<string, unknown> | null | undefined, choices: string[]): string {
+  const tops = voteTopIndices(result);
+  if (tops.length === 0) return '1위 · -';
+  const names = tops.map((i) => choices[i] ?? '-').join(', ');
+  return tops.length > 1 ? `공동 1위 · ${names}` : `1위 · ${names}`;
+}
+
+/**
  * 생성 · 수정 공용 검증.
  * 통과하면 null, 실패하면 사람이 읽는 한국어 사유를 돌려준다.
  */
@@ -236,6 +278,15 @@ export function validateGameInput(
   if (type === 'LADDER') {
     const dest = cleanList(config.destinations);
     if (dest.length < 2) return '도착 항목(보상)을 2개 이상 입력해 주세요.';
+    /**
+     * 출발 항목 수와 도착 항목 수가 같아야 한다 (GM-G).
+     * 예전에는 도착이 더 많으면 섞기 전에 뒤쪽을 잘라내, 마지막에 적은 '당첨' 같은 항목이
+     * 영원히 나오지 않았다. 모자라면 빈칸 도착이 생겨 결과가 비어 보였다.
+     */
+    const starts = cleanList(items);
+    if (dest.length !== starts.length) {
+      return `출발 항목(${starts.length}개)과 도착 항목(${dest.length}개)의 개수를 같게 맞춰 주세요. 꽝도 도착 항목으로 넣어 주세요.`;
+    }
   }
   if (type === 'VOTE') {
     if (!String(config.topic ?? '').trim()) return '투표 주제를 입력해 주세요.';
@@ -245,7 +296,9 @@ export function validateGameInput(
     if (!String(config.question ?? '').trim()) return '문제를 입력해 주세요.';
     const choices = cleanList(config.choices, MAX_CHOICES);
     if (choices.length < 2) return '선택지를 2개 이상 입력해 주세요.';
-    const idx = Number(config.answerIndex);
+    // GM-B: 정리 전 목록(스튜디오 폼)이든 정리 후 목록(서버)이든 같은 기준으로 본다.
+    // 정리 후 목록에서는 번호가 그대로 유지되고, 정리 전 목록에서는 빈칸을 뺀 위치로 옮겨 확인한다.
+    const idx = remapIndexAfterClean(config.choices, Number(config.answerIndex), MAX_CHOICES);
     if (!Number.isInteger(idx) || idx < 0 || idx >= choices.length) return '정답 선택지를 골라 주세요.';
   }
   if (type === 'KEYWORD') {
@@ -298,7 +351,8 @@ export function normalizeConfig(type: string, input: Record<string, unknown>): R
       return {
         question: String(input.question ?? '').trim().slice(0, 80),
         choices: cleanList(input.choices, MAX_CHOICES),
-        answerIndex: Math.max(0, Number(input.answerIndex) || 0),
+        // GM-B: 빈 선택지를 뺀 뒤의 위치로 정답 번호를 옮긴다. 고른 칸이 비었으면 -1(검증에서 거절).
+        answerIndex: remapIndexAfterClean(input.choices, Number(input.answerIndex ?? 0), MAX_CHOICES),
         prize,
       };
     case 'KEYWORD':

@@ -1,4 +1,5 @@
 import { prisma } from '@/server/db';
+import type { Prisma } from '@/generated/prisma/client';
 import { env } from '@/lib/env';
 import {
   SECRET_CONFIG_KEYS,
@@ -86,6 +87,51 @@ export interface GameStudioState extends GamePublicState {
   entryMode: string;
   /** 이 회차에서 결과를 발표(또는 돌리기)한 횟수. 재발표 흔적을 크리에이터에게 보여 준다(GM-2). */
   revealCount?: number;
+  /**
+   * [발표 취소]를 누를 수 있는 마지막 시각(ISO). 발표 전이거나 취소할 수 없으면 null (GM-J).
+   * 화면이 이 시각을 지나면 버튼을 감춘다. 서버도 같은 값(UNDO_WINDOW_SEC)으로 거절한다.
+   */
+  undoUntil?: string | null;
+}
+
+/** 결과 발표를 되돌릴 수 있는 시간(초). 이 시간이 지나면 재추첨을 막는다. */
+export const UNDO_WINDOW_SEC = Math.max(10, Number(process.env.GAME_UNDO_WINDOW_SEC) || 120);
+
+/**
+ * 게임 참여·집계에서 빼야 하는 후원 상태 (GM-C).
+ * 환불이 요청됐거나 끝난 후원은 당첨·게이지에 쓰이면 안 된다. 요청이 반려되면 원래 상태로
+ * 돌아가므로 그때는 다시 포함된다.
+ */
+export const REFUND_EXCLUDED_STATUSES = ['REFUND_REQUESTED', 'REFUNDED'] as const;
+
+type Db = Prisma.TransactionClient;
+
+/** 주어진 후원 중 환불됐거나 환불 요청 중인 것의 ID (GM-C) */
+export async function refundedDonationIds(donationIds: string[], db: Db = prisma): Promise<Set<string>> {
+  const ids = [...new Set(donationIds.filter(Boolean))];
+  if (ids.length === 0) return new Set();
+  const rows = await db.donation.findMany({
+    where: {
+      id: { in: ids },
+      OR: [{ status: { in: [...REFUND_EXCLUDED_STATUSES] } }, { refundedAt: { not: null } }],
+    },
+    select: { id: true },
+  });
+  return new Set(rows.map((r) => r.id));
+}
+
+/**
+ * 회차 참여자 중 환불(요청) 후원으로 자동 참여한 사람의 참여 ID (GM-C).
+ * 후원 자동 참여가 없는 회차(LINK 전용)는 조회하지 않는다.
+ */
+export async function refundedParticipantIds(roundId: string, db: Db = prisma): Promise<Set<string>> {
+  const rows = await db.gameParticipant.findMany({
+    where: { roundId, donationId: { not: null } },
+    select: { id: true, donationId: true },
+  });
+  if (rows.length === 0) return new Set();
+  const refunded = await refundedDonationIds(rows.map((r) => r.donationId ?? ''), db);
+  return new Set(rows.filter((r) => r.donationId && refunded.has(r.donationId)).map((r) => r.id));
 }
 
 /** 결과 발표 전까지 감춰야 하는 config 키를 제거한다. */
@@ -108,6 +154,7 @@ export function toPublicState(state: GameStudioState): GamePublicState {
     autoCloseSec: _a,
     entryMode: _e,
     revealCount: _r,
+    undoUntil: _u,
     ...rest
   } = state;
   /**
@@ -116,9 +163,16 @@ export function toPublicState(state: GameStudioState): GamePublicState {
    * 참여 인원은 그대로 보여 주고, 막대는 마감·발표 뒤에 공개한다.
    */
   const hideCounts = rest.type === 'QUIZ' && rest.status === 'OPEN';
+  /**
+   * 선착순 키워드의 정답자 수도 참여를 받는 동안에는 내보내지 않는다 (GM-I).
+   * 숫자가 보이면 후보 단어를 하나씩 넣어 보고 정답자 수가 오르는지로 정답을 알아낼 수 있다
+   * (참여 응답에서 정답 여부를 뺀 것과 같은 이유). 크리에이터 화면에는 그대로 보인다.
+   */
+  const hideCorrect = rest.type === 'KEYWORD' && rest.status === 'OPEN';
   return {
     ...rest,
     counts: hideCounts ? null : rest.counts,
+    correctCount: hideCorrect ? null : rest.correctCount,
     result: rest.result ? (sanitizePublicValue(rest.result) as Record<string, unknown>) : null,
   };
 }
@@ -153,12 +207,15 @@ export async function findActiveRound(creatorId: string) {
 }
 
 /** 후원 목표 게이지의 현재 누적액. 회차를 연 시각 이후 결제 완료된 후원만 센다. */
-export async function sumDonationsSince(creatorId: string, since: Date): Promise<number> {
-  const agg = await prisma.donation.aggregate({
+export async function sumDonationsSince(creatorId: string, since: Date, db: Db = prisma): Promise<number> {
+  const agg = await db.donation.aggregate({
     where: {
       creatorId,
       isTest: false,
       refundedAt: null,
+      // GM-C: 환불 요청 중인 후원도 게이지에서 뺀다. 환불이 끝나면 다시 줄어드는 게이지보다
+      // 요청 시점에 빠지는 편이 공약 달성 판정이 흔들리지 않는다.
+      status: { notIn: [...REFUND_EXCLUDED_STATUSES] },
       paidAt: { gte: since },
     },
     _sum: { amount: true },
@@ -198,6 +255,14 @@ const snapshotGeneration = new Map<string, number>();
 
 function currentSnapshotGeneration(creatorId: string): number {
   return snapshotGeneration.get(creatorId) ?? 0;
+}
+
+/**
+ * 상태 스냅샷의 세대 번호 (GM-D).
+ * 상태를 심을 때마다 하나씩 오른다. 늦게 끝난 조회가 더 새 상태를 덮어쓰지 않게 비교하는 데 쓴다.
+ */
+export function studioSnapshotGeneration(creatorId: string): number {
+  return currentSnapshotGeneration(creatorId);
 }
 
 function advanceSnapshotGeneration(creatorId: string): void {
@@ -285,6 +350,9 @@ export async function buildStudioStateForRound(roundId: string): Promise<GameStu
 
   if (usesEntries(type)) {
     participantCount = await prisma.gameParticipant.count({ where: { roundId: round.id } });
+    // GM-C: 환불(요청)된 후원으로 자동 참여한 사람은 인원·이름에서 뺀다. 발표 때도 같은 기준으로 뺀다.
+    const refundedIds = game.entryMode === 'LINK' ? new Set<string>() : await refundedParticipantIds(round.id);
+    participantCount -= refundedIds.size;
 
     if (usesChoices(type) && choices.length > 0) {
       const grouped = await prisma.gameParticipant.groupBy({
@@ -310,9 +378,9 @@ export async function buildStudioStateForRound(roundId: string): Promise<GameStu
     const recent = await prisma.gameParticipant.findMany({
       where: { roundId: round.id },
       orderBy: { createdAt: 'desc' },
-      take: 30,
+      take: 30 + refundedIds.size,
       select: { id: true, displayName: true, entry: true, source: true, createdAt: true },
-    });
+    }).then((rows) => rows.filter((r) => !refundedIds.has(r.id)).slice(0, 30));
     // 투표는 익명이라 이름을 방송에 흘리지 않는다.
     participantNames = type === 'VOTE' ? [] : recent.slice(0, 24).map((p) => p.displayName);
     recentParticipants = recent.map((p) => ({
@@ -382,6 +450,11 @@ export async function buildStudioStateForRound(roundId: string): Promise<GameStu
     autoCloseSec: game.autoCloseSec,
     entryMode: game.entryMode,
     revealCount: round.revealCount ?? 0,
+    // GM-J: 발표 취소가 아직 가능한 경우에만 마감 시각을 준다(회차당 1회, 발표 후 UNDO_WINDOW_SEC 초).
+    undoUntil:
+      revealed && round.revealedAt && (round.revealCount ?? 0) <= 1
+        ? new Date(round.revealedAt.getTime() + UNDO_WINDOW_SEC * 1000).toISOString()
+        : null,
   };
 }
 

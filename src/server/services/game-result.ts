@@ -72,8 +72,14 @@ function buildRungs(cols: number) {
 
 export function computeLadder(items: string[], destinationsInput: string[], selectedIndex?: number) {
   const cols = items.length;
-  // 도착 항목 수를 출발 수에 맞춘다. 모자라면 빈칸으로 채운다.
-  const destinations = [...destinationsInput];
+  /**
+   * 도착 항목 수를 출발 수에 맞춘다. 모자라면 빈칸으로 채운다.
+   *
+   * GM-G: 개수가 다른 설정은 저장 단계(validateGameInput)에서 막는다. 여기서 자르는 것은
+   * 그 검증 이전에 저장된 옛 게임을 위한 방어일 뿐이다. 자를 때도 **섞은 뒤에** 잘라
+   * 뒤쪽 도착 항목('당첨' 등)이 영원히 뽑히지 않는 일이 없게 한다.
+   */
+  const destinations = shuffle(destinationsInput);
   while (destinations.length < cols) destinations.push('');
   destinations.length = cols;
 
@@ -131,12 +137,20 @@ export function computeEntryResult(
       counts.forEach((c, i) => {
         if (c > counts[topIndex]) topIndex = i;
       });
+      /**
+       * 동점 1위를 모두 담는다 (GM-H).
+       * 예전에는 첫 선택지 하나만 1위로 발표돼, 2:2 동점이어도 방송에는 'A 1위' 로 나갔다.
+       * topIndex·topLabel 은 옛 화면 호환을 위해 남기고, 화면은 topIndices 로 "공동 1위" 를 그린다.
+       */
+      const topIndices = total > 0 ? counts.flatMap((c, i) => (c === counts[topIndex] ? [i] : [])) : [];
       return {
         choices,
         counts,
         total,
         topIndex: total > 0 ? topIndex : -1,
         topLabel: total > 0 ? choices[topIndex] : '',
+        topIndices,
+        tie: topIndices.length > 1,
       };
     }
     case 'QUIZ': {
