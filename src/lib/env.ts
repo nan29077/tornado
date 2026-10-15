@@ -415,6 +415,12 @@ export function allowLegacyWebInstantPay(): boolean {
 }
 
 export const isProd = env.appEnv === 'prod';
+
+/**
+ * 헥토 PIN 인증창 발급(adapters/payment/hecto.ts requestPinLink)이 아직 mock 인지 (PAY-K).
+ * 실제 API 로 교체하면 false 로 바꾼다. 부팅 점검(assertProductionSafety)이 이 값을 본다.
+ */
+export const HECTO_PIN_LINK_IS_MOCK = true;
 /** 개발 전용 기능(테스트 로그인, MO 시뮬레이터, 개발 아웃박스)을 열어도 되는 환경인지. */
 export const isLocal = env.appEnv === 'local';
 
@@ -508,6 +514,20 @@ export function assertProductionSafety(): string[] {
   // 각 provider 가 설정된 경우에만 해당 provider 의 키를 검증한다.
   // 다른 provider 의 키는 요구하지 않는다.
   if (env.payment.provider === 'hecto') {
+    /**
+     * 실결제(헥토) + mock PIN 인증창 조합은 기동을 막는다 (PAY-K).
+     *
+     * 헥토 requestPinLink 는 아직 토네이도 내부 모의 화면 주소를 돌려주는데, 운영에서는 그 화면이
+     * 막혀 있다(mock-guard). 그대로 뜨면 PIN 경로의 모든 후원(문자·웹)이 결제되지 못하고 실패한다.
+     * PIN 경로를 아예 쓰지 않는 구성(문자=구 확인 링크, 웹=구 즉시결제 둘 다 켠 경우)만 허용한다.
+     */
+    if (HECTO_PIN_LINK_IS_MOCK && !(allowLegacyConfirmLink() && allowLegacyWebInstantPay())) {
+      problems.push(
+        'PAYMENT_PROVIDER=hecto 이지만 헥토 PIN 인증창 발급(requestPinLink)은 아직 mock 입니다. ' +
+          '운영에서는 모의 PIN 화면이 막혀 있어 PIN 경로의 모든 후원이 실패합니다. 헥토 PIN 연동을 마치거나, ' +
+          '임시로 ALLOW_LEGACY_CONFIRM_LINK=true 와 ALLOW_LEGACY_WEB_INSTANT_PAY=true 를 함께 설정하십시오.',
+      );
+    }
     if (!env.payment.hectoMid) problems.push('HECTO_MID 가 비어 있습니다.');
     if (!env.payment.hectoHashKey) problems.push('HECTO_HASH_KEY 가 비어 있습니다.');
     if (!env.payment.hectoAesKey) problems.push('HECTO_AES_KEY 가 비어 있습니다.');

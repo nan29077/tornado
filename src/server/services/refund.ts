@@ -253,7 +253,13 @@ async function finishRefundCancel(
   }).catch(() => undefined);
 
   if (refund.donation.donorId && refund.donation.paidAt) {
-    await rollbackCounters(refund.donation.donorId, refund.donation.creatorId, refund.amount, refund.donation.paidAt);
+    /**
+     * 집계는 결제 판정 때 **결제 거래 생성 시각(txn.requestedAt)** 으로 예약된다(commitCounters).
+     * 결제 완료 시각(paidAt)으로 되돌리면 PIN 대기·재시도로 자정을 넘긴 건이나 관리자 수동 확정
+     * (paidAt = 확정 시각) 건은 예약하지 않은 날짜를 깎고, 실제로 예약한 날짜는 그대로 남는다 (PAY-F).
+     */
+    const reservedAt = txn.requestedAt ?? refund.donation.createdAt;
+    await rollbackCounters(refund.donation.donorId, refund.donation.creatorId, refund.amount, reservedAt);
     await prisma.donorCreatorLink.updateMany({
       where: { donorId: refund.donation.donorId, creatorId: refund.donation.creatorId },
       data: { totalAmount: { decrement: refund.amount }, totalCount: { decrement: 1 } },

@@ -162,7 +162,10 @@ export async function startRegistration(input: {
   const session = await adapter.createRegistrationSession({
     donorRef: registration.id,
     returnUrl: `${env.baseUrl}/r/${input.token}/complete`,
-    notifyUrl: `${env.baseUrl}/api/payments/notify`,
+    // 예전 값(/api/payments/notify)은 존재하지 않는 경로였다. 지금 이 값을 실제로 쓰는 어댑터는
+    // 온기뿐이고, 온기 노티 수신 경로는 /api/webhooks/ongi 다(규격 수령 전이라 아직 501 응답).
+    // 다른 어댑터(헥토·카카오·mock)는 이 값을 쓰지 않는다.
+    notifyUrl: `${env.baseUrl}/api/webhooks/ongi`,
     method,
   });
   if (!session.ok || !session.data) throw new Error(session.message ?? '결제창 생성에 실패했습니다.');
@@ -242,11 +245,24 @@ export async function completeRegistration(input: {
     throw new Error(res.message ?? '계좌 등록에 실패했습니다.');
   }
 
-  // 기존 활성 결제수단은 폐기 (활성 1건 유지)
-  await prisma.paymentMethodToken.updateMany({
+  /**
+   * 기존 활성 결제수단은 폐기한다 (활성 1건 유지).
+   *
+   * 예전에는 DB 상태만 REVOKED 로 바꾸고 결제사(PG) 빌키 해지를 부르지 않았다. revokeFailedAt 도
+   * 비어 있어 해지 재시도 배치(retryFailedBillKeyRevocations)도 잡지 못했고, 결제수단을 바꾼
+   * 후원자의 옛 빌키가 PG 에 계속 살아 있었다 (PAY-C). 폐기할 행을 먼저 읽어 두고, 새 빌키 저장이
+   * 끝난 뒤 같은 해지 경로(attemptBillKeyRevoke)로 PG 해지를 요청한다.
+   */
+  const previousTokens = await prisma.paymentMethodToken.findMany({
     where: { donorId: ctx.donorId, status: 'ACTIVE' },
-    data: { status: 'REVOKED', revokedAt: new Date() },
+    select: { id: true, donorId: true, billKeyEnc: true, revokeAttempts: true },
   });
+  if (previousTokens.length > 0) {
+    await prisma.paymentMethodToken.updateMany({
+      where: { id: { in: previousTokens.map((t) => t.id) }, status: 'ACTIVE' },
+      data: { status: 'REVOKED', revokedAt: new Date() },
+    });
+  }
 
   // 빌키 종류는 사업자 응답을 우선하고, 없으면 등록을 시작할 때 기록해 둔 값을 쓴다.
   const method: PaymentMethodKind = res.data.method ?? owned.method ?? 'ACCOUNT';
@@ -288,6 +304,10 @@ export async function completeRegistration(input: {
 
   // 링크는 1회만 사용 가능
   await consumeSecureLink(ctx.linkId, input.ip, input.userAgent);
+
+  // 옛 빌키의 PG 해지 (PAY-C). 실패해도 등록은 이미 끝났으므로 되돌리지 않는다.
+  // 실패는 attemptBillKeyRevoke 가 revokeFailedAt 에 남기고 재시도 배치가 이어받는다.
+  await revokeReplacedBillKeys(previousTokens, res.data.billKey);
 
   return {
     tokenId: token.id,
@@ -339,6 +359,43 @@ async function attemptBillKeyRevoke(token: { id: string; donorId: string; billKe
     message: revoked.message,
   });
   return false;
+}
+
+/**
+ * 결제수단 재등록으로 대체된 옛 빌키를 PG 에서 해지한다 (PAY-C).
+ *
+ *  - 같은 계좌를 다시 등록하면 PG 가 **같은 빌키**를 돌려주는 경우가 있다. 그걸 해지하면 방금
+ *    등록한 새 결제수단까지 죽으므로, 새 빌키와 같은 값은 건너뛴다(PG 해지 없이 행만 정리).
+ *  - 예외는 밖으로 내보내지 않는다. 등록 완료 응답이 해지 실패로 깨지면 안 된다.
+ */
+async function revokeReplacedBillKeys(
+  tokens: Array<{ id: string; donorId: string; billKeyEnc: string; revokeAttempts: number }>,
+  newBillKey: string,
+) {
+  for (const t of tokens) {
+    try {
+      if (!t.billKeyEnc) continue;
+      if (decrypt(t.billKeyEnc) === newBillKey) {
+        // 같은 빌키: PG 해지는 하지 않는다. 폐기 행에 같은 빌키 암호문을 남길 이유가 없어 지운다.
+        await prisma.paymentMethodToken.update({ where: { id: t.id }, data: { billKeyEnc: '' } });
+        continue;
+      }
+      await attemptBillKeyRevoke(t);
+    } catch (e) {
+      // 복호화·DB 오류 등. 행에 실패 표시를 남겨 재시도 배치가 잡게 한다.
+      logger.error('재등록으로 대체된 빌키 해지 중 예외 (재시도 대상)', { tokenId: t.id, message: (e as Error).message });
+      await prisma.paymentMethodToken
+        .update({
+          where: { id: t.id },
+          data: {
+            revokeFailedAt: new Date(),
+            revokeAttempts: { increment: 1 },
+            revokeLastError: (e as Error).message.slice(0, 300),
+          },
+        })
+        .catch(() => undefined);
+    }
+  }
 }
 
 /** 자동출금 동의 해지 = 등록 결제수단 폐기 */

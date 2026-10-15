@@ -235,6 +235,38 @@ function failure(json: HectoResponse, fallback: string): ProviderResult<never> {
 // 어댑터
 // ---------------------------------------------------------------------------
 
+/**
+ * 헥토 거래결과조회 **오류 응답**의 결과코드 → 조회 상태 (PAY-D).
+ *
+ * NOT_FOUND 는 "출금 없음 확정"으로 쓰여 같은 주문번호로 **승인을 다시 보내는 근거**가 된다.
+ * 그래서 의미가 확실한 코드만 NOT_FOUND 로 본다. 예전에는 '9999' 도 NOT_FOUND 로 봤는데,
+ * '9999' 는 헥토 규격서에서 "거래 없음"으로 확인된 코드가 아니다(통상 '기타 오류' 계열로 쓰인다).
+ * 조회 장애를 "거래 없음"으로 읽으면 이미 출금된 건에 승인을 한 번 더 보낼 수 있다.
+ * TODO(규격 확인): 헥토 거래결과조회 규격서에서 "거래 없음" 결과코드를 확인해 아래에 추가할 것.
+ * 그 전까지 모르는 코드는 모두 PENDING(미확정) → 호출부가 UNKNOWN(수동 대사)으로 처리한다.
+ */
+export function hectoInquiryErrorStatus(resultCode: string): InquiryStatus {
+  if (resultCode === 'NOT_FOUND') return 'NOT_FOUND';
+  return 'PENDING';
+}
+
+/**
+ * 헥토 거래결과조회 **정상 응답**의 거래상태 코드 → 조회 상태 (PAY-D).
+ *
+ * 매핑표에 없는 코드는 FAILED 가 아니라 PENDING(미확정)이다. FAILED 는 "출금 없음 확정"이라
+ * 실패 확정·한도 되돌림·재승인의 근거가 되는데, 처음 보는 코드(부분취소·처리중 변종 등)를
+ * 실패로 단정하면 실제로 출금된 건이 실패로 기록된다. 호출부(executePayment)는 PENDING 을
+ * UNKNOWN 으로 넘겨 관리자 대사 큐에 올린다.
+ * TODO(규격 확인): 실패 상태 코드가 규격서로 확인되면 'FAILED' 분기에 명시적으로 추가할 것.
+ */
+export function hectoInquiryStatus(stat: string): InquiryStatus {
+  if (stat === 'TS02' || stat === 'APPROVED' || stat === '0000') return 'APPROVED';
+  if (stat === 'TS03' || stat === 'CANCELED') return 'CANCELED';
+  if (stat === 'TS01' || stat === 'PENDING') return 'PENDING';
+  if (stat === 'FAILED') return 'FAILED';
+  return 'PENDING';
+}
+
 export const hectoPaymentAdapter: PaymentAdapter = {
   info(): AdapterInfo {
     const missing = requiredCredentials();
@@ -352,7 +384,8 @@ export const hectoPaymentAdapter: PaymentAdapter = {
    *
    * TODO(계약 후): HECTO_SPEC.pinAuthPath 로 실제 인증창 발급 API 를 호출하고
    *                응답의 인증 URL·세션ID·만료시각을 그대로 반환하도록 교체한다.
-   *                교체 시 `mock: false` 로 바꾸는 것을 잊지 말 것.
+   *                교체 시 `mock: false` 로 바꾸고, src/lib/env.ts 의 HECTO_PIN_LINK_IS_MOCK 도
+   *                false 로 바꿔야 운영 부팅 점검이 풀린다(PAY-K).
    */
   async requestPinLink(
     donationId: string,
@@ -458,22 +491,11 @@ export const hectoPaymentAdapter: PaymentAdapter = {
 
     // 조회 자체가 실패하면 상태를 단정하지 않는다 (PENDING 으로 남겨 재조회하게 한다).
     if (!isSuccess(res.json)) {
-      const code = String(res.json.outRsltCd ?? '');
-      if (code === 'NOT_FOUND' || code === '9999') {
-        return { ok: true, data: { status: 'NOT_FOUND' }, raw: res.json as Record<string, unknown> };
-      }
-      return { ok: true, data: { status: 'PENDING' }, raw: res.json as Record<string, unknown> };
+      const status = hectoInquiryErrorStatus(String(res.json.outRsltCd ?? ''));
+      return { ok: true, data: { status }, raw: res.json as Record<string, unknown> };
     }
 
-    const stat = String(res.json.outStatCd ?? res.json.outTrStat ?? '');
-    const status: InquiryStatus =
-      stat === 'TS02' || stat === 'APPROVED' || stat === '0000'
-        ? 'APPROVED'
-        : stat === 'TS03' || stat === 'CANCELED'
-          ? 'CANCELED'
-          : stat === 'TS01' || stat === 'PENDING'
-            ? 'PENDING'
-            : 'FAILED';
+    const status = hectoInquiryStatus(String(res.json.outStatCd ?? res.json.outTrStat ?? ''));
 
     const amountRaw = res.json.outTrPrice ?? res.json.trPrice;
     let amount: bigint | undefined;

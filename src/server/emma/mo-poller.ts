@@ -101,6 +101,35 @@ async function bumpAttempt(moKey: string, kind: 'fail' | 'defer'): Promise<numbe
   }
 }
 
+/**
+ * 처리 시작 표식 (PAY-I).
+ *
+ * 선점('2')된 채 오래된 행을 되살리는 기준이 EMMA 수신 시각(date_mo_recv)뿐이었다. EMMA 테이블에는
+ * 갱신 시각 컬럼이 없고 인포뱅크 DDL 이라 컬럼을 더할 수도 없다. 그래서 적체로 늦게 처리되는 문자는
+ * **지금 막 선점해 처리 중인데도** 수신 시각이 오래돼 다른 폴링이 다시 가져갔고, 같은 문자가 두 번
+ * 처리돼 안내 문자가 중복으로 나갔다(결제는 멱등키가 막는다).
+ *
+ * 선점할 때 이 키를 staleSec 동안 남겨 "처리 시작 시각"으로 쓴다. 오래된 '2' 행을 되살리기 전에
+ * 이 키를 원자적으로 올려 보고(1 이 아니면 누군가 staleSec 안에 처리를 시작한 것) 건너뛴다.
+ * 카운터 저장소 장애 시에는 표식 없이 예전 기준(date_mo_recv)만으로 동작한다.
+ */
+function processingKey(moKey: string): string {
+  return `emma:mo:processing:${moKey}`;
+}
+
+async function markProcessing(moKey: string, staleSec: number): Promise<void> {
+  await kv.set(processingKey(moKey), '1', staleSec).catch(() => undefined);
+}
+
+/** 오래된 선점 행을 되살려도 되는지. staleSec 안에 처리를 시작한 실행이 있으면 false. */
+async function acquireStaleReclaim(moKey: string, staleSec: number): Promise<boolean> {
+  try {
+    return (await kv.incr(processingKey(moKey), staleSec)) === 1;
+  } catch {
+    return true;
+  }
+}
+
 async function clearAttempts(moKey: string): Promise<void> {
   await kv.del(failureKey(moKey, 'fail')).catch(() => undefined);
   await kv.del(failureKey(moKey, 'defer')).catch(() => undefined);
@@ -387,6 +416,18 @@ export async function pollEmmaMo(handler: EmmaMoHandler): Promise<EmmaPollResult
 
     for (const row of rows) {
       const moKey = row.mo_key;
+
+      // 오래된 선점('2') 행은 처리 시작 표식으로 한 번 더 거른다(PAY-I).
+      if (row.msg_status === EMMA_MO_STATUS.CLAIMED) {
+        if (!(await acquireStaleReclaim(moKey, staleSec))) {
+          result.skipped++;
+          result.details.push({ moKey, outcome: 'skipped', detail: '다른 실행이 처리 중(처리 시작 표식)' });
+          continue;
+        }
+      } else {
+        // 선점 전에 표식을 남긴다. 선점 직후 다른 폴링이 이 행을 '오래된 2' 로 오인하지 않게 한다.
+        await markProcessing(moKey, staleSec);
+      }
 
       let claimed = false;
       try {

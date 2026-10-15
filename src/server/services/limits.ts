@@ -381,11 +381,28 @@ export async function rollbackCounters(
  * DB 집계(rollbackCounters)는 되돌리면서 Redis 카운터만 남으면, 결제가 실패한 건이
  * 계속 "후원 1건"으로 세어져 정상 후원자가 속도 제한과 쿨다운에 걸린다.
  * 실패해도 되돌아가지 않던 비대칭을 없앤다. (되돌리기 실패는 무시한다 — TTL 로 자연 소멸한다)
+ *
+ * `at` 은 **카운터를 올린 시각(접수 시각, donation.createdAt)** 이어야 한다 (PAY-E).
+ * 예전에는 결제 거래 생성 시각을 넘겨, PIN 입력을 기다린 건은 엉뚱한 창(버킷)을 깎았다.
+ * 그 창의 키가 없으면 incrBy 가 -1 짜리 키를 새로 만들어 다음 후원의 한도를 한 건 늘려 줬다.
+ * 그래서 키가 없거나 0 이하이면 건드리지 않고, 내린 결과가 음수가 되면 0 으로 되돌린다.
  */
-export async function rollbackVelocity(donorId: string, policy: EffectivePolicy, at: Date = new Date()) {
+export async function rollbackVelocity(donorId: string, policy: EffectivePolicy, at: Date) {
   const velocityKey = `velocity:${donorId}:${Math.floor(at.getTime() / (policy.velocityWindowSec * 1000))}`;
-  await kv.incrBy(velocityKey, -1, policy.velocityWindowSec).catch(() => 0);
-  await kv.incrBy(`streak:${donorId}`, -1, policy.cooldownSec).catch(() => 0);
+  await decrementIfPositive(velocityKey, policy.velocityWindowSec);
+  await decrementIfPositive(`streak:${donorId}`, policy.cooldownSec);
+}
+
+/** 키가 있고 양수일 때만 1 내린다. 음수가 되면 0 으로 고정한다. 실패는 삼킨다. */
+async function decrementIfPositive(key: string, ttlSec: number) {
+  try {
+    const cur = Number((await kv.get(key)) ?? 0);
+    if (!(cur > 0)) return;
+    const next = await kv.incrBy(key, -1, ttlSec);
+    if (next < 0) await kv.set(key, '0', ttlSec);
+  } catch {
+    // 되돌리기 실패는 무시한다. 카운터는 TTL 로 자연 소멸한다.
+  }
 }
 
 export async function registerFailure(donorId: string, threshold: number) {

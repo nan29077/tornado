@@ -6,6 +6,7 @@ import { prisma } from '@/server/db';
 import { kv } from '@/server/redis';
 import { newId } from '@/lib/id';
 import { encrypt, maskPhone, normalizePhone, phoneHash } from '@/lib/crypto';
+import { decodePinCookie, encodePinCookie } from '@/server/services/web-pin-cookie';
 import { env, isLocal } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { issueSecureLink } from '@/server/services/secure-link';
@@ -41,7 +42,8 @@ const PIN_COOKIE = 'webdon_pin';
 
 async function setPinCookie(donationId: string) {
   const jar = await cookies();
-  jar.set(PIN_COOKIE, donationId, {
+  // 서명된 값만 담는다(PAY-J). 서명 함수는 서버 액션으로 노출되지 않게 별도 모듈에 둔다.
+  jar.set(PIN_COOKIE, encodePinCookie(donationId), {
     httpOnly: true,
     sameSite: 'lax',
     secure: !isLocal && env.baseUrl.startsWith('https'),
@@ -53,7 +55,10 @@ async function setPinCookie(donationId: string) {
 
 async function readPinCookie(): Promise<string | null> {
   const jar = await cookies();
-  return jar.get(PIN_COOKIE)?.value ?? null;
+  const raw = jar.get(PIN_COOKIE)?.value ?? null;
+  const id = decodePinCookie(raw);
+  if (raw && !id) logger.warn('웹 PIN 진행 쿠키 서명 불일치 — 무시합니다.');
+  return id;
 }
 
 /**

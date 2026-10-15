@@ -1,6 +1,6 @@
 import { prisma } from '@/server/db';
 import { logger } from '@/lib/logger';
-import { executePayment, setStatus } from './donation-flow';
+import { executePayment, revertIntakeVelocity, setStatus } from './donation-flow';
 import type { DonationStatus } from '@/generated/prisma/enums';
 
 /**
@@ -115,7 +115,7 @@ export async function completePinAuthorization(input: PinCallbackInput): Promise
 
   // (2) 만료 — 시간이 지난 인증으로는 출금하지 않는다.
   if (session.expiresAt.getTime() < Date.now()) {
-    await prisma.paymentPinSession.updateMany({
+    const expiredClaim = await prisma.paymentPinSession.updateMany({
       where: { id: session.id, status: 'PENDING' },
       data: {
         status: 'EXPIRED',
@@ -126,6 +126,8 @@ export async function completePinAuthorization(input: PinCallbackInput): Promise
     });
     if (donation.status === 'PENDING_PIN') {
       await setStatus(session.donationId, 'PAYMENT_FAILED', 'PIN 입력 시간 초과로 자동 취소');
+      // 세션 선점에 이긴 요청만 접수 때 소진한 속도 카운터를 되돌린다(PAY-E, 이중 되돌림 방지).
+      if (expiredClaim.count === 1) await revertIntakeVelocity(session.donationId);
     }
     return {
       ok: false,
@@ -267,6 +269,8 @@ export async function failPinAuthorization(
   if (donation.status === 'PENDING_PIN') {
     // setStatus 를 거쳐야 DonationStatusLog 감사 이력이 남는다
     await setStatus(session.donationId, 'PAYMENT_FAILED', `PIN 인증 실패: ${note}`.slice(0, 500));
+    // 출금 없이 끝났다. 접수 때 소진한 속도 카운터를 되돌린다(PAY-E). 위 선점에 이긴 요청만 온다.
+    await revertIntakeVelocity(session.donationId);
   }
 
   logger.warn('PIN 인증 실패 통지', { donationId: session.donationId, note });
@@ -305,6 +309,8 @@ export async function expirePinSessionIfStale(donationId: string, now = new Date
   if (d?.status !== 'PENDING_PIN') return false;
   // setStatus 를 거쳐야 DonationStatusLog 감사 이력이 남는다
   await setStatus(donationId, 'PAYMENT_FAILED', 'PIN 입력 시간 초과로 자동 취소');
+  // 출금 없이 끝났다. 접수 때 소진한 속도 카운터를 되돌린다(PAY-E). 위 선점에 이긴 호출만 온다.
+  await revertIntakeVelocity(donationId);
   return true;
 }
 
@@ -379,5 +385,7 @@ export async function cancelPendingPinDonation(donationId: string, reason: strin
   const d = await prisma.donation.findUnique({ where: { id: donationId }, select: { status: true } });
   if (d?.status !== 'PENDING_PIN') return false;
   await setStatus(donationId, 'PAYMENT_FAILED', reason);
+  // 출금 없이 끝났다. 접수 때 소진한 속도 카운터를 되돌린다(PAY-E). 위 선점에 이긴 호출만 온다.
+  await revertIntakeVelocity(donationId);
   return true;
 }

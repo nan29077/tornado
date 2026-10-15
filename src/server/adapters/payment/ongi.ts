@@ -287,6 +287,23 @@ export async function ongiPing(): Promise<ProviderResult<{ status: number }>> {
 // 어댑터
 // ---------------------------------------------------------------------------
 
+/**
+ * 온기 결제조회 상태값 → 조회 상태 (PAY-D).
+ *
+ * 매핑표에 없는 값은 FAILED 가 아니라 PENDING(미확정)이다. FAILED 는 "출금 없음 확정"으로
+ * 실패 확정·한도 되돌림·재승인의 근거가 되므로, 규격서로 확인된 실패 값만 FAILED 로 본다.
+ * 호출부(executePayment)는 PENDING 을 UNKNOWN(관리자 수동 대사)으로 처리한다.
+ * TODO(규격 확인): 온기 결제조회 규격서 수령 후 실패 상태값 목록을 확정할 것.
+ */
+export function ongiInquiryStatus(raw: string): InquiryStatus {
+  const stat = raw.toUpperCase();
+  if (['PAID', 'APPROVED', 'DONE', 'COMPLETE', 'COMPLETED'].includes(stat)) return 'APPROVED';
+  if (['CANCELED', 'CANCELLED', 'REFUNDED'].includes(stat)) return 'CANCELED';
+  if (['FAILED', 'FAIL'].includes(stat)) return 'FAILED';
+  // READY / PENDING / IN_PROGRESS / 빈 값 / 처음 보는 값 → 미확정
+  return 'PENDING';
+}
+
 export const ongiPaymentAdapter: PaymentAdapter = {
   info(): AdapterInfo {
     const missing = requiredCredentials();
@@ -444,17 +461,7 @@ export const ongiPaymentAdapter: PaymentAdapter = {
       return { ok: true, data: { status: 'PENDING' }, raw: res.json as Record<string, unknown> };
     }
 
-    const stat = String(res.json.status ?? res.json.paymentStatus ?? '').toUpperCase();
-    const status: InquiryStatus =
-      ['PAID', 'APPROVED', 'DONE', 'COMPLETE', 'COMPLETED'].includes(stat)
-        ? 'APPROVED'
-        : ['CANCELED', 'CANCELLED', 'REFUNDED'].includes(stat)
-          ? 'CANCELED'
-          : ['READY', 'PENDING', 'IN_PROGRESS'].includes(stat)
-            ? 'PENDING'
-            : stat === ''
-              ? 'PENDING'
-              : 'FAILED';
+    const status = ongiInquiryStatus(String(res.json.status ?? res.json.paymentStatus ?? ''));
 
     const amountRaw = res.json.amount ?? res.json.payAmount;
     let amount: bigint | undefined;
