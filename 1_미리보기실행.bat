@@ -45,7 +45,16 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if not exist "src\generated\prisma" (
+rem 스키마가 바뀌면(새 마이그레이션 등) 생성된 Prisma 클라이언트도 다시 만든다.
+rem 예전에는 폴더가 없을 때만 생성해, 스키마 변경 뒤 빌드가 "모델 없음" 으로 실패했다.
+set NEED_GEN=0
+if not exist "src\generated\prisma" set NEED_GEN=1
+if not exist "src\generated\.schema-stamp" set NEED_GEN=1
+if exist "src\generated\.schema-stamp" (
+  fc /b "prisma\schema.prisma" "src\generated\.schema-stamp" >nul 2>&1
+  if errorlevel 1 set NEED_GEN=1
+)
+if "%NEED_GEN%"=="1" (
   echo [작업] Prisma 클라이언트 생성
   if not exist "logs" mkdir "logs"
   call npm run db:generate 2>&1
@@ -58,6 +67,7 @@ if not exist "src\generated\prisma" (
     pause
     exit /b 1
   )
+  copy /y "prisma\schema.prisma" "src\generated\.schema-stamp" >nul
 )
 
 netstat -ano | findstr /r /c:":3025 .*LISTENING" >nul 2>nul
