@@ -34,19 +34,22 @@ export interface ComboTracker {
    * 알림이 재생되기 시작할 때 부른다.
    * @returns 이번 후원까지 포함한 콤보 수 (1 이면 첫 후원)
    */
-  register: (donorName: string) => number;
+  register: (donorName: string, anonymous?: boolean) => number;
   /** 화면에 그릴 콤보 상태. 2콤보 미만이면 null 이다. */
   combo: ComboView | null;
   /** 현재 콤보의 효과 증폭 배율 */
   multiplier: number;
 }
 
+/** [OV-B] 서버가 익명 후원에 붙이는 표시명(broadcast-dispatch.ts). 예전 이벤트 판별용. */
+const ANONYMOUS_NAME = '익명의 후원자';
+
 export function useComboTracker(): ComboTracker {
   const [combo, setCombo] = React.useState<ComboView | null>(null);
   const [multiplier, setMultiplier] = React.useState(1);
 
   /** 진행 중인 콤보. 렌더와 무관하게 유지돼야 하므로 ref 에 둔다. */
-  const current = React.useRef<{ donorName: string; count: number; at: number } | null>(null);
+  const current = React.useRef<{ donorName: string; key: string | null; count: number; at: number } | null>(null);
   const breakTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const summaryTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -60,14 +63,21 @@ export function useComboTracker(): ComboTracker {
   React.useEffect(() => clearTimers, [clearTimers]);
 
   const register = React.useCallback(
-    (donorName: string): number => {
+    (donorName: string, anonymous?: boolean): number => {
       const now = Date.now();
       const prev = current.current;
+      /**
+       * [OV-B] 익명 후원은 콤보를 잇지 않는다. 익명 후원의 표시명은 모두 '익명의 후원자'라 이름으로 비교하면
+       * 서로 다른 후원자가 하나의 콤보로 합쳐졌다. 누가 보냈는지 알 수 없으므로 매번 새 후원(1콤보)으로 본다.
+       * anonymous 가 없는 예전 이벤트는 표시명으로 판단한다.
+       */
+      const isAnon = anonymous === true || donorName === ANONYMOUS_NAME;
+      const key = isAnon ? null : donorName;
       const continuing =
-        prev !== null && prev.donorName === donorName && now - prev.at <= COMBO_WINDOW_MS;
+        prev !== null && key !== null && prev.key === key && now - prev.at <= COMBO_WINDOW_MS;
       const count = continuing ? prev.count + 1 : 1;
 
-      current.current = { donorName, count, at: now };
+      current.current = { donorName, key, count, at: now };
       clearTimers();
 
       setMultiplier(comboMultiplier(count));

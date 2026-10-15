@@ -36,7 +36,8 @@ export interface StreamHandle {
 }
 
 /** public/sse-hub.js 를 바꾸면 올린다. 주소가 바뀌어야 브라우저가 새 공유기를 띄운다. */
-const HUB_VERSION = '1';
+// [SSE-A] 2: 시간 초과 정리 시 'error' 통지, 정리된 포트 재등록, 'check' 메시지 추가.
+const HUB_VERSION = '2';
 const HELLO_TIMEOUT_MS = 2000;
 const PING_MS = 10_000;
 
@@ -114,6 +115,27 @@ function startHub(): Promise<Hub | null> {
       } catch {
         /* ignore */
       }
+    });
+
+    /**
+     * [SSE-A] 다시 보이게 된 탭은 구독이 살아 있는지 공유기에 확인한다.
+     * 가려진 탭은 타이머가 늦어져(크롬: 5분 이후 1분에 1번, 얼린 탭은 정지) 생존 신호가 끊기고
+     * 공유기가 구독을 정리했을 수 있다. 'pagehide' 에서 'bye' 를 보낸 뒤 bfcache 로 돌아온 경우도 같다.
+     * 공유기는 모르는 id 에 'error' 를 돌려주고, 화면은 그 구독의 onError(재연결)를 그대로 탄다.
+     */
+    const check = () => {
+      if (hub.handlers.size === 0) return;
+      try {
+        hub.port.postMessage({ type: 'check', ids: Array.from(hub.handlers.keys()) });
+      } catch {
+        /* ignore */
+      }
+    };
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') check();
+    });
+    window.addEventListener('pageshow', (ev) => {
+      if (ev.persisted) check();
     });
   });
   return hubPromise;

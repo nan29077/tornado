@@ -308,7 +308,10 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
     const connect = () => {
       if (disposed) return;
       // 같은 주소를 여는 다른 탭·미리보기와 연결을 나눠 쓴다(로컬 http 연결 6개 한도 대응).
-      source = openStream('/api/studio/games/stream', {
+      // [OV-E] 공유기는 주소로 연결을 묶는다. 주소에 크리에이터가 없으면 같은 브라우저에서 계정을 바꿨을 때
+      // B 의 화면이 A 의 연결·마지막 상태(정답 포함)를 그대로 받는다. c 는 묶음 구분용일 뿐이며
+      // 서버 라우트는 쿼리를 읽지 않고 세션으로만 크리에이터를 정한다.
+      source = openStream(`/api/studio/games/stream?c=${encodeURIComponent(creatorId)}`, {
         share: true,
         events: ['state'],
         onEvent: (_name, message) => {
@@ -335,7 +338,7 @@ export function GameStudio({ creatorId, compact = false }: { creatorId: string; 
       if (timer) clearTimeout(timer);
       source?.close();
     };
-  }, []);
+  }, [creatorId]);
 
   const control = React.useCallback(
     async (action: Action, extra?: Record<string, unknown>) => {

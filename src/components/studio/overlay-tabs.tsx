@@ -41,7 +41,7 @@ export function OverlayTabs({ active }: { active: 'donation' | 'game' }) {
                 on ? 'bg-ink-900 text-white' : 'text-ink-500 hover:bg-ink-50',
               )}
             >
-              <Icon size={17} strokeWidth={1.8} />
+              <Icon size={17} strokeWidth={1.7} />
               {label}
             </Link>
           );
