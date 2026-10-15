@@ -11,7 +11,9 @@ import {
   purgeResidentIfNotFilable,
   appendLedger,
   getSettlementSummary,
+  AMENDED_FILING_TAG,
 } from '@/server/services/settlement';
+import { kstDateKey } from '@/lib/datetime';
 import { notifyUser } from '@/server/services/notifications';
 import { formatWon } from '@/lib/money';
 import type { AdminActionState } from '@/components/admin/state';
@@ -22,6 +24,22 @@ import { run, text, optText, money, rate, enumValue, requiredId, optDate, assert
  * 정산 요청 처리 / 수수료 정책 관리 / 지급대행(쿠콘) 운영.
  * 정산 원장(SettlementLedger)은 append-only 이므로 여기서 수정/삭제하지 않는다.
  */
+
+/**
+ * 일반 상태 전이 허용표 (SET-C, 2026-10-15).
+ *
+ *  - 승인(APPROVED)  : 접수(REQUESTED)·검토중(REVIEWING) 에서만
+ *  - 검토중(REVIEWING): 접수·승인(이체파일 미발급) 에서만
+ *  - 반려(REJECTED)  : 접수·검토중·승인(이체파일 미발급) 에서만
+ *
+ * "이체파일 미발급" 조건은 가드(payoutIssuedAt 검사)와 조건부 갱신(where payoutIssuedAt: null)이 함께 지킨다.
+ * 지급실패(PAYOUT_FAILED)·지급완료(PAID)·반려(REJECTED) 에서 출발하는 일반 전이는 없다.
+ */
+const GENERAL_TRANSITIONS: Record<'APPROVED' | 'REVIEWING' | 'REJECTED', readonly string[]> = {
+  APPROVED: ['REQUESTED', 'REVIEWING'],
+  REVIEWING: ['REQUESTED', 'APPROVED'],
+  REJECTED: ['REQUESTED', 'REVIEWING', 'APPROVED'],
+};
 
 async function creatorUserId(creatorId: string): Promise<string | null> {
   const c = await prisma.creatorProfile.findUnique({ where: { id: creatorId }, select: { userId: true } });
@@ -53,7 +71,7 @@ export async function updateSettlementRequestStatus(
       where: { id: requestId },
       select: {
         id: true, status: true, amount: true, payoutAmount: true, creatorId: true,
-        payoutIssuedAt: true, payoutBatchNo: true,
+        payoutIssuedAt: true, payoutBatchNo: true, withholdingFiledAt: true,
       },
     });
     if (!before) throw new Error('정산 요청을 찾을 수 없습니다.');
@@ -95,6 +113,26 @@ export async function updateSettlementRequestStatus(
     }
     if (before.status === 'PAID' && status !== 'PAYOUT_FAILED') throw new Error('이미 지급 완료된 요청입니다.');
     if (before.status === 'REJECTED') throw new Error('이미 반려된 요청입니다.');
+    /**
+     * SET-C (2026-10-15): 일반 상태 전이는 **허용표에 있는 것만** 통과시킨다.
+     *
+     * 예전에는 금지 조건만 나열해서, 지급실패(PAYOUT_FAILED) 건을 승인(APPROVED)으로 바로 올리거나
+     * 검토중을 거쳐 승인으로 올릴 수 있었다. 지급실패 건은 잔액이 이미 풀려 크리에이터가 재요청했을 수
+     * 있으므로, 잔액 검증 없이 다시 승인되면 같은 돈이 두 번 이체파일에 실린다.
+     * 지급실패 건은 새 요청으로만 다시 진행한다(은행 정정은 결과 반영 경로가 따로 처리한다).
+     * 지급 완료·지급 실패·발급 취소는 아래에서 각자의 가드로 따로 판정한다.
+     */
+    if (status === 'APPROVED' || status === 'REVIEWING' || status === 'REJECTED') {
+      const allowed = GENERAL_TRANSITIONS[status];
+      if (!allowed.includes(before.status)) {
+        throw new Error(
+          `현재 상태(${before.status})에서는 ${status} 로 바꿀 수 없습니다. ` +
+            (before.status === 'PAYOUT_FAILED'
+              ? '지급실패 건은 크리에이터의 새 정산 요청으로 다시 진행해 주세요.'
+              : '화면을 새로고침한 뒤 다시 확인해 주세요.'),
+        );
+      }
+    }
     // 이체파일이 이미 발급된 건을 반려/검토로 되돌리면, 이후 지급대행 결과(SUCCESS)를 반영할 수 없어
     // 돈은 나갔는데 원장에 지급 분개가 없는 상태가 된다. 지급 실패 결과를 먼저 반영해야 한다.
     if (before.payoutIssuedAt && (status === 'REJECTED' || status === 'REVIEWING')) {
@@ -120,6 +158,9 @@ export async function updateSettlementRequestStatus(
       await markSettlementPaid(requestId, admin.id);
       await notifySettlement(before.creatorId, '정산 지급이 완료되었습니다', `${formatWon(before.payoutAmount)}이 지급 처리되었습니다.`);
     } else if (status === 'PAYOUT_FAILED') {
+      if (before.status !== 'APPROVED' && before.status !== 'PAID') {
+        throw new Error('승인 또는 지급 완료 상태의 요청만 지급 실패로 처리할 수 있습니다.');
+      }
       await markSettlementPayoutFailed(requestId, memo!, admin.id);
       await notifySettlement(before.creatorId, '정산 지급이 실패했습니다', `사유: ${memo}. 계좌를 확인하고 다시 요청해 주세요.`);
     } else {
@@ -139,7 +180,13 @@ export async function updateSettlementRequestStatus(
        *  발생하지 않지만, 상태 기계가 뚫리는 것 자체를 막는다)
        */
       const claimed = await prisma.settlementRequest.updateMany({
-        where: { id: requestId, status: before.status },
+        where: {
+          id: requestId,
+          status: before.status,
+          // 반려·검토 전환은 이체파일이 아직 나가지 않았을 때만 (SET-C·SET-D).
+          // 가드 이후 다른 담당자가 발급했다면 여기서 0건이 되어 막힌다.
+          ...(status === 'REJECTED' || status === 'REVIEWING' ? { payoutIssuedAt: null } : {}),
+        },
         data,
       });
       if (claimed.count === 0) {
@@ -151,22 +198,32 @@ export async function updateSettlementRequestStatus(
 
     // 반려·지급실패 건은 원천징수 신고 대상이 아니므로 주민등록번호를 보관할 근거가 없다.
     // "신고 후 즉시 파기" 안내를 지키기 위해 상태 전이 시점에 바로 파기한다.
+    // (이체파일이 발급된 지급실패 건은 은행 정정 가능성 때문에 보관한다 — SET-B, 서비스 함수 주석 참고)
     await purgeResidentIfNotFilable(requestId);
 
+    // P2-6: 원천징수 신고까지 마친 지급 건을 실패로 되돌리면 수정신고가 필요하다.
+    const amendedFilingRequired =
+      status === 'PAYOUT_FAILED' && before.status === 'PAID' && before.withholdingFiledAt != null;
     await writeAudit({
       adminUserId: admin.id,
       action: `SETTLEMENT_${status}`,
       targetType: 'SettlementRequest',
       targetId: requestId,
       before: { status: before.status, amount: before.amount },
-      after: { status, memo, payoutAmount: before.payoutAmount },
+      after: {
+        status, memo, payoutAmount: before.payoutAmount,
+        ...(amendedFilingRequired
+          ? { amendedFilingRequired: true, withholdingFiledAt: before.withholdingFiledAt!.toISOString() }
+          : {}),
+      },
     });
     revalidatePath('/admin/settlements');
     revalidatePath('/studio/settlement');
     return status === 'PAID'
       ? '지급 완료로 처리했습니다. 원장에 PAYOUT / 원천징수 분개가 추가되었습니다.'
       : status === 'PAYOUT_FAILED'
-        ? '지급 실패로 처리했습니다. 이미 지급 분개가 있었다면 잔액으로 환입되었습니다.'
+        ? '지급 실패로 처리했습니다. 이미 지급 분개가 있었다면 잔액으로 환입되었습니다.' +
+          (amendedFilingRequired ? ` 이 건은 원천징수 신고가 끝난 건이라 ${AMENDED_FILING_TAG} — 수정신고가 필요합니다.` : '')
         : '정산 요청 상태를 변경했습니다.';
   });
 }
@@ -220,7 +277,8 @@ export async function bulkUpdateSettlementAction(
           }
           await notifySettlement(req.creatorId, '정산 요청이 승인되었습니다', '지급대행을 통해 곧 지급됩니다.');
         } else if (action === 'REJECT') {
-          if (req.status === 'PAID' || req.status === 'REJECTED') {
+          // 단건 액션의 허용표(SET-C)와 같은 기준. 지급실패 건은 반려 대상이 아니다.
+          if (!GENERAL_TRANSITIONS.REJECTED.includes(req.status)) {
             errors.push(`${id.slice(-6)}: 반려 불가 상태(${req.status})`);
             continue;
           }
@@ -229,7 +287,7 @@ export async function bulkUpdateSettlementAction(
             continue;
           }
           const claimed = await prisma.settlementRequest.updateMany({
-            where: { id, status: req.status },
+            where: { id, status: req.status, payoutIssuedAt: null },
             data: { status: 'REJECTED', rejectedAt: now, adminId: admin.id, adminMemo: memo },
           });
           if (claimed.count === 0) {
@@ -301,21 +359,40 @@ export async function applyPayoutResultsAction(
     }
 
     const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const parsed = lines
+      .map((line) => parsePayoutResultLine(line))
+      .filter((l): l is ParsedResultLine => l !== null);
+
+    /**
+     * SET-J (2026-10-15): 같은 요청ID 가 두 줄 이상이면 **붙여넣은 내용 전체를 거절한다.**
+     * 예전에는 한 줄씩 차례로 반영해, 같은 건이 SUCCESS 와 FAIL 로 함께 있으면 지급 분개와
+     * 환입 분개가 모두 쌓이고 마지막 줄의 결과가 남았다. 어느 쪽이 맞는지는 사람이 판단해야 한다.
+     */
+    const seen = new Map<string, number>();
+    for (const l of parsed) seen.set(l.id, (seen.get(l.id) ?? 0) + 1);
+    const duplicated = [...seen.entries()].filter(([, n]) => n > 1).map(([id]) => id);
+    if (duplicated.length > 0) {
+      throw new Error(
+        `같은 요청ID 가 여러 줄에 있습니다: ${duplicated.join(', ')}. ` +
+          '결과 파일을 확인해 한 건당 한 줄만 남긴 뒤 다시 붙여넣어 주세요. 아무것도 반영하지 않았습니다.',
+      );
+    }
+
     let ok = 0;
     let failed = 0;
     const errors: string[] = [];
+    const paidIds: string[] = [];
+    const failedIds: string[] = [];
+    const amendedFilingIds: string[] = [];
 
-    for (const line of lines) {
-      const [id, result, ...rest] = line.split(',').map((s) => s.trim());
-      if (!id || !result) continue;
-      const reason = rest.join(',').trim();
+    for (const { id, result, reason, transferDate } of parsed) {
       try {
         const up = result.toUpperCase();
         const req = await prisma.settlementRequest.findUnique({
           where: { id },
           select: {
             creatorId: true, payoutAmount: true, status: true,
-            payoutBatchNo: true, payoutIssuedAt: true,
+            payoutBatchNo: true, payoutIssuedAt: true, withholdingFiledAt: true,
           },
         });
         if (!req) {
@@ -337,16 +414,36 @@ export async function applyPayoutResultsAction(
 
         if (up === 'SUCCESS' || up === 'OK' || up === '성공') {
           if (req.status === 'PAID') { ok += 1; continue; } // 이미 반영됨 (멱등)
+          /**
+           * SET-K (2026-10-15): 지급일은 **이체일**로 기록한다(원천징수 귀속월 기준).
+           *  - 결과 줄 세 번째 칸에 이체일(YYYY-MM-DD)이 있으면 그 날짜
+           *  - 없으면 이 배치의 이체파일 발급 시각 (발급 당일 이체가 운영 원칙)
+           * 결과를 반영한 시각을 쓰면 월말 이체가 다음 달 지급분으로 신고된다.
+           */
+          const paidAt = resolveTransferPaidAt(transferDate, req.payoutIssuedAt);
+          if (typeof paidAt === 'string') {
+            errors.push(`${id.slice(-6)}: ${paidAt}`);
+            continue;
+          }
           // 은행 결과(SUCCESS)는 돈이 나갔다는 증거다. 잔액과 무관하게 반드시 기록한다(SET-1).
-          await markSettlementPaid(id, admin.id, reason || undefined, { fromBankResult: true });
+          await markSettlementPaid(id, admin.id, reason || undefined, { fromBankResult: true, paidAt });
           await notifySettlement(req.creatorId, '정산 지급이 완료되었습니다', `${formatWon(req.payoutAmount)}이 지급 처리되었습니다.`);
+          paidIds.push(id);
           ok += 1;
         } else if (up === 'FAIL' || up === 'ERROR' || up === '실패') {
           if (req.status === 'PAYOUT_FAILED') { failed += 1; continue; } // 이미 반영됨 (멱등)
           await markSettlementPayoutFailed(id, reason || '지급대행 실패', admin.id);
           await notifySettlement(req.creatorId, '정산 지급이 실패했습니다', `사유: ${reason || '지급대행 실패'}. 계좌를 확인하고 다시 요청해 주세요.`);
-          // 지급 실패 건도 신고 대상이 아니므로 주민등록번호를 파기한다.
+          /**
+           * SET-B (2026-10-15): 여기서는 주민등록번호를 **파기하지 않는다.**
+           * 이 경로의 건은 모두 이체파일이 발급된 건이라, 은행이 나중에 "실제로는 성공" 으로 정정하면
+           * (SET-1) 지급완료가 되어 원천징수 신고 대상이 된다. purgeResidentIfNotFilable 은
+           * 발급된 지급실패 건을 보관으로 판정하므로 호출해도 지우지 않는다(규칙을 한 곳에 둔다).
+           * 끝내 실패로 남은 건은 정리 배치가 보관 기간 뒤 파기한다.
+           */
           await purgeResidentIfNotFilable(id);
+          if (req.status === 'PAID' && req.withholdingFiledAt) amendedFilingIds.push(id); // P2-6
+          failedIds.push(id);
           failed += 1;
         } else {
           errors.push(`${id.slice(-6)}: 알 수 없는 결과 '${result}'`);
@@ -356,17 +453,75 @@ export async function applyPayoutResultsAction(
       }
     }
 
+    // P2-4: 어느 배치의 어느 건을 반영했는지 감사로그만으로 추적할 수 있게 남긴다.
     await writeAudit({
       adminUserId: admin.id,
       action: 'SETTLEMENT_PAYOUT_RESULT',
       targetType: 'SettlementRequest',
-      after: { ok, failed, lines: lines.length },
+      targetId: batchNo,
+      after: {
+        batchNo,
+        ok,
+        failed,
+        lines: lines.length,
+        paidRequestIds: paidIds,
+        failedRequestIds: failedIds,
+        requestIds: parsed.map((l) => l.id),
+        ...(amendedFilingIds.length > 0 ? { amendedFilingRequired: amendedFilingIds } : {}),
+        errors: errors.slice(0, 50),
+      },
     });
     revalidatePath('/admin/settlements');
     revalidatePath('/studio/settlement');
-    const base = `지급 완료 ${ok}건, 지급 실패 ${failed}건 반영했습니다.`;
+    const base =
+      `지급 완료 ${ok}건, 지급 실패 ${failed}건 반영했습니다.` +
+      (amendedFilingIds.length > 0
+        ? ` 원천징수 신고가 끝난 ${amendedFilingIds.length}건이 실패로 정정되어 ${AMENDED_FILING_TAG} 표시를 남겼습니다.`
+        : '');
     return errors.length ? `${base} (오류 ${errors.length}건: ${errors.slice(0, 3).join(' / ')})` : base;
   });
+}
+
+interface ParsedResultLine {
+  id: string;
+  result: string;
+  reason: string;
+  /** 결과 줄에 적힌 이체일(YYYY-MM-DD). 없으면 null. */
+  transferDate: string | null;
+}
+
+/**
+ * 결과 한 줄 파싱. 형식: `요청ID,SUCCESS|FAIL[,이체일(YYYY-MM-DD)][,사유]`
+ * 세 번째 칸이 날짜 모양일 때만 이체일로 읽고, 아니면 예전처럼 사유로 읽는다(기존 파일 호환).
+ */
+function parsePayoutResultLine(line: string): ParsedResultLine | null {
+  const [id, result, ...rest] = line.split(',').map((s) => s.trim());
+  if (!id || !result) return null;
+  let transferDate: string | null = null;
+  if (rest.length > 0 && /^\d{4}-\d{2}-\d{2}$/.test(rest[0]!)) {
+    transferDate = rest.shift()!;
+  }
+  return { id, result, reason: rest.join(',').trim(), transferDate };
+}
+
+/**
+ * 지급일 결정 (SET-K). 오류면 사유 문자열을 돌려준다.
+ *  - 이체일이 있으면: 달력에 있는 날짜이고, 발급일(KST) 이후·오늘(KST) 이전이어야 한다.
+ *    발급 당일이면 발급 시각을, 그 밖의 날은 그날 KST 정오를 지급 시각으로 쓴다.
+ *  - 없으면: 이체파일 발급 시각.
+ */
+function resolveTransferPaidAt(transferDate: string | null, issuedAt: Date | null): Date | string {
+  if (!transferDate) return issuedAt ?? new Date();
+  const [y, m, d] = transferDate.split('-').map(Number);
+  const probe = new Date(Date.UTC(y!, m! - 1, d!));
+  if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== m! - 1 || probe.getUTCDate() !== d) {
+    return `이체일 ${transferDate} 은(는) 달력에 없는 날짜입니다`;
+  }
+  const issuedKey = issuedAt ? kstDateKey(issuedAt) : null;
+  if (issuedKey && transferDate < issuedKey) return `이체일 ${transferDate} 이 이체파일 발급일(${issuedKey})보다 앞섭니다`;
+  if (transferDate > kstDateKey()) return `이체일 ${transferDate} 이 오늘보다 뒤입니다`;
+  if (issuedAt && issuedKey === transferDate) return issuedAt;
+  return new Date(`${transferDate}T12:00:00+09:00`);
 }
 
 /**
@@ -385,11 +540,13 @@ export async function fileWithholdingAction(
     if (ids.length === 0) throw new Error('처리할 정산 요청을 선택해 주세요.');
 
     let purged = 0;
+    let alreadyFiled = 0;
     const errors: string[] = [];
     for (const id of ids) {
       try {
         const r = await fileWithholdingAndPurgeResident(id, admin.id);
         if (r.purged) purged += 1;
+        if (r.alreadyFiled) alreadyFiled += 1;
       } catch (e) {
         errors.push(`${id.slice(-6)}: ${(e as Error).message}`);
       }
@@ -400,7 +557,7 @@ export async function fileWithholdingAction(
       action: 'SETTLEMENT_WITHHOLDING_FILED',
       targetType: 'SettlementRequest',
       targetId: ids.join(','),
-      after: { count: ids.length, purged },
+      after: { count: ids.length, purged, alreadyFiled, errors: errors.slice(0, 50) },
     });
     revalidatePath('/admin/settlements');
     return `원천징수 신고 완료 처리했습니다. 주민등록번호 ${purged}건을 파기했습니다.`;

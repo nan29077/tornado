@@ -202,6 +202,8 @@ describe('정산 지급 안전장치', () => {
   it('이체파일 발급 이력이 남고, 재발급 건은 재발급으로 표시된다', async () => {
     const summary = await getSettlementSummary(fx.creatorId);
     const req = await createSettlementRequest(fx.creatorId, summary.available);
+    // SET-D(2026-10-15): 이체파일은 승인(APPROVED) 건만 발급된다.
+    await prisma.settlementRequest.updateMany({ where: { id: { in: [req.id] } }, data: { status: 'APPROVED' } });
 
     const first = await markPayoutFileIssued([req.id], 'admin-test');
     expect(first.batchNo).toMatch(/^B[0-9A-Z]{10}$/);

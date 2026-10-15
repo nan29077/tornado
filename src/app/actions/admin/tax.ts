@@ -6,6 +6,7 @@ import { writeAudit } from '@/server/auth';
 import { kstMonthRange } from '@/lib/datetime';
 import { TAX_TYPES, taxTypeLabel, normalizeTaxType } from '@/lib/labels';
 import { maskBusinessNo } from '@/lib/crypto';
+import { fileWithholdingAndPurgeResidents } from '@/server/services/settlement';
 import type { AdminActionState } from '@/components/admin/state';
 import { run, text, optText, enumValue, requiredId, assertFinanceAdmin } from './shared';
 
@@ -118,13 +119,28 @@ export async function updateCreatorTaxProfile(_prev: AdminActionState, fd: FormD
  * 국세청 신고 자체는 홈택스에서 한다. 여기서는 "무엇을 이미 신고했는지" 를 기록해
  * 다음 달에 같은 건을 두 번 신고하거나 빠뜨리는 일을 막는다.
  * 이미 표시된 건은 건드리지 않으므로 여러 번 눌러도 안전하다.
+ *
+ * SET-E (2026-10-15): 정산 화면의 건별 신고 완료와 **같은 서비스 함수**로 처리해
+ * 신고 완료와 동시에 주민등록번호 원문을 파기한다. 예전에는 신고 시각만 찍고 원문을 남겨
+ * "신고 후 즉시 파기" 안내와 어긋났다. 표시와 파기는 한 트랜잭션에서 함께 성공하거나 함께 실패한다.
  */
 export async function markWithholdingFiled(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
     assertFinanceAdmin(admin, '원천징수 신고 완료 처리');
 
     const ym = text(fd, 'month');
+    /**
+     * P2-5 (2026-10-15): 월 형식을 엄격하게 확인한다.
+     * kstMonthRange 는 잘못된 값을 **이번 달로 바꿔** 돌려주므로(조회 화면용 관대한 동작),
+     * 그대로 쓰면 오타 하나로 엉뚱한 달 지급분 전체가 신고 완료로 표시되고 주민번호가 파기된다.
+     */
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ym)) {
+      throw new Error(`신고 월 형식이 올바르지 않습니다. YYYY-MM 형식으로 지정해 주세요. (입력: ${ym || '없음'})`);
+    }
     const { key, start, end } = kstMonthRange(ym);
+    if (key !== ym) {
+      throw new Error(`신고 월(${ym})이 처리 가능한 범위를 벗어났습니다.`);
+    }
 
     const target = await prisma.settlementRequest.findMany({
       where: { status: 'PAID', paidAt: { gte: start, lt: end }, withholdingFiledAt: null },
@@ -134,21 +150,32 @@ export async function markWithholdingFiled(_prev: AdminActionState, fd: FormData
       throw new Error(`${key} 지급분 중 신고 대기 중인 건이 없습니다. (이미 모두 완료 표시되어 있습니다)`);
     }
 
-    const filedAt = new Date();
-    await prisma.settlementRequest.updateMany({
-      where: { id: { in: target.map((t) => t.id) } },
-      data: { withholdingFiledAt: filedAt },
-    });
+    const result = await prisma.$transaction((tx) =>
+      fileWithholdingAndPurgeResidents(
+        target.map((t) => t.id),
+        tx,
+      ),
+    );
 
     await writeAudit({
       adminUserId: admin.id,
       action: 'WITHHOLDING_MARK_FILED',
       targetType: 'SettlementRequest',
       targetId: key,
-      after: { month: key, rows: target.length, filedAt: filedAt.toISOString() },
+      after: {
+        month: key,
+        rows: result.filed.length,
+        residentPurged: result.purged.length,
+        requestIds: result.filed,
+        filedAt: new Date().toISOString(),
+      },
     });
 
     revalidatePath('/admin/tax');
-    return `${key} 지급분 ${target.length}건을 원천징수 신고 완료로 표시했습니다.`;
+    revalidatePath('/admin/settlements');
+    return (
+      `${key} 지급분 ${result.filed.length}건을 원천징수 신고 완료로 표시했습니다. ` +
+      `주민등록번호 ${result.purged.length}건을 파기했습니다.`
+    );
   });
 }

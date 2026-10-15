@@ -20,10 +20,17 @@ import { calculateWithholding } from '@/lib/withholding';
 export function SettlementAmountField({
   available,
   minAmount,
+  withholds,
 }: {
   available: string;
   /** 최소 요청 금액(원, 문자열). '0' 이면 하한 없음. */
   minAmount: string;
+  /**
+   * 원천징수 대상인가 (SET-F).
+   * 서버(createSettlementRequest)와 같은 기준 `taxTypeLabel[normalizeTaxType(taxType)].withholding` 으로
+   * 페이지에서 판정해 넘긴다. 사업자는 false — 원천징수 0원, 요청 금액 전액 지급으로 보여 준다.
+   */
+  withholds: boolean;
 }) {
   const availableWon = BigInt(available);
   const minWon = BigInt(minAmount);
@@ -43,7 +50,8 @@ export function SettlementAmountField({
   const under = parsed != null && parsed > 0n && minWon > 0n && parsed < minWon;
   const valid = parsed != null && parsed > 0n && !over && !under;
   const target = valid ? parsed : 0n;
-  const wh = calculateWithholding(target);
+  // SET-F: 사업자는 서버도 원천징수하지 않으므로 미리보기도 0원으로 맞춘다.
+  const wh = withholds ? calculateWithholding(target) : { total: 0n, incomeTax: 0n, localTax: 0n };
 
   return (
     <>
@@ -76,12 +84,15 @@ export function SettlementAmountField({
       <div className="-mt-1 rounded-2xl border border-ink-100 bg-ink-50/60 px-4 py-3">
         <p className="text-[12px] font-extrabold text-ink-900">이 금액으로 요청하면</p>
         <dl className="mt-2 space-y-1.5">
-          <PreviewRow label="소득세 (3%)" value={formatWon(wh.incomeTax)} />
-          <PreviewRow label="지방소득세 (소득세의 10%)" value={formatWon(wh.localTax)} />
-          <PreviewRow
-            label="원천징수 합계"
-            value={formatWon(wh.total)}
-          />
+          {withholds ? (
+            <>
+              <PreviewRow label="소득세 (3%)" value={formatWon(wh.incomeTax)} />
+              <PreviewRow label="지방소득세 (소득세의 10%)" value={formatWon(wh.localTax)} />
+              <PreviewRow label="원천징수 합계" value={formatWon(wh.total)} />
+            </>
+          ) : (
+            <PreviewRow label="원천징수 (사업자 미적용)" value={formatWon(0n)} />
+          )}
           <PreviewRow label="실지급 예상" value={formatWon(target - wh.total)} strong />
         </dl>
         {!valid ? (

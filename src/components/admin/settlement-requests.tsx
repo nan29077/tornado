@@ -508,7 +508,9 @@ export function SettlementRequestsPanel({
         >
           <p className="text-[11.5px] leading-relaxed text-ink-400">
             각 줄에 <code className="rounded bg-ink-50 px-1">요청ID,SUCCESS|FAIL,사유</code> 형식으로 입력합니다. 지급대행(쿠콘)
-            결과 파일을 그대로 붙여넣어 성공/실패를 한 번에 반영할 수 있습니다.
+            결과 파일을 그대로 붙여넣어 성공/실패를 한 번에 반영할 수 있습니다. 실제 이체일이 발급일과 다르면{' '}
+            <code className="rounded bg-ink-50 px-1">요청ID,SUCCESS,YYYY-MM-DD</code> 처럼 세 번째 칸에 이체일을 넣어 주세요
+            (지급일·원천징수 귀속월 기준, 생략 시 이체파일 발급일). 같은 요청ID 가 두 줄 이상이면 전체를 반영하지 않습니다.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <input
@@ -529,8 +531,10 @@ export function SettlementRequestsPanel({
             placeholder={'01ABC...,SUCCESS\n01DEF...,FAIL,잔액부족'}
             className="w-full rounded-xl border border-ink-200 px-3 py-2 font-mono text-[12px] outline-none focus:border-brand-400"
           />
+          {/* P2-7: 조회 전용 등 권한이 없으면 다른 툴바 버튼과 같이 결과 반영도 막는다. */}
           <button
-            disabled={resultPending}
+            disabled={locked || resultPending}
+            title={denyReason}
             className="h-9 rounded-xl bg-ink-900 px-4 text-[12px] font-bold text-white disabled:opacity-50"
           >
             결과 반영

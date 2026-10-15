@@ -1,5 +1,7 @@
 import { requireAdmin, writeAudit } from '@/server/auth';
 import { prisma } from '@/server/db';
+// SET-G·P2-1: 음수 금액을 깨뜨리지 않고 수식 주입은 막는 공용 CSV 셀 인코더.
+import { csvCell } from '@/lib/csv';
 import { buildPayoutBatch, markPayoutFileIssued } from '@/server/services/settlement';
 
 export const runtime = 'nodejs';
@@ -14,13 +16,6 @@ export const dynamic = 'force-dynamic';
  *
  * ?ids=a,b,c  (승인 건 요청 ID 목록)
  */
-function csvCell(v: string): string {
-  // CSV 인젝션(=,+,-,@ 로 시작) 방지 + 콤마/따옴표 이스케이프
-  const needsQuote = /[",\n]/.test(v) || /^[=+\-@]/.test(v);
-  const safe = /^[=+\-@]/.test(v) ? `'${v}` : v;
-  return needsQuote ? `"${safe.replace(/"/g, '""')}"` : safe;
-}
-
 /**
  * 이 파일에는 **복호화된 계좌번호와 예금주 실명**이 들어간다.
  * requireAdmin() 만으로는 조회 전용(READ_ONLY, 기본값) 관리자까지 통과하므로
@@ -119,6 +114,19 @@ export async function GET(req: Request) {
     admin.id,
     { allowReissueIds: confirmReissueIds },
   );
+
+  /**
+   * SET-D: 파일 행을 만든 뒤 발급 표시를 하기 전에 다른 관리자가 반려·검토 전환한 건이 있으면
+   * 발급 전체를 되돌렸다(상태 변화 없음). 그 건이 섞인 파일을 내주면 반려한 돈이 이체된다.
+   */
+  if (issue.notApproved.length > 0) {
+    return new Response(
+      `처리하는 사이 승인 상태가 아니게 된 요청이 ${issue.notApproved.length}건 있어 이체파일을 만들지 않았습니다 ` +
+        `(${issue.notApproved.map((id) => id.slice(-6)).join(', ')}). ` +
+        '다른 담당자가 반려하거나 검토중으로 바꿨을 수 있습니다. 화면을 새로고침한 뒤 다시 선택해 주세요. 상태는 바뀌지 않았습니다.',
+      { status: 409, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } },
+    );
+  }
 
   if (issue.blocked) {
     return new Response(
