@@ -1,5 +1,7 @@
 import { requireAdmin, writeAudit } from '@/server/auth';
 import { prisma } from '@/server/db';
+// SET-G·P2-1: 음수 금액을 깨뜨리지 않고 수식 주입은 막는 공용 CSV 셀 인코더.
+import { csvCell } from '@/lib/csv';
 import { kstMonthRange, kstMonthKey, formatKst } from '@/lib/datetime';
 import { ledgerEntryLabel } from '@/lib/labels';
 import { getLedgerTotals, isFeeVatIncluded } from '@/server/services/tax';
@@ -26,13 +28,6 @@ const ALLOWED_PERMISSIONS = new Set(['SUPER_ADMIN', 'FINANCE']);
 
 /** 한 번에 내려줄 원장 분개 수 상한. 브라우저가 받아 열 수 있는 크기로 자른다. */
 const LEDGER_ROW_LIMIT = 50_000;
-
-function csvCell(v: string): string {
-  const needsQuote = /[",\n]/.test(v) || /^[=+\-@]/.test(v);
-  // 엑셀 수식 주입 방지. '=' 로 시작하는 값이 그대로 수식으로 실행되면 안 된다.
-  const safe = /^[=+\-@]/.test(v) ? `'${v}` : v;
-  return needsQuote ? `"${safe.replace(/"/g, '""')}"` : safe;
-}
 
 function csvResponse(filename: string, lines: string[]): Response {
   // BOM 을 붙여야 엑셀이 UTF-8 로 읽는다. 없으면 한글이 전부 깨진다.

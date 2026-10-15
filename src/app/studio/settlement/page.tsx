@@ -632,6 +632,7 @@ export default async function StudioSettlementPage({
                     <SettlementAmountField
                       available={summary.available.toString()}
                       minAmount={env.settlement.minRequestAmount.toString()}
+                      withholds={withholds}
                     />
 
                     {/*

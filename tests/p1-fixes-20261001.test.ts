@@ -221,10 +221,14 @@ describe('P1-5 이체파일 재발급을 거절할 때는 아무것도 바꾸지
 
   it('재발급 미확인이면 blocked 를 돌려주고 배치번호를 보존한다', async () => {
     const a = await createSettlementRequest(fx.creatorId, 50_000n, { resident: '9001011234567' });
+    // SET-D(2026-10-15): 이체파일은 승인(APPROVED) 건만 발급된다.
+    await prisma.settlementRequest.updateMany({ where: { id: { in: [a.id] } }, data: { status: 'APPROVED' } });
     const first = await markPayoutFileIssued([a.id], 'admin', { allowReissue: false });
     expect(first.blocked).toBe(false);
 
     const b = await createSettlementRequest(fx.creatorId, 50_000n, { resident: '9001011234567' });
+    // SET-D(2026-10-15): 이체파일은 승인(APPROVED) 건만 발급된다.
+    await prisma.settlementRequest.updateMany({ where: { id: { in: [b.id] } }, data: { status: 'APPROVED' } });
     const second = await markPayoutFileIssued([a.id, b.id], 'admin', { allowReissue: false });
     expect(second.blocked).toBe(true);
     expect(second.reissued).toEqual([a.id]);

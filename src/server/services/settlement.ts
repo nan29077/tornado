@@ -5,7 +5,7 @@ import { applyRate, formatWon } from '@/lib/money';
 import { env } from '@/lib/env';
 import { calculateWithholding } from '@/lib/withholding';
 import { normalizeTaxType, taxTypeLabel } from '@/lib/labels';
-import { kstMonthKey } from '@/lib/datetime';
+import { kstDateKey, kstMonthKey } from '@/lib/datetime';
 import { logger } from '@/lib/logger';
 import { notifySuperAdmins } from '@/server/services/notifications';
 import { addDaysKey, fromDateKey, settlementDateFor, toDateKey } from '@/lib/business-day';
@@ -635,6 +635,15 @@ export async function assertPayable(
    * 여러 건을 한 이체파일에 담을 때, 앞 건이 쓴 금액만큼 잔액에서 빼고 판정해야 한다.
    */
   alreadyClaimed: bigint = 0n,
+  opts: {
+    /**
+     * 이번 이체파일에 **이미 담기로 확정된** 요청 ID (SET-A).
+     * 이 건들의 금액은 `alreadyClaimed` 로 이미 셌으므로 "앞선 배치에서 결과 대기 중인 건"
+     * 집계에서 뺀다. 재발급 건이 섞여 있어도 같은 금액을 두 번 빼지 않기 위함이다.
+     * (이번 배치에서 아직 판정 전이거나 제외된 발급 건은 여전히 결과 대기 금액으로 센다)
+     */
+    claimedIds?: readonly string[];
+  } = {},
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const req = await prisma.settlementRequest.findUnique({ where: { id: requestId } });
   if (!req) return { ok: false, reason: '정산 요청을 찾을 수 없습니다.' };
@@ -654,7 +663,31 @@ export async function assertPayable(
    *  그것까지 예약하면 정상적인 지급이 막힌다)
    */
   const summary = await getSettlementSummary(req.creatorId);
-  const payable = summary.balance - alreadyClaimed;
+
+  /**
+   * SET-A (2026-10-15): **앞선 배치에서 이미 이체파일이 나간 승인 건**도 뺀다.
+   *
+   * 이체파일이 나갔지만 은행 결과를 아직 반영하지 않은 건(APPROVED + payoutIssuedAt)은
+   * 원장에 PAYOUT 분개가 없어 `balance` 에 그대로 남아 있다. 예전에는 같은 배치 안의 건만
+   * 뺐기 때문에, 1차 배치로 나간 돈을 2차 배치가 다시 잔액으로 보고 통과시켜
+   * 두 배치 합계가 잔액을 넘을 수 있었다(그 사이 환불·감액이 있으면 실제 초과 지급).
+   *
+   * 제외 대상
+   *  - 이 요청 자신 (재발급이면 자기 금액을 두 번 빼지 않는다)
+   *  - 이번 배치에 이미 담긴 건 (`alreadyClaimed` 로 이미 셌다)
+   */
+  const exclude = new Set<string>([req.id, ...(opts.claimedIds ?? [])]);
+  const issuedElsewhereAgg = await prisma.settlementRequest.aggregate({
+    where: {
+      creatorId: req.creatorId,
+      status: 'APPROVED',
+      payoutIssuedAt: { not: null },
+      id: { notIn: [...exclude] },
+    },
+    _sum: { amount: true },
+  });
+  const issuedElsewhere = issuedElsewhereAgg._sum.amount ?? 0n;
+  const payable = summary.balance - alreadyClaimed - issuedElsewhere;
 
   if (req.amount > payable) {
     return {
@@ -662,6 +695,7 @@ export async function assertPayable(
       reason:
         `정산 가능 잔액 부족 (요청 ${req.amount.toString()}원 / 지급 가능 ${payable.toString()}원` +
         (alreadyClaimed > 0n ? `, 같은 배치의 앞선 건 ${alreadyClaimed.toString()}원 반영` : '') +
+        (issuedElsewhere > 0n ? `, 앞선 배치에서 결과 대기 중인 ${issuedElsewhere.toString()}원 반영` : '') +
         `)`,
     };
   }
@@ -692,6 +726,15 @@ export interface MarkPaidOptions {
    * (같은 크리에이터의 진행 중 요청을 검토중으로 돌리고 최고관리자에게 알린다)
    */
   fromBankResult?: boolean;
+  /**
+   * 실제 이체일 (SET-K, 2026-10-15).
+   *
+   * 원천징수 귀속월은 **지급일(paidAt)** 로 정해진다. 예전에는 결과를 반영한 시각을 그대로
+   * 지급일로 써서, 월말에 이체하고 다음 달 초에 결과를 반영하면 다음 달 지급분으로 신고됐다.
+   * 은행 결과 반영 경로는 이체파일 발급 시각(또는 결과 줄에 적힌 이체일)을 넘긴다.
+   * 원장 분개의 발생 시각은 그대로 "기록한 시각" 이다 — 이미 마감한 달의 원장을 소급해 바꾸지 않는다.
+   */
+  paidAt?: Date;
 }
 
 export async function markSettlementPaid(
@@ -778,6 +821,8 @@ export async function markSettlementPaid(
       }
 
       const now = new Date();
+      // 지급일(원천징수 귀속월 기준). 미래 시각은 받지 않는다.
+      const paidAt = opts.paidAt && opts.paidAt.getTime() <= now.getTime() ? opts.paidAt : now;
       await appendLedger(
         [
           {
@@ -802,7 +847,7 @@ export async function markSettlementPaid(
         where: { id: requestId },
         data: {
           status: 'PAID',
-          paidAt: now,
+          paidAt,
           adminId: adminId ?? null,
           payoutRef: payoutRef ?? null,
           payoutFailReason: null,
@@ -861,11 +906,21 @@ export async function markPayoutFileIssued(
      */
     allowReissueIds?: string[];
   } = {},
-): Promise<{ batchNo: string; reissued: string[]; blocked: boolean }> {
+): Promise<{
+  batchNo: string;
+  reissued: string[];
+  blocked: boolean;
+  /**
+   * 발급 시점에 승인(APPROVED) 상태가 아니었던 요청 (SET-D).
+   * 비어 있지 않으면 blocked=true 이고 아무것도 바뀌지 않았다.
+   */
+  notApproved: string[];
+}> {
   const allowReissue = opts.allowReissue ?? false;
   const confirmedIds = opts.allowReissueIds ? [...new Set(opts.allowReissueIds)].sort() : null;
   const batchNo = `B${newId().slice(-10).toUpperCase()}`;
-  if (requestIds.length === 0) return { batchNo, reissued: [], blocked: false };
+  const ids = [...new Set(requestIds)];
+  if (ids.length === 0) return { batchNo, reissued: [], blocked: false, notApproved: [] };
 
   /**
    * 읽기와 쓰기를 **한 트랜잭션 안에서** 처리한다.
@@ -883,19 +938,36 @@ export async function markPayoutFileIssued(
    * (실제 나간 돈이 원장에 기록되지 않음). 이제는 트랜잭션을 통째로 되돌린다.
    */
   class ReissueBlocked extends Error {}
+  /**
+   * SET-D (2026-10-15): 발급 순간에 **승인 상태가 아닌 건이 하나라도 있으면 통째로 되돌린다.**
+   *
+   * 이체파일 행은 buildPayoutBatch 가 먼저 만들고, 그 뒤 여기서 발급 표시를 한다. 그 사이에
+   * 다른 관리자가 반려하면 예전에는 조건 없이 발급 표시가 붙어 반려 건이 파일에 실려 나갔다.
+   * 선점 조건에 `status: 'APPROVED'` 를 넣고, 대상 전부가 승인 상태인지 다시 확인한다.
+   * (반려·검토 전환 쪽도 `payoutIssuedAt: null` 조건으로 갱신하므로 순서가 바뀌어도 둘 중 하나만 이긴다)
+   */
+  class NotApprovedBlocked extends Error {
+    constructor(readonly ids: string[]) {
+      super('not approved');
+    }
+  }
   try {
     return await prisma.$transaction(async (tx) => {
       const claimed = await tx.settlementRequest.updateMany({
-        where: { id: { in: requestIds }, payoutIssuedAt: null },
+        where: { id: { in: ids }, payoutIssuedAt: null, status: 'APPROVED' },
         data: { payoutIssuedAt: new Date(), payoutBatchNo: batchNo },
       });
 
-      // 선점하지 못한 나머지가 곧 재발급 대상이다.
-      const reissuedRows = await tx.settlementRequest.findMany({
-        where: { id: { in: requestIds }, payoutBatchNo: { not: batchNo } },
-        select: { id: true },
+      const current = await tx.settlementRequest.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, status: true, payoutBatchNo: true },
       });
-      const reissued = reissuedRows.map((r) => r.id);
+      const byId = new Map(current.map((r) => [r.id, r]));
+      const notApproved = ids.filter((id) => byId.get(id)?.status !== 'APPROVED');
+      if (notApproved.length > 0) throw new NotApprovedBlocked(notApproved);
+
+      // 선점하지 못한 나머지가 곧 재발급 대상이다.
+      const reissued = current.filter((r) => r.payoutBatchNo !== batchNo).map((r) => r.id);
 
       if (reissued.length > 0 && !allowReissue) {
         const actual = [...reissued].sort();
@@ -908,10 +980,18 @@ export async function markPayoutFileIssued(
 
       // 재발급 건은 최초 발급 시각을 보존하고 최신 배치번호만 갱신한다.
       if (reissued.length > 0) {
-        await tx.settlementRequest.updateMany({
-          where: { id: { in: reissued } },
+        const re = await tx.settlementRequest.updateMany({
+          where: { id: { in: reissued }, status: 'APPROVED' },
           data: { payoutBatchNo: batchNo },
         });
+        // 확인과 갱신 사이에 상태가 바뀐 건이 있으면 통째로 되돌린다(SET-D).
+        if (re.count !== reissued.length) {
+          const after = await tx.settlementRequest.findMany({
+            where: { id: { in: reissued }, status: { not: 'APPROVED' } },
+            select: { id: true },
+          });
+          throw new NotApprovedBlocked(after.map((r) => r.id));
+        }
         logger.warn('지급대행 이체파일 재발급', {
           batchNo,
           reissued,
@@ -919,15 +999,21 @@ export async function markPayoutFileIssued(
           adminId: adminId ?? null,
         });
       }
-      return { batchNo, reissued, blocked: false };
+      return { batchNo, reissued, blocked: false, notApproved: [] };
     });
   } catch (e) {
+    if (e instanceof NotApprovedBlocked) {
+      logger.warn('이체파일 발급 중 승인 상태가 아닌 건 발견 — 발급 취소', {
+        batchNo, notApproved: e.ids, adminId: adminId ?? null,
+      });
+      return { batchNo, reissued: [], blocked: true, notApproved: e.ids };
+    }
     if (!(e instanceof ReissueBlocked)) throw e;
     const issuedRows = await prisma.settlementRequest.findMany({
-      where: { id: { in: requestIds }, payoutIssuedAt: { not: null } },
+      where: { id: { in: ids }, payoutIssuedAt: { not: null } },
       select: { id: true },
     });
-    return { batchNo, reissued: issuedRows.map((r) => r.id), blocked: true };
+    return { batchNo, reissued: issuedRows.map((r) => r.id), blocked: true, notApproved: [] };
   }
 }
 
@@ -937,6 +1023,9 @@ export async function markPayoutFileIssued(
  * 이미 PAID 로 원장에 기록됐다면 지급/원천징수 분개를 반대 부호로 환입해
  * 잔액이 되살아나게 하고, 재요청할 수 있도록 상태만 PAYOUT_FAILED 로 둔다.
  */
+/** 수정신고가 필요한 건의 처리 메모 표시 (P2-6). */
+export const AMENDED_FILING_TAG = '[수정신고 필요]';
+
 export async function markSettlementPayoutFailed(requestId: string, reason: string, adminId?: string) {
   return prisma.$transaction(async (tx) =>
     // 지급 완료 처리와 같은 락(크리에이터 단위)을 잡아야 서로 경합하지 않는다.
@@ -966,9 +1055,27 @@ export async function markSettlementPayoutFailed(requestId: string, reason: stri
         );
       }
 
+      /**
+       * P2-6 (2026-10-15): 원천징수 신고까지 끝난 지급 건이 실패로 되돌아가면
+       * 이미 낸 지급명세서·원천세 신고를 **수정신고**해야 한다. 아무 표시가 없으면 놓친다.
+       * 스키마를 바꾸지 않고 처리 메모 앞에 표시를 붙이고, 호출부가 감사로그에 남긴다.
+       */
+      const amendedFilingRequired = req.status === 'PAID' && req.withholdingFiledAt != null;
+      if (amendedFilingRequired) {
+        logger.error('원천징수 신고 완료 건이 지급실패로 정정됨 — 수정신고 필요', {
+          requestId, creatorId: req.creatorId, withholdingFiledAt: req.withholdingFiledAt,
+        });
+      }
+      const amendNote = amendedFilingRequired
+        ? `${AMENDED_FILING_TAG} 원천징수 신고(${kstDateKey(req.withholdingFiledAt!)}) 후 지급실패 정정`
+        : null;
+
       return tx.settlementRequest.update({
         where: { id: requestId },
         data: {
+          ...(amendNote
+            ? { adminMemo: [amendNote, req.adminMemo].filter(Boolean).join(' / ').slice(0, 500) }
+            : {}),
           status: 'PAYOUT_FAILED',
           /**
            * **지급일도 함께 지운다.**
@@ -992,27 +1099,70 @@ export async function markSettlementPayoutFailed(requestId: string, reason: stri
  *
  * 지급명세서에 담긴 금액·원천징수·지급일 등 회계 기록은 세법상 보존 의무가 있어 그대로 남기고,
  * **주민등록번호 원문만** 즉시 삭제한다. 출금 신청 화면에서 안내한 "신고 후 파기" 를 실제로 이행한다.
+ *
+ * 정산 화면(건별)과 세무 화면(월별 "신고 완료 표시") 이 **같은 함수**를 쓴다 (SET-E, 2026-10-15).
+ * 예전에는 세무 화면이 신고 시각만 찍고 주민번호를 남겨 두어 두 경로의 결과가 달랐다.
+ *
+ * P2-4 (2026-10-15)
+ *  - `adminId` 는 지급을 처리한 담당자 기록이다. 신고 처리자가 덮어쓰지 않는다(신고자는 감사로그에 남는다).
+ *  - 이미 신고 완료된 건의 신고 시각은 다시 찍지 않는다(최초 신고 시각 보존).
+ *
+ * 지급 완료(PAID) 건만 처리한다. 그 밖의 상태는 `skipped` 로 돌려준다.
+ * 트랜잭션 안에서 부르려면 `client` 로 tx 를 넘긴다.
  */
-export async function fileWithholdingAndPurgeResident(requestId: string, adminId?: string) {
+export async function fileWithholdingAndPurgeResidents(
+  requestIds: readonly string[],
+  client: Pick<typeof prisma, 'settlementRequest'> | Parameters<Parameters<typeof prisma.$transaction>[0]>[0] = prisma,
+): Promise<{ filed: string[]; alreadyFiled: string[]; purged: string[]; skipped: string[] }> {
+  const ids = [...new Set(requestIds)];
+  if (ids.length === 0) return { filed: [], alreadyFiled: [], purged: [], skipped: [] };
   const now = new Date();
-  const req = await prisma.settlementRequest.findUnique({
-    where: { id: requestId },
-    select: { id: true, status: true, residentEnc: true, residentPurgedAt: true },
+  const rows = await client.settlementRequest.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, status: true, residentEnc: true, residentPurgedAt: true, withholdingFiledAt: true },
   });
-  if (!req) throw new Error('정산 요청을 찾을 수 없습니다.');
-  if (req.status !== 'PAID') throw new Error('지급 완료된 요청만 원천징수 신고 처리할 수 있습니다.');
+  const paid = rows.filter((r) => r.status === 'PAID');
+  const paidIds = new Set(paid.map((r) => r.id));
+  const skipped = ids.filter((id) => !paidIds.has(id));
 
-  await prisma.settlementRequest.update({
-    where: { id: requestId },
-    data: {
-      withholdingFiledAt: now,
-      // 주민등록번호 원문만 파기한다. 마스킹·금액·원천징수 기록은 유지.
-      residentEnc: null,
-      residentPurgedAt: req.residentEnc ? now : req.residentPurgedAt ?? now,
-      adminId: adminId ?? null,
-    },
-  });
-  return { purged: Boolean(req.residentEnc) };
+  const toFile = paid.filter((r) => r.withholdingFiledAt == null).map((r) => r.id);
+  const alreadyFiled = paid.filter((r) => r.withholdingFiledAt != null).map((r) => r.id);
+  if (toFile.length > 0) {
+    await client.settlementRequest.updateMany({
+      where: { id: { in: toFile }, status: 'PAID', withholdingFiledAt: null },
+      data: { withholdingFiledAt: now },
+    });
+  }
+
+  // 주민등록번호 원문만 파기한다. 마스킹·금액·원천징수 기록은 유지.
+  const toPurge = paid.filter((r) => r.residentEnc).map((r) => r.id);
+  if (toPurge.length > 0) {
+    await client.settlementRequest.updateMany({
+      where: { id: { in: toPurge }, status: 'PAID' },
+      data: { residentEnc: null, residentPurgedAt: now },
+    });
+  }
+  // 원문이 처음부터 없던 건도 "보관 중인 원문 없음" 을 파기 시각으로 표시한다(기존 동작 유지).
+  const markOnly = paid.filter((r) => !r.residentEnc && !r.residentPurgedAt).map((r) => r.id);
+  if (markOnly.length > 0) {
+    await client.settlementRequest.updateMany({
+      where: { id: { in: markOnly }, residentPurgedAt: null },
+      data: { residentPurgedAt: now },
+    });
+  }
+  return { filed: toFile, alreadyFiled, purged: toPurge, skipped };
+}
+
+/** 한 건 처리용 래퍼. 지급 완료 건이 아니면 예외를 던진다. */
+export async function fileWithholdingAndPurgeResident(requestId: string, _adminId?: string) {
+  void _adminId; // P2-4: 지급 담당자(adminId)를 덮어쓰지 않는다. 신고 처리자는 감사로그에 남긴다.
+  const r = await fileWithholdingAndPurgeResidents([requestId]);
+  if (r.skipped.length > 0) {
+    const exists = await prisma.settlementRequest.findUnique({ where: { id: requestId }, select: { id: true } });
+    if (!exists) throw new Error('정산 요청을 찾을 수 없습니다.');
+    throw new Error('지급 완료된 요청만 원천징수 신고 처리할 수 있습니다.');
+  }
+  return { purged: r.purged.length > 0, alreadyFiled: r.alreadyFiled.length > 0 };
 }
 
 /**
@@ -1022,22 +1172,55 @@ export async function fileWithholdingAndPurgeResident(requestId: string, adminId
  * 주민등록번호를 보관할 근거가 없다. 지급 완료 건에만 파기 기능이 있으면
  * 이 사본들이 영구히 남아 "신고 후 즉시 파기" 안내와 어긋난다.
  * 상태 전이 시점에 자동으로 호출한다.
+ *
+ * ── 예외: 이체파일이 발급된 지급실패 건 (SET-B, 2026-10-15) ─────────────────
+ * 이체파일이 은행에 나간 건은 은행이 나중에 "실제로는 성공" 이라고 정정해 올 수 있고,
+ * 그러면 SET-1 경로로 지급완료(PAID)가 되어 원천징수 신고 대상이 된다. 실패 시점에 주민번호를
+ * 지워 버리면 원천세는 떼었는데 지급명세서를 낼 수 없다. 그래서 이 건은 **실패 시점에 지우지 않는다.**
+ *  - 나중에 PAID 로 정정되면: 일반 지급 건과 같이 신고 완료 처리 때 파기된다.
+ *  - 끝내 실패로 남으면: 정리 배치(`purgeStaleFailedResidents`)가 발급 후
+ *    `FAILED_RESIDENT_RETENTION_DAYS` 일이 지난 뒤 파기한다.
+ * 이체파일이 나간 적 없는 지급실패 건(수동 처리)은 은행 정정이 올 수 없으므로 즉시 파기한다.
  */
 export async function purgeResidentIfNotFilable(requestId: string) {
   const req = await prisma.settlementRequest.findUnique({
     where: { id: requestId },
-    select: { id: true, status: true, residentEnc: true },
+    select: { id: true, status: true, residentEnc: true, payoutIssuedAt: true },
   });
   if (!req || !req.residentEnc) return { purged: false };
   if (req.status !== 'REJECTED' && req.status !== 'PAYOUT_FAILED') {
     return { purged: false };
   }
-  await prisma.settlementRequest.update({
-    where: { id: requestId },
+  if (req.status === 'PAYOUT_FAILED' && req.payoutIssuedAt) {
+    return { purged: false, retained: true as const };
+  }
+  const res = await prisma.settlementRequest.updateMany({
+    where: { id: requestId, status: req.status, residentEnc: { not: null } },
     data: { residentEnc: null, residentPurgedAt: new Date() },
   });
+  if (res.count === 0) return { purged: false };
   logger.info('신고 대상 아님 — 주민등록번호 파기', { requestId, status: req.status });
   return { purged: true };
+}
+
+/**
+ * 이체파일 발급 후 지급실패로 남은 건의 주민번호 보관 기간(일) (SET-B).
+ * 은행 정정 결과가 이 기간 안에 오지 않으면 더 이상 신고 대상이 될 일이 없다고 보고 파기한다.
+ */
+export const FAILED_RESIDENT_RETENTION_DAYS = 90;
+
+/** 정리 배치용: 보관 기간이 지난 "발급 후 지급실패" 건의 주민번호를 파기한다. 파기 건수를 돌려준다. */
+export async function purgeStaleFailedResidents(now: Date = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - FAILED_RESIDENT_RETENTION_DAYS * 86_400_000);
+  const res = await prisma.settlementRequest.updateMany({
+    where: {
+      status: 'PAYOUT_FAILED',
+      residentEnc: { not: null },
+      payoutIssuedAt: { lt: cutoff },
+    },
+    data: { residentEnc: null, residentPurgedAt: now },
+  });
+  return res.count;
 }
 
 /** 지급대행 이체 파일 한 줄에 담기는 값. */
@@ -1137,7 +1320,9 @@ export async function buildPayoutBatch(requestIds: string[]): Promise<PayoutBuil
     // 잔액까지 여기서 걸러낸다. 검증은 반드시 **이체 전** 에 끝나야 한다.
     // 이체가 끝난 뒤(markSettlementPaid) 막으면 이미 나간 돈이 원장에 안 남아 이중 지급이 된다.
     const alreadyClaimed = claimedByCreator.get(r.creatorId) ?? 0n;
-    const payable = await assertPayable(r.id, alreadyClaimed);
+    const payable = await assertPayable(r.id, alreadyClaimed, {
+      claimedIds: rows.map((row) => row.requestId),
+    });
     if (!payable.ok) {
       exclude(r, payable.reason);
       continue;

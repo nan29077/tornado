@@ -1,5 +1,7 @@
 import { requireAdmin, writeAudit } from '@/server/auth';
 import { prisma } from '@/server/db';
+// SET-G·P2-1: 음수 금액을 깨뜨리지 않고 수식 주입은 막는 공용 CSV 셀 인코더.
+import { csvCell } from '@/lib/csv';
 import { decrypt } from '@/lib/crypto';
 import { kstMonthEndKey } from '@/lib/datetime';
 
@@ -20,12 +22,6 @@ export const dynamic = 'force-dynamic';
  * (AdminPermission 기본값은 READ_ONLY 다). 반드시 화이트리스트로 유지할 것.
  */
 const ALLOWED_PERMISSIONS = new Set(['SUPER_ADMIN', 'FINANCE']);
-
-function csvCell(v: string): string {
-  const needsQuote = /[",\n]/.test(v) || /^[=+\-@]/.test(v);
-  const safe = /^[=+\-@]/.test(v) ? `'${v}` : v;
-  return needsQuote ? `"${safe.replace(/"/g, '""')}"` : safe;
-}
 
 export async function GET(req: Request) {
   // 미인증 요청이 500 으로 떨어지지 않도록 여기서 401 로 정리한다.

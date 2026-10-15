@@ -22,6 +22,7 @@ import { retryFailedYouTubeDeliveries } from '@/server/services/broadcast-dispat
 import { checkEmmaMtQueueBacklog } from '@/server/emma';
 import { retryFailedBillKeyRevocations } from '@/server/services/donor-registration';
 import { clearExpiredFailureLocks } from '@/server/services/limits';
+import { purgeStaleFailedResidents } from '@/server/services/settlement';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -57,6 +58,8 @@ export const dynamic = 'force-dynamic';
  *                                       1회용 링크·인증번호가 든 문자는 대상에서 제외한다.
  * 13) clearExpiredFailureLocks        — 잠금 시간이 지난 후원자의 실패 카운터를 초기화한다.
  * 14) purgeOldWebhookLogs            — 보존 기간이 지난 웹훅 원문 로그를 지운다.
+ * 15) purgeStaleFailedResidents       — 이체파일 발급 후 지급실패로 남은 정산 건의 주민등록번호를
+ *                                       보관 기간(90일)이 지나면 파기한다 (SET-B).
  *
  * 원칙
  *  - 인증은 fail-closed. 비밀이 없으면 로컬에서만 통과한다.
@@ -136,6 +139,7 @@ export async function GET(req: Request) {
     const failureLocks = await step('만료된 실패 잠금 해제', () => clearExpiredFailureLocks());
     const webhookLogs = await step('오래된 웹훅 로그 정리', () => purgeOldWebhookLogs());
     const billKeyRevokes = await step('사업자 빌키 해지 재시도', () => retryFailedBillKeyRevocations());
+    const failedResidents = await step('지급실패 건 주민번호 파기', () => purgeStaleFailedResidents());
     /**
      * EMMA 발송 큐 적체 감시.
      *
@@ -162,6 +166,7 @@ export async function GET(req: Request) {
       failureLocks,
       webhookLogs,
       billKeyRevokes,
+      failedResidents,
       mtQueueStuck,
     };
     const allOk = Object.values(steps).every((s) => s.ok);

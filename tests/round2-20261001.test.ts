@@ -109,6 +109,8 @@ describe('SET-14 재발급은 확인한 ID 목록과 정확히 같을 때만', (
   it('미리보기 뒤 다른 건이 발급되면 거절하고, 정확히 일치하면 허용한다', async () => {
     const a = await createSettlementRequest(fx.creatorId, 50_000n, { resident: '9001011234567' });
     const b = await createSettlementRequest(fx.creatorId, 50_000n, { resident: '9001011234567' });
+    // SET-D(2026-10-15): 이체파일은 승인(APPROVED) 건만 발급된다.
+    await prisma.settlementRequest.updateMany({ where: { id: { in: [a.id, b.id] } }, data: { status: 'APPROVED' } });
     await markPayoutFileIssued([a.id], 'admin');
 
     // A 만 재발급 대상이라고 확인했는데, 그 사이 B 도 다른 담당자가 받아 갔다.
@@ -122,6 +124,8 @@ describe('SET-14 재발급은 확인한 ID 목록과 정확히 같을 때만', (
 
   it('기본값은 재발급 거부다', async () => {
     const a = await createSettlementRequest(fx.creatorId, 50_000n, { resident: '9001011234567' });
+    // SET-D(2026-10-15): 이체파일은 승인(APPROVED) 건만 발급된다.
+    await prisma.settlementRequest.updateMany({ where: { id: { in: [a.id] } }, data: { status: 'APPROVED' } });
     await markPayoutFileIssued([a.id], 'admin');
     expect((await markPayoutFileIssued([a.id], 'admin')).blocked).toBe(true);
   });

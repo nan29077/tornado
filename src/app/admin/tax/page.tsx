@@ -460,7 +460,7 @@ async function WithholdingTab({ month, denyReason }: { month: string; denyReason
         <ActionForm
           action={markWithholdingFiled}
           submitLabel={`${month} 신고 완료로 표시`}
-          confirm={`${month} 지급분을 원천징수 신고 완료로 표시합니다. 실제 신고를 마친 뒤에만 눌러 주세요.`}
+          confirm={`${month} 지급분을 원천징수 신고 완료로 표시하고, 해당 건의 주민등록번호 원문을 파기합니다. 실제 신고(지급명세서 제출 포함)를 마친 뒤에만 눌러 주세요.`}
           disabledReason={denyReason}
         >
           <input type="hidden" name="month" value={month} />
