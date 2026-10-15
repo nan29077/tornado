@@ -3,7 +3,12 @@ import Redis from 'ioredis';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { quietRedisWhenUnavailable, redisRetryStrategy } from '@/server/redis-quiet';
-import { primeStudioStateCache, type GameStudioState } from '@/server/services/game-state';
+import {
+  buildStudioState,
+  primeStudioStateCache,
+  studioSnapshotGeneration,
+  type GameStudioState,
+} from '@/server/services/game-state';
 
 /**
  * 게임 오버레이 실시간 버스.
@@ -91,12 +96,23 @@ const THROTTLE_MS = 700;
  * 시청자 5,000명이 20초 안에 참여하면 참여 1건마다 발행할 경우 초당 250회 브로드캐스트가 된다.
  * 화면에 보이는 것은 "참여자 수"와 "막대 길이"뿐이라 0.7초에 한 번이면 충분하다.
  */
-export function publishGameStateThrottled(creatorId: string, build: () => Promise<GameStudioState | null>) {
+export function publishGameStateThrottled(
+  creatorId: string,
+  /**
+   * 기본값은 **그 크리에이터의 지금 화면 상태**다 (GM-D).
+   * 예전에는 참여가 들어온 회차를 고정해 다시 만들었다. 0.7초 사이에 그 회차가 끝났거나
+   * 발표됐으면, 끝난 회차가 화면에 잠깐 다시 뜨거나 OPEN 상태가 RESULT 를 덮어썼다.
+   */
+  build: () => Promise<GameStudioState | null> = () => buildStudioState(creatorId),
+) {
   if (pending.has(creatorId)) return;
   const timer = setTimeout(() => {
     pending.delete(creatorId);
+    // GM-D: 만드는 사이에 더 새로운 상태(발표·종료 등 즉시 발행)가 심어졌으면 이 결과는 버린다.
+    const generation = studioSnapshotGeneration(creatorId);
     build()
       .then((state) => {
+        if (generation !== studioSnapshotGeneration(creatorId)) return;
         if (state) {
           // 참여자 수처럼 자주 바뀌는 값도 캐시에 심어 둔다. 심지 않으면 각 SSE 연결이
           // 2초 폴링에서 캐시에 남은 이전 숫자를 읽어 참여자 수가 뒤로 갔다 앞으로 간다.

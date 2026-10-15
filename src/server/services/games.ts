@@ -33,10 +33,12 @@ import {
 } from '@/server/services/game-result';
 import { publishGameState, publishGameStateThrottled } from '@/server/services/game-bus';
 import {
+  REFUND_EXCLUDED_STATUSES,
+  UNDO_WINDOW_SEC,
   buildStudioState,
-  buildStudioStateForRound,
   findActiveRound,
   primeStudioStateCache,
+  refundedParticipantIds,
   sumDonationsSince,
 } from '@/server/services/game-state';
 
@@ -74,6 +76,23 @@ function asRecord(v: unknown): Record<string, unknown> {
 
 function asStringArray(v: unknown): string[] {
   return Array.isArray(v) ? v.map((x) => String(x ?? '')).filter(Boolean) : [];
+}
+
+/**
+ * 회차 단위 자문 잠금 (GM-F).
+ *
+ * 참여(링크·후원)는 **공유 잠금**, 결과 발표는 **배타 잠금**을 잡는다. 참여끼리는 서로 막지 않고,
+ * 발표는 진행 중인 참여가 모두 끝난 뒤에 상태를 바꾸고 참여자를 읽는다. 발표가 잠금을 쥔 동안
+ * 들어온 참여는 잠금이 풀린 뒤 상태(RESULT)를 다시 보고 거절된다.
+ * 예전에는 발표가 참여자를 읽은 뒤 상태를 바꿔, 그 사이 들어온 참여는 "참여 완료" 응답을
+ * 받고도 추첨에서 빠졌다.
+ */
+function roundLockKey(roundId: string) {
+  return `game-round:${roundId}`;
+}
+
+async function lockRoundShared(tx: Prisma.TransactionClient, roundId: string) {
+  await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock_shared(hashtext($1))', roundLockKey(roundId));
 }
 
 // ---------------------------------------------------------------- 게임 CRUD
@@ -161,8 +180,10 @@ export async function updateGame(creatorId: string, gameId: string, input: GameI
 
   // 진행 중에는 설정을 바꿀 수 없다. 판을 벌여 둔 상태에서 정답이나 항목이 바뀌면
   // 결과를 신뢰할 수 없게 된다. (셀러브릭스와 같은 규칙)
+  // GM-A: 결과가 떠 있는 동안(RESULT)도 막는다. 예전에는 발표 뒤 정답·항목을 바꾸고
+  // [발표 취소] → 재발표로 다른 정답을 적용할 수 있었고, 룰렛은 바뀐 항목과 결과가 어긋나 보였다.
   const active = await prisma.gameRound.findFirst({
-    where: { gameId, status: { in: ['OPEN', 'CLOSED'] } },
+    where: { gameId, status: { in: ['OPEN', 'CLOSED', 'RESULT'] } },
     select: { id: true },
   });
   if (active) fail('진행 중에는 설정을 바꿀 수 없습니다. 게임을 화면에서 내린 뒤 수정해 주세요.');
@@ -386,51 +407,60 @@ export async function revealRound(creatorId: string, roundId: string) {
 
   const type = round.game.type;
   const config = asRecord(round.game.config);
-
-  let result: Record<string, unknown>;
-
-  if (usesDonationTotal(type)) {
-    const target = Number(config.target ?? 0);
-    const current = await sumDonationsSince(creatorId, round.openedAt);
-    result = { target, current, achieved: current >= target, reward: String(config.reward ?? '') };
-  } else if (usesEntries(type)) {
-    const participants = await prisma.gameParticipant.findMany({
-      where: { roundId },
-      orderBy: { createdAt: 'asc' },
-      select: { displayName: true, entry: true, donorId: true, createdAt: true },
-    });
-    if (participants.length === 0 && type !== 'VOTE') {
-      fail('아직 참여자가 없습니다. 참여자가 들어온 뒤에 발표해 주세요.');
-    }
-    result = computeEntryResult(type, config, participants);
-  } else {
-    fail('결과를 발표할 수 있는 게임이 아닙니다.');
-  }
+  if (!usesDonationTotal(type) && !usesEntries(type)) fail('결과를 발표할 수 있는 게임이 아닙니다.');
 
   /**
-   * 상태를 조건부로 선점한 뒤에만 결과를 쓴다.
+   * 회차 배타 잠금 안에서 **상태를 먼저 선점하고**, 그다음 참여자를 읽는다 (GM-F).
    *
-   * 예전에는 상태를 읽고 계산한 뒤 무조건 update 했다. [결과 발표]를 빠르게 두 번 누르면
-   * 두 요청이 각각 다른 추첨 결과를 계산해 나중 것이 이겼고, 방송 화면에는 순간적으로
-   * 다른 당첨자가 스쳐 지나갔다.
+   * 예전에는 참여자를 읽고 계산한 뒤 상태를 바꿨다. 그 사이 들어온 참여는 "참여 완료" 를 받고도
+   * 추첨에서 빠졌다. 지금은 참여 쪽이 같은 키의 공유 잠금을 잡으므로, 진행 중인 참여가 모두
+   * 끝난 뒤에 선점하고, 선점 뒤에 오는 참여는 상태(RESULT)를 보고 거절된다.
+   *
+   * 선점은 여전히 조건부다. [결과 발표]를 빠르게 두 번 누르면 한쪽만 통과한다. 참여자가 없어
+   * 실패하면 트랜잭션이 되돌아가 상태도 원래대로 남는다.
    */
-  const claimed = await prisma.gameRound.updateMany({
-    where: { id: roundId, status: { in: ['OPEN', 'CLOSED'] } },
-    data: {
-      status: 'RESULT',
-      result: result as object,
-      revealedAt: new Date(),
-      closedAt: round.closedAt ?? new Date(),
-      closesAt: null,
-      revealCount: { increment: 1 },
-    },
-  });
-  if (claimed.count === 0) fail('이미 결과가 발표되었습니다. 화면을 새로 고쳐 주세요.');
+  const result = await prisma.$transaction(async (tx) =>
+    withAdvisoryLock(tx, roundLockKey(roundId), async () => {
+      const now = new Date();
+      const claimed = await tx.gameRound.updateMany({
+        where: { id: roundId, status: { in: ['OPEN', 'CLOSED'] } },
+        data: {
+          status: 'RESULT',
+          revealedAt: now,
+          closedAt: round.closedAt ?? now,
+          closesAt: null,
+          revealCount: { increment: 1 },
+        },
+      });
+      if (claimed.count === 0) fail('이미 결과가 발표되었습니다. 화면을 새로 고쳐 주세요.');
 
-  await prisma.$transaction([
-    prisma.gameWinner.deleteMany({ where: { roundId } }),
-    ...winnerRows(round, winnersOf(type, result, config)),
-  ]);
+      let computed: Record<string, unknown>;
+      if (usesDonationTotal(type)) {
+        const target = Number(config.target ?? 0);
+        const current = await sumDonationsSince(creatorId, round.openedAt, tx);
+        computed = { target, current, achieved: current >= target, reward: String(config.reward ?? '') };
+      } else {
+        const rows = await tx.gameParticipant.findMany({
+          where: { roundId },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true, displayName: true, entry: true, donorId: true, createdAt: true },
+        });
+        // GM-C: 환불됐거나 환불 요청 중인 후원으로 자동 참여한 사람은 추첨에서 뺀다.
+        const refunded = await refundedParticipantIds(roundId, tx);
+        const participants = rows.filter((p) => !refunded.has(p.id));
+        if (participants.length === 0 && type !== 'VOTE') {
+          fail('아직 참여자가 없습니다. 참여자가 들어온 뒤에 발표해 주세요.');
+        }
+        computed = computeEntryResult(type, config, participants);
+      }
+
+      await tx.gameRound.update({ where: { id: roundId }, data: { result: computed as object } });
+      await tx.gameWinner.deleteMany({ where: { roundId } });
+      const seeds = winnersOf(type, computed, config);
+      if (seeds.length > 0) await tx.gameWinner.createMany({ data: winnerData(round, seeds) });
+      return computed;
+    }),
+  );
 
   // 재발표는 조작 시비의 핵심이므로 반드시 흔적을 남긴다.
   if (round.revealCount > 0) {
@@ -467,12 +497,22 @@ export async function undoReveal(creatorId: string, roundId: string) {
   if (round.revealCount > 1) {
     fail('발표 취소는 회차당 한 번만 할 수 있습니다. 결과를 바꾸려면 새 회차를 시작해 주세요.');
   }
+  /**
+   * GM-A 이중 방어: 회차를 연 뒤 게임 설정(정답·항목)이 바뀌었으면 되돌리지 않는다.
+   * 수정 자체는 updateGame 에서 막지만, 막기 전에 바뀐 설정이나 다른 경로의 수정으로
+   * "발표 → 설정 변경 → 취소 → 재발표" 가 되는 길을 남기지 않는다.
+   */
+  if (round.game.updatedAt.getTime() > round.openedAt.getTime()) {
+    fail('회차를 연 뒤 게임 설정이 바뀌어 발표를 취소할 수 없습니다. 새 회차를 시작해 주세요.');
+  }
 
   const backTo = usesItems(round.game.type) || usesDonationTotal(round.game.type) ? 'OPEN' : 'CLOSED';
   await prisma.$transaction(async (tx) => {
     // 상태 조건부(GM-3): 그사이 종료된 회차를 되살리지 않는다.
     const changed = await tx.gameRound.updateMany({
-      where: { id: roundId, status: 'RESULT' },
+      // GM-E: 발표 횟수 조건도 같은 문장에 넣는다. 위의 확인은 읽은 값이라, 동시에 들어온
+      // 오래된 취소 요청이 "취소 → 재발표" 뒤의 결과를 한 번 더 되돌릴 수 있었다.
+      where: { id: roundId, status: 'RESULT', revealCount: { lte: 1 } },
       // Json 컬럼을 SQL NULL 로 되돌리려면 Prisma.DbNull 을 써야 한다(null 은 JSON null 이 된다).
       // revealCount 는 되돌리지 않는다. 몇 번 발표했는지가 기록으로 남아야 한다.
       data: { status: backTo, result: Prisma.DbNull, revealedAt: null },
@@ -555,23 +595,24 @@ export async function autoCloseIfDue(creatorId: string): Promise<boolean> {
   return true;
 }
 
+/** 당첨자 기록 행 */
+function winnerData(round: { id: string; gameId: string; creatorId: string }, seeds: WinnerSeed[]) {
+  return seeds.map((s) => ({
+    id: newId(),
+    roundId: round.id,
+    gameId: round.gameId,
+    creatorId: round.creatorId,
+    rank: s.rank,
+    displayName: s.name,
+    prize: s.prize,
+    donorId: s.donorId,
+  }));
+}
+
 /** 당첨자 기록을 만드는 트랜잭션 조각. 결과와 같은 트랜잭션에서 저장한다. */
 function winnerRows(round: { id: string; gameId: string; creatorId: string }, seeds: WinnerSeed[]) {
   if (seeds.length === 0) return [];
-  return [
-    prisma.gameWinner.createMany({
-      data: seeds.map((s) => ({
-        id: newId(),
-        roundId: round.id,
-        gameId: round.gameId,
-        creatorId: round.creatorId,
-        rank: s.rank,
-        displayName: s.name,
-        prize: s.prize,
-        donorId: s.donorId,
-      })),
-    }),
-  ];
+  return [prisma.gameWinner.createMany({ data: winnerData(round, seeds) })];
 }
 
 // --------------------------------------------------------------- 참여 처리
@@ -612,8 +653,7 @@ export interface JoinResult {
  */
 const MAX_JOIN_PER_NETWORK = Math.max(1, Number(process.env.GAME_JOIN_MAX_PER_NETWORK) || 15);
 
-/** 결과 발표를 되돌릴 수 있는 시간(초). 이 시간이 지나면 재추첨을 막는다. */
-const UNDO_WINDOW_SEC = Math.max(10, Number(process.env.GAME_UNDO_WINDOW_SEC) || 120);
+// 결과 발표를 되돌릴 수 있는 시간(UNDO_WINDOW_SEC)은 game-state.ts 에 있다. 화면도 같은 값을 쓴다(GM-J).
 
 /**
  * 시청자 참여.
@@ -663,8 +703,10 @@ export async function joinByCode(joinCode: string, input: JoinInput): Promise<Jo
      * 예전에는 "센 다음 넣기" 라 동시에 몰아 보내면 상한을 넘겨 들어갔다.
      * 회차 상태도 잠금 안에서 다시 확인한다. 발표·마감과 겹친 참여가 결과 뒤에 끼어들지 않게 한다.
      */
-    await prisma.$transaction(async (tx) =>
-      withAdvisoryLock(tx, `game-join:${round.id}:${netHash ?? 'none'}`, async () => {
+    await prisma.$transaction(async (tx) => {
+      // GM-F: 발표와 겹치지 않게 회차 공유 잠금을 먼저 잡는다(참여끼리는 서로 막지 않는다).
+      await lockRoundShared(tx, round.id);
+      return withAdvisoryLock(tx, `game-join:${round.id}:${netHash ?? 'none'}`, async () => {
         const live = await tx.gameRound.findUnique({ where: { id: round.id }, select: { status: true } });
         if (!live || live.status !== 'OPEN') fail('지금은 참여를 받지 않습니다.');
         if (netHash) {
@@ -689,8 +731,8 @@ export async function joinByCode(joinCode: string, input: JoinInput): Promise<Jo
             netHash,
           },
         });
-      }),
-    );
+      });
+    });
   } catch (e) {
     if (e instanceof GameError) throw e;
     // 유니크 위반 = 이미 참여함. 입력을 바꾸는 것은 허용하지 않는다(선착순 게임의 공정성).
@@ -700,7 +742,8 @@ export async function joinByCode(joinCode: string, input: JoinInput): Promise<Jo
   }
 
   const participantCount = await prisma.gameParticipant.count({ where: { roundId: round.id } });
-  publishGameStateThrottled(round.creatorId, () => buildStudioStateForRound(round.id));
+  // GM-D: 특정 회차가 아니라 그 크리에이터의 지금 상태를 다시 만들어 보낸다.
+  publishGameStateThrottled(round.creatorId);
 
   /**
    * 정답 여부는 **응답에 담지 않는다.**
@@ -844,23 +887,40 @@ export async function joinFromDonation(donationId: string): Promise<void> {
       ? `donor:${donation.donorId}`
       : `dname:${sha256(`${round.id}:${donation.displayName}`)}`;
 
-    await prisma.gameParticipant.create({
-      data: {
-        id: newId(),
-        roundId: round.id,
-        gameId: game.id,
-        creatorId: donation.creatorId,
-        donorId: donation.donorId,
-        donationId: donation.id,
-        displayName: publicName.slice(0, MAX_NICKNAME_LEN),
-        entry: null,
-        source: 'DONATION',
-        entryKey,
-        amount: donation.amount,
-      },
-    });
+    /**
+     * GM-F: 회차 공유 잠금 안에서 상태를 다시 확인한 뒤에만 참여시킨다.
+     * 위에서 찾은 회차가 그사이 마감·발표됐으면 결과 뒤에 참여가 끼어들지 않게 한다.
+     * GM-C: 그사이 환불(요청)된 후원이면 참여시키지 않는다.
+     */
+    const paidAt = donation.paidAt;
+    const joined = await prisma.$transaction(async (tx) => {
+      await lockRoundShared(tx, round.id);
+      const live = await tx.gameRound.findUnique({ where: { id: round.id }, select: { status: true, closesAt: true } });
+      if (!live || live.status !== 'OPEN') return false;
+      if (live.closesAt && live.closesAt.getTime() < paidAt.getTime()) return false;
+      const fresh = await tx.donation.findUnique({ where: { id: donation.id }, select: { status: true, refundedAt: true } });
+      if (!fresh || fresh.refundedAt || (REFUND_EXCLUDED_STATUSES as readonly string[]).includes(fresh.status)) return false;
 
-    publishGameStateThrottled(donation.creatorId, () => buildStudioStateForRound(round.id));
+      await tx.gameParticipant.create({
+        data: {
+          id: newId(),
+          roundId: round.id,
+          gameId: game.id,
+          creatorId: donation.creatorId,
+          donorId: donation.donorId,
+          donationId: donation.id,
+          displayName: publicName.slice(0, MAX_NICKNAME_LEN),
+          entry: null,
+          source: 'DONATION',
+          entryKey,
+          amount: donation.amount,
+        },
+      });
+      return true;
+    });
+    if (!joined) return;
+
+    publishGameStateThrottled(donation.creatorId);
   } catch (e) {
     const message = (e as Error).message ?? '';
     // 이미 참여한 후원자의 추가 후원은 정상 흐름이다. 로그를 남기지 않는다.
@@ -880,7 +940,7 @@ export async function refreshDonationGauge(creatorId: string): Promise<void> {
       include: { game: true },
     });
     if (!round || !usesDonationTotal(round.game.type)) return;
-    publishGameStateThrottled(creatorId, () => buildStudioStateForRound(round.id));
+    publishGameStateThrottled(creatorId);
   } catch {
     /* 게임은 부가 기능이다. 실패해도 후원 처리에 영향을 주지 않는다 */
   }

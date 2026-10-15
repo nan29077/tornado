@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { GAME_TYPE_META, type GameType } from '@/lib/game-catalog';
+import { GAME_TYPE_META, voteTopIndices, voteTopLabel, type GameType } from '@/lib/game-catalog';
 import { formatNumber } from '@/lib/money';
 import { Portal } from '@/components/ui/portal';
 import { useStandalone } from '@/components/overlay/use-standalone';
@@ -1065,7 +1065,8 @@ function ChoiceBoard({ state, mode }: { state: GamePublicState; mode: 'vote' | '
   const counts = result?.counts ?? state.counts ?? state.choices.map(() => 0);
   const total = counts.reduce((a, b) => a + b, 0);
   const answerIndex = revealed && typeof result?.answerIndex === 'number' ? result.answerIndex : null;
-  const topIndex = revealed && typeof result?.topIndex === 'number' ? result.topIndex : null;
+  // GM-H: 동점 1위는 모두 강조한다.
+  const topSet = new Set(revealed ? voteTopIndices(state.result) : []);
 
   return (
     <div className="flex items-start gap-[40px]">
@@ -1079,7 +1080,7 @@ function ChoiceBoard({ state, mode }: { state: GamePublicState; mode: 'vote' | '
             const value = counts[i] ?? 0;
             const pct = total > 0 ? Math.round((value / total) * 100) : 0;
             const isAnswer = answerIndex === i;
-            const isTop = topIndex === i;
+            const isTop = mode === 'vote' && topSet.has(i);
             return (
               <div key={`${c}-${i}`}>
                 <div className="mb-[6px] flex items-center justify-between">
@@ -1116,8 +1117,9 @@ function ChoiceBoard({ state, mode }: { state: GamePublicState; mode: 'vote' | '
           </div>
         ) : null}
         {revealed && mode === 'vote' ? (
+          // GM-H: 동점이면 "공동 1위 · A, B" 로 보여 준다. 예전에는 첫 선택지만 1위로 나갔다.
           <p className="mt-[26px] animate-game-pop text-[40px] font-black text-ink-900">
-            1위 · {state.choices[topIndex ?? 0] ?? '-'}
+            {voteTopLabel(state.result, state.choices)}
           </p>
         ) : null}
       </div>
@@ -1159,8 +1161,10 @@ function KeywordBoard({ state }: { state: GamePublicState }) {
               hint={state.status === 'CLOSED' ? '마감 · 발표를 기다립니다' : '키워드를 입력하세요'}
             />
             <div className="rounded-[28px] border-[3px] border-dashed border-brand-200 bg-brand-50 px-[36px] py-[30px]">
+              {/* GM-I: 참여를 받는 동안 서버는 정답자 수를 보내지 않는다(null). 그때는 참여 인원만 보여 준다. */}
               <p className="text-[30px] font-black text-brand-800">
-                정답 입력 <span className="tabular-nums">{state.correctCount ?? 0}</span>명
+                {state.correctCount === null ? '참여 ' : '정답 입력 '}
+                <span className="tabular-nums">{state.correctCount ?? state.participantCount}</span>명
               </p>
               <p className="mt-[10px] text-[24px] font-bold text-ink-400">
                 먼저 맞힌 순서대로 당첨됩니다. 정답은 발표 전까지 공개되지 않습니다.

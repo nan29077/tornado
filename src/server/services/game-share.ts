@@ -32,6 +32,7 @@ export interface GameShareResult {
 const REASON_TEXT: Record<string, string> = {
   NO_ROUND: '지금 방송에 올라가 있는 게임이 없습니다.',
   NO_JOIN_URL: '이 게임은 링크로 참여하는 방식이 아닙니다.',
+  NOT_OPEN: '지금은 참여를 받지 않는 회차입니다. 참여가 열려 있을 때만 링크를 올릴 수 있습니다.',
   NO_CONNECTION: '유튜브 채널이 연결돼 있지 않습니다. [유튜브 연동]에서 먼저 연결해 주세요.',
   TOKEN_REFRESH_FAILED: '유튜브 연결이 만료됐습니다. [유튜브 연동]에서 다시 연결해 주세요.',
   BROADCAST_LOOKUP_FAILED: '유튜브 라이브 방송 정보를 가져오지 못했습니다. 잠시 뒤 다시 시도해 주세요.',
@@ -69,6 +70,13 @@ export async function shareGameLinkToChat(creatorId: string): Promise<GameShareR
   // 후원 자동 참여만 쓰는 게임에는 시청자가 들어올 링크 자체가 없다.
   const entryByLink = round.game.entryMode !== 'DONATION' && usesEntries(round.game.type);
   if (!entryByLink) return fail('NO_JOIN_URL');
+
+  /**
+   * GM-J: 참여를 받는 중(OPEN)일 때만 올린다.
+   * 마감·발표 뒤에 링크를 올리면 시청자가 눌러도 "지금은 참여를 받지 않습니다" 만 보게 되고,
+   * 같은 일일 예산(후원 알림과 공유)만 쓴다. 할당량 차감 전에 거른다.
+   */
+  if (round.status !== 'OPEN') return fail('NOT_OPEN');
 
   const limited = await consumeRateLimit('yt-share', creatorId, SHARE_LIMIT_COUNT, SHARE_LIMIT_WINDOW_SEC, {
     failClosed: true,

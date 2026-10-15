@@ -43,6 +43,7 @@ import {
   usesDonationTotal,
   usesEntries,
   usesItems,
+  voteTopLabel,
   type GameType,
   type RoundStatus,
 } from '@/lib/game-catalog';
@@ -84,6 +85,8 @@ interface WinnerView {
 interface StudioState {
   /** 이 회차의 발표(돌리기 포함) 횟수. 1 을 넘으면 재발표다(GM-2). */
   revealCount?: number;
+  /** [발표 취소]를 누를 수 있는 마지막 시각(ISO). 지나면 버튼을 감춘다(GM-J). */
+  undoUntil?: string | null;
   creatorId: string;
   gameId: string;
   roundId: string;
@@ -1433,6 +1436,7 @@ function ControlPanel({
   const [endPhase, setEndPhase] = React.useState<ConfirmPhase>('closed');
   /** 참여 주소가 이 컴퓨터 안에서만 통하는 주소인지 (휴대폰에서 QR 이 열리지 않는다) */
   const localOnlyJoinUrl = Boolean(state.joinUrl && /\/\/(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(state.joinUrl));
+  const canUndo = useUndoAvailable(state);
 
   return (
     /*
@@ -1520,7 +1524,8 @@ function ControlPanel({
             <RotateCcw size={16} strokeWidth={1.8} /> 마감 취소
           </Button>
         ) : null}
-        {state.status === 'RESULT' && (state.revealCount ?? 0) <= 1 ? (
+        {/* GM-J: 취소 가능 시간(발표 후 120초)이 지나면 감춘다. 눌러도 서버가 거절할 버튼을 남기지 않는다. */}
+        {canUndo ? (
           <Button variant="secondary" onClick={() => void onAction('undo')} disabled={busy}>
             <Undo2 size={16} strokeWidth={1.8} /> 발표 취소
           </Button>
@@ -1711,6 +1716,26 @@ const CHECKER_STYLE: React.CSSProperties = {
 };
 
 /** 상태 배지. 폭을 고정해 상태가 바뀌어도 옆 요소가 밀리지 않게 한다. */
+/**
+ * [발표 취소]를 지금 누를 수 있는지 (GM-J).
+ *
+ * 서버가 내려 준 `undoUntil` 을 기준으로 하고, 그 시각이 지나면 스스로 다시 그려 버튼을 감춘다.
+ * 예전에는 120초가 지나도 버튼이 남아 있어 눌러도 오류만 났다.
+ */
+function useUndoAvailable(state: StudioState): boolean {
+  const until = state.status === 'RESULT' && (state.revealCount ?? 0) <= 1 && state.undoUntil
+    ? new Date(state.undoUntil).getTime()
+    : 0;
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    if (!until) return;
+    // 이미 지났어도 타이머로 한 번 다시 그린다(이펙트 안에서 바로 setState 하지 않는다).
+    const t = setTimeout(() => setNow(Date.now()), Math.max(0, until - Date.now()) + 50);
+    return () => clearTimeout(t);
+  }, [until]);
+  return until > 0 && now < until;
+}
+
 function StatusBadge({ status }: { status: RoundStatus }) {
   const tone = status === 'OPEN' ? 'success' : status === 'CLOSED' ? 'warning' : 'brand';
   return (
@@ -1806,6 +1831,10 @@ function LiveTally({ state }: { state: StudioState }) {
             );
           })}
         </div>
+        {state.type === 'VOTE' && state.status === 'RESULT' ? (
+          // GM-H: 동점이면 "공동 1위" 로 보여 준다(오버레이와 같은 문구).
+          <p className="mt-2 text-[13px] font-black text-brand-700">{voteTopLabel(state.result, state.choices)}</p>
+        ) : null}
       </div>
     );
   }
