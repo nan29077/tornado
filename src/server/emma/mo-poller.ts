@@ -46,20 +46,72 @@ import {
 } from './types';
 
 /**
+ * EMMA DB 벽시계 시간대 (EM-1).
+ *
+ * IANA 이름(Asia/Seoul, UTC, Etc/GMT+9 …)만 허용한다. SQL 에는 바인드 파라미터로만 넘기므로
+ * 주입 여지는 없지만, 오타를 조용히 넘기지 않도록 형식이 틀리면 폴링을 멈추고 오류를 남긴다.
+ */
+const TIMEZONE_PATTERN = /^[A-Za-z][A-Za-z0-9_+-]{0,31}(?:\/[A-Za-z0-9_+-]{1,32}){0,2}$/;
+
+/**
+ * 설정된 EMMA DB 시간대. **비어 있으면 null**(기존 동작) — 이때 수신 시각은 UTC 로,
+ * 대기·선점 만료는 DB 세션 시간대로 해석한다(예전 코드와 같은 결과).
+ */
+export function emmaDbTimezone(raw: string = env.emma.dbTimezone): string | null {
+  const tz = (raw ?? '').trim();
+  if (!tz) return null;
+  if (!TIMEZONE_PATTERN.test(tz)) {
+    throw new Error(`EMMA_DB_TIMEZONE 값이 올바르지 않습니다: '${tz}' (예: UTC, Asia/Seoul)`);
+  }
+  return tz;
+}
+
+/**
  * 조회 컬럼. 명세서에 있는 필드만 읽는다.
  *
  * date_mo / date_mo_recv 는 시간대 정보가 없는 TIMESTAMP 다(E-6). 이 값을 드라이버가 알아서
  * 해석하게 두면 **접속 방식에 따라 결과가 달라진다.** Prisma(같은 DB 구성)는 UTC 로,
  * node-postgres(전용 DB 구성)는 Node 프로세스의 로컬 시간대로 읽는다. 컨테이너 TZ 하나만
  * 바뀌어도 수신 시각이 9시간 어긋나고, 그 값이 그대로 후원 기록(receivedAt)에 박힌다.
- * `AT TIME ZONE 'UTC'` 로 DB 에서 timestamptz 로 확정해 두 경로가 같은 절대 시각을 보게 한다.
+ * `AT TIME ZONE <EMMA_DB_TIMEZONE>` 으로 DB 에서 timestamptz 로 확정해 두 경로가 같은 절대 시각을 보게 한다.
+ *
+ * 예전에는 'UTC' 로 못박았다. EMMA DB 가 한국 시간 벽시계로 기록하면 수신 시각이 9시간 미래가 된다(EM-1).
+ * 이제 EMMA_DB_TIMEZONE 을 **바인드 파라미터**로 넘긴다. 설정하면 수신 시각·waited_sec·오래된 선점
+ * 판정이 모두 같은 해석(`date_mo_recv AT TIME ZONE tz` 대 `NOW()`)을 쓴다. 비우면(null) 예전과 같다:
+ * 수신 시각은 UTC, 대기·만료 계산은 DB 세션 시간대(= LOCALTIMESTAMP 비교와 같은 결과).
+ *
+ * 돌려줄 때는 **UTC ISO 문자열**로 만든다. Prisma pg 어댑터는 timestamptz 의 오프셋(+09)을 버리고
+ * 벽시계를 UTC 로 읽어(검증함) 세션 시간대가 UTC 가 아니면 9시간 어긋난다. 문자열은 해석 여지가 없다.
+ *
+ * @param tzParam 시간대 값을 담은 바인드 파라미터 자리(예: '$4'). 값이 null 일 수 있다.
  */
-const MO_COLUMNS = `mo_key, service_type, mo_recipient, emo_recipient, mo_originator,
+function moColumns(tzParam: string): string {
+  const recvAbs = `(date_mo_recv AT TIME ZONE COALESCE(${tzParam}::text, current_setting('TimeZone')))`;
+  const isoUtc = (expr: string) =>
+    `to_char((${expr}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+  return `mo_key, service_type, mo_recipient, emo_recipient, mo_originator,
                     mo_callback, msg_status, subject, content,
-                    (date_mo AT TIME ZONE 'UTC') AS date_mo,
-                    (date_mo_recv AT TIME ZONE 'UTC') AS date_mo_recv,
-                    EXTRACT(EPOCH FROM (LOCALTIMESTAMP - date_mo_recv))::int AS waited_sec,
+                    ${isoUtc(`date_mo AT TIME ZONE COALESCE(${tzParam}::text, 'UTC')`)} AS date_mo,
+                    ${isoUtc(`date_mo_recv AT TIME ZONE COALESCE(${tzParam}::text, 'UTC')`)} AS date_mo_recv,
+                    EXTRACT(EPOCH FROM (NOW() - ${recvAbs}))::int AS waited_sec,
                     carrier, rs_id, ems_id, ems_total, ems_seq, emma_id`;
+}
+
+/** 오래된 선점('2') 판정. date_mo_recv 를 설정 시간대(없으면 세션 시간대)로 해석해 NOW() 와 비교한다. */
+function staleRecvCondition(staleParam: string, tzParam: string): string {
+  return `(date_mo_recv AT TIME ZONE COALESCE(${tzParam}::text, current_setting('TimeZone'))) < NOW() - MAKE_INTERVAL(secs => ${staleParam})`;
+}
+
+/**
+ * 수신번호 전체 복원식(SQL). number.ts 의 restoreMoNumber 와 **같은 규칙**이다.
+ * 대표번호 필터를 SQL 에서 걸어 남의 번호로 온 행이 배치 자리를 차지하지 않게 한다(P0-1).
+ */
+const RESTORED_RECIPIENT_SQL = `(CASE
+            WHEN d.e = '' THEN d.m
+            WHEN d.m = '' THEN d.e
+            WHEN left(d.e, length(d.m)) = d.m THEN d.e
+            ELSE d.m || d.e
+          END)`;
 
 /** 같은 행에서 예외가 반복될 때 재시도를 포기하는 횟수. */
 const MAX_HANDLER_FAILURES = 5;
@@ -83,6 +135,10 @@ const FAILURE_TTL_SEC = 7 * 24 * 60 * 60;
  * 통째로 유실되는 것보다 낫다.
  */
 const MMS_ASSEMBLY_TIMEOUT_SEC = 180;
+
+/** 건너뜀 비율 경고 기준. 표본이 너무 작을 때(동시 실행 1~2건)는 경고하지 않는다. */
+const SKIP_WARN_RATIO = 0.5;
+const SKIP_WARN_MIN_FETCHED = 10;
 
 /** 마지막 폴링 성공 시각을 남기는 키. 폴링 정지를 감지하는 유일한 지표다(E-8). */
 export const EMMA_LAST_POLL_KEY = 'emma:lastPollAt';
@@ -143,25 +199,76 @@ async function clearAttempts(moKey: string): Promise<void> {
  * **EMMA 가 행을 넣은 시각(date_mo_recv)** 을 기준으로 오래된 것만 되살린다.
  * (정상 처리는 1초 안에 끝나므로 기본 5분이면 진행 중인 건을 건드리지 않는다)
  */
-async function fetchCandidates(suffix: string, limit: number, staleSec: number): Promise<EmmaMoRow[]> {
+/*
+ * 대표번호 필터 (P0-1)
+ * --------------------
+ * 예전에는 전부 읽은 뒤 앱에서 대표번호를 비교해, 남의 번호면 선점했다가 신규('3')로 되돌렸다.
+ * 그 행들은 영원히 '3' 으로 남아 `ORDER BY date_mo ASC LIMIT batch` 의 앞자리를 계속 차지한다.
+ * 한 EMMA 를 같이 쓰는 다른 서비스의 미처리 문자가 배치 크기(200)만큼 쌓이면 **우리 후원은 한 건도
+ * 처리되지 않는데 배치는 성공으로 끝났다.** 이제 SQL 에서 걸러 남의 행은 아예 읽지 않는다.
+ * (대표번호로 시작하는 행만 읽는다. 서브번호 없이 대표번호로만 온 답장도 여기 포함된다)
+ */
+async function fetchCandidates(
+  suffix: string,
+  limit: number,
+  staleSec: number,
+  tz: string | null,
+  expectedBase: string,
+): Promise<EmmaMoRow[]> {
   assertSafeSuffix(suffix);
   const q = getEmmaQuerier();
+  const params: unknown[] = [EMMA_MO_STATUS.NEW, EMMA_MO_STATUS.CLAIMED, staleSec, tz];
+  let baseFilter = '';
+  if (expectedBase) {
+    params.push(expectedBase);
+    baseFilter = `AND left(${RESTORED_RECIPIENT_SQL}, length($5::text)) = $5::text`;
+  }
   return q.query<EmmaMoRow>(
-    `SELECT ${MO_COLUMNS}
-       FROM em_mo_log_${suffix}
-      WHERE msg_status = $1
-         OR (msg_status = $2 AND date_mo_recv < NOW() - MAKE_INTERVAL(secs => $3))
-      ORDER BY date_mo ASC
+    `SELECT ${moColumns('$4')}
+       FROM em_mo_log_${suffix} l
+       CROSS JOIN LATERAL (
+         SELECT regexp_replace(COALESCE(l.mo_recipient, ''), '[^0-9]', '', 'g') AS m,
+                regexp_replace(COALESCE(l.emo_recipient, ''), '[^0-9]', '', 'g') AS e
+       ) d
+      WHERE (msg_status = $1
+             OR (msg_status = $2 AND ${staleRecvCondition('$3', '$4')}))
+        ${baseFilter}
+      ORDER BY l.date_mo ASC
       LIMIT ${Number(limit)}`,
-    [EMMA_MO_STATUS.NEW, EMMA_MO_STATUS.CLAIMED, staleSec],
+    params,
   );
+}
+
+/** EMMA DB 세션 시간대를 한 번만 로그로 남긴다(운영자가 EMMA_DB_TIMEZONE 을 정하는 근거). */
+let sessionTimezoneLogged = false;
+async function logSessionTimezoneOnce(configured: string | null): Promise<void> {
+  if (sessionTimezoneLogged) return;
+  sessionTimezoneLogged = true;
+  try {
+    const rows = await getEmmaQuerier().query<{ tz: string }>(`SELECT current_setting('TimeZone') AS tz`);
+    const sessionTz = rows[0]?.tz ?? '알 수 없음';
+    logger.info('EMMA DB 세션 시간대', { sessionTimezone: sessionTz, configured: configured ?? '(미설정 — UTC 로 해석)' });
+    if (configured === null) {
+      logger.warn(
+        'EMMA_DB_TIMEZONE 이 비어 있어 EMMA 수신 시각을 UTC 로 해석합니다. EMMA 가 한국 시간으로 기록한다면 Asia/Seoul 로 설정하십시오.',
+        { sessionTimezone: sessionTz },
+      );
+    } else if (sessionTz !== configured) {
+      logger.warn(
+        'EMMA DB 세션 시간대와 EMMA_DB_TIMEZONE 이 다릅니다. EMMA 가 어느 시간대 벽시계로 date_mo 를 기록하는지 확인하십시오.',
+        { sessionTimezone: sessionTz, configured },
+      );
+    }
+  } catch (e) {
+    logger.warn('EMMA DB 세션 시간대 조회 실패', { message: (e as Error).message });
+  }
 }
 
 /**
  * 상태를 '처리 중'으로 원자적으로 선점한다.
  * 다른 프로세스가 먼저 가져갔으면 0행이 갱신되어 false 를 돌려준다.
  */
-async function claim(suffix: string, moKey: string, staleSec: number): Promise<boolean> {
+async function claim(suffix: string, moKey: string, staleSec: number, tz: string | null): Promise<boolean> {
   assertSafeSuffix(suffix);
   const q = getEmmaQuerier();
   const affected = await q.execute(
@@ -169,8 +276,8 @@ async function claim(suffix: string, moKey: string, staleSec: number): Promise<b
         SET msg_status = $1
       WHERE mo_key = $2
         AND (msg_status = $3
-             OR (msg_status = $1 AND date_mo_recv < NOW() - MAKE_INTERVAL(secs => $4)))`,
-    [EMMA_MO_STATUS.CLAIMED, moKey, EMMA_MO_STATUS.NEW, staleSec],
+             OR (msg_status = $1 AND ${staleRecvCondition('$4', '$5')}))`,
+    [EMMA_MO_STATUS.CLAIMED, moKey, EMMA_MO_STATUS.NEW, staleSec, tz],
   );
   return affected > 0;
 }
@@ -186,15 +293,15 @@ async function setStatus(suffix: string, moKey: string, status: string): Promise
  * 같은 묶음(ems_id)의 조각을 모두 읽는다. 상태와 무관하게 읽는다 —
  * 아직 신규('3')인 조각도, 우리가 방금 선점('2')한 조각도 함께 봐야 조립이 된다.
  */
-async function fetchFragments(suffix: string, emsId: number): Promise<EmmaMoRow[]> {
+async function fetchFragments(suffix: string, emsId: number, tz: string | null): Promise<EmmaMoRow[]> {
   assertSafeSuffix(suffix);
   const q = getEmmaQuerier();
   return q.query<EmmaMoRow>(
-    `SELECT ${MO_COLUMNS}
+    `SELECT ${moColumns('$2')}
        FROM em_mo_log_${suffix}
       WHERE ems_id = $1
       ORDER BY ems_seq ASC NULLS LAST`,
-    [emsId],
+    [emsId, tz],
   );
 }
 
@@ -244,10 +351,10 @@ function waitedSecOf(row: EmmaMoRow): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
-async function assembleFragments(suffix: string, row: EmmaMoRow): Promise<AssemblyResult> {
+async function assembleFragments(suffix: string, row: EmmaMoRow, tz: string | null): Promise<AssemblyResult> {
   const emsId = Number(row.ems_id);
   const total = Number(row.ems_total ?? 0);
-  const fragments = await fetchFragments(suffix, emsId);
+  const fragments = await fetchFragments(suffix, emsId, tz);
 
   if (fragments.length === 0) {
     // 있을 수 없는 상황이지만, 방어적으로 지금 행만이라도 처리한다.
@@ -340,7 +447,7 @@ function toMessageType(serviceType: string | null): EmmaMoMessage['messageType']
 /**
  * 수신 시각 정규화(E-6).
  *
- * SELECT 에서 `AT TIME ZONE 'UTC'` 로 확정하지만, 드라이버가 문자열로 돌려주는 경우까지
+ * SELECT 에서 `AT TIME ZONE <EMMA_DB_TIMEZONE>` 으로 확정하지만, 드라이버가 문자열로 돌려주는 경우까지
  * 대비한다. 시간대 표기가 없는 문자열은 **UTC 로 명시해** 해석한다(로컬 시간대 추정 금지).
  */
 export function parseEmmaTimestamp(value: unknown): Date | null {
@@ -394,19 +501,23 @@ export async function pollEmmaMo(handler: EmmaMoHandler): Promise<EmmaPollResult
     failed: 0,
     deferred: 0,
     abandoned: 0,
+    skippedRatio: 0,
     details: [],
   };
 
   const limit = env.emma.batchSize;
   const staleSec = env.emma.staleSec;
   const expectedBase = env.emma.baseNumber.replace(/\D/g, '');
+  // 형식이 틀리면 여기서 던진다. 잘못된 시간대로 수신 시각을 9시간씩 틀리게 박는 것보다 멈추는 편이 낫다.
+  const tz = emmaDbTimezone();
+  await logSessionTimezoneOnce(tz);
 
   for (const suffix of pollingSuffixes()) {
     if (!(await moTableExists(suffix))) continue;
 
     let rows: EmmaMoRow[];
     try {
-      rows = await fetchCandidates(suffix, limit, staleSec);
+      rows = await fetchCandidates(suffix, limit, staleSec, tz, expectedBase);
     } catch (e) {
       // 한 달치 테이블 조회가 실패해도 나머지 달은 계속 본다.
       logger.error('EMMA MO 조회 실패', { suffix, message: (e as Error).message });
@@ -431,7 +542,7 @@ export async function pollEmmaMo(handler: EmmaMoHandler): Promise<EmmaPollResult
 
       let claimed = false;
       try {
-        claimed = await claim(suffix, moKey, staleSec);
+        claimed = await claim(suffix, moKey, staleSec, tz);
       } catch (e) {
         result.failed++;
         result.details.push({ moKey, outcome: 'failed', detail: `선점 실패: ${(e as Error).message}` });
@@ -445,9 +556,18 @@ export async function pollEmmaMo(handler: EmmaMoHandler): Promise<EmmaPollResult
 
       const single = toMoMessage(row);
 
-      // 대표번호가 설정과 다르면 남의 번호가 섞여 들어온 것이다. 처리하지 않고 남겨 둔다.
-      // (한 EMMA 에 여러 서비스의 번호가 물린 구성에서 서로의 후원을 가로채는 사고를 막는다)
-      if (expectedBase && single.baseNumber !== expectedBase) {
+      /**
+       * 대표번호 확인 (P0-1).
+       *
+       * 남의 번호는 SQL 에서 이미 걸렀다. 여기서는 그 필터와 앱의 복원 규칙이 어긋나는 경우만
+       * 방어한다. 비교 기준은 "복원한 전체번호가 대표번호로 시작하는가" 다.
+       *
+       * 예전 기준(splitMoNumber 로 뒤 4자리를 떼어 낸 앞부분 === 대표번호)은 **서브번호 없이 대표번호로만
+       * 온 문자**(감사 문자 답장 — 발신번호가 대표번호다)를 대표번호 '1688' 로 잘못 읽어 매번 '3' 으로
+       * 되돌렸고, 그런 행이 배치 크기만큼 쌓이면 폴링이 영원히 굶었다. 이제 그런 문자도 핸들러로 넘겨
+       * UNKNOWN_ROUTE(안내 문자)로 완료한다.
+       */
+      if (expectedBase && !single.receivedNumber.startsWith(expectedBase)) {
         await setStatus(suffix, moKey, EMMA_MO_STATUS.NEW).catch(() => undefined);
         result.skipped++;
         result.details.push({
@@ -476,7 +596,7 @@ export async function pollEmmaMo(handler: EmmaMoHandler): Promise<EmmaPollResult
       if (isMultipart(row)) {
         let assembly: AssemblyResult;
         try {
-          assembly = await assembleFragments(suffix, row);
+          assembly = await assembleFragments(suffix, row, tz);
         } catch (e) {
           // 조립 조회가 실패하면 이 행만 되돌려 다음 폴링에서 다시 본다.
           await setStatus(suffix, moKey, EMMA_MO_STATUS.NEW).catch(() => undefined);
@@ -608,6 +728,21 @@ export async function pollEmmaMo(handler: EmmaMoHandler): Promise<EmmaPollResult
    * "몇 분째 폴링이 없다"를 바로 볼 수 있다.
    */
   await kv.set(EMMA_LAST_POLL_KEY, new Date().toISOString()).catch(() => undefined);
+
+  /**
+   * 건너뜀 비율 감시 (P0-1 c).
+   *
+   * 건너뜀이 배치의 대부분을 차지하면 처리량이 사실상 0 인데 배치는 성공으로 끝난다(조용한 정지).
+   * 비율을 결과에 싣고, 높으면 경고를 남긴다.
+   */
+  result.skippedRatio = result.fetched > 0 ? Math.round((result.skipped / result.fetched) * 1000) / 1000 : 0;
+  if (result.fetched >= SKIP_WARN_MIN_FETCHED && result.skippedRatio >= SKIP_WARN_RATIO) {
+    logger.warn('EMMA MO 폴링에서 건너뛴 비율이 높습니다 — 처리량이 막혀 있을 수 있습니다', {
+      fetched: result.fetched,
+      skipped: result.skipped,
+      skippedRatio: result.skippedRatio,
+    });
+  }
 
   return result;
 }

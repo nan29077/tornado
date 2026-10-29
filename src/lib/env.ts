@@ -267,6 +267,12 @@ export const env = {
      * 너무 짧으면 정상 처리 중인 건을 다른 폴링이 가로채므로 최솟값 30초를 강제한다.
      */
     staleSec: Math.max(30, Math.trunc(num('EMMA_MO_STALE_SEC', 300))),
+    /**
+     * EMMA 테이블의 시간대 없는 TIMESTAMP(date_mo 등)가 어느 시간대의 벽시계인지 (EM-1).
+     * EMMA DB 가 한국 시간으로 기록하면 `Asia/Seoul`. 비우면 기존 동작(수신 시각은 UTC 로 해석).
+     * 형식 검증은 mo-poller.ts 의 emmaDbTimezone().
+     */
+    dbTimezone: str('EMMA_DB_TIMEZONE').trim(),
   },
 
   /** 문자 발송(MT). provider 는 mock | coolsms | emma 를 지원한다. */

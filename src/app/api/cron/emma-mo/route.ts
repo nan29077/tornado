@@ -65,7 +65,13 @@ export async function GET(req: Request) {
     });
   }
 
-  const locked = await kv.setnx(LOCK_KEY, String(Date.now()), LOCK_TTL_SEC).catch(() => true);
+  /**
+   * 잠금 토큰 (P2-21b).
+   * 실행이 TTL(50초)을 넘기면 잠금이 만료되고 다음 실행이 새 잠금을 잡는다. 이때 앞 실행이 finally 에서
+   * 무조건 지우면 **남의 잠금을 지워** 세 번째 실행까지 겹친다. 내 토큰일 때만 지운다(cleanup 크론과 같은 방식).
+   */
+  const lockToken = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  const locked = await kv.setnx(LOCK_KEY, lockToken, LOCK_TTL_SEC).catch(() => true);
   if (!locked) {
     return NextResponse.json({ ok: true, skipped: true, message: '이전 폴링이 아직 진행 중입니다.' });
   }
@@ -83,6 +89,7 @@ export async function GET(req: Request) {
         failed: result.failed,
         deferred: result.deferred,
         abandoned: result.abandoned,
+        skippedRatio: result.skippedRatio,
         latencyMs,
       });
     }
@@ -97,6 +104,7 @@ export async function GET(req: Request) {
       failed: result.failed,
       deferred: result.deferred,
       abandoned: result.abandoned,
+      skippedRatio: result.skippedRatio,
       // 상세는 운영 진단용이다. 전화번호·본문은 담기지 않는다(mo_key 와 결과 코드뿐).
       details: result.details,
     });
@@ -106,6 +114,7 @@ export async function GET(req: Request) {
     logger.error('EMMA MO 폴링 실패', { message });
     return NextResponse.json({ ok: false, message }, { status: 500 });
   } finally {
-    await kv.del(LOCK_KEY).catch(() => undefined);
+    const current = await kv.get(LOCK_KEY).catch(() => null);
+    if (current === lockToken) await kv.del(LOCK_KEY).catch(() => undefined);
   }
 }

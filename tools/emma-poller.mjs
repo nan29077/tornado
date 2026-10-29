@@ -75,7 +75,13 @@ async function pollOnce() {
     consecutiveFailures = 0;
 
     // 정상이면 조용히 지나간다. 무언가 일어났을 때만 남긴다.
-    if (body.skipped) return;
+    // skipped 는 잠금으로 건너뛴 호출이면 true, 정상 실행이면 건너뛴 행 수(숫자)다.
+    if (body.skipped === true) return;
+    if ((body.skippedRatio ?? 0) >= 0.5 && (body.fetched ?? 0) >= 10) {
+      console.warn(
+        `[${ts()}] EMMA 폴링 건너뜀 비율 높음 ${Math.round(body.skippedRatio * 100)}% (가져옴 ${body.fetched} · 건너뜀 ${body.skipped})`,
+      );
+    }
     if ((body.handed ?? 0) > 0 || (body.failed ?? 0) > 0 || (body.abandoned ?? 0) > 0 || (body.deferred ?? 0) > 0) {
       console.log(
         `[${ts()}] EMMA 폴링 처리 ${body.handed ?? 0}건` +

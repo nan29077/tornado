@@ -316,6 +316,11 @@ async function RegisterScreen({ token }: { token: string }) {
 
 // ------------------------------------------------------------- 결제 확인 화면
 
+/** 서버 시계 기준 남은 유효시간(ms). 브라우저 시계와 비교하지 않는다(P2-20b). */
+function remainingMsUntil(expiresAt: Date): number {
+  return Math.max(0, expiresAt.getTime() - Date.now());
+}
+
 async function ConfirmScreen({ token }: { token: string }) {
   const loaded = await loadConfirmContext(token);
   if (!loaded.ok) {
@@ -335,7 +340,7 @@ async function ConfirmScreen({ token }: { token: string }) {
       amountText={formatWon(ctx.amount)}
       buttonText={`${formatWon(ctx.amount)} 후원하기`}
       message={ctx.message}
-      expiresAtIso={ctx.expiresAt.toISOString()}
+      remainingMs={remainingMsUntil(ctx.expiresAt)}
       donorId={ctx.donorId ?? undefined}
       donorNickname={ctx.donorNickname ?? undefined}
       donorSnsPlatform={ctx.donorSnsPlatform ?? undefined}

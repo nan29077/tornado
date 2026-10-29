@@ -236,9 +236,19 @@ export async function listCreatorFans(
   const perPage = options.perPage ?? 20;
   const q = (options.q ?? '').trim();
 
-  const [links, signupOnly, blocked] = await Promise.all([
+  /**
+   * 상한(2,000)을 넘는 채널 (P2-20c).
+   *
+   * 예전에는 orderBy 없이 take 만 걸어, 팬이 상한을 넘으면 **DB 가 아무렇게나 고른 2,001행**으로
+   * 상위 10위와 요약을 계산했다. 고액 후원자가 순위에서 빠지고 합계가 실제보다 작게 보였다.
+   *  - 링크 행은 후원금 내림차순으로 읽는다 → 잘려도 상위 후원자는 항상 포함된다(상위 10위 정확).
+   *  - 요약(팬 수·후원 합계)은 잘린 목록이 아니라 DB 집계로 낸다.
+   */
+  const signupWhere = { creatorId, user: { donorProfile: null, deletedAt: null } };
+  const [links, signupOnly, blocked, linkAgg, supporterCount, signupCount] = await Promise.all([
     prisma.donorCreatorLink.findMany({
       where: { creatorId },
+      orderBy: [{ totalAmount: 'desc' }, { donorId: 'asc' }],
       take: FAN_SCAN_LIMIT + 1,
       select: {
         donorId: true,
@@ -260,7 +270,8 @@ export async function listCreatorFans(
     }),
     // 번호를 아직 연결하지 않아 링크 행이 없는 팬 (크리에이터마다 따로 쌓인다)
     prisma.creatorFanAccount.findMany({
-      where: { creatorId, user: { donorProfile: null, deletedAt: null } },
+      where: signupWhere,
+      orderBy: [{ createdAt: 'desc' }, { userId: 'asc' }],
       take: FAN_SCAN_LIMIT + 1,
       select: {
         createdAt: true,
@@ -268,6 +279,13 @@ export async function listCreatorFans(
       },
     }),
     prisma.blockedDonor.findMany({ where: { creatorId }, select: { donorId: true } }),
+    prisma.donorCreatorLink.aggregate({
+      where: { creatorId },
+      _count: { _all: true },
+      _sum: { totalAmount: true, totalCount: true },
+    }),
+    prisma.donorCreatorLink.count({ where: { creatorId, totalCount: { gt: 0 } } }),
+    prisma.creatorFanAccount.count({ where: signupWhere }),
   ]);
 
   const blockedSet = new Set(blocked.map((b) => b.donorId));
@@ -312,17 +330,16 @@ export async function listCreatorFans(
 
   const all = [...fromLinks, ...fromSignup];
 
-  const summary = all.reduce(
-    (acc, f) => ({
-      fanCount: acc.fanCount + 1,
-      supporterCount: acc.supporterCount + (f.totalCount > 0 ? 1 : 0),
-      totalAmount: acc.totalAmount + f.totalAmount,
-      totalCount: acc.totalCount + f.totalCount,
-    }),
-    { fanCount: 0, supporterCount: 0, totalAmount: 0n, totalCount: 0 },
-  );
+  // 요약은 DB 집계 — 상한에 걸려 잘린 목록과 무관하게 전체 기준이다. (가입만 한 팬은 후원 0)
+  const summary = {
+    fanCount: linkAgg._count._all + signupCount,
+    supporterCount,
+    totalAmount: linkAgg._sum.totalAmount ?? 0n,
+    totalCount: linkAgg._sum.totalCount ?? 0,
+  };
 
   // 후원금 상위 10위는 **검색·페이지와 무관하게** 전체 기준으로 뽑는다.
+  // 링크 행을 후원금 내림차순으로 읽었으므로 잘렸더라도 상위 10명은 이 안에 있다.
   const top = [...all]
     .filter((f) => f.totalCount > 0)
     .sort(comparator('amount'))
