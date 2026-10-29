@@ -295,7 +295,7 @@ async function CreatorsTab({
       <Notice tone="neutral" title="과세유형이 지급 방식을 결정합니다">
         <strong>비사업자(개인)</strong> 는 지급할 때 사업소득 3.3%를 원천징수하고 지급명세서를 제출합니다.
         <strong> 사업자(일반·간이·면세)</strong> 는 원천징수하지 않고 크리에이터가 계산서를 발행합니다.
-        변경은 <strong>다음 지급부터</strong> 적용되며 이미 지급된 건에는 소급되지 않습니다.
+        변경은 <strong>다음 정산 요청부터</strong> 적용되며 이미 지급된 건에는 소급되지 않습니다.
       </Notice>
 
       <FilterBar action="/admin/tax" resetHref="/admin/tax?tab=creators">
@@ -347,7 +347,7 @@ async function CreatorsTab({
                 </div>
 
                 {/*
-                  과세유형이 바뀌면 **다음 지급부터 원천징수 여부가 달라진다.**
+                  과세유형이 바뀌면 **다음 정산 요청부터 원천징수 여부가 달라진다.**
                   개인(3.3% 징수) ↔ 사업자(징수 없음) 를 잘못 저장하면 원천징수의무 불이행이 되어
                   도네이도가 가산세를 부담한다. 저장 직전에 무엇이 달라지는지 한 번 더 확인받는다.
                 */}
@@ -357,7 +357,7 @@ async function CreatorsTab({
                   confirm={
                     `${c.displayName} 님의 세무 정보를 저장합니다.\n\n` +
                     `현재 과세유형: ${label.text} (${label.withholding ? '원천징수 3.3% 적용' : '원천징수 없음'})\n` +
-                    '과세유형을 바꾸면 다음 지급부터 원천징수 여부가 달라집니다. ' +
+                    '과세유형을 바꾸면 다음 정산 요청부터 원천징수 여부가 달라집니다. ' +
                     '이미 지급된 건에는 소급되지 않습니다.'
                   }
                   disabledReason={denyReason}

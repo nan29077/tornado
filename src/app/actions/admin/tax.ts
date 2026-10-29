@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/server/db';
 import { writeAudit } from '@/server/auth';
-import { kstMonthRange } from '@/lib/datetime';
+import { kstMonthRange, isStrictMonthKey } from '@/lib/datetime';
 import { TAX_TYPES, taxTypeLabel, normalizeTaxType } from '@/lib/labels';
 import { maskBusinessNo } from '@/lib/crypto';
 import { fileWithholdingAndPurgeResidents } from '@/server/services/settlement';
@@ -35,7 +35,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 /**
  * 크리에이터 한 명의 세무 정보 저장.
  *
- * 과세유형을 바꾸면 **다음 지급부터** 원천징수 여부가 달라진다.
+ * 과세유형을 바꾸면 **다음 정산 요청부터** 원천징수 여부가 달라진다.
  * 이미 지급된 건에는 소급되지 않는다(화면에도 그렇게 안내한다).
  */
 export async function updateCreatorTaxProfile(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
@@ -107,7 +107,7 @@ export async function updateCreatorTaxProfile(_prev: AdminActionState, fd: FormD
     const changed = normalizeTaxType(before.taxType) !== taxType;
     return changed
       ? `${before.displayName} 의 과세유형을 ${taxTypeLabel[taxType].text}(으)로 변경했습니다. ` +
-          `${taxTypeLabel[taxType].withholding ? '다음 지급부터 3.3% 를 원천징수합니다.' : '다음 지급부터 원천징수하지 않습니다.'} ` +
+          `${taxTypeLabel[taxType].withholding ? '다음 정산 요청부터 3.3% 를 원천징수합니다.' : '다음 정산 요청부터 원천징수하지 않습니다.'} ` +
           '이미 지급된 건에는 적용되지 않습니다.'
       : `${before.displayName} 의 세무 정보를 저장했습니다.`;
   });
@@ -137,10 +137,11 @@ export async function markWithholdingFiled(_prev: AdminActionState, fd: FormData
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ym)) {
       throw new Error(`신고 월 형식이 올바르지 않습니다. YYYY-MM 형식으로 지정해 주세요. (입력: ${ym || '없음'})`);
     }
-    const { key, start, end } = kstMonthRange(ym);
-    if (key !== ym) {
+    // 세무 자료 다운로드(P2-10)와 같은 엄격 검사를 쓴다.
+    if (!isStrictMonthKey(ym)) {
       throw new Error(`신고 월(${ym})이 처리 가능한 범위를 벗어났습니다.`);
     }
+    const { key, start, end } = kstMonthRange(ym);
 
     const target = await prisma.settlementRequest.findMany({
       where: { status: 'PAID', paidAt: { gte: start, lt: end }, withholdingFiledAt: null },

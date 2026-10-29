@@ -1499,6 +1499,8 @@ model SettlementRequest {
   payoutBatchNo  String?                 @map("payout_batch_no")
   /// 이체파일 최초 발급 시각
   payoutIssuedAt DateTime?               @map("payout_issued_at") @db.Timestamptz(3)
+  /// 이체파일 마지막 재발급 시각 (P2-8). 재발급 파일로 이체했으면 지급일은 이 시각을 기준으로 한다.
+  payoutReissuedAt DateTime?             @map("payout_reissued_at") @db.Timestamptz(3)
   /// 크리에이터가 남기는 메모
   memo           String?
   /// 관리자 처리 메모(반려 사유 등). 크리에이터에게 노출된다.

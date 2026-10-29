@@ -1,5 +1,5 @@
 import { prisma } from '@/server/db';
-import { kstMonthRange, kstMonthKey } from '@/lib/datetime';
+import { kstMonthRange } from '@/lib/datetime';
 import { normalizeTaxType, taxTypeLabel, type TaxType } from '@/lib/labels';
 
 /**
@@ -332,66 +332,112 @@ export interface TaxDeadline {
   daysLeft: number;
 }
 
+/**
+ * P2-9 (2026-10-29): 각 기한의 **다음 도래분**을 해를 넘어 계산한다.
+ *
+ * 예전 구현의 문제
+ *  - 연간 기한(지급명세서 3/10, 법인세 3/31)을 항상 `y+1` 로 잡아, 1~3월에는 **올해 3월**에
+ *    돌아오는 전년 귀속분 기한이 빠지고 내년 기한만 보였다.
+ *  - 원천징수 신고는 "이번 달 10일" 로 고정이라 10일이 지나도 다음 달 10일로 넘어가지 않았다.
+ *  - 사업소득 간이지급명세서를 반기 제출로 안내했다. 2021-07 귀속분부터 **매월 제출**
+ *    (지급일이 속한 달의 다음 달 말일까지)이다.
+ *
+ * 지금은 기한 종류마다 전년~내년 후보를 만들고, KST 날짜 기준 오늘 이후(오늘 포함) 중
+ * 가장 이른 것 하나만 고른다. 따라서 daysLeft 는 항상 0 이상이다.
+ */
 export function getTaxDeadlines(today = new Date()): TaxDeadline[] {
   const kst = new Date(today.getTime() + 9 * 3600_000);
   const y = kst.getUTCFullYear();
-  const m = kst.getUTCMonth() + 1; // 1~12
-  const todayKey = kstMonthKey(today);
+  const todayKey = kst.toISOString().slice(0, 10);
 
   const iso = (yy: number, mm: number, dd: number) =>
     `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+  /** 달력 날짜 차이(일). 시각을 쓰지 않으므로 오늘이 기한일이면 0 이다. */
   const daysFrom = (key: string) =>
-    Math.ceil((new Date(`${key}T00:00:00+09:00`).getTime() - today.getTime()) / 86_400_000);
+    Math.round((Date.parse(`${key}T00:00:00Z`) - Date.parse(`${todayKey}T00:00:00Z`)) / 86_400_000);
+  const lastDay = (yy: number, mm: number) => new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+  /** yy년 mm월 기준으로 n개월 이동한 [연, 월] */
+  const shift = (yy: number, mm: number, n: number): [number, number] => {
+    const idx = yy * 12 + (mm - 1) + n;
+    return [Math.floor(idx / 12), (idx % 12) + 1];
+  };
+  const ymKey = (yy: number, mm: number) => `${yy}-${String(mm).padStart(2, '0')}`;
 
-  const items: Array<{ title: string; dueDate: string; detail: string }> = [];
+  type Candidate = { title: string; dueDate: string; detail: string };
+  /** 후보 중 오늘 이후 가장 이른 것 하나. */
+  const nextOf = (cands: Candidate[]): Candidate | null =>
+    cands
+      .filter((c) => c.dueDate >= todayKey)
+      .sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0))[0] ?? null;
+
+  const picked: Array<Candidate | null> = [];
+  const months: Array<[number, number]> = [];
+  // 이번 달 기준 앞뒤 13개월. 월 기한은 이 안에서 반드시 다음 도래분이 나온다.
+  for (let n = -13; n <= 13; n += 1) months.push(shift(y, kst.getUTCMonth() + 1, n));
 
   // 원천징수 이행상황신고 — 매달 10일, 전월 지급분
-  const prevMonth = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
-  items.push({
-    title: '원천징수 이행상황신고·납부',
-    dueDate: iso(y, m, 10),
-    detail: `${prevMonth} 지급분 사업소득 원천징수(소득세 3% + 지방소득세 0.3%) 신고·납부`,
-  });
+  picked.push(
+    nextOf(
+      months.map(([yy, mm]) => {
+        const [py, pm] = shift(yy, mm, -1);
+        return {
+          title: '원천징수 이행상황신고·납부',
+          dueDate: iso(yy, mm, 10),
+          detail: `${ymKey(py, pm)} 지급분 사업소득 원천징수(소득세 3% + 지방소득세 0.3%) 신고·납부`,
+        };
+      }),
+    ),
+  );
 
-  // 부가가치세 — 1/25(2기 확정), 4/25(1기 예정), 7/25(1기 확정), 10/25(2기 예정)
-  const vatMap: Record<number, string> = {
-    1: `${y - 1}년 2기 확정 (7~12월) 신고·납부`,
-    4: `${y}년 1기 예정 (1~3월) 신고·납부`,
-    7: `${y}년 1기 확정 (4~6월) 신고·납부`,
-    10: `${y}년 2기 예정 (7~9월) 신고·납부`,
-  };
-  for (const mm of [1, 4, 7, 10]) {
-    items.push({ title: '부가가치세 신고', dueDate: iso(y, mm, 25), detail: vatMap[mm] });
+  // 사업소득 간이지급명세서 — 2021-07 귀속분부터 매월. 지급월의 다음 달 말일까지
+  picked.push(
+    nextOf(
+      months.map(([yy, mm]) => {
+        const [py, pm] = shift(yy, mm, -1);
+        return {
+          title: '사업소득 간이지급명세서',
+          dueDate: iso(yy, mm, lastDay(yy, mm)),
+          detail: `${ymKey(py, pm)} 지급분 제출 (매월, 지급월의 다음 달 말일까지)`,
+        };
+      }),
+    ),
+  );
+
+  // 부가가치세 — 1/25(전년 2기 확정), 4/25(1기 예정), 7/25(1기 확정), 10/25(2기 예정)
+  const vatCands: Candidate[] = [];
+  for (const yy of [y - 1, y, y + 1]) {
+    vatCands.push(
+      { title: '부가가치세 신고', dueDate: iso(yy, 1, 25), detail: `${yy - 1}년 2기 확정 (7~12월) 신고·납부` },
+      { title: '부가가치세 신고', dueDate: iso(yy, 4, 25), detail: `${yy}년 1기 예정 (1~3월) 신고·납부` },
+      { title: '부가가치세 신고', dueDate: iso(yy, 7, 25), detail: `${yy}년 1기 확정 (4~6월) 신고·납부` },
+      { title: '부가가치세 신고', dueDate: iso(yy, 10, 25), detail: `${yy}년 2기 예정 (7~9월) 신고·납부` },
+    );
   }
+  picked.push(nextOf(vatCands));
 
-  // 사업소득 지급명세서(간이) — 반기별. 상반기 7/31, 하반기 다음 해 1/31
-  items.push({
-    title: '사업소득 간이지급명세서',
-    dueDate: iso(y, 7, 31),
-    detail: `${y}년 상반기(1~6월) 지급분 제출`,
-  });
-  items.push({
-    title: '사업소득 간이지급명세서',
-    dueDate: iso(y + 1, 1, 31),
-    detail: `${y}년 하반기(7~12월) 지급분 제출`,
-  });
-  // 사업소득 지급명세서(연간) — 다음 해 3/10
-  items.push({
-    title: '사업소득 지급명세서(연간)',
-    dueDate: iso(y + 1, 3, 10),
-    detail: `${y}년 귀속 전체 지급분 제출`,
-  });
+  // 사업소득 지급명세서(연간) — 다음 해 3/10. 1~3/10 에는 올해 3/10(전년 귀속분)이 다음 기한이다.
+  picked.push(
+    nextOf(
+      [y, y + 1].map((yy) => ({
+        title: '사업소득 지급명세서(연간)',
+        dueDate: iso(yy, 3, 10),
+        detail: `${yy - 1}년 귀속 전체 지급분 제출`,
+      })),
+    ),
+  );
   // 법인세 — 12월 결산 법인 기준 다음 해 3/31
-  items.push({
-    title: '법인세 신고·납부',
-    dueDate: iso(y + 1, 3, 31),
-    detail: `${y}년 귀속 (12월 결산 법인 기준)`,
-  });
+  picked.push(
+    nextOf(
+      [y, y + 1].map((yy) => ({
+        title: '법인세 신고·납부',
+        dueDate: iso(yy, 3, 31),
+        detail: `${yy - 1}년 귀속 (12월 결산 법인 기준)`,
+      })),
+    ),
+  );
 
-  return items
+  return picked
+    .filter((it): it is Candidate => it !== null)
     .map((it) => ({ ...it, daysLeft: daysFrom(it.dueDate) }))
-    // 이미 30일 넘게 지난 기한은 감춘다. 남은 기한이 가까운 순으로 본다.
-    .filter((it) => it.daysLeft >= -30 || it.dueDate.startsWith(todayKey))
-    .sort((a, b) => a.daysLeft - b.daysLeft)
-    .slice(0, 6);
+    .sort((a, b) => a.daysLeft - b.daysLeft);
 }

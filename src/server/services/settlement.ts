@@ -735,6 +735,34 @@ export interface MarkPaidOptions {
    * 원장 분개의 발생 시각은 그대로 "기록한 시각" 이다 — 이미 마감한 달의 원장을 소급해 바꾸지 않는다.
    */
   paidAt?: Date;
+  /**
+   * 이 상태일 때만 지급 완료 처리한다 (P2-11, 2026-10-29).
+   *
+   * 화면의 단건·일괄 [지급 완료] 는 승인(APPROVED) 건만 대상인데, 예전에는 그 확인을 락 밖에서
+   * 했다. 확인과 처리 사이에 다른 경로가 지급실패로 바꾸면 이 함수가 지급실패 재지급 경로로
+   * 처리해 버렸다. 수동 경로는 'APPROVED' 를 넘겨 **락 안에서** 다시 확인한다.
+   * 지정하면 이미 지급 완료(PAID)된 건도 멱등 처리하지 않고 오류로 돌려준다(중복 클릭을 알리기 위해).
+   * 은행 결과 반영 경로는 지정하지 않는다(APPROVED·PAYOUT_FAILED 모두 허용).
+   */
+  expectedStatus?: 'APPROVED';
+  /**
+   * paidAt 을 넘기지 않았을 때 **이체파일 발급 시각**을 지급일로 쓴다 (SET-2, 2026-10-29).
+   *
+   * 수동 [지급 완료] 는 보통 은행 이체를 끝낸 뒤 며칠 지나 누른다. 누른 시각을 지급일로 쓰면
+   * 월말 이체가 다음 달 지급분으로 신고된다(SET-K 와 같은 문제). 재발급했으면 마지막 재발급
+   * 시각을 쓴다(P2-8). 이체파일이 없는 건은 처리 시각을 쓴다.
+   */
+  paidAtFromPayoutIssue?: boolean;
+}
+
+/** 이체파일의 마지막 발급 시각 (재발급 포함, P2-8). 발급 전이면 null. */
+export function latestPayoutIssueAt(req: {
+  payoutIssuedAt: Date | null;
+  payoutReissuedAt?: Date | null;
+}): Date | null {
+  if (!req.payoutIssuedAt) return null;
+  const re = req.payoutReissuedAt ?? null;
+  return re && re.getTime() > req.payoutIssuedAt.getTime() ? re : req.payoutIssuedAt;
 }
 
 export async function markSettlementPaid(
@@ -748,6 +776,14 @@ export async function markSettlementPaid(
     withAdvisoryLock(tx, `settlement:creator:${await creatorIdOf(tx, requestId)}`, async () => {
       const req = await tx.settlementRequest.findUnique({ where: { id: requestId } });
       if (!req) throw new Error('정산 요청을 찾을 수 없습니다.');
+      // P2-11: 수동 경로는 락 안에서 상태를 다시 확인한다.
+      if (opts.expectedStatus && req.status !== opts.expectedStatus) {
+        throw new Error(
+          req.status === 'PAID'
+            ? '이미 지급 완료된 요청입니다. 화면을 새로고침해 주세요.'
+            : `승인(APPROVED) 상태가 아니어서 지급 완료 처리하지 않았습니다(현재 ${req.status}). 화면을 새로고침한 뒤 다시 확인해 주세요.`,
+        );
+      }
       if (req.status === 'PAID') return req;
 
       // 이미 지급 실패로 되돌린 건을 다시 지급 완료로 올리는 것은 사람이 판단해야 한다.
@@ -822,7 +858,9 @@ export async function markSettlementPaid(
 
       const now = new Date();
       // 지급일(원천징수 귀속월 기준). 미래 시각은 받지 않는다.
-      const paidAt = opts.paidAt && opts.paidAt.getTime() <= now.getTime() ? opts.paidAt : now;
+      const requestedPaidAt =
+        opts.paidAt ?? (opts.paidAtFromPayoutIssue ? latestPayoutIssueAt(req) ?? undefined : undefined);
+      const paidAt = requestedPaidAt && requestedPaidAt.getTime() <= now.getTime() ? requestedPaidAt : now;
       await appendLedger(
         [
           {
@@ -843,8 +881,13 @@ export async function markSettlementPaid(
         });
       }
 
-      return tx.settlementRequest.update({
-        where: { id: requestId },
+      /**
+       * P2-11: 위에서 읽은 상태가 그대로일 때만 쓴다(조건부 갱신).
+       * 반려·검토 전환은 이 락을 잡지 않고 조건부 갱신으로만 경합하므로, 그 사이 상태가 바뀌었으면
+       * 0건이 되고 트랜잭션 전체(방금 남긴 지급 분개 포함)가 되돌아간다.
+       */
+      const updated = await tx.settlementRequest.updateMany({
+        where: { id: requestId, status: req.status },
         data: {
           status: 'PAID',
           paidAt,
@@ -854,6 +897,10 @@ export async function markSettlementPaid(
           adminMemo: warnings.length > 0 ? `[주의] ${warnings.join(' / ')}` : req.adminMemo,
         },
       });
+      if (updated.count === 0) {
+        throw new Error('처리하는 사이 정산 요청 상태가 바뀌었습니다. 화면을 새로고침한 뒤 다시 확인해 주세요.');
+      }
+      return tx.settlementRequest.findUniqueOrThrow({ where: { id: requestId } });
     }),
   );
 
@@ -955,7 +1002,8 @@ export async function markPayoutFileIssued(
     return await prisma.$transaction(async (tx) => {
       const claimed = await tx.settlementRequest.updateMany({
         where: { id: { in: ids }, payoutIssuedAt: null, status: 'APPROVED' },
-        data: { payoutIssuedAt: new Date(), payoutBatchNo: batchNo },
+        // 최초 발급이면 재발급 시각은 비운다(발급 취소 뒤 다시 받은 경우 포함).
+        data: { payoutIssuedAt: new Date(), payoutBatchNo: batchNo, payoutReissuedAt: null },
       });
 
       const current = await tx.settlementRequest.findMany({
@@ -979,10 +1027,11 @@ export async function markPayoutFileIssued(
       }
 
       // 재발급 건은 최초 발급 시각을 보존하고 최신 배치번호만 갱신한다.
+      // P2-8: 재발급 시각을 따로 남긴다. 재발급 파일로 이체했으면 지급일은 이 시각이 기준이다.
       if (reissued.length > 0) {
         const re = await tx.settlementRequest.updateMany({
           where: { id: { in: reissued }, status: 'APPROVED' },
-          data: { payoutBatchNo: batchNo },
+          data: { payoutBatchNo: batchNo, payoutReissuedAt: new Date() },
         });
         // 확인과 갱신 사이에 상태가 바뀐 건이 있으면 통째로 되돌린다(SET-D).
         if (re.count !== reissued.length) {

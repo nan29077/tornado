@@ -77,7 +77,7 @@ export default async function AdminSettlementsPage({
         memo: true, adminMemo: true, payoutFailReason: true,
         residentMasked: true, residentPurgedAt: true,
         requestedAt: true, approvedAt: true, paidAt: true, rejectedAt: true,
-        payoutBatchNo: true, payoutIssuedAt: true,
+        payoutBatchNo: true, payoutIssuedAt: true, payoutReissuedAt: true,
         creator: {
           select: {
             id: true, displayName: true, code: true,
@@ -202,6 +202,8 @@ export default async function AdminSettlementsPage({
     // 지급대행 결과 반영에 필요한 배치번호를 화면에 보여 준다(SET-2).
     payoutBatchNo: r.payoutBatchNo ?? null,
     payoutIssuedAt: r.payoutIssuedAt ? formatKst(r.payoutIssuedAt, true) : null,
+    // P2-8: 재발급했으면 지급일 기준이 되는 마지막 재발급 시각도 보여 준다.
+    payoutReissuedAt: r.payoutReissuedAt ? formatKst(r.payoutReissuedAt, true) : null,
   }));
   const countOf = (s: SettlementRequestStatus) => byStatus.find((b) => b.status === s)?._count._all ?? 0;
   const sumOf = (s: SettlementRequestStatus) => byStatus.find((b) => b.status === s)?._sum.amount ?? 0n;

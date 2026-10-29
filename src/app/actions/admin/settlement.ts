@@ -12,6 +12,7 @@ import {
   appendLedger,
   getSettlementSummary,
   AMENDED_FILING_TAG,
+  latestPayoutIssueAt,
 } from '@/server/services/settlement';
 import { kstDateKey } from '@/lib/datetime';
 import { notifyUser } from '@/server/services/notifications';
@@ -93,6 +94,7 @@ export async function updateSettlementRequestStatus(
         data: {
           payoutIssuedAt: null,
           payoutBatchNo: null,
+          payoutReissuedAt: null,
           adminId: admin.id,
           adminMemo: `[발급 취소] ${memo}`,
         },
@@ -155,7 +157,13 @@ export async function updateSettlementRequestStatus(
     const now = new Date();
     if (status === 'PAID') {
       if (before.status !== 'APPROVED') throw new Error('승인된 요청만 지급 완료 처리할 수 있습니다.');
-      await markSettlementPaid(requestId, admin.id);
+      /**
+       * SET-2·P2-11 (2026-10-29)
+       *  - 지급일은 이체파일 (마지막) 발급 시각이다. 누른 시각으로 두면 월말 이체가 다음 달 지급분으로
+       *    신고된다. 이체파일 없이 직접 이체한 건만 처리 시각을 쓴다.
+       *  - 승인 상태 확인을 락 안에서 다시 한다. 위의 확인은 빠른 안내용일 뿐이다.
+       */
+      await markSettlementPaid(requestId, admin.id, undefined, { expectedStatus: 'APPROVED', paidAtFromPayoutIssue: true });
       await notifySettlement(before.creatorId, '정산 지급이 완료되었습니다', `${formatWon(before.payoutAmount)}이 지급 처리되었습니다.`);
     } else if (status === 'PAYOUT_FAILED') {
       if (before.status !== 'APPROVED' && before.status !== 'PAID') {
@@ -305,7 +313,8 @@ export async function bulkUpdateSettlementAction(
             errors.push(`${id.slice(-6)}: 지급 완료 불가 상태(${req.status}) — 승인 건만 일괄 지급 완료할 수 있습니다`);
             continue;
           }
-          await markSettlementPaid(id, admin.id);
+          // SET-2·P2-11: 단건과 같이 지급일은 이체파일 발급 시각, 승인 상태는 락 안에서 다시 확인.
+          await markSettlementPaid(id, admin.id, undefined, { expectedStatus: 'APPROVED', paidAtFromPayoutIssue: true });
           await notifySettlement(req.creatorId, '정산 지급이 완료되었습니다', `${formatWon(req.payoutAmount)}이 지급 처리되었습니다.`);
         }
         done += 1;
@@ -392,7 +401,7 @@ export async function applyPayoutResultsAction(
           where: { id },
           select: {
             creatorId: true, payoutAmount: true, status: true,
-            payoutBatchNo: true, payoutIssuedAt: true, withholdingFiledAt: true,
+            payoutBatchNo: true, payoutIssuedAt: true, payoutReissuedAt: true, withholdingFiledAt: true,
           },
         });
         if (!req) {
@@ -420,7 +429,8 @@ export async function applyPayoutResultsAction(
            *  - 없으면 이 배치의 이체파일 발급 시각 (발급 당일 이체가 운영 원칙)
            * 결과를 반영한 시각을 쓰면 월말 이체가 다음 달 지급분으로 신고된다.
            */
-          const paidAt = resolveTransferPaidAt(transferDate, req.payoutIssuedAt);
+          // P2-8: 이체일이 없으면 마지막(재)발급 시각. 이체일 하한은 최초 발급일로 둔다.
+          const paidAt = resolveTransferPaidAt(transferDate, req.payoutIssuedAt, latestPayoutIssueAt(req));
           if (typeof paidAt === 'string') {
             errors.push(`${id.slice(-6)}: ${paidAt}`);
             continue;
@@ -508,10 +518,14 @@ function parsePayoutResultLine(line: string): ParsedResultLine | null {
  * 지급일 결정 (SET-K). 오류면 사유 문자열을 돌려준다.
  *  - 이체일이 있으면: 달력에 있는 날짜이고, 발급일(KST) 이후·오늘(KST) 이전이어야 한다.
  *    발급 당일이면 발급 시각을, 그 밖의 날은 그날 KST 정오를 지급 시각으로 쓴다.
- *  - 없으면: 이체파일 발급 시각.
+ *  - 없으면: 이체파일 마지막 발급 시각(재발급했으면 재발급 시각, P2-8).
  */
-function resolveTransferPaidAt(transferDate: string | null, issuedAt: Date | null): Date | string {
-  if (!transferDate) return issuedAt ?? new Date();
+function resolveTransferPaidAt(
+  transferDate: string | null,
+  issuedAt: Date | null,
+  latestIssuedAt: Date | null = issuedAt,
+): Date | string {
+  if (!transferDate) return latestIssuedAt ?? issuedAt ?? new Date();
   const [y, m, d] = transferDate.split('-').map(Number);
   const probe = new Date(Date.UTC(y!, m! - 1, d!));
   if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== m! - 1 || probe.getUTCDate() !== d) {
@@ -520,6 +534,8 @@ function resolveTransferPaidAt(transferDate: string | null, issuedAt: Date | nul
   const issuedKey = issuedAt ? kstDateKey(issuedAt) : null;
   if (issuedKey && transferDate < issuedKey) return `이체일 ${transferDate} 이 이체파일 발급일(${issuedKey})보다 앞섭니다`;
   if (transferDate > kstDateKey()) return `이체일 ${transferDate} 이 오늘보다 뒤입니다`;
+  // 이체일이 마지막 발급일과 같으면 그 발급 시각을 쓴다(재발급 당일 이체).
+  if (latestIssuedAt && kstDateKey(latestIssuedAt) === transferDate) return latestIssuedAt;
   if (issuedAt && issuedKey === transferDate) return issuedAt;
   return new Date(`${transferDate}T12:00:00+09:00`);
 }

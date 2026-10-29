@@ -1,7 +1,7 @@
 import { requireAdmin, writeAudit } from '@/server/auth';
 import { prisma } from '@/server/db';
 // SET-G·P2-1: 음수 금액을 깨뜨리지 않고 수식 주입은 막는 공용 CSV 셀 인코더.
-import { csvCell } from '@/lib/csv';
+import { csvRow, type CsvColumnKind } from '@/lib/csv';
 import { decrypt } from '@/lib/crypto';
 import { kstMonthEndKey } from '@/lib/datetime';
 
@@ -96,13 +96,19 @@ export async function GET(req: Request) {
     '소득세(3%)', '지방소득세(10%)', '원천징수합계', '실지급액',
     '주민등록번호', '주민번호상태', '원천징수신고',
   ];
+  /**
+   * SET-1 (2026-10-29): 이 파일은 사람이 엑셀로 열어 지급명세서를 만드는 자료다.
+   * 코드·주민등록번호는 식별번호 열로 내보내 엑셀이 앞자리 0 을 지우거나 지수 표기로 바꾸지 않게 한다.
+   * 금액 열은 숫자 그대로 둔다(엑셀 합계가 되어야 한다).
+   */
+  const kinds: CsvColumnKind[] = ['auto', 'auto', 'text', 'auto', 'auto', 'auto', 'auto', 'auto', 'text', 'auto', 'auto'];
   const lines = [header.join(',')];
   for (const r of reqs) {
     // 파기 전이면 원문을, 파기 후면 마스킹만 노출한다.
     const resident = r.residentEnc ? decrypt(r.residentEnc) : (r.residentMasked ?? '');
     const state = r.residentPurgedAt ? '파기됨' : r.residentEnc ? '보관중' : '미입력';
     lines.push(
-      [
+      csvRow([
         r.paidAt ? new Date(r.paidAt.getTime() + 9 * 3600_000).toISOString().slice(0, 10) : '',
         r.creator.displayName,
         r.creator.code,
@@ -114,9 +120,7 @@ export async function GET(req: Request) {
         resident,
         state,
         r.withholdingFiledAt ? '완료' : '대기',
-      ]
-        .map(csvCell)
-        .join(','),
+      ], kinds),
     );
   }
 

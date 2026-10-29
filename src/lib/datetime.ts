@@ -96,6 +96,22 @@ export function addDays(date: Date, days: number): Date {
  */
 export const MIN_MONTH_YEAR = 2020;
 
+/**
+ * P2-10 (2026-10-29): 엄격한 월 키 검사.
+ *
+ * kstMonthRange 는 조회 화면용으로 관대하게 동작해 범위를 벗어난 값을 **이번 달로 바꾼다**.
+ * 신고·다운로드처럼 "요청한 달" 이 정확해야 하는 곳은 이 함수로 먼저 확인하고 400/오류로 돌려보낸다.
+ * (예: 세무 분기 자료에 `year=2099` 를 넣으면 이번 달 집계가 세 번 들어갔다)
+ * 허용 범위는 kstMonthRange 와 같다(MIN_MONTH_YEAR ~ 올해+1).
+ */
+export function isStrictMonthKey(ym: string, today = new Date()): boolean {
+  const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(ym);
+  if (!m) return false;
+  const maxYear = Number(kstMonthKey(today).slice(0, 4)) + 1;
+  const y = Number(m[1]);
+  return y >= MIN_MONTH_YEAR && y <= maxYear;
+}
+
 export function kstMonthRange(ym: string) {
   const m = /^(\d{4})-(\d{2})$/.exec(ym);
   const now = kstMonthKey();
