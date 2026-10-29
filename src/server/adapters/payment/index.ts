@@ -79,7 +79,26 @@ export interface ApproveRequest {
   amount: bigint;
   billKey: string;
   productName: string;
+  /** 표시용 후원자 이름(닉네임). 결제사 식별자로 쓰지 않는다. */
   buyerName?: string;
+  /**
+   * 결제사에 보내는 **고정 후원자 식별자**(donor_profile.id).
+   * 카카오페이처럼 빌키 발급 때의 partner_user_id 와 승인 때 값이 같아야 하는 결제사가 쓴다 (PAY-3).
+   * 닉네임은 바뀔 수 있어 식별자로 쓰면 안 된다.
+   */
+  partnerUserId?: string;
+  /** 후원 거래 ID. PIN/결제 URL 단계에서 이 값으로 결제 건을 만든 결제사(온기)가 쓴다 (PAY-4). */
+  donationId?: string;
+}
+
+/**
+ * 조회·취소 때 함께 넘기는 거래 참조값.
+ * providerTid: 승인 응답에서 받아 저장한 결제사 거래번호(카카오 tid 등, PAY-3).
+ * donationId : 결제 URL 을 후원 ID 로 만든 결제사(온기)가 조회 키로 쓴다 (PAY-4).
+ */
+export interface PaymentTxnRef {
+  providerTid?: string | null;
+  donationId?: string | null;
 }
 
 export interface ApproveResult {
@@ -98,6 +117,11 @@ export interface PaymentAdapter {
     notifyUrl: string;
     /** 생략하면 ACCOUNT. 카드 빌링키는 규격 수령 후 어댑터에서 분기한다. */
     method?: PaymentMethodKind;
+    /**
+     * 고정 후원자 식별자(donor_profile.id). 빌키 발급과 승인에서 같은 후원자 식별자를 요구하는
+     * 결제사(카카오페이 partner_user_id)가 쓴다 (PAY-3). completeRegistration payload 에도 donorId 로 넘긴다.
+     */
+    donorId?: string;
   }): Promise<ProviderResult<RegistrationSession>>;
   completeRegistration(payload: Record<string, unknown>): Promise<ProviderResult<RegistrationResult>>;
   /**
@@ -119,8 +143,17 @@ export interface PaymentAdapter {
   ): Promise<ProviderResult<PinLinkSession>>;
   approve(req: ApproveRequest): Promise<ProviderResult<ApproveResult>>;
   /** 타임아웃/불확실 상태에서 반드시 호출하여 최종 상태를 확정한다. */
-  inquire(orderNo: string): Promise<ProviderResult<{ status: InquiryStatus; providerTid?: string; amount?: bigint }>>;
-  cancel(input: { orderNo: string; providerTid: string; amount: bigint; reason?: string }): Promise<ProviderResult<{ canceledAt: Date }>>;
+  inquire(
+    orderNo: string,
+    ref?: PaymentTxnRef,
+  ): Promise<ProviderResult<{ status: InquiryStatus; providerTid?: string; amount?: bigint }>>;
+  cancel(input: {
+    orderNo: string;
+    providerTid: string;
+    amount: bigint;
+    reason?: string;
+    donationId?: string;
+  }): Promise<ProviderResult<{ canceledAt: Date }>>;
   revokeBillKey(billKey: string): Promise<ProviderResult<{ revokedAt: Date }>>;
 }
 
@@ -272,12 +305,22 @@ export const mockPaymentAdapter: PaymentAdapter = {
   },
 };
 
-export function getPaymentAdapter(): PaymentAdapter {
-  if (env.safety.safeMode && env.payment.provider !== 'mock') {
+/**
+ * 결제 어댑터를 고른다.
+ *
+ * @param provider 거래·빌키를 만든 결제사 이름(payment_transaction.provider / payment_method_token.provider).
+ *   생략하면 현재 설정(PAYMENT_PROVIDER)을 쓴다. 이미 만들어진 거래의 승인·조회·취소·환불은
+ *   **그 거래를 만든 결제사**로 보내야 한다 (P2-7). 운영 중 PAYMENT_PROVIDER 를 바꾼 뒤
+ *   예전 결제사 거래를 새 결제사로 조회·취소하면 "거래 없음"으로 잘못 확정된다.
+ *   예전 기본값('HECTO')처럼 대문자로 저장된 값도 소문자로 맞춰 받는다.
+ */
+export function getPaymentAdapter(provider?: string | null): PaymentAdapter {
+  const name = (provider ?? '').trim().toLowerCase() || env.payment.provider;
+  if (env.safety.safeMode && name !== 'mock') {
     logger.warn('SAFE_MODE 가 켜져 있어 실제 결제를 차단하고 mock 으로 대체합니다.');
     return mockPaymentAdapter;
   }
-  switch (env.payment.provider) {
+  switch (name) {
     case 'mock':
       return mockPaymentAdapter;
     case 'hecto': {
@@ -307,6 +350,6 @@ export function getPaymentAdapter(): PaymentAdapter {
       return adapter;
     }
     default:
-      throw new Error(`PAYMENT_PROVIDER=${env.payment.provider} 어댑터가 구현되지 않았습니다.`);
+      throw new Error(`PAYMENT_PROVIDER=${name} 어댑터가 구현되지 않았습니다.`);
   }
 }

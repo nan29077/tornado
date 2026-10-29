@@ -17,8 +17,15 @@ export const dynamic = 'force-dynamic';
  *  1) 원문 보존 + 서명/IP 검증
  *  2) 사업자 payload 정규화
  *  3) 후원 흐름 실행 (중복/미등록/한도/금칙어 처리 포함)
- *  4) 항상 200 으로 응답해 사업자 재전송 폭주를 막고, 실패는 내부 상태로 관리한다.
- *     (단 서명 실패는 401 로 명확히 거절한다)
+ *  4) 처리 결과가 확정된 수신(정상·중복·미등록·한도·금칙어 등)은 200 으로 응답한다.
+ *     서명 실패는 401, payload 형식 오류는 400 으로 거절한다(재전송해도 결과가 같다).
+ *  5) **예상하지 못한 처리 오류와 "직전 처리 미완료(retryLater)" 는 5xx 로 응답한다** (P2-6, 2026-10-29).
+ *     예전에는 오류도 200 으로 응답해 MTONET 이 재전송하지 않았고, 수신 로그만 ERROR 로 남은 채
+ *     후원자는 문자 요금만 내고 후원은 만들어지지 않았다(재처리 경로 없음).
+ *     재전송이 와도 이중 처리되지 않는다:
+ *       - provider_message_id 유니크로 같은 문자를 찾고, 후원이 생긴 행은 DUPLICATE(200)로 끝낸다.
+ *       - 후원 생성 전에 실패한 행(result=ERROR, 후원 없음)만 조건부 선점으로 다시 처리한다.
+ *       - 처리 중 멈춘 PENDING 행은 정리 배치(recoverStuckMoMessages)가 ERROR 로 풀어 준 뒤 재처리된다.
  */
 /** MO 문자 본문은 길어야 수 KB 다. 인증 전 단계이므로 과도한 본문은 기록 없이 거절한다. */
 const MAX_BODY_BYTES = 64 * 1024;
@@ -96,9 +103,22 @@ export async function POST(req: Request) {
     return finish(401, verified.reason ?? '서명 검증 실패', { ok: false, message: '인증되지 않은 요청입니다.' });
   }
 
+  let inbound: ReturnType<typeof adapter.parse>;
   try {
-    const inbound = adapter.parse(parsedBody);
+    inbound = adapter.parse(parsedBody);
+  } catch (e) {
+    // 필수값 누락·형식 오류는 재전송해도 결과가 같다. 재전송을 유도하지 않는다.
+    logger.warn('MO payload 형식 오류', { message: (e as Error).message });
+    return finish(400, `PARSE_ERROR: ${(e as Error).message}`, { ok: false, message: '요청 형식이 올바르지 않습니다.' });
+  }
+
+  try {
     const result = await handleMoInbound(inbound);
+    if (result.retryLater) {
+      // 직전 처리가 끝나지 않은 수신이다. 완료(200)로 응답하면 재전송이 오지 않아 이 문자는
+      // 다시 처리되지 않는다. 일시 오류(503)로 응답해 사업자가 나중에 다시 보내게 한다.
+      return finish(503, `${result.result}_PENDING`, { ok: false, retry: true, message: result.message });
+    }
     return finish(200, result.result, {
       ok: true,
       result: result.result,
@@ -107,7 +127,8 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     logger.error('MO 처리 오류', { message: (e as Error).message });
-    // 사업자에게는 200 으로 응답하되 내부적으로 오류를 남긴다(재전송 폭주 방지).
-    return finish(200, `ERROR: ${(e as Error).message}`, { ok: false, message: '수신은 되었으나 처리에 실패했습니다.' });
+    // 5xx 로 응답해 사업자가 재전송하게 한다. 후원 생성 전에 실패한 수신 행은 handleMoInbound 가
+    // ERROR 로 표시해 두었으므로, 재전송이 오면 같은 행을 선점해 다시 처리한다(이중 처리 없음).
+    return finish(500, `ERROR: ${(e as Error).message}`.slice(0, 500), { ok: false, retry: true, message: '처리에 실패했습니다. 다시 보내 주세요.' });
   }
 }

@@ -2,7 +2,7 @@ import { prisma } from '@/server/db';
 import { resolveSecureLink, consumeSecureLink } from './secure-link';
 import { tokenHash } from '@/lib/crypto';
 import { logger } from '@/lib/logger';
-import { executePayment, setStatus } from './donation-flow';
+import { executePayment, revertIntakeVelocity, transitionStatus } from './donation-flow';
 
 /**
  * **deprecated — 구(舊) CONFIRM_LINK 경로.**
@@ -92,16 +92,32 @@ export async function confirmDonation(token: string, ip?: string, userAgent?: st
   return executePayment(loaded.ctx.donationId);
 }
 
+/**
+ * 확인 대기 후원 한 건을 만료 취소한다 (P2-1, P2-2).
+ *
+ * 예전에는 미리 읽은 상태를 보고 setStatus 로 무조건 덮었다. 그 사이 확인 버튼으로 결제가
+ * 시작된 건(PENDING_PAYMENT)이 PAYMENT_FAILED 로 바뀔 수 있었고, 화면 열람과 배치가 겹치면
+ * 상태 이력이 두 번 남았다. 또 접수 때 소진한 속도 카운터를 되돌리지 않았다.
+ * 조건부 전이(PENDING_CONFIRM → PAYMENT_FAILED)에 이긴 호출만 카운터를 되돌린다.
+ *
+ * @returns 이 호출이 실제로 취소했으면 true
+ */
+async function expireConfirmation(donationId: string): Promise<boolean> {
+  const moved = await transitionStatus(donationId, 'PENDING_CONFIRM', 'PAYMENT_FAILED', '확인 시간 초과로 자동 취소');
+  if (moved) await revertIntakeVelocity(donationId);
+  return moved;
+}
+
 /** 만료된 확인 링크 한 건에 연결된 확인 대기 후원을 취소한다. */
 async function expireConfirmationByToken(token: string) {
   const link = await prisma.secureLink.findUnique({
     where: { tokenHash: tokenHash(token) },
-    select: { purpose: true, donationId: true },
+    select: { purpose: true, donationId: true, usedAt: true },
   });
   if (!link || link.purpose !== 'CONFIRM_PAYMENT' || !link.donationId) return;
-  const d = await prisma.donation.findUnique({ where: { id: link.donationId }, select: { status: true } });
-  if (d?.status !== 'PENDING_CONFIRM') return;
-  await setStatus(link.donationId, 'PAYMENT_FAILED', '확인 시간 초과로 자동 취소');
+  // 이미 소비된 링크는 결제가 시작됐거나 복구 대기(recoverStaleConfirmedDonations) 중이다.
+  if (link.usedAt) return;
+  await expireConfirmation(link.donationId);
 }
 
 /** 만료된 확인 대기 건 정리 (배치) */
@@ -113,11 +129,8 @@ export async function expireStaleConfirmations(now = new Date()) {
   let count = 0;
   for (const s of stale) {
     if (!s.donationId) continue;
-    const d = await prisma.donation.findUnique({ where: { id: s.donationId }, select: { status: true } });
-    if (d?.status !== 'PENDING_CONFIRM') continue;
-    // setStatus 를 거쳐야 DonationStatusLog 감사 이력이 남는다
-    await setStatus(s.donationId, 'PAYMENT_FAILED', '확인 시간 초과로 자동 취소');
-    count += 1;
+    // 조건부 전이 — DonationStatusLog 감사 이력은 실제로 바꾼 경우에만 남는다.
+    if (await expireConfirmation(s.donationId)) count += 1;
   }
   return count;
 }

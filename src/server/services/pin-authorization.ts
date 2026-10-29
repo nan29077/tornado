@@ -1,6 +1,6 @@
 import { prisma } from '@/server/db';
 import { logger } from '@/lib/logger';
-import { executePayment, revertIntakeVelocity, setStatus } from './donation-flow';
+import { executePayment, revertIntakeVelocity, transitionStatus } from './donation-flow';
 import type { DonationStatus } from '@/generated/prisma/enums';
 
 /**
@@ -124,16 +124,28 @@ export async function completePinAuthorization(input: PinCallbackInput): Promise
         resultNote: '유효시간 경과 후 도착한 콜백',
       },
     });
-    if (donation.status === 'PENDING_PIN') {
-      await setStatus(session.donationId, 'PAYMENT_FAILED', 'PIN 입력 시간 초과로 자동 취소');
-      // 세션 선점에 이긴 요청만 접수 때 소진한 속도 카운터를 되돌린다(PAY-E, 이중 되돌림 방지).
-      if (expiredClaim.count === 1) await revertIntakeVelocity(session.donationId);
+    /**
+     * 세션 선점에 이긴 요청만, 그리고 후원이 **지금도** PIN 대기일 때만 취소한다 (P2-2).
+     * 위에서 읽은 donation.status 는 오래됐을 수 있다. 무조건 덮으면 그 사이 결제로 넘어간 건
+     * (PENDING_PAYMENT 이후)이 PAYMENT_FAILED 로 바뀌고, 선점에 진 중복 콜백도 상태 이력을 또 남겼다.
+     */
+    let expiredStatus: DonationStatus = donation.status;
+    if (expiredClaim.count === 1) {
+      const moved = await transitionStatus(session.donationId, 'PENDING_PIN', 'PAYMENT_FAILED', 'PIN 입력 시간 초과로 자동 취소');
+      if (moved) {
+        expiredStatus = 'PAYMENT_FAILED';
+        // 접수 때 소진한 속도 카운터를 되돌린다(PAY-E). 전이에 이긴 호출만 온다(이중 되돌림 방지).
+        await revertIntakeVelocity(session.donationId);
+      } else {
+        const cur = await prisma.donation.findUnique({ where: { id: session.donationId }, select: { status: true } });
+        expiredStatus = cur?.status ?? donation.status;
+      }
     }
     return {
       ok: false,
       code: 'EXPIRED',
       donationId: session.donationId,
-      status: 'PAYMENT_FAILED',
+      status: expiredStatus,
       message: 'PIN 입력 시간이 지나 후원이 취소되었습니다. 결제는 진행되지 않았습니다.',
     };
   }
@@ -266,9 +278,8 @@ export async function failPinAuthorization(
     };
   }
 
-  if (donation.status === 'PENDING_PIN') {
-    // setStatus 를 거쳐야 DonationStatusLog 감사 이력이 남는다
-    await setStatus(session.donationId, 'PAYMENT_FAILED', `PIN 인증 실패: ${note}`.slice(0, 500));
+  // 조건부 전이로 바꿔야 그 사이 결제로 넘어간 건을 덮지 않는다(P2-2). 이력은 전이했을 때만 남는다.
+  if (await transitionStatus(session.donationId, 'PENDING_PIN', 'PAYMENT_FAILED', `PIN 인증 실패: ${note}`.slice(0, 500))) {
     // 출금 없이 끝났다. 접수 때 소진한 속도 카운터를 되돌린다(PAY-E). 위 선점에 이긴 요청만 온다.
     await revertIntakeVelocity(session.donationId);
   }
@@ -304,11 +315,8 @@ export async function expirePinSessionIfStale(donationId: string, now = new Date
   });
   if (claimed.count !== 1) return false;
 
-  const d = await prisma.donation.findUnique({ where: { id: donationId }, select: { status: true } });
-  // 이미 결제로 넘어간 건(PENDING_PAYMENT 이후)은 건드리지 않는다.
-  if (d?.status !== 'PENDING_PIN') return false;
-  // setStatus 를 거쳐야 DonationStatusLog 감사 이력이 남는다
-  await setStatus(donationId, 'PAYMENT_FAILED', 'PIN 입력 시간 초과로 자동 취소');
+  // 이미 결제로 넘어간 건(PENDING_PAYMENT 이후)은 건드리지 않는다. 조건부 전이로 확인한다(P2-2).
+  if (!(await transitionStatus(donationId, 'PENDING_PIN', 'PAYMENT_FAILED', 'PIN 입력 시간 초과로 자동 취소'))) return false;
   // 출금 없이 끝났다. 접수 때 소진한 속도 카운터를 되돌린다(PAY-E). 위 선점에 이긴 호출만 온다.
   await revertIntakeVelocity(donationId);
   return true;
@@ -382,9 +390,7 @@ export async function cancelPendingPinDonation(donationId: string, reason: strin
   });
   if (claimed.count !== 1) return false;
 
-  const d = await prisma.donation.findUnique({ where: { id: donationId }, select: { status: true } });
-  if (d?.status !== 'PENDING_PIN') return false;
-  await setStatus(donationId, 'PAYMENT_FAILED', reason);
+  if (!(await transitionStatus(donationId, 'PENDING_PIN', 'PAYMENT_FAILED', reason))) return false;
   // 출금 없이 끝났다. 접수 때 소진한 속도 카운터를 되돌린다(PAY-E). 위 선점에 이긴 호출만 온다.
   await revertIntakeVelocity(donationId);
   return true;

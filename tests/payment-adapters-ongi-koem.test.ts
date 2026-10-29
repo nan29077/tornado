@@ -836,6 +836,7 @@ describe('카카오페이 어댑터', () => {
       amount: 5000n,
       billKey: 'SID-TEST',
       productName: '후원',
+      partnerUserId: 'DONOR-1',
     });
 
     const headers = capturedHeaders as Record<string, string>;
