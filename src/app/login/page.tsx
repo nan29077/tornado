@@ -8,7 +8,7 @@ import { Button, Card, CardTitle, Field, Input, Notice, LinkButton } from '@/com
 import { SocialAuthButtons } from '@/components/public/social-auth';
 import { TestLoginPanel } from '@/components/public/test-login';
 import { SOCIAL_LABEL, type SocialProvider } from '@/server/adapters/social';
-import { isLocal } from '@/lib/env';
+import { isDevFeatureRequestAllowed } from '@/server/request-ip';
 
 export const metadata: Metadata = {
   title: '로그인 | 도네이도',
@@ -32,17 +32,18 @@ export default async function LoginPage({
 }) {
   const sp = await searchParams;
   const providerLabel =
-    sp.provider && sp.provider in SOCIAL_LABEL ? SOCIAL_LABEL[sp.provider as SocialProvider] : null;
+    sp.provider && Object.hasOwn(SOCIAL_LABEL, sp.provider) ? SOCIAL_LABEL[sp.provider as SocialProvider] : null;
 
   const errorText =
     sp.error === 'social_not_ready'
       ? `${providerLabel ?? '소셜'} 간편 로그인은 연동 준비 중입니다. 이메일로 로그인해 주세요.`
       : sp.error
-        ? (ERROR_MESSAGES[sp.error] ?? decodeURIComponent(sp.error))
+        ? ((Object.hasOwn(ERROR_MESSAGES, sp.error) ? ERROR_MESSAGES[sp.error] : undefined) ?? safeDecode(sp.error))
         : null;
 
-  // 테스트 로그인과 시드 계정 안내는 로컬 개발 환경에서만 노출한다.
-  const showTestLogin = isLocal;
+  // 테스트 로그인과 시드 계정 안내는 로컬 개발 환경에서, 이 컴퓨터로 직접 접속했을 때만 노출한다.
+  // [SEC-1] 터널 주소로 공유된 미리보기에서는 숨긴다(ALLOW_DEV_LOGIN_ON_TUNNEL=1 예외).
+  const showTestLogin = await isDevFeatureRequestAllowed();
 
   return (
     <PublicShell aside={<LoginAside />}>
@@ -118,7 +119,8 @@ export default async function LoginPage({
         <div className="mt-4">
           <TestLoginPanel
             seedAccounts={[
-              { email: 'admin@tornado.kr', password: 'tornado1234!' },
+              // [P2-14] 관리자 시드 비밀번호는 공개 저장소에 적지 않는다(SEED_ADMIN_PASSWORD 또는 시드 실행 시 1회 출력).
+              { email: 'admin@tornado.kr', password: '시드 실행 시 출력된 값 (또는 SEED_ADMIN_PASSWORD)' },
               { email: 'creator1@tornado.kr', password: 'tornado1234!' },
               { email: 'donor@tornado.kr', password: 'tornado1234!' },
             ]}
@@ -128,6 +130,15 @@ export default async function LoginPage({
 
     </PublicShell>
   );
+}
+
+/** 잘못된 퍼센트 인코딩(?error=%E0)이 URIError 로 500 을 내지 않게 한다. */
+function safeDecode(v: string): string {
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
 }
 
 function LoginAside() {

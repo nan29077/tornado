@@ -66,7 +66,7 @@ npm run dev                       # http://localhost:3025
 
 | 구분 | 계정 | 비밀번호 |
 |---|---|---|
-| 통합 관리자 | `admin@tornado.kr` | `tornado1234!` |
+| 통합 관리자 | `admin@tornado.kr` | 시드 실행 시 한 번 출력되는 무작위 값 (또는 `.env` 의 `SEED_ADMIN_PASSWORD`) |
 | 크리에이터 | `creator1@tornado.kr` | `tornado1234!` (코드 `TOR-8K2M`, 전용번호 `168812341001`) |
 | 크리에이터 | `creator2@tornado.kr` | `tornado1234!` (코드 `TOR-3QP7`, 전용번호 `168812342002`) |
 | 테스트 후원자 | `010-1234-5678` | 계좌 등록 완료 상태 |

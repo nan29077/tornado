@@ -45,8 +45,8 @@ export default async function AdminUsersPage({
   const now = new Date();
   const page = parsePage(sp.page);
   const q = (sp.q ?? '').trim();
-  const role = sp.role && sp.role in roleLabel ? (sp.role as UserRole) : undefined;
-  const status = sp.status && sp.status in userStatusLabel ? (sp.status as UserStatus) : undefined;
+  const role = sp.role && Object.hasOwn(roleLabel, sp.role) ? (sp.role as UserRole) : undefined;
+  const status = sp.status && Object.hasOwn(userStatusLabel, sp.status) ? (sp.status as UserStatus) : undefined;
   /** 'none' = 번호가 없는 크리에이터만. 번호 부여 대상을 한 번에 뽑기 위한 필터. */
   const moFilter = sp.mo === 'none' ? 'none' : undefined;
 

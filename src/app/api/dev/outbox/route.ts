@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isLocal } from '@/lib/env';
+import { isDevFeatureAllowedFor } from '@/server/request-ip';
 import { readMockOutbox } from '@/server/adapters/mt';
 
 export const runtime = 'nodejs';
@@ -12,8 +12,9 @@ export const dynamic = 'force-dynamic';
  * (MO 수신 → 계좌 등록 → 확인 링크 → 결제)을 검증할 때만 사용한다.
  * APP_ENV=local 이 아니면 404 를 반환하며, 운영 배포 시에는 이 라우트를 제거한다.
  */
-export async function GET() {
-  if (!isLocal) {
+export async function GET(req: Request) {
+  // [SEC-1] local 이어도 터널로 들어온 요청에는 보안링크 원문을 내주지 않는다.
+  if (!isDevFeatureAllowedFor((name) => req.headers.get(name))) {
     return NextResponse.json({ ok: false, message: 'not found' }, { status: 404 });
   }
   return NextResponse.json({

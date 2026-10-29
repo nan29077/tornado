@@ -85,7 +85,9 @@ export function createReporter(title) {
 export async function login(page, email, { expectUrl = /\/(studio|admin|my|)$/ } = {}) {
   await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' });
   await page.fill('input[name=email]', email);
-  await page.fill('input[name=password]', PASSWORD);
+  // 최고관리자 시드 비밀번호는 더 이상 고정값이 아니다(P2-14). SEED_ADMIN_PASSWORD 로 시드한 DB 를 쓴다.
+  const pw = email === 'admin@tornado.kr' && process.env.SEED_ADMIN_PASSWORD ? process.env.SEED_ADMIN_PASSWORD : PASSWORD;
+  await page.fill('input[name=password]', pw);
   await Promise.all([
     page.waitForURL(expectUrl, { timeout: 20_000 }),
     page.click('button[type=submit]'),

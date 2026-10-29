@@ -74,7 +74,7 @@ echo   2_개발서버실행.bat 을 실행하면 앱이 열립니다.
 echo ==========================================
 echo.
 echo   주소       http://localhost:3025
-echo   관리자     admin@tornado.kr / tornado1234!
+echo   관리자     admin@tornado.kr / (시드 실행 시 출력값 또는 SEED_ADMIN_PASSWORD)
 echo   크리에이터 creator1@tornado.kr / tornado1234!
 echo.
 pause

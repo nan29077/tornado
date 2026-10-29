@@ -239,6 +239,13 @@ async function main() {
      * 아무 문구 없이 거부된다. **빌드와 실행 양쪽**에 이 표시를 넣어야 한다.
      */
     TORNADO_LOCAL_PREVIEW: '1',
+    /**
+     * 미리보기는 내 컴퓨터에서 도는 실행이므로 APP_ENV 를 비워 두었다면 local 로 정한다.
+     * .env.example 의 APP_ENV 기본값은 비어 있다(복사해 운영에 쓰다 local 로 남는 사고 방지, SEC-1).
+     * 비운 채 프로덕션 빌드로 뜨면 prod 로 판정되어 운영 점검에 걸려 기동되지 않는다.
+     * 명시적으로 넣은 값은 그대로 존중한다.
+     */
+    APP_ENV: (process.env.APP_ENV ?? '').trim() || 'local',
   };
   Object.assign(process.env, previewEnv);
 

@@ -16,6 +16,10 @@ export async function register() {
   const { installCryptoProvider } = await import('@/server/crypto-provider');
   await installCryptoProvider();
 
+  // [P2-14] 공개된 기본 비밀번호로 들어가지는 시드 관리자가 남아 있으면 운영 기동을 막는다.
+  const { assertNoLegacySeedAdmin } = await import('@/server/boot-checks');
+  await assertNoLegacySeedAdmin(env.appEnv);
+
   if (env.appEnv !== 'prod') {
     console.info(`[env] APP_ENV=${env.appEnv} / NODE_ENV=${env.nodeEnv} 로 기동합니다.`);
   }

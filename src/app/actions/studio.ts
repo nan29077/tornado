@@ -91,6 +91,12 @@ function text(formData: FormData, key: string): string {
   return typeof v === 'string' ? v.trim() : '';
 }
 
+/** 비밀번호 입력값. 공백도 비밀번호의 일부이므로 trim 하지 않는다 (SEC-2). */
+function rawPassword(formData: FormData, key: string): string {
+  const v = formData.get(key);
+  return typeof v === 'string' ? v : '';
+}
+
 function checked(formData: FormData, key: string): boolean {
   return formData.get(key) != null;
 }
@@ -1280,9 +1286,15 @@ export async function changeCreatorPasswordAction(
   formData: FormData,
 ): Promise<StudioActionState> {
   return withCreator(async (_creatorId, userId) => {
-    const current = text(formData, 'currentPassword');
-    const next = text(formData, 'newPassword');
-    const confirm = text(formData, 'newPasswordConfirm');
+    /**
+     * [SEC-2] 비밀번호는 **다듬지 않은 원문** 그대로 쓴다.
+     * text() 는 앞뒤 공백을 지운다. 가입·로그인·재설정은 원문을 쓰므로, 여기서만 trim 하면
+     * 끝에 공백이 들어간 비밀번호를 가진 사람은 현재 비밀번호 확인에서 늘 실패하고,
+     * 새 비밀번호를 " abc…" 로 정하면 실제로는 "abc…" 가 저장되어 다음 로그인이 막힌다.
+     */
+    const current = rawPassword(formData, 'currentPassword');
+    const next = rawPassword(formData, 'newPassword');
+    const confirm = rawPassword(formData, 'newPasswordConfirm');
 
     if (!current) return { ok: false, message: '현재 비밀번호를 입력해 주세요.' };
     if (next.length < 8 || next.length > 72) {

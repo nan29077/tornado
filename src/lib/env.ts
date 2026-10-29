@@ -441,6 +441,109 @@ export function isMailDeliveryIntegrated(): boolean {
   return false;
 }
 
+/**
+ * [P2-12] 클라이언트 IP 를 X-Forwarded-For 가 아닌 헤더에서 읽어도 되는지.
+ *
+ * CF-Connecting-IP / X-Real-IP 는 **아무 클라이언트나 직접 써 넣을 수 있는 헤더**다.
+ * 앞단(Cloudflare, Nginx)이 그 값을 덮어쓴다는 것이 보장될 때만 믿어야 하므로,
+ * 기본값은 false 이고 운영자가 구성에 맞게 명시적으로 켠다.
+ * (호출 시점에 읽는다 — 테스트와 운영 전환에서 재기동 없이 값이 반영되게)
+ */
+export function trustCfConnectingIpHeader(): boolean {
+  return bool('TRUST_CF_HEADER', false);
+}
+export function trustRealIpHeader(): boolean {
+  return bool('TRUST_REAL_IP_HEADER', false);
+}
+
+/**
+ * [SEC-1] 터널(외부 주소)로 들어온 요청에도 개발 전용 기능(테스트 로그인, 개발 아웃박스)을 열지.
+ * 기본값 false. 로컬 미리보기를 Cloudflare 터널로 공유할 때 그 주소를 아는 누구나
+ * 비밀번호 없이 최고관리자로 들어오는 것을 막는다. 위험을 알고 시연할 때만 1 로 켠다.
+ */
+export function allowDevLoginOnTunnel(): boolean {
+  return bool('ALLOW_DEV_LOGIN_ON_TUNNEL', false);
+}
+
+/** 루프백·사설망(RFC1918, 링크로컬, IPv6 ULA) 호스트/IP 인지. 포트·대괄호는 미리 떼고 넘긴다. */
+export function isLoopbackOrPrivateHost(hostname: string): boolean {
+  const h = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  if (!h) return false;
+  if (h === 'localhost' || h.endsWith('.localhost')) return true;
+  if (h === '::1' || h === '0.0.0.0') return true;
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(h);
+  const v4 = mapped ? mapped[1] : h;
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(v4);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    if ([a, b, Number(m[3]), Number(m[4])].some((n) => n > 255)) return false;
+    return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
+  }
+  // IPv6 ULA(fc00::/7)·링크로컬(fe80::/10)
+  if (h.includes(':')) return /^f[cd][0-9a-f]{2}:/.test(h) || /^fe[89ab][0-9a-f]:/.test(h);
+  return false;
+}
+
+/**
+ * [SEC-1] APP_ENV=local 로 띄워도 되는 상황인지 점검한다.
+ *
+ * APP_ENV=local 은 테스트 로그인(비밀번호 없는 최고관리자), 개발 아웃박스, 서명 없는 PIN 콜백을
+ * 연다. 그런데 예전 운영 점검(assertProductionSafety)은 `!isProd` 이면 곧바로 빠져나가서,
+ * .env.example 을 그대로 복사한 운영 서버(APP_ENV="local")는 **모든 점검이 꺼진 채** 떴다.
+ *
+ * 그래서 local 은 "내 컴퓨터에서 도는 실행" 임이 드러날 때만 허용한다.
+ *  - 프로덕션 빌드(NODE_ENV=production)는 로컬 미리보기 실행기(tools/preview.mjs 가 넣는
+ *    TORNADO_LOCAL_PREVIEW=1)일 때만 허용한다. `next start` 로 직접 띄운 서버는 막는다.
+ *  - APP_BASE_URL 이 공개 주소(localhost·사설망이 아님)면 막는다. 공개 도메인으로 서비스하면서
+ *    local 로 둘 이유가 없다. (터널 미리보기는 APP_BASE_URL 을 localhost 로 두고 요청 호스트를 쓴다)
+ */
+export function localModeProblems(): string[] {
+  if (!isLocal) return [];
+  const problems: string[] = [];
+  if (NODE_ENV === 'production' && process.env.TORNADO_LOCAL_PREVIEW !== '1') {
+    problems.push(
+      'APP_ENV=local 인데 프로덕션 빌드(NODE_ENV=production)로 기동했습니다. local 은 테스트 로그인·개발 아웃박스를 ' +
+        '열어 두므로 운영 서버에서는 쓸 수 없습니다. 운영이면 APP_ENV=prod(또는 비움)로, 로컬 확인이면 ' +
+        '1_미리보기실행.bat(npm run preview)으로 실행하십시오.',
+    );
+  }
+  let host = '';
+  try {
+    host = new URL(env.baseUrl).hostname;
+  } catch {
+    host = '';
+  }
+  if (!isLoopbackOrPrivateHost(host)) {
+    problems.push(
+      `APP_ENV=local 인데 APP_BASE_URL(${env.baseUrl}) 이 공개 주소입니다. 공개 도메인으로 서비스한다면 ` +
+        'APP_ENV=prod 또는 staging 으로 설정하십시오. (터널 미리보기는 APP_BASE_URL 을 localhost 로 둡니다)',
+    );
+  }
+  return problems;
+}
+
+/**
+ * [P2-13] .env.example 에 실린 예시 값. 공개 저장소에 있으므로 운영에서 그대로 쓰면 비밀이 아니다.
+ */
+const EXAMPLE_SECRET_VALUES: ReadonlySet<string> = new Set([
+  'dev-only-mo-webhook-secret',
+  'dev-only-phone-hmac-secret-change-me',
+  'dev-only-session-secret-change-me-please',
+  'ZGV2LW9ubHktbWFzdGVyLWtleS0zMi1ieXRlcy0hIQ==',
+]);
+
+/** 공유 비밀의 최소 길이. `openssl rand -hex 32`(64자) 정도를 권장한다. */
+export const MIN_SHARED_SECRET_LENGTH = 32;
+
+/** 비밀값이 약하면 이유를, 괜찮으면 null 을 돌려준다. */
+export function weakSecretReason(value: string, minLength = MIN_SHARED_SECRET_LENGTH): string | null {
+  const v = value.trim();
+  if (v.toLowerCase().startsWith('dev-only')) return '개발용 기본값(dev-only…)입니다';
+  if (EXAMPLE_SECRET_VALUES.has(v)) return '.env.example 의 예시 값입니다';
+  if (v.length < minLength) return `${minLength}자 미만입니다`;
+  return null;
+}
+
 /** 운영 배포 전 반드시 통과해야 하는 환경 점검 */
 export function assertProductionSafety(): string[] {
   const problems: string[] = [];
@@ -477,6 +580,23 @@ export function assertProductionSafety(): string[] {
   if (!env.emma.enabled) {
     if (env.mo.allowedIps.length === 0) problems.push('MO_ALLOWED_IPS 가 비어 있습니다.');
     if (!env.mo.webhookSecret) problems.push('MO_WEBHOOK_SECRET 이 비어 있습니다.');
+  }
+  /**
+   * [P2-13] 값이 "있기만 하면" 통과시키던 공유 비밀들.
+   * .env.example 의 MO_WEBHOOK_SECRET 은 dev-only 기본값이 채워져 있어서, 그대로 복사한 운영
+   * 서버는 공개 저장소에 적힌 값으로 MO 웹훅 서명을 검증하고 있었다. 설정된 값은 모두 강도를 본다.
+   */
+  const sharedSecrets: Array<[string, string]> = [
+    ['MO_WEBHOOK_SECRET', env.mo.webhookSecret],
+    ['CRON_SECRET', env.cron.secret],
+    ['PAYMENT_PIN_CALLBACK_SECRET', env.payment.pinCallbackSecret],
+  ];
+  for (const [key, value] of sharedSecrets) {
+    if (!value) continue;
+    const reason = weakSecretReason(value);
+    if (reason) {
+      problems.push(`${key} 가 약합니다 (${reason}). openssl rand -hex 32 로 만든 값으로 교체하십시오.`);
+    }
   }
   // 비어 있으면 PIN 완료 콜백이 전건 거절되어 결제가 영원히 완료되지 않는다.
   if (!env.payment.pinCallbackSecret) problems.push('PAYMENT_PIN_CALLBACK_SECRET 이 비어 있습니다.');
@@ -656,7 +776,7 @@ export function bootWarnings(): string[] {
  * — 잘못된 설정으로 조용히 서비스가 뜨는 것이 가장 위험하다.
  */
 export function assertBootSafety(): void {
-  const problems = assertProductionSafety();
+  const problems = [...localModeProblems(), ...assertProductionSafety()];
   if (problems.length > 0) {
     const msg = `[env] 운영 환경 설정 점검 실패\n- ${problems.join('\n- ')}`;
     throw new Error(msg);
