@@ -3,6 +3,8 @@ import Redis from 'ioredis';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { quietRedisWhenUnavailable, redisRetryStrategy } from '@/server/redis-quiet';
+import { closeStaleOverlayConnections } from '@/server/services/overlay-connections';
+import { primeOverlayTokenHash } from '@/server/services/overlay-token-check';
 
 /**
  * 오버레이 실시간 이벤트 버스 (SSE 백엔드).
@@ -82,6 +84,18 @@ export interface OverlayEventPayload {
 }
 
 const CHANNEL = 'tornado:overlay';
+/**
+ * [OV-1] 오버레이 토큰 재발급 알림 채널.
+ * 재발급한 인스턴스만 자기 연결을 끊으면, 다른 인스턴스에 붙은 유출 OBS 는 계속 후원 알림을 받는다.
+ * 후원 알림과 같은 Redis 연결을 쓰되 채널을 나눠 후원 알림 처리에 섞이지 않게 한다.
+ */
+const REVOKE_CHANNEL = 'tornado:overlay:revoke';
+
+/** 재발급 알림 본문. 토큰 원문은 싣지 않는다(해시만). */
+interface OverlayRevokeMessage {
+  creatorId: string;
+  tokenHash: string | null;
+}
 
 const globalForBus = globalThis as unknown as {
   overlayEmitter?: EventEmitter;
@@ -203,19 +217,8 @@ function ensureRedis() {
     quietRedisWhenUnavailable(sub, '후원 알림 구독', () => {
       globalForBus.overlaySub = undefined;
     });
-    sub.subscribe(CHANNEL).catch((e: Error) => logger.warn('overlay subscribe 실패', { message: e.message }));
-    sub.on('message', (_ch: string, raw: string) => {
-      try {
-        const payload = JSON.parse(raw) as OverlayEventPayload;
-        // 이 프로세스에서 이미 로컬로 전달한 이벤트가 Redis 를 거쳐 되돌아온 경우 중복 재생을 막는다.
-        if (recentLocalEventIds.has(payload.eventId)) return;
-        // 이 인스턴스로 합성 요청이 들어올 수 있으므로 재생 여부와 무관하게 문장은 기억해 둔다.
-        rememberTtsGrant(payload);
-        emitter.emit(payload.creatorId, payload);
-      } catch {
-        /* ignore */
-      }
-    });
+    sub.subscribe(CHANNEL, REVOKE_CHANNEL).catch((e: Error) => logger.warn('overlay subscribe 실패', { message: e.message }));
+    sub.on('message', (ch: string, raw: string) => handleOverlayBusMessage(ch, raw));
     globalForBus.overlayPub = pub;
     globalForBus.overlaySub = sub;
   } catch (e) {
@@ -223,7 +226,58 @@ function ensureRedis() {
   }
 }
 
+/**
+ * Redis 로 받은 메시지 처리. 다른 인스턴스가 보낸 메시지를 흉내 내는 테스트에서도 쓴다.
+ */
+export function handleOverlayBusMessage(channel: string, raw: string): void {
+  try {
+    if (channel === REVOKE_CHANNEL) {
+      const msg = JSON.parse(raw) as OverlayRevokeMessage;
+      if (!msg?.creatorId) return;
+      applyOverlayRevoke(msg.creatorId, msg.tokenHash ?? null);
+      return;
+    }
+    const payload = JSON.parse(raw) as OverlayEventPayload;
+    // 이 프로세스에서 이미 로컬로 전달한 이벤트가 Redis 를 거쳐 되돌아온 경우 중복 재생을 막는다.
+    if (recentLocalEventIds.has(payload.eventId)) return;
+    // 이 인스턴스로 합성 요청이 들어올 수 있으므로 재생 여부와 무관하게 문장은 기억해 둔다.
+    rememberTtsGrant(payload);
+    emitter.emit(payload.creatorId, payload);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 이 프로세스의 연결 중 현재 토큰과 다른 것을 끊고, 토큰 재확인 캐시도 새 값으로 바꾼다. */
+function applyOverlayRevoke(creatorId: string, tokenHash: string | null): number {
+  primeOverlayTokenHash(creatorId, tokenHash);
+  return closeStaleOverlayConnections(creatorId, tokenHash);
+}
+
 ensureRedis();
+
+/**
+ * [OV-1] 오버레이 토큰 재발급을 모든 인스턴스에 알린다.
+ *
+ * - 이 프로세스: 즉시 끊는다(Redis 가 없어도 단일 인스턴스는 이것으로 충분하다).
+ * - 다른 인스턴스: Redis 로 알려 각자 끊게 한다. 자기 자신에게 되돌아온 알림은 이미 끊은 뒤라
+ *   아무 일도 일어나지 않는다(현재 해시와 같은 연결만 남아 있다).
+ * - Redis 전파가 실패해도 각 스트림이 하트비트마다 토큰을 다시 확인하므로 20초 안에 끊긴다.
+ *
+ * @returns 이 프로세스에서 끊은 연결 수
+ */
+export function revokeOverlayToken(creatorId: string, currentTokenHash: string): number {
+  const closed = applyOverlayRevoke(creatorId, currentTokenHash);
+  const message: OverlayRevokeMessage = { creatorId, tokenHash: currentTokenHash };
+  globalForBus.overlayPub?.publish(REVOKE_CHANNEL, JSON.stringify(message)).catch((e: Error) => {
+    logger.warn('오버레이 토큰 재발급 Redis 전파 실패. 다른 인스턴스는 하트비트 재확인으로 끊는다.', {
+      creatorId,
+      redisStatus: globalForBus.overlayPub?.status ?? 'none',
+      message: e.message,
+    });
+  });
+  return closed;
+}
 
 
 export function publishOverlayEvent(payload: OverlayEventPayload) {

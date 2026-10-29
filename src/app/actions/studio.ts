@@ -9,7 +9,7 @@ import { newId } from '@/lib/id';
 import { env } from '@/lib/env';
 import { accountTail4, decrypt, encrypt, generateToken, isValidResident, maskName, maskSecret, normalizeResident, tokenHash } from '@/lib/crypto';
 import { sendTestOverlay } from '@/server/services/broadcast-dispatch';
-import { closeOverlayConnections } from '@/server/services/overlay-connections';
+import { revokeOverlayToken } from '@/server/services/overlay-bus';
 import { DISPLAY_PAID_STATUSES } from '@/components/studio/shared';
 import { OVERLAY_EFFECTS } from '@/server/services/overlay-tiers';
 import { OVERLAY_TEXT_ANIM_VALUES, textAnimOf } from '@/lib/overlay-text-anim';
@@ -424,8 +424,12 @@ export async function regenerateOverlayTokenAction(
      * 토큰 검사는 연결을 **열 때 한 번만** 한다. 끊어 주지 않으면 아래 안내 문구
      * ("기존 URL은 즉시 무효화되었습니다")가 사실이 아니게 되고, 유출된 OBS 가 계속
      * 후원 알림을 받는다. 스튜디오 미리보기는 세션으로 열리므로 건드리지 않는다.
+     *
+     * [OV-1] 이 인스턴스만 끊으면 다른 인스턴스에 붙은 유출 OBS 는 그대로 남는다.
+     * Redis 로 모든 인스턴스에 알리고(각자 현재 해시와 다른 연결만 끊는다), 알림이 닿지 않아도
+     * 각 스트림이 하트비트마다 토큰을 다시 확인해 끊는다. closed 는 이 인스턴스에서 끊은 수다.
      */
-    const closed = closeOverlayConnections(creatorId, 'broadcast');
+    const closed = revokeOverlayToken(creatorId, data.tokenHash);
 
     /**
      * 주소는 **요청 호스트 기준**으로 만든다.
