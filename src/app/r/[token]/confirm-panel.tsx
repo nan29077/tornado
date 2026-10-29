@@ -20,7 +20,7 @@ export function ConfirmPanel({
   amountText,
   buttonText,
   message,
-  expiresAtIso,
+  remainingMs,
   donorId,
   donorNickname,
   donorSnsPlatform,
@@ -30,15 +30,25 @@ export function ConfirmPanel({
   amountText: string;
   buttonText: string;
   message: string;
-  expiresAtIso: string;
+  /**
+   * 서버가 렌더 시점에 계산한 남은 유효시간(ms).
+   *
+   * 예전에는 만료 시각을 받아 `expiresAt - Date.now()` 를 브라우저에서 계산했다(P2-20b).
+   *  - 서버 렌더 값과 첫 클라이언트 렌더 값이 달라 하이드레이션 불일치가 났고,
+   *  - 휴대전화 시계가 몇 분 빠르면 멀쩡한 링크가 처음부터 "만료"로 보였다.
+   * 이제 서버가 남은 시간을 넘기고, 브라우저는 **마운트 이후 흐른 시간**만 뺀다(시계 차이와 무관).
+   * 실제 만료 판정은 서버가 1회용 보안링크로 다시 한다.
+   */
+  remainingMs: number;
   donorId?: string;
   /** 기존에 저장된 닉네임 (없으면 undefined) */
   donorNickname?: string;
   /** 기존에 저장된 SNS 플랫폼 (없으면 undefined) */
   donorSnsPlatform?: string;
 }) {
-  const expiresAt = React.useMemo(() => new Date(expiresAtIso).getTime(), [expiresAtIso]);
-  const [remainMs, setRemainMs] = React.useState(() => Math.max(0, expiresAt - Date.now()));
+  const initialRemainMs = Math.max(0, Math.floor(remainingMs));
+  // SSR 과 첫 클라이언트 렌더가 같은 값을 그리도록 서버 값을 그대로 초기값으로 쓴다.
+  const [remainMs, setRemainMs] = React.useState(initialRemainMs);
   const [pending, startTransition] = React.useTransition();
   const [result, setResult] = React.useState<ConfirmActionResult | null>(null);
   const submitted = React.useRef(false);
@@ -53,9 +63,13 @@ export function ConfirmPanel({
   const [nicknameSaved, setNicknameSaved] = React.useState(false);
 
   React.useEffect(() => {
-    const id = setInterval(() => setRemainMs(Math.max(0, expiresAt - Date.now())), 500);
+    // 경과 시간은 단조 시계(performance.now)로 잰다. 사용자가 기기 시계를 바꿔도 흔들리지 않는다.
+    const mountedAt = performance.now();
+    const id = setInterval(() => {
+      setRemainMs(Math.max(0, initialRemainMs - (performance.now() - mountedAt)));
+    }, 500);
     return () => clearInterval(id);
-  }, [expiresAt]);
+  }, [initialRemainMs]);
 
   const expired = remainMs <= 0;
   const mm = String(Math.floor(remainMs / 60000)).padStart(2, '0');

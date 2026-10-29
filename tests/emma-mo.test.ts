@@ -202,7 +202,9 @@ describe('EMMA MO 폴링 → 후원 처리', () => {
     const result = await runEmmaMoPolling();
 
     expect(result.handed).toBe(0);
-    expect(result.skipped).toBe(1);
+    // P0-1. 남의 번호는 SQL 에서 걸러 아예 읽지 않는다(배치 자리를 차지하지 않게).
+    expect(result.fetched).toBe(0);
+    expect(result.skipped).toBe(0);
     expect(await prisma.donation.count()).toBe(0);
     expect(await prisma.moInboundMessage.count()).toBe(0);
     // 우리가 손대지 않았으므로 신규 상태 그대로여야 한다(다른 서비스가 가져갈 수 있게).
@@ -216,10 +218,117 @@ describe('EMMA MO 폴링 → 후원 처리', () => {
     const moKey = await insertFakeMo({ moRecipient: BASE, emoRecipient: null, from: fx.donorPhone });
     const result = await runEmmaMoPolling();
 
-    // 16881234 는 서브번호를 떼면 대표번호가 1688 이 되어 설정값과 다르다 → 처리 대상 아님
+    // P0-1. 예전에는 16881234 의 뒤 4자리를 떼어 대표번호를 '1688' 로 읽고 '3' 으로 되돌렸다.
+    // 그런 행이 배치 크기만큼 쌓이면 폴링이 영원히 굶었다. 이제 UNKNOWN_ROUTE(안내 문자)로 완료한다.
     expect(await prisma.donation.count()).toBe(0);
-    expect(result.handed + result.skipped).toBe(1);
-    expect(await readMoStatus(moKey)).not.toBe('9');
+    expect(result.handed).toBe(1);
+    expect(result.skipped).toBe(0);
+    expect(result.details[0]?.detail).toBe('UNKNOWN_ROUTE');
+    expect(await readMoStatus(moKey)).toBe('9');
+    const mo = await prisma.moInboundMessage.findUnique({ where: { providerMessageId: moKey } });
+    expect(mo?.result).toBe('UNKNOWN_ROUTE');
+    expect(mo?.receivedNumber).toBe(BASE);
+  });
+
+  it('[6-1] 대표번호로만 온 답장이 배치 크기만큼 쌓여도 다음 폴링에서 정상 후원이 처리된다', async () => {
+    await assignBaseNumber('5678', fx.creatorId);
+    await seedRegisteredDonor(fx.donorPhone);
+
+    const old = new Date(Date.now() - 60_000);
+    for (let i = 0; i < 3; i += 1) {
+      await insertFakeMo({ moRecipient: BASE, emoRecipient: null, from: '01055556666', dateMo: old });
+    }
+    const valid = await insertFakeMo({ moRecipient: BASE, emoRecipient: '5678', from: fx.donorPhone });
+
+    await runEmmaMoPolling();
+    // 답장 행이 '3' 으로 남아 다시 앞자리를 차지하지 않는다.
+    const left = await prisma.$queryRawUnsafe<Array<{ n: number }>>(
+      `SELECT COUNT(*)::int AS n FROM em_mo_log_${moTableSuffix()} WHERE msg_status <> '9'`,
+    );
+    expect(left[0]!.n).toBe(0);
+    expect(await readMoStatus(valid)).toBe('9');
+    expect(await prisma.donation.count()).toBe(1);
+  });
+
+  it('[6-2] 다른 서비스 번호로 온 미처리 문자 250건이 앞에 쌓여 있어도 새 후원은 처리된다', async () => {
+    await assignBaseNumber('5678', fx.creatorId);
+    await seedRegisteredDonor(fx.donorPhone);
+
+    // 배치 크기(기본 200)보다 많은 남의 행을 더 이른 시각으로 넣는다.
+    const suffix = moTableSuffix();
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO em_mo_log_${suffix}
+         (mo_key, service_type, mo_recipient, emo_recipient, mo_originator, mo_callback,
+          msg_status, content, date_mo, date_mo_recv, carrier, emma_id)
+       SELECT 'FOREIGN-' || g, '4', '16889999', '5678', '01011112222', '01011112222',
+              '3', '남의 문자', LOCALTIMESTAMP - INTERVAL '1 hour', LOCALTIMESTAMP - INTERVAL '1 hour', 10001, ' '
+         FROM generate_series(1, 250) g`,
+    );
+    const valid = await insertFakeMo({ moRecipient: BASE, emoRecipient: '5678', from: fx.donorPhone });
+
+    const result = await runEmmaMoPolling();
+
+    expect(result.fetched).toBe(1);
+    expect(result.handed).toBe(1);
+    expect(result.skipped).toBe(0);
+    expect(result.skippedRatio).toBe(0);
+    expect(await readMoStatus(valid)).toBe('9');
+    expect(await prisma.donation.count()).toBe(1);
+    // 남의 행은 건드리지 않는다.
+    const foreign = await prisma.$queryRawUnsafe<Array<{ n: number }>>(
+      `SELECT COUNT(*)::int AS n FROM em_mo_log_${suffix} WHERE mo_key LIKE 'FOREIGN-%' AND msg_status = '3'`,
+    );
+    expect(foreign[0]!.n).toBe(250);
+  });
+
+  it('[6-3] 수신 시각은 EMMA_DB_TIMEZONE 으로 해석된다 (EM-1)', async () => {
+    await assignBaseNumber('5678', fx.creatorId);
+    await seedRegisteredDonor(fx.donorPhone);
+    const { env } = await import('@/lib/env');
+    const prev = env.emma.dbTimezone;
+    try {
+      // EMMA 가 한국 시간 벽시계로 '2026-10-29 12:00:00' 을 기록한 상황
+      const moKey = await insertFakeMo({ moRecipient: BASE, emoRecipient: '5678', from: fx.donorPhone });
+      await prisma.$executeRawUnsafe(
+        `UPDATE em_mo_log_${moTableSuffix()} SET date_mo = TIMESTAMP '2026-10-29 12:00:00' WHERE mo_key = $1`,
+        moKey,
+      );
+      (env.emma as { dbTimezone: string }).dbTimezone = 'Asia/Seoul';
+      await runEmmaMoPolling();
+      const mo = await prisma.moInboundMessage.findUnique({ where: { providerMessageId: moKey } });
+      expect(mo!.receivedAt.toISOString()).toBe('2026-10-29T03:00:00.000Z');
+    } finally {
+      (env.emma as { dbTimezone: string }).dbTimezone = prev;
+    }
+  });
+
+  it('[6-3b] EMMA_DB_TIMEZONE 을 지정하면 선점 만료 판정도 같은 시간대로 해석된다', async () => {
+    await assignBaseNumber('5678', fx.creatorId);
+    await seedRegisteredDonor(fx.donorPhone);
+    const { env } = await import('@/lib/env');
+    const prev = env.emma.dbTimezone;
+    // 테스트 행은 DB 세션 시간대의 벽시계로 들어간다. 그 시간대를 설정값으로 준다.
+    const tzRow = await prisma.$queryRawUnsafe<Array<{ tz: string }>>(`SELECT current_setting('TimeZone') AS tz`);
+    try {
+      (env.emma as { dbTimezone: string }).dbTimezone = tzRow[0]!.tz;
+      const fresh = await insertFakeMo({ moRecipient: BASE, emoRecipient: '5678', from: fx.donorPhone, status: '2', receivedAgoSec: 5 });
+      const stale = await insertFakeMo({ moRecipient: BASE, emoRecipient: '5678', from: fx.donorPhone, status: '2', receivedAgoSec: 600 });
+      const result = await runEmmaMoPolling();
+      expect(result.fetched).toBe(1);
+      expect(await readMoStatus(fresh)).toBe('2');
+      expect(await readMoStatus(stale)).toBe('9');
+    } finally {
+      (env.emma as { dbTimezone: string }).dbTimezone = prev;
+    }
+  });
+
+  it('[6-4] EMMA_DB_TIMEZONE 형식이 틀리면 폴링하지 않는다', async () => {
+    const { emmaDbTimezone } = await import('@/server/emma/mo-poller');
+    expect(emmaDbTimezone('Asia/Seoul')).toBe('Asia/Seoul');
+    expect(emmaDbTimezone('UTC')).toBe('UTC');
+    expect(emmaDbTimezone('')).toBeNull(); // 미설정 = 기존 동작
+    expect(() => emmaDbTimezone("UTC'; DROP TABLE x; --")).toThrow();
+    expect(() => emmaDbTimezone('+09:00')).toThrow();
   });
 
   it('[7] 미등록 팬의 문자는 결제되지 않고 안내만 나간다', async () => {

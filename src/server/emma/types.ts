@@ -40,7 +40,7 @@ export interface EmmaMoRow {
   /**
    * MO 발생 시각.
    *
-   * 원본 컬럼은 시간대가 없는 TIMESTAMP 다. 폴러가 SELECT 단계에서 `AT TIME ZONE 'UTC'` 로
+   * 원본 컬럼은 시간대가 없는 TIMESTAMP 다. 폴러가 SELECT 단계에서 `AT TIME ZONE <EMMA_DB_TIMEZONE>` 으로
    * 확정하지만, 드라이버에 따라 Date 가 아니라 문자열로 올 수 있어 두 형태를 모두 받는다.
    * (해석은 `parseEmmaTimestamp` 한 곳에서만 한다)
    */
@@ -58,8 +58,10 @@ export interface EmmaMoRow {
    * 한국 시간대 세션에서는 그 값을 UTC 로 읽는 순간 **9시간 미래**가 되고,
    * "얼마나 기다렸나" 가 항상 0 이 되어 장문 조각 대기 상한이 영영 발동하지 않았다.
    *
-   * `LOCALTIMESTAMP - date_mo_recv` 는 양쪽 모두 같은 세션 시간대의 벽시계라
-   * 시간대를 어떻게 잡든 차이가 정확하다. 해석이 개입할 여지를 없앤다.
+   * 이제 `NOW() - (date_mo_recv AT TIME ZONE <EMMA_DB_TIMEZONE>)` 로 계산한다(EM-1).
+   * 수신 시각(date_mo)과 오래된 선점 판정이 모두 같은 설정 시간대로 해석되어 서로 어긋나지 않는다.
+   * EMMA 가 기록하는 세션 시간대(JDBC 는 JVM 시간대를 쓴다)와 우리 접속 세션 시간대가 다를 수 있어
+   * LOCALTIMESTAMP 비교보다 명시 설정이 확실하다.
    *
    * 드라이버에 따라 문자열로 올 수 있어 number 와 string 을 모두 받는다.
    */
@@ -178,6 +180,11 @@ export interface EmmaPollResult {
   deferred: number;
   /** 반복 실패 상한을 넘겨 재시도를 포기한 행 수 (사람이 봐야 하는 건) */
   abandoned: number;
+  /**
+   * 조회한 행 중 건너뛴 비율(0~1). 높으면 처리량이 막혀 있다는 뜻이라 폴러가 경고를 남긴다.
+   * (남의 대표번호로 온 행은 SQL 에서 걸러지므로 여기 포함되지 않는다)
+   */
+  skippedRatio: number;
   details: Array<{
     moKey: string;
     outcome: 'handed' | 'skipped' | 'failed' | 'deferred' | 'abandoned';

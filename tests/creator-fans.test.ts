@@ -196,6 +196,41 @@ describe('팬 목록은 두 경로를 한자리에 모은다', () => {
     expect(board.top.some((f) => f.name === '가입만')).toBe(false);
   });
 
+  it('팬이 조회 상한(2,000)을 넘어도 상위 10위와 요약은 전체 기준이다 (P2-20c)', async () => {
+    const N = 2005;
+    const donors = Array.from({ length: N + 1 }, (_, i) => ({
+      id: newId(),
+      phoneHash: `bulk-hash-${i}`,
+      phoneEnc: 'bulk-enc',
+      phoneMasked: '010-****-0000',
+      displayName: i === N ? '최고액팬' : `벌크${i}`,
+    }));
+    await prisma.donorProfile.createMany({ data: donors });
+    // 고액 팬을 **마지막에** 넣는다. 정렬 없이 앞에서 2,001행만 읽으면 빠지는 위치다.
+    await prisma.donorCreatorLink.createMany({
+      data: donors.map((d, i) => ({
+        id: newId(),
+        donorId: d.id,
+        creatorId: fx.creatorId,
+        joinedVia: 'DONATION' as const,
+        totalAmount: i === N ? 1_000_000n : 1_000n,
+        totalCount: 1,
+        lastDonatedAt: new Date(),
+      })),
+    });
+
+    const board = await listCreatorFans(fx.creatorId);
+
+    expect(board.truncated).toBe(true);
+    expect(board.top[0]?.name).toBe('최고액팬');
+    expect(board.top[0]?.totalAmount).toBe(1_000_000n);
+    // 요약은 잘린 목록이 아니라 DB 집계다.
+    expect(board.summary.fanCount).toBe(N + 1);
+    expect(board.summary.supporterCount).toBe(N + 1);
+    expect(board.summary.totalAmount).toBe(1_000_000n + BigInt(N) * 1_000n);
+    expect(board.summary.totalCount).toBe(N + 1);
+  });
+
   it('상위 10위는 검색어와 무관하게 전체 기준이다', async () => {
     const a = await makeLinkedDonor('가나다', '01000000011');
     await giveDonationHistory(a.donorId, fx.creatorId, 90_000n, 3);
