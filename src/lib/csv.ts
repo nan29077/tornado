@@ -26,3 +26,38 @@ export function csvCell(v: string): string {
   const needsQuote = formula || /[",\r\n]/.test(safe);
   return needsQuote ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
+
+/**
+ * SET-1 (2026-10-29): 식별번호 열(은행코드·계좌번호·주민등록번호·사업자번호·크리에이터 코드 등).
+ *
+ * csvCell 은 순수 숫자를 그대로 내보낸다. 금액 열에는 그게 맞지만(엑셀이 숫자로 합계를 낸다),
+ * 식별번호를 엑셀로 열면 숫자로 바뀌어 **앞자리 0 이 사라지고**(은행코드 004 -> 4) 12자리가 넘으면
+ * 지수 표기(9.00101E+12)가 되어 원래 값을 되살릴 수 없다. 저장하는 순간 파일 자체가 망가진다.
+ *
+ * 숫자·하이픈으로만 된 값은 `="004"` 수식-문자열 형태로 내보낸다. 엑셀은 이것을 문자열 상수
+ * "004" 를 돌려주는 수식으로 읽어 0 을 지키고 지수 표기도 하지 않는다.
+ *  - 수식 주입 방지와 충돌하지 않는다: 이 형태는 **숫자·하이픈만** 있는 값에만 쓰므로 수식 안에
+ *    공격자가 넣을 수 있는 문자가 없다. 그 밖의 값은 csvCell 로 넘겨 기존 방어(`'` 접두)를 그대로 쓴다.
+ *  - 빈 값은 빈 칸으로 둔다.
+ *
+ * **기계가 읽는 파일(은행 대량이체 업로드)에는 쓰지 않는다.** 은행·지급대행 시스템은 `="004"` 를
+ * 그대로 문자열로 읽어 거부하거나 잘못 이체한다. 그 파일은 csvCell(원문 숫자)로 두고,
+ * 엑셀로 열어 저장하지 말라고 화면에서 안내한다 (api/admin/settlements/payout 참고).
+ */
+const IDENTIFIER = /^[0-9][0-9-]*$/;
+
+export function csvTextCell(v: string): string {
+  const cleaned = v.replace(CONTROL_CHARS, '').trim();
+  if (cleaned === '') return '';
+  if (!IDENTIFIER.test(cleaned)) return csvCell(cleaned);
+  // CSV 이스케이프 후: "=""004"""  ->  엑셀이 읽는 값: ="004"
+  return `"=""${cleaned}"""`;
+}
+
+/** 열 종류. 'text' 는 식별번호(csvTextCell), 'auto' 는 기본(csvCell, 금액·일반 텍스트). */
+export type CsvColumnKind = 'auto' | 'text';
+
+/** 열 종류 배열에 맞춰 한 행을 만든다. kinds 가 짧으면 나머지는 'auto' 다. */
+export function csvRow(values: string[], kinds: readonly CsvColumnKind[] = []): string {
+  return values.map((v, i) => (kinds[i] === 'text' ? csvTextCell(v) : csvCell(v))).join(',');
+}

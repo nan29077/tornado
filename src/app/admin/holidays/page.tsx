@@ -10,7 +10,7 @@ import { formatDateKeyKo, toDateKey } from '@/lib/business-day';
 import { findYearsMissingHolidays } from '@/server/services/settlement-schedule';
 import { holidayKindLabel } from '@/lib/labels';
 import type { HolidayKind } from '@/generated/prisma/enums';
-import { requireAdminPage } from '@/server/admin-guard';
+import { requireAdminPage, financeDenyReason } from '@/server/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +26,9 @@ export default async function AdminHolidaysPage({
 }) {
   // 레이아웃 가드에만 기대지 않는다. 레이아웃과 페이지는 병렬로 렌더되므로
   // 이 호출이 없으면 권한 없는 요청에서도 아래 조회가 먼저 실행된다.
-  await requireAdminPage('/admin/holidays');
+  const admin = await requireAdminPage('/admin/holidays');
+  // 공휴일은 정산일·보류에 직접 영향을 준다. 최고관리자·재무만 바꿀 수 있다(액션 가드와 같은 집합).
+  const denyReason = financeDenyReason(admin, '공휴일 등록·수정·삭제');
 
   const sp = await searchParams;
 
@@ -72,7 +74,7 @@ export default async function AdminHolidaysPage({
             법정공휴일뿐 아니라 대체공휴일·임시공휴일·은행 휴무일(근로자의 날 등)도 함께 등록해야 정산일이
             정확합니다.
           </p>
-          <ActionForm action={createHolidayAction} submitLabel="공휴일 등록">
+          <ActionForm action={createHolidayAction} submitLabel="공휴일 등록" disabledReason={denyReason}>
             <AdminField label="날짜">
               <AdminInput type="date" name="date" required />
             </AdminField>
@@ -152,7 +154,13 @@ export default async function AdminHolidaysPage({
                     </Td>
                     <Td className="max-w-[200px] break-words text-[12px] text-ink-400">{h.memo ?? '-'}</Td>
                     <Td>
-                      <ActionForm action={updateHolidayAction} submitLabel="수정" variant="secondary" compact>
+                      <ActionForm
+                        action={updateHolidayAction}
+                        submitLabel="수정"
+                        variant="secondary"
+                        compact
+                        disabledReason={denyReason}
+                      >
                         <input type="hidden" name="id" value={h.id} />
                         <div className="flex w-56 flex-col gap-1.5">
                           <AdminInput name="name" defaultValue={h.name} placeholder="명칭" required />
@@ -182,6 +190,7 @@ export default async function AdminHolidaysPage({
                         values={{ id: h.id }}
                         label="삭제"
                         variant="danger"
+                        disabledReason={denyReason}
                         confirm={`${formatDateKeyKo(h.date)} "${h.name}" 공휴일을 삭제합니다. 이 날짜가 다시 영업일로 계산에 포함됩니다.`}
                       />
                     </Td>

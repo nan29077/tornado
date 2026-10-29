@@ -6,27 +6,28 @@ import { writeAudit } from '@/server/auth';
 import { newId } from '@/lib/id';
 import { isValidDateKey, formatDateKeyKo } from '@/lib/business-day';
 import type { AdminActionState } from '@/components/admin/state';
-import { run, text, optText, bool, enumValue, requiredId } from './shared';
+import type { SessionUser } from '@/server/auth';
+import { run, text, optText, bool, enumValue, requiredId, assertFinanceAdmin } from './shared';
 
 /**
  * 공휴일(public_holiday) 관리 액션.
  *
  * 이 표가 틀리면 전체 정산일 계산이 통째로 어긋나므로(settlement-schedule.ts 참고),
  * 고객지원(SUPPORT)·읽기전용(READ_ONLY) 권한에서는 어떤 변경도 허용하지 않는다.
- * READ_ONLY 는 run() 내부의 requireWriteAdmin() 에서 이미 걸러지므로 여기서는 SUPPORT 만 추가로 막는다.
+ *
+ * 2026-10-29 (4차 점검): 공휴일은 정산 보류·지급일을 바꾸므로 **돈이 움직이는 작업**으로 본다.
+ * 운영(OPERATION) 도 막고 최고관리자·재무(FINANCE)만 등록·수정·삭제할 수 있다(assertFinanceAdmin 과 같은 집합).
  */
 
 const HOLIDAY_KINDS = ['STATUTORY', 'SUBSTITUTE', 'TEMPORARY', 'BANK_ONLY'] as const;
 
-function assertHolidayAdmin(permission: string): void {
-  if (permission === 'SUPPORT') {
-    throw new Error('공휴일 등록/수정은 정산일 계산에 직접 영향을 주므로 고객지원 권한에서는 할 수 없습니다.');
-  }
+function assertHolidayAdmin(admin: SessionUser): void {
+  assertFinanceAdmin(admin, '공휴일 등록·수정·삭제(정산일 계산에 직접 영향)');
 }
 
 export async function createHolidayAction(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
-    assertHolidayAdmin(admin.adminPermission ?? '');
+    assertHolidayAdmin(admin);
 
     const date = text(fd, 'date');
     if (!isValidDateKey(date)) {
@@ -59,7 +60,7 @@ export async function createHolidayAction(_prev: AdminActionState, fd: FormData)
 
 export async function updateHolidayAction(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
-    assertHolidayAdmin(admin.adminPermission ?? '');
+    assertHolidayAdmin(admin);
 
     const id = requiredId(fd, 'id', '공휴일');
     const name = text(fd, 'name');
@@ -87,7 +88,7 @@ export async function updateHolidayAction(_prev: AdminActionState, fd: FormData)
 
 export async function deleteHolidayAction(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
-    assertHolidayAdmin(admin.adminPermission ?? '');
+    assertHolidayAdmin(admin);
 
     const id = requiredId(fd, 'id', '공휴일');
     const before = await prisma.publicHoliday.findUnique({ where: { id } });

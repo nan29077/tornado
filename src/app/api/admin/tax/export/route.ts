@@ -1,8 +1,8 @@
 import { requireAdmin, writeAudit } from '@/server/auth';
 import { prisma } from '@/server/db';
 // SET-G·P2-1: 음수 금액을 깨뜨리지 않고 수식 주입은 막는 공용 CSV 셀 인코더.
-import { csvCell } from '@/lib/csv';
-import { kstMonthRange, kstMonthKey, formatKst } from '@/lib/datetime';
+import { csvCell, csvRow, type CsvColumnKind } from '@/lib/csv';
+import { kstMonthRange, kstMonthKey, formatKst, isStrictMonthKey, MIN_MONTH_YEAR } from '@/lib/datetime';
 import { ledgerEntryLabel } from '@/lib/labels';
 import { getLedgerTotals, isFeeVatIncluded } from '@/server/services/tax';
 
@@ -57,11 +57,20 @@ export async function GET(req: Request) {
   if (kind === 'vat') {
     const year = Number(sp.get('year'));
     const quarter = Number(sp.get('quarter'));
-    if (!Number.isInteger(year) || year < 2020 || year > 2100 || ![1, 2, 3, 4].includes(quarter)) {
-      return new Response('year(2020~2100) 와 quarter(1~4) 를 올바르게 지정해 주세요.', { status: 400 });
+    if (!Number.isInteger(year) || ![1, 2, 3, 4].includes(quarter)) {
+      return new Response('year 와 quarter(1~4) 를 올바르게 지정해 주세요.', { status: 400 });
     }
 
     const months = [0, 1, 2].map((i) => `${year}-${String((quarter - 1) * 3 + 1 + i).padStart(2, '0')}`);
+    /**
+     * P2-10 (2026-10-29): 예전에는 2020~2100 을 받았지만 집계 함수(kstMonthRange)는
+     * 올해+1 을 넘는 연도를 **이번 달로 바꿔** 계산했다. 그래서 `year=2099` 분기 파일에
+     * 이번 달 집계가 세 줄 들어갔다. 신고 자료는 요청한 달과 정확히 같아야 하므로 엄격히 거른다.
+     */
+    if (!months.every((k) => isStrictMonthKey(k))) {
+      const maxYear = Number(kstMonthKey().slice(0, 4)) + 1;
+      return new Response(`year 는 ${MIN_MONTH_YEAR}~${maxYear} 사이로 지정해 주세요. (요청: ${year})`, { status: 400 });
+    }
     const totals = await Promise.all(months.map((k) => getLedgerTotals(k, vatIncluded)));
 
     await writeAudit({
@@ -117,7 +126,12 @@ export async function GET(req: Request) {
   }
 
   if (kind === 'ledger') {
-    const { key, start, end } = kstMonthRange(sp.get('month') ?? kstMonthKey());
+    const requested = sp.get('month') ?? kstMonthKey();
+    // P2-10: 잘못된 월을 이번 달로 바꿔 내려주면 엉뚱한 달 원장이 그 달 파일 이름으로 나간다.
+    if (!isStrictMonthKey(requested)) {
+      return new Response(`month 는 YYYY-MM 형식의 처리 가능한 월이어야 합니다. (요청: ${requested})`, { status: 400 });
+    }
+    const { key, start, end } = kstMonthRange(requested);
 
     const rows = await prisma.settlementLedger.findMany({
       where: { occurredAt: { gte: start, lt: end } },
@@ -141,9 +155,11 @@ export async function GET(req: Request) {
     const lines = [
       ['발생시각', '정산월', '크리에이터', '코드', '과세유형', '사업자번호', '분개유형', '금액(부호포함)', '메모', '후원ID', '환불ID', '정산ID'].join(','),
     ];
+    // SET-1: 코드·사업자번호는 식별번호 열(엑셀에서 앞자리 0·자릿수 보존). 금액은 숫자 그대로.
+    const kinds: CsvColumnKind[] = ['auto', 'auto', 'auto', 'text', 'auto', 'text'];
     for (const r of rows) {
       lines.push(
-        [
+        csvRow([
           formatKst(r.occurredAt),
           r.settlementKey,
           r.creator.displayName,
@@ -156,9 +172,7 @@ export async function GET(req: Request) {
           r.donationId ?? '',
           r.refundId ?? '',
           r.requestId ?? '',
-        ]
-          .map(csvCell)
-          .join(','),
+        ], kinds),
       );
     }
     if (rows.length === LEDGER_ROW_LIMIT) {

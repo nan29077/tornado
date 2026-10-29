@@ -37,6 +37,8 @@ export interface SettlementRow {
   payoutBatchNo?: string | null;
   /** 이체파일 최초 발급 시각 */
   payoutIssuedAt?: string | null;
+  /** 이체파일 마지막 재발급 시각 (P2-8) */
+  payoutReissuedAt?: string | null;
 }
 
 const SELECTABLE = new Set(['REQUESTED', 'REVIEWING', 'APPROVED', 'PAID']);
@@ -424,6 +426,13 @@ export function SettlementRequestsPanel({
             </div>
           ) : null}
 
+          {/* SET-1: 은행 업로드용 원문 파일이다. 엑셀로 열어 저장하면 은행코드·계좌번호 앞자리 0 이 사라진다. */}
+          <p className="mt-2.5 text-[11px] leading-snug text-ink-500">
+            이체파일은 은행코드·계좌번호를 원문 숫자로 담은 업로드용 파일입니다.{' '}
+            <strong className="text-ink-700">엑셀로 열어 저장하지 말고</strong> 받은 파일을 그대로 업로드해 주세요.
+            엑셀이 저장하면 앞자리 0 이 지워지고(004 → 4) 긴 계좌번호가 지수로 바뀝니다.
+          </p>
+
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -624,6 +633,7 @@ export function SettlementRequestsPanel({
                   <span className="mt-0.5 block text-[11px] text-ink-600">
                     이체파일 <span className="font-mono font-semibold">{r.payoutBatchNo}</span>
                     {r.payoutIssuedAt ? <span className="block text-ink-500">{r.payoutIssuedAt} 발급</span> : null}
+                    {r.payoutReissuedAt ? <span className="block text-ink-500">{r.payoutReissuedAt} 재발급</span> : null}
                   </span>
                 ) : null}
               </Td>
