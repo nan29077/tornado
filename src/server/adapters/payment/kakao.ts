@@ -118,6 +118,30 @@ function isSuccess(json: KakaoResponse): boolean {
   return !json.error_code;
 }
 
+/**
+ * 결과를 단정할 수 없는 HTTP 응답인지 (PAY-3).
+ * 5xx·게이트웨이 오류, 또는 4xx 인데 카카오 오류 코드(error_code)가 없는 응답(프록시 HTML 등)은
+ * 승인 실패가 아니라 "불확실"이다. 헥토·코엠 어댑터와 같이 예외로 올려 상위가 조회로 확정하게 한다.
+ */
+function isUncertainHttp(res: { ok: boolean; status: number; json: KakaoResponse }): boolean {
+  if (res.ok) return false;
+  if (res.status >= 500) return true;
+  return !res.json.error_code;
+}
+
+/** 조회 응답의 amount 객체(total/tax_free/vat …)에서 결제 총액을 꺼낸다 (PAY-3). */
+function parseKakaoAmount(raw: unknown): bigint | undefined {
+  const total = raw != null && typeof raw === 'object' ? (raw as { total?: unknown }).total : raw;
+  if (total == null || total === '') return undefined;
+  const digits = String(total).replace(/[^\d]/g, '');
+  if (!digits) return undefined;
+  try {
+    return BigInt(digits);
+  } catch {
+    return undefined;
+  }
+}
+
 function failure(json: KakaoResponse, fallback: string): ProviderResult<never> {
   const detail = json.extras?.method_result_message
     ? ` (${json.extras.method_result_code}: ${json.extras.method_result_message})`
@@ -154,8 +178,14 @@ export const kakaoPaymentAdapter: PaymentAdapter = {
     returnUrl,
     notifyUrl,
     method = 'ACCOUNT',
+    donorId,
   }): Promise<ProviderResult<RegistrationSession>> {
     assertConfigured();
+    // partner_user_id 는 승인(approve) 때와 같아야 한다. 승인 시점에는 등록 건 ID 를 알 수 없으므로
+    // 바뀌지 않는 후원자 ID 로 고정한다 (PAY-3).
+    if (!donorId) {
+      return { ok: false, code: 'NO_PARTNER_USER_ID', message: '후원자 ID(donorId)가 없어 카카오페이 빌키를 발급할 수 없습니다.' };
+    }
 
     // partner_order_id 를 donorRef(= PaymentRegistration.id) 와 동일하게 고정한다.
     // 타임스탬프를 붙이면 approval 단계에서 재현이 불가능해진다(저장하지 않으므로).
@@ -163,7 +193,7 @@ export const kakaoPaymentAdapter: PaymentAdapter = {
     const res = await postJson(KAKAO_SPEC.billKeyRegisterPath, {
       cid: env.payment.kakaoCid,
       partner_order_id: orderNo,
-      partner_user_id: donorRef,
+      partner_user_id: donorId,
       item_name: '후원 결제수단 등록',
       quantity: 1,
       total_amount: 0,
@@ -209,6 +239,8 @@ export const kakaoPaymentAdapter: PaymentAdapter = {
     // 주입한다. partner_order_id 와 partner_user_id 는 ready 요청 때 donorRef 와 동일하게 고정했으므로
     // 이 값으로 재현한다. payload.partner_order_id / partner_user_id 를 클라이언트에서 받지 않는다.
     const registrationId = String(payload.registrationId ?? payload.partner_order_id ?? '');
+    // 빌키 발급 요청(ready) 때 보낸 partner_user_id(= 후원자 ID). 서비스 레이어가 주입한다 (PAY-3).
+    const partnerUserId = String(payload.donorId ?? '');
 
     if (!pgToken || !tid) {
       return {
@@ -221,8 +253,11 @@ export const kakaoPaymentAdapter: PaymentAdapter = {
       return {
         ok: false,
         code: 'NO_REGISTRATION_ID',
-        message: 'registrationId 가 없습니다. partner_order_id / partner_user_id 를 재현할 수 없습니다.',
+        message: 'registrationId 가 없습니다. partner_order_id 를 재현할 수 없습니다.',
       };
+    }
+    if (!partnerUserId) {
+      return { ok: false, code: 'NO_PARTNER_USER_ID', message: '후원자 ID(donorId)가 없습니다. partner_user_id 를 재현할 수 없습니다.' };
     }
 
     // 빌키 발급 승인: billKeyApprovePath (/online/v1/payment/subscription)
@@ -231,7 +266,7 @@ export const kakaoPaymentAdapter: PaymentAdapter = {
       cid: env.payment.kakaoCid,
       tid,
       partner_order_id: registrationId,
-      partner_user_id: registrationId,
+      partner_user_id: partnerUserId,
       pg_token: pgToken,
     });
 
@@ -282,25 +317,46 @@ export const kakaoPaymentAdapter: PaymentAdapter = {
    */
   async approve(req: ApproveRequest): Promise<ProviderResult<ApproveResult>> {
     assertConfigured();
+    /**
+     * partner_user_id 는 빌키(SID) 발급 때 보낸 값과 같아야 한다 (PAY-3).
+     * 예전에는 후원자 닉네임(buyerName)을 보냈다. 닉네임은 등록 때 값과 다르고 바뀔 수도 있어
+     * 카카오가 전건 거절한다. 발급 때와 같은 고정 후원자 ID 가 없으면 요청하지 않는다(출금 없음 확정).
+     */
+    if (!req.partnerUserId) {
+      return { ok: false, code: 'NO_PARTNER_USER_ID', message: '후원자 ID 가 없어 카카오페이 정기결제를 요청하지 않았습니다.' };
+    }
 
     const now = new Date();
     const res = await postJson(KAKAO_SPEC.billKeyApprovePath, {
       cid: env.payment.kakaoCid,
       sid: req.billKey,
       partner_order_id: req.orderNo,
-      partner_user_id: req.buyerName ?? 'donor',
+      partner_user_id: req.partnerUserId,
       item_name: req.productName,
       quantity: 1,
       total_amount: Number(req.amount),
       tax_free_amount: 0,
     });
 
+    if (isUncertainHttp(res)) {
+      // 실제로는 승인됐는데 실패로 확정하면 크리에이터가 그 금액을 영영 못 받는다.
+      // 예외를 던져 상위(executePayment)가 거래결과조회로 실제 상태를 확정하게 한다.
+      throw new Error(`카카오페이 승인 API HTTP 오류 (status=${res.status})`);
+    }
     if (!res.ok || !isSuccess(res.json)) return failure(res.json, '카카오페이 정기결제 승인에 실패했습니다.');
+
+    // 카카오 주문 조회·취소는 우리 주문번호가 아니라 카카오 tid 로 한다. 승인 응답의 tid 를
+    // providerTid 로 돌려주면 executePayment 가 payment_transaction.provider_tid 에 저장한다 (PAY-3).
+    const tid = res.json.tid ? String(res.json.tid) : '';
+    if (!tid) {
+      // tid 없는 성공 응답은 이후 조회·취소가 불가능하다. 상위가 조회 경로(→ 미확인)로 넘기게 한다.
+      throw new Error('카카오페이 승인 응답에 tid 가 없습니다.');
+    }
 
     return {
       ok: true,
       data: {
-        providerTid: String(res.json.tid ?? res.json.aid ?? req.orderNo),
+        providerTid: tid,
         approvedAt: now,
         amount: req.amount,
       },
@@ -314,12 +370,25 @@ export const kakaoPaymentAdapter: PaymentAdapter = {
    */
   async inquire(
     orderNo: string,
+    ref,
   ): Promise<ProviderResult<{ status: InquiryStatus; providerTid?: string; amount?: bigint }>> {
     assertConfigured();
 
+    /**
+     * 카카오 주문 조회의 키는 카카오 tid 다 (PAY-3).
+     * 예전에는 우리 주문번호(orderNo)를 tid 로 보내 조회가 전건 실패했다.
+     * 승인 응답을 못 받은 건(타임아웃)은 tid 가 없다. 이 경우 단정하지 않고 실패(ok:false)로
+     * 돌려 상위가 결과 미확인(UNKNOWN)으로 수동 대사에 넘기게 한다.
+     */
+    const tid = ref?.providerTid ? String(ref.providerTid) : '';
+    if (!tid) {
+      logger.warn('카카오페이 tid 가 없어 주문 조회를 할 수 없습니다 — 수동 대사 필요', { orderNo });
+      return { ok: false, code: 'NO_PROVIDER_TID', message: '카카오페이 tid 가 없어 주문 조회를 할 수 없습니다.' };
+    }
+
     const res = await postJson(KAKAO_SPEC.orderInquiryPath, {
       cid: env.payment.kakaoCid,
-      tid: orderNo,
+      tid,
     });
 
     if (!res.ok || !isSuccess(res.json)) return failure(res.json, '카카오페이 주문 조회에 실패했습니다.');
@@ -344,8 +413,9 @@ export const kakaoPaymentAdapter: PaymentAdapter = {
       ok: true,
       data: {
         status: inquiryStatus,
-        providerTid: String(res.json.tid ?? orderNo),
-        amount: res.json.amount != null ? BigInt(Number(res.json.amount)) : undefined,
+        providerTid: String(res.json.tid ?? tid),
+        // amount 는 { total, tax_free, vat, … } 객체다. Number(객체)는 NaN 이라 BigInt 에서 예외가 났다.
+        amount: parseKakaoAmount(res.json.amount),
       },
       raw: res.json as Record<string, unknown>,
       latencyMs: res.latencyMs,
@@ -357,6 +427,9 @@ export const kakaoPaymentAdapter: PaymentAdapter = {
    */
   async cancel({ providerTid, amount }): Promise<ProviderResult<{ canceledAt: Date }>> {
     assertConfigured();
+    if (!providerTid) {
+      return { ok: false, code: 'NO_PROVIDER_TID', message: '카카오페이 tid 가 없어 취소를 요청할 수 없습니다.' };
+    }
 
     const res = await postJson(KAKAO_SPEC.cancelPath, {
       cid: env.payment.kakaoCid,

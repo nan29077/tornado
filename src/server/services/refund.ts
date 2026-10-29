@@ -99,7 +99,8 @@ export async function approveRefund(refundId: string, adminUserId?: string) {
     throw new Error('이미 다른 처리가 진행 중인 환불입니다. 잠시 후 상태를 다시 확인해 주세요.');
   }
 
-  const adapter = getPaymentAdapter();
+  // 취소는 그 거래를 승인한 결제사로 보낸다(현재 설정 결제사가 아니라, P2-7).
+  const adapter = getPaymentAdapter(txn.provider);
   const res = await callCancel(adapter, refund, txn, refundId);
   await finishRefundCancel(refund, txn, res, adminUserId);
   return prisma.refund.findUnique({ where: { id: refundId } });
@@ -122,6 +123,7 @@ async function callCancel(
       orderNo: txn.orderNo,
       providerTid: txn.providerTid ?? '',
       amount: refund.amount,
+      donationId: txn.donationId,
       reason: refund.reason ?? '고객 요청',
     });
   } catch (e) {
@@ -148,10 +150,10 @@ async function callCancel(
  * 결제사 조회로 "이미 취소된 거래"인지 확인한다.
  * 조회 자체가 실패하면 단정하지 않고 false 를 돌려준다(실패 확정 경로로 간다).
  */
-async function confirmAlreadyCanceled(orderNo: string): Promise<boolean> {
+async function confirmAlreadyCanceled(txn: RefundTxn): Promise<boolean> {
   try {
-    const adapter = getPaymentAdapter();
-    const inq = await adapter.inquire(orderNo);
+    const adapter = getPaymentAdapter(txn.provider);
+    const inq = await adapter.inquire(txn.orderNo, { providerTid: txn.providerTid, donationId: txn.donationId });
     return Boolean(inq.ok && inq.data?.status === 'CANCELED');
   } catch {
     return false;
@@ -176,7 +178,7 @@ async function finishRefundCancel(
      * 오류로 회신한다. 그걸 그대로 실패로 확정하면 **실제로는 환불된 건이 FAILED 로 남아**
      * 후원자에게는 돈이 돌아갔는데 우리 원장에는 반대분개가 없는 상태가 된다.
      */
-    const confirmed = await confirmAlreadyCanceled(txn.orderNo);
+    const confirmed = await confirmAlreadyCanceled(txn);
     if (confirmed) {
       logger.warn('취소 응답은 실패였지만 조회 결과 이미 취소됨 — 환불 완료로 확정', {
         refundId,
@@ -316,11 +318,11 @@ export async function retryRefundRecovery(refundId: string, adminUserId?: string
     throw new Error('이미 다른 처리가 진행 중인 환불입니다. 잠시 후 상태를 다시 확인해 주세요.');
   }
 
-  const adapter = getPaymentAdapter();
+  const adapter = getPaymentAdapter(txn.provider);
 
   let confirmedCanceled = false;
   try {
-    const inq = await adapter.inquire(txn.orderNo);
+    const inq = await adapter.inquire(txn.orderNo, { providerTid: txn.providerTid, donationId: txn.donationId });
     if (inq.ok && inq.data?.status === 'CANCELED') confirmedCanceled = true;
   } catch (e) {
     logger.warn('환불 재시도 — 거래결과조회 실패, 취소를 다시 요청합니다', { refundId, message: (e as Error).message });

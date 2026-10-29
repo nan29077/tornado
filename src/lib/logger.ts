@@ -18,7 +18,27 @@ const SENSITIVE_KEYS = [
   'msg', 'smsmsg', 'text', 'content', 'body',
   'callee', 'caller', 'recvno', 'sendno', 'svcno', 'calledno', 'callingno',
   'resident', 'ssn', 'holder', 'holdername',
+  // HTTP 헤더 (P2-6/P2-5). 'x-api-key'·'set-cookie' 처럼 하이픈이 든 이름은 아래 정규화로 잡는다.
+  'cookie', 'setcookie', 'proxyauthorization', 'xapikey', 'apisecret', 'clientsecret',
 ];
+
+/**
+ * 키 이름 정규화 (P2-5, 2026-10-29).
+ * 예전에는 소문자로만 바꿔 부분 일치를 봤기 때문에 `x-api-key`(하이픈)가 `apiKey` 에 걸리지 않아
+ * MO 웹훅 헤더 로그(`webhook_log.headers_mask`)에 API 키가 평문으로 남았다.
+ * 하이픈·밑줄을 지우고 소문자로 맞춘 뒤 비교한다(api_key / API-KEY / apiKey 모두 같은 키).
+ */
+function normalizeKey(k: string): string {
+  return k.replace(/[-_\s]/g, '').toLowerCase();
+}
+
+const NORMALIZED_SENSITIVE_KEYS = SENSITIVE_KEYS.map(normalizeKey);
+
+/** 이 키의 값을 가려야 하는지 (헤더 이름·JSON 키 공통). */
+export function isSensitiveKey(k: string): boolean {
+  const n = normalizeKey(k);
+  return NORMALIZED_SENSITIVE_KEYS.some((s) => n.includes(s));
+}
 
 /**
  * 전화번호 패턴.
@@ -119,7 +139,7 @@ export function scrub(value: unknown, depth = 0): unknown {
 
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    if (SENSITIVE_KEYS.some((s) => k.toLowerCase().includes(s.toLowerCase()))) {
+    if (isSensitiveKey(k)) {
       out[k] = typeof v === 'string' && v.length > 8 ? `${v.slice(0, 2)}***${v.slice(-2)}` : '***';
     } else {
       out[k] = scrub(v, depth + 1);

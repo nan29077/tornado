@@ -167,6 +167,7 @@ export async function startRegistration(input: {
     // 다른 어댑터(헥토·카카오·mock)는 이 값을 쓰지 않는다.
     notifyUrl: `${env.baseUrl}/api/webhooks/ongi`,
     method,
+    donorId: ctx.donorId,
   });
   if (!session.ok || !session.data) throw new Error(session.message ?? '결제창 생성에 실패했습니다.');
 
@@ -229,7 +230,13 @@ export async function completeRegistration(input: {
   // 결제수단 종류는 결제창 응답이 아니라 우리가 시작할 때 기록한 값이 기준이다.
   // registrationId 를 함께 주입한다. 카카오 등 partner_order_id/partner_user_id 를
   // DB 에 저장하지 않고 재현해야 하는 어댑터에서 사용한다(kakao.ts 주석 참고).
-  const res = await adapter.completeRegistration({ ...input.providerPayload, method: owned.method, registrationId: owned.id });
+  const res = await adapter.completeRegistration({
+    ...input.providerPayload,
+    method: owned.method,
+    registrationId: owned.id,
+    // 카카오페이 partner_user_id 는 승인 때와 같은 고정 후원자 ID 여야 한다(PAY-3).
+    donorId: ctx.donorId,
+  });
 
   if (!res.ok || !res.data) {
     await prisma.paymentRegistration.update({

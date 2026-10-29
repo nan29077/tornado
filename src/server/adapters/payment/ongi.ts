@@ -304,6 +304,30 @@ export function ongiInquiryStatus(raw: string): InquiryStatus {
   return 'PENDING';
 }
 
+/**
+ * 온기에 보내는 주문번호 (PAY-4).
+ *
+ * 온기 결제 건은 PIN(결제 URL) 단계에서 **후원 ID** 를 주문번호로 만든다. 그 시점에는 아직
+ * payment_transaction(우리 주문번호)이 없기 때문이다. 예전에는 승인·조회·취소를 우리 주문번호
+ * (txn.orderNo)로 보내 온기가 모르는 주문을 찾았다(전건 NOT_FOUND/PENDING).
+ * 상위가 donationId 를 넘기면 그 값을, 없으면(예전 호출부) 받은 주문번호를 쓴다.
+ */
+function ongiOrderNo(orderNo: string, donationId?: string | null): string {
+  return donationId ? String(donationId) : orderNo;
+}
+
+/** 금액 표기("3,000" 등)를 bigint 로 바꾼다. 값이 없거나 해석할 수 없으면 undefined. */
+function parseOngiAmount(raw: unknown): bigint | undefined {
+  if (raw === undefined || raw === null || String(raw) === '') return undefined;
+  const digits = String(raw).replace(/[^\d]/g, '');
+  if (!digits) return undefined;
+  try {
+    return BigInt(digits);
+  } catch {
+    return undefined;
+  }
+}
+
 export const ongiPaymentAdapter: PaymentAdapter = {
   info(): AdapterInfo {
     const missing = requiredCredentials();
@@ -407,9 +431,10 @@ export const ongiPaymentAdapter: PaymentAdapter = {
     assertConfigured();
     if (!ONGI_SPEC.paymentInquirePath) return missingSpec('결제 조회');
 
+    const ongiOrder = ongiOrderNo(req.orderNo, req.donationId);
     const res = await request('POST', ONGI_SPEC.paymentInquirePath, {
       merchantId: env.payment.ongiApiMid || undefined,
-      orderNo: req.orderNo,
+      orderNo: ongiOrder,
     });
 
     if (!res.ok) {
@@ -418,9 +443,26 @@ export const ongiPaymentAdapter: PaymentAdapter = {
     }
     if (!isSuccess(res.ok, res.json)) return failure(res.json, '온기 결제 확인에 실패했습니다.');
 
-    const paid = String(res.json.status ?? res.json.paymentStatus ?? '').toUpperCase();
-    if (paid && !['PAID', 'APPROVED', 'DONE', 'COMPLETE', 'COMPLETED'].includes(paid)) {
-      return { ok: false, code: paid, message: '아직 결제가 완료되지 않았습니다.', raw: res.json as Record<string, unknown> };
+    /**
+     * 결제 완료가 **명시된 경우에만** 승인으로 본다 (PAY-4).
+     * 예전 조건(`paid && …`)은 상태 값이 비어 있으면 그대로 통과시켜, 아무 응답이나 승인이 됐다.
+     *  - 실패·취소가 명시됨 → 출금 없음 확정(실패 반환)
+     *  - 비어 있음·대기·처음 보는 값 → 불확실. 예외로 올려 상위가 조회(→ 미확인)로 넘기게 한다.
+     */
+    const paidRaw = String(res.json.status ?? res.json.paymentStatus ?? '');
+    const paidStatus = ongiInquiryStatus(paidRaw);
+    if (paidStatus === 'FAILED' || paidStatus === 'CANCELED') {
+      return { ok: false, code: paidRaw.toUpperCase(), message: '결제가 완료되지 않았습니다.', raw: res.json as Record<string, unknown> };
+    }
+    if (paidStatus !== 'APPROVED') {
+      throw new Error(`온기 결제 상태를 확정할 수 없습니다 (status=${paidRaw || '없음'})`);
+    }
+    // 승인 금액이 요청 금액과 같은지 확인한다. 다르거나 없으면 단정하지 않는다(조회에서 금액 대조 후 미확인 처리).
+    const paidAmount = parseOngiAmount(res.json.amount ?? res.json.payAmount);
+    if (paidAmount === undefined || paidAmount !== req.amount) {
+      throw new Error(
+        `온기 결제 금액을 확인할 수 없습니다 (요청 ${req.amount.toString()}원, 응답 ${paidAmount?.toString() ?? '없음'})`,
+      );
     }
 
     const approvedAtRaw = res.json.paidAt ?? res.json.approvedAt;
@@ -429,15 +471,15 @@ export const ongiPaymentAdapter: PaymentAdapter = {
     return {
       ok: true,
       data: {
-        providerTid: String(res.json.paymentId ?? res.json.tid ?? req.orderNo),
+        providerTid: String(res.json.paymentId ?? res.json.tid ?? ongiOrder),
         approvedAt: Number.isNaN(approvedAt.getTime()) ? new Date() : approvedAt,
-        amount: req.amount,
+        amount: paidAmount,
       },
       latencyMs: res.latencyMs,
     };
   },
 
-  async inquire(orderNo): Promise<ProviderResult<{ status: InquiryStatus; providerTid?: string; amount?: bigint }>> {
+  async inquire(orderNo, ref): Promise<ProviderResult<{ status: InquiryStatus; providerTid?: string; amount?: bigint }>> {
     assertConfigured();
     if (!ONGI_SPEC.paymentInquirePath) {
       // 조회 경로가 없다고 FAILED 로 확정하면 실제로 결제된 건을 정산에서 누락시킨다.
@@ -452,7 +494,7 @@ export const ongiPaymentAdapter: PaymentAdapter = {
 
     const res = await request('POST', ONGI_SPEC.paymentInquirePath, {
       merchantId: env.payment.ongiApiMid || undefined,
-      orderNo,
+      orderNo: ongiOrderNo(orderNo, ref?.donationId),
     });
 
     // 조회 자체가 실패하면 상태를 단정하지 않는다.
@@ -463,15 +505,7 @@ export const ongiPaymentAdapter: PaymentAdapter = {
 
     const status = ongiInquiryStatus(String(res.json.status ?? res.json.paymentStatus ?? ''));
 
-    const amountRaw = res.json.amount ?? res.json.payAmount;
-    let amount: bigint | undefined;
-    if (amountRaw !== undefined && amountRaw !== null && String(amountRaw) !== '') {
-      try {
-        amount = BigInt(String(amountRaw).replace(/[^\d]/g, ''));
-      } catch {
-        amount = undefined;
-      }
-    }
+    const amount = parseOngiAmount(res.json.amount ?? res.json.payAmount);
 
     return {
       ok: true,
@@ -484,13 +518,13 @@ export const ongiPaymentAdapter: PaymentAdapter = {
     };
   },
 
-  async cancel({ orderNo, providerTid, amount, reason }): Promise<ProviderResult<{ canceledAt: Date }>> {
+  async cancel({ orderNo, providerTid, amount, reason, donationId }): Promise<ProviderResult<{ canceledAt: Date }>> {
     assertConfigured();
     if (!ONGI_SPEC.paymentCancelPath) return missingSpec('결제 취소');
 
     const res = await request('POST', ONGI_SPEC.paymentCancelPath, {
       merchantId: env.payment.ongiApiMid || undefined,
-      orderNo,
+      orderNo: ongiOrderNo(orderNo, donationId),
       paymentId: providerTid,
       amount: amount.toString(),
       reason: reason ?? '후원 환불',
