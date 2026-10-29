@@ -206,6 +206,14 @@ export async function transitionStatus(
   });
 }
 
+/** ERROR 행 재처리를 다른 실행이 먼저 선점했을 때. 호출부는 중복 수신(경합)으로 처리한다. */
+class MoRowClaimRace extends Error {
+  constructor() {
+    super('수신 로그 재처리 선점 경합');
+    this.name = 'MoRowClaimRace';
+  }
+}
+
 function isUniqueViolation(e: unknown): boolean {
   const code = (e as { code?: string } | null)?.code;
   // Prisma P2002 / PostgreSQL 23505
@@ -408,7 +416,7 @@ export async function handleMoInbound(inbound: MoInbound): Promise<MoHandleResul
   } catch (e) {
     // 동시 재전송 경합만 중복으로 본다. 그 밖의 오류(DB 연결 등)는 다시 던져 웹훅이 5xx 로
     // 응답하게 한다 — 200 으로 끝내면 사업자가 재전송하지 않아 문자가 유실된다(4차 검토).
-    if (!isUniqueViolation(e)) throw e;
+    if (!isUniqueViolation(e) && !(e instanceof MoRowClaimRace)) throw e;
     const again = await prisma.moInboundMessage.findUnique({
       where: { providerMessageId: inbound.providerMessageId },
       select: { id: true },
@@ -463,7 +471,7 @@ async function createOrReuseMoRow(inbound: MoInbound, routed: RoutedCreator, ph:
         matchedKeyword: routed?.keyword ?? null,
       },
     });
-    if (claimed.count === 0) throw new Error('수신 로그 재처리 선점 경합');
+    if (claimed.count === 0) throw new MoRowClaimRace();
     return prisma.moInboundMessage.findUniqueOrThrow({ where: { id: reuseId } });
   }
   return prisma.moInboundMessage.create({
