@@ -6,6 +6,7 @@ import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
 import { createSession, hashPassword } from '@/server/auth';
 import { isLocal } from '@/lib/env';
+import { isDevFeatureRequestAllowed } from '@/server/request-ip';
 import { consumeIpRateLimit, clientIpFromHeaders } from '@/server/rate-limit';
 import { activeSignupTerms, recordSignupConsents, SignupTermsMissingError } from '@/server/services/signup-consent';
 import { authReturnPath } from '@/lib/auth-return-path';
@@ -115,7 +116,8 @@ export interface TestLoginState {
 /** 테스트 로그인이 허용되는 환경인지 */
 export async function isTestLoginAllowed(): Promise<boolean> {
   // 화이트리스트 방식: local 에서만 허용한다. (APP_ENV 오타/미설정은 env 로더가 prod 로 간주)
-  return isLocal;
+  // [SEC-1] local 이어도 터널(외부 주소)로 들어온 요청에는 열지 않는다(ALLOW_DEV_LOGIN_ON_TUNNEL=1 예외).
+  return isDevFeatureRequestAllowed();
 }
 
 const TEST_ACCOUNTS = {
@@ -129,6 +131,13 @@ export type TestAccountKey = keyof typeof TEST_ACCOUNTS;
 export async function testLogin(_prev: TestLoginState, formData: FormData): Promise<TestLoginState> {
   if (!isLocal) {
     return { message: '이 환경에서는 테스트 로그인을 사용할 수 없습니다. (APP_ENV=local 전용)' };
+  }
+  if (!(await isDevFeatureRequestAllowed())) {
+    return {
+      message:
+        '테스트 로그인은 이 컴퓨터(localhost)에서 직접 접속했을 때만 사용할 수 있습니다. ' +
+        '터널 주소로 시연하려면 .env 에 ALLOW_DEV_LOGIN_ON_TUNNEL=1 을 넣고 다시 실행하십시오.',
+    };
   }
 
   const key = String(formData.get('account') ?? '') as TestAccountKey;

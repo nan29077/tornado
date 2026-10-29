@@ -74,7 +74,7 @@ echo        종료하려면 이 창에서 Ctrl+C 를 누르거나 창을 닫으�
 echo.
 echo   메인        %TORNADO_URL%
 echo   크리에이터  %TORNADO_URL%/studio   creator1@tornado.kr / tornado1234!
-echo   관리자      %TORNADO_URL%/admin    admin@tornado.kr / tornado1234!
+echo   관리자      %TORNADO_URL%/admin    admin@tornado.kr / (시드 실행 시 출력값 또는 SEED_ADMIN_PASSWORD)
 echo   후원자      %TORNADO_URL%/my       donor@tornado.kr / tornado1234!
 echo.
 

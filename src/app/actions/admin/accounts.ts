@@ -189,6 +189,11 @@ export async function findDonorByPhoneAction(
 
 export async function unlockDonor(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
+    /**
+     * 결제 실패 잠금은 "남의 계좌로 반복 결제를 시도한" 흔적일 수 있다. 해제는 위험 판단이므로
+     * 고객지원(SUPPORT)이 아니라 운영 권한 이상이 한다(4차 점검 정책).
+     */
+    assertOperationAdmin(admin, '후원자 결제 실패 잠금 해제');
     const donorId = requiredId(fd, 'donorId', '후원자');
     const before = await prisma.donorProfile.findUnique({
       where: { id: donorId },
@@ -222,6 +227,8 @@ export async function setDonorBlock(_prev: AdminActionState, fd: FormData): Prom
     if (next === 'BLOCK' && (!reason || reason.length < 2)) {
       throw new Error('이용 제한 사유를 2자 이상 입력해 주세요.');
     }
+    // 제한은 고객지원도 즉시 걸 수 있어야 하지만(피해 확산 차단), 해제는 운영 판단이다.
+    if (next === 'UNBLOCK') assertOperationAdmin(admin, '후원자 이용 제한 해제');
 
     const before = await prisma.donorProfile.findUnique({
       where: { id: donorId },
@@ -514,6 +521,21 @@ export async function updateCreatorPaymentMode(_prev: AdminActionState, fd: Form
 
 // =========================================================== 크리에이터 1건 후원금 허용 범위
 
+/**
+ * [P2-15] 크리에이터별 1건 상한은 전역 한도 정책(GLOBAL DonationLimitPolicy.maxAmount)을 넘을 수 없다.
+ * 전역 정책은 재무가 금융사·결제사 한도에 맞춰 정한 값이다. 채널 설정으로 그 위를 열면
+ * 한도 검사(limits.ts)와 화면 안내가 서로 다른 상한을 말하게 된다.
+ */
+async function assertWithinGlobalMax(maxAmount: bigint): Promise<void> {
+  const global = await resolvePolicy(null, null);
+  if (maxAmount > global.maxAmount) {
+    throw new Error(
+      `1건 최대 후원금은 전역 한도 정책의 1건 상한(${global.maxAmount.toString()}원)을 넘을 수 없습니다. ` +
+        '상한을 올리려면 [한도 정책]에서 전역 값을 먼저 변경해 주세요.',
+    );
+  }
+}
+
 /** 크리에이터의 donationAmount 를 [min, max] 범위 안으로 보정한다. */
 function clampAmount(amount: bigint, min: bigint, max: bigint): bigint {
   if (amount < min) return min;
@@ -527,10 +549,16 @@ function clampAmount(amount: bigint, min: bigint, max: bigint): bigint {
  */
 export async function updateCreatorAmountBounds(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
+    /**
+     * [P2-15] 1건 후원금 범위는 돈 관련 정책이다(SET-H: 최고관리자·재무만).
+     * 예전에는 등급 가드가 없어 고객지원 계정으로도 특정 채널의 1건 상한을 올릴 수 있었다.
+     */
+    assertFinanceAdmin(admin, '1건 후원금 허용 범위 변경');
     const creatorId = requiredId(fd, 'creatorId', '크리에이터');
     const minAmount = money(fd, 'minAmount', '1건 최소 후원금', { min: 100n });
     const maxAmount = money(fd, 'maxAmount', '1건 최대 후원금', { min: 100n });
     if (minAmount > maxAmount) throw new Error('최소 금액이 최대 금액보다 클 수 없습니다.');
+    await assertWithinGlobalMax(maxAmount);
 
     const before = await prisma.creatorProfile.findUnique({
       where: { id: creatorId },
@@ -572,13 +600,14 @@ export async function applyGlobalAmountBounds(_prev: AdminActionState, fd: FormD
     if (minAmount > maxAmount) throw new Error('최소 금액이 최대 금액보다 클 수 없습니다.');
 
     /**
-     * 되돌릴 수 없는 일괄 변경이므로 **최고관리자·운영 권한으로 제한**하고,
-     * 대상도 승인된 크리에이터로 좁힌다. 예전에는 where 없이 전 행을 덮어써
-     * 반려·정지 채널까지 함께 바뀌었고, 개별 조정값도 한 번에 사라졌다.
+     * 되돌릴 수 없는 일괄 변경이므로 권한을 제한하고, 대상도 승인된 크리에이터로 좁힌다.
+     * 예전에는 where 없이 전 행을 덮어써 반려·정지 채널까지 함께 바뀌었고, 개별 조정값도 한 번에 사라졌다.
+     *
+     * [P2-15] 개별 변경(updateCreatorAmountBounds)과 같은 등급으로 맞춘다. 1건 후원금 범위는
+     * 돈 관련 정책이므로 SET-H 규칙대로 **최고관리자·재무**만 바꾼다(한도 정책 변경과 동일).
      */
-    if (admin.adminPermission !== 'SUPER_ADMIN' && admin.adminPermission !== 'OPERATION') {
-      throw new Error('전체 일괄 적용은 최고관리자 또는 운영 권한에서만 가능합니다.');
-    }
+    assertFinanceAdmin(admin, '1건 후원금 허용 범위 전체 일괄 적용');
+    await assertWithinGlobalMax(maxAmount);
 
     const scope = { status: 'APPROVED' as const };
     const result = await prisma.$transaction(async (tx) => {
@@ -747,6 +776,28 @@ export async function reissueCreatorCode(_prev: AdminActionState, fd: FormData):
 
 // =========================================================== 관리자 권한
 
+type AccountsTx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/**
+ * [P2-21] 마지막 SUPER_ADMIN 보호를 경쟁 조건 없이 검사한다.
+ *
+ * 예전에는 count() 후 update() 를 따로 실행했다. 최고관리자 두 명이 **동시에** 서로를 강등·회수하면
+ * 두 요청 모두 "2명이니 괜찮다" 를 읽고 통과해 최고관리자가 0명이 되었다(아무도 되돌릴 수 없다).
+ *
+ * 활성 SUPER_ADMIN 행 전체를 `FOR UPDATE` 로 잠근 뒤 센다. 뒤따르는 요청은 잠금이 풀릴 때까지
+ * 기다렸다가 **바뀐 값으로 다시 평가**하므로(PostgreSQL READ COMMITTED 재검사), 앞 요청이
+ * 강등을 커밋했으면 남은 1명만 보고 거절된다. 대상이 SUPER_ADMIN 이 아니면 아무것도 막지 않는다.
+ */
+async function lockSuperAdminsAndAssertNotLast(tx: AccountsTx, profileId: string, message: string): Promise<void> {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM admin_profile
+    WHERE permission = 'SUPER_ADMIN' AND revoked_at IS NULL
+    ORDER BY id
+    FOR UPDATE`;
+  if (!rows.some((r) => r.id === profileId)) return;
+  if (rows.length <= 1) throw new Error(message);
+}
+
 export async function updateAdminPermission(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
     if (admin.adminPermission !== 'SUPER_ADMIN') {
@@ -774,12 +825,12 @@ export async function updateAdminPermission(_prev: AdminActionState, fd: FormDat
     }
     if (before.permission === permission) throw new Error('이미 해당 권한입니다.');
 
-    if (before.permission === 'SUPER_ADMIN' && permission !== 'SUPER_ADMIN') {
-      const superCount = await prisma.adminProfile.count({ where: { permission: 'SUPER_ADMIN', revokedAt: null } });
-      if (superCount <= 1) throw new Error('마지막 SUPER_ADMIN 의 권한은 강등할 수 없습니다.');
-    }
-
-    await prisma.adminProfile.update({ where: { id: profileId }, data: { permission } });
+    await prisma.$transaction(async (tx) => {
+      if (before.permission === 'SUPER_ADMIN' && permission !== 'SUPER_ADMIN') {
+        await lockSuperAdminsAndAssertNotLast(tx, profileId, '마지막 SUPER_ADMIN 의 권한은 강등할 수 없습니다.');
+      }
+      await tx.adminProfile.update({ where: { id: profileId }, data: { permission } });
+    });
     await writeAudit({
       adminUserId: admin.id,
       action: 'ADMIN_PERMISSION_UPDATE',
@@ -822,11 +873,7 @@ export async function revokeAdmin(_prev: AdminActionState, fd: FormData): Promis
     if (before.userId === admin.id) {
       throw new Error('본인의 관리자 자격은 회수할 수 없습니다. 다른 SUPER_ADMIN 에게 요청해 주세요.');
     }
-    // 마지막 SUPER_ADMIN 을 없애면 아무도 권한을 되돌릴 수 없다.
-    if (before.permission === 'SUPER_ADMIN') {
-      const superCount = await prisma.adminProfile.count({ where: { permission: 'SUPER_ADMIN', revokedAt: null } });
-      if (superCount <= 1) throw new Error('마지막 SUPER_ADMIN 의 자격은 회수할 수 없습니다.');
-    }
+    // 마지막 SUPER_ADMIN 을 없애면 아무도 권한을 되돌릴 수 없다. (검사는 아래 트랜잭션 안에서 잠금과 함께 한다)
 
     /**
      * 프로필 행은 남기고 회수 표시만 한다(감사로그 FK 보존). 실제 접근 차단은
@@ -834,17 +881,19 @@ export async function revokeAdmin(_prev: AdminActionState, fd: FormData): Promis
      * 권한도 READ_ONLY 로 낮춰, 나중에 role 이 잘못 되돌아가도 최소 권한만 남게 한다.
      * 열려 있는 세션도 함께 끊는다. 그러지 않으면 브라우저를 켜 둔 사람은 그대로 들어온다.
      */
-    await prisma.$transaction([
-      prisma.adminProfile.update({
+    await prisma.$transaction(async (tx) => {
+      // 잠금 이후의 현재 값으로 다시 본다. before 를 읽은 뒤 다른 요청이 승격·강등했을 수 있다.
+      await lockSuperAdminsAndAssertNotLast(tx, profileId, '마지막 SUPER_ADMIN 의 자격은 회수할 수 없습니다.');
+      await tx.adminProfile.update({
         where: { id: profileId },
         data: { revokedAt: new Date(), permission: 'READ_ONLY' },
-      }),
-      prisma.user.update({ where: { id: before.userId }, data: { role: 'DONOR' } }),
-      prisma.userSession.updateMany({
+      });
+      await tx.user.update({ where: { id: before.userId }, data: { role: 'DONOR' } });
+      await tx.userSession.updateMany({
         where: { userId: before.userId, revokedAt: null },
         data: { revokedAt: new Date() },
-      }),
-    ]);
+      });
+    });
 
     await writeAudit({
       adminUserId: admin.id,

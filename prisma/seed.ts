@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'node:crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
 import { newId } from '../src/lib/id';
@@ -78,14 +79,42 @@ async function main() {
   }
 
   // ---------------------------------------------------------------- 관리자
+  /**
+   * [P2-14] 최고관리자 시드 비밀번호를 저장소에 적지 않는다.
+   *
+   * 저장소가 공개되어 있어 예전 고정값(tornado1234!)은 누구나 안다. 스테이징이나 터널로 공유한
+   * 미리보기에 이 계정이 남아 있으면 그 값 하나로 최고관리자 콘솔에 들어온다.
+   *  - SEED_ADMIN_PASSWORD 가 있으면 그 값을 쓴다(이미 있는 계정도 그 값으로 바꾼다).
+   *  - 없으면 계정을 **새로 만들 때만** 무작위 비밀번호를 만들고 이 창에 한 번만 출력한다.
+   *    이미 있는 계정의 비밀번호는 건드리지 않는다.
+   * 로컬 [테스트 로그인] 버튼은 비밀번호 없이 계정을 찾아 로그인하므로 영향이 없다.
+   */
+  const ADMIN_EMAIL = 'admin@tornado.kr';
+  const envAdminPassword = process.env.SEED_ADMIN_PASSWORD ?? '';
+  if (envAdminPassword && (envAdminPassword.length < 12 || envAdminPassword === 'tornado1234!')) {
+    throw new Error('[seed] SEED_ADMIN_PASSWORD 는 12자 이상이어야 하고, 공개된 예전 기본값(tornado1234!)은 쓸 수 없습니다.');
+  }
+  const adminExists = Boolean(await prisma.user.findUnique({ where: { email: ADMIN_EMAIL }, select: { id: true } }));
+  const generatedAdminPassword = !envAdminPassword && !adminExists ? randomBytes(12).toString('base64url') : null;
+  const adminPasswordForCreate = envAdminPassword || generatedAdminPassword || randomBytes(12).toString('base64url');
+  const adminPasswordHash = await bcrypt.hash(adminPasswordForCreate, 10);
   const adminUser = await prisma.user.upsert({
-    where: { email: 'admin@tornado.kr' },
+    where: { email: ADMIN_EMAIL },
     create: {
-      id: newId(), email: 'admin@tornado.kr', name: '도네이도 관리자',
-      role: 'ADMIN', passwordHash: await bcrypt.hash('tornado1234!', 10),
+      id: newId(), email: ADMIN_EMAIL, name: '도네이도 관리자',
+      role: 'ADMIN', passwordHash: adminPasswordHash,
     },
-    update: { role: 'ADMIN' },
+    update: envAdminPassword ? { role: 'ADMIN', passwordHash: adminPasswordHash } : { role: 'ADMIN' },
   });
+  if (generatedAdminPassword) {
+    console.log('');
+    console.log('[seed] 최고관리자 계정을 만들었습니다. 아래 비밀번호는 지금 한 번만 표시됩니다.');
+    console.log(`[seed]   ${ADMIN_EMAIL} / ${generatedAdminPassword}`);
+    console.log('[seed]   고정값을 쓰려면 .env 에 SEED_ADMIN_PASSWORD 를 넣고 시드를 다시 실행하십시오.');
+    console.log('');
+  } else if (envAdminPassword) {
+    console.log(`[seed] 최고관리자(${ADMIN_EMAIL}) 비밀번호를 SEED_ADMIN_PASSWORD 값으로 설정했습니다.`);
+  }
   await prisma.adminProfile.upsert({
     where: { userId: adminUser.id },
     create: { id: newId(), userId: adminUser.id, permission: 'SUPER_ADMIN' },

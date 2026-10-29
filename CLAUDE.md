@@ -49,7 +49,7 @@ docs/              분석·설계 보고서, 운영 문서
 
 ## 마이그레이션 주의
 
-- 마이그레이션은 `init_tornado` + `guards_and_indexes` 두 개다. 순서에 의존하는 DROP 문을 넣지 말 것.
+- 마이그레이션은 `prisma/migrations/` 아래 타임스탬프 순으로 40개가 넘게 쌓여 있다(첫 두 개가 `init_tornado` + `guards_and_indexes`, 2026-10-29 기준 48개). 새 마이그레이션은 기존 것을 고치지 말고 뒤에 추가한다. 순서에 의존하는 DROP 문을 넣지 말 것.
 - 스키마를 바꾼 뒤에는 반드시 **빈 DB 에서 `npm run db:reset`** 으로 처음부터 적용되는지 확인한다.
 - `prisma migrate reset` 대신 `npm run db:reset`(tools/db-reset.mjs)을 사용한다.
 

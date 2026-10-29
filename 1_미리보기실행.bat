@@ -83,7 +83,7 @@ echo        (창을 닫으면 서버도 함께 종료됩니다)
 echo.
 echo   메인        %TORNADO_URL%
 echo   크리에이터  %TORNADO_URL%/studio   creator1@tornado.kr / tornado1234!
-echo   관리자      %TORNADO_URL%/admin    admin@tornado.kr / tornado1234!
+echo   관리자      %TORNADO_URL%/admin    admin@tornado.kr / (시드 실행 시 출력값 또는 SEED_ADMIN_PASSWORD)
 echo   문자 시뮬   %TORNADO_URL%/admin/simulator
 echo.
 

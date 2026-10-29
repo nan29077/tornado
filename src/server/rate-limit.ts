@@ -1,6 +1,6 @@
 import { headers } from 'next/headers';
 import { kv } from '@/server/redis';
-import { env } from '@/lib/env';
+import { env, isLocal, trustCfConnectingIpHeader, trustRealIpHeader } from '@/lib/env';
 import { logger } from '@/lib/logger';
 
 /**
@@ -11,8 +11,10 @@ import { logger } from '@/lib/logger';
  *  - 비밀번호 재설정 요청       : 메일 폭탄 · 계정 존재 여부 탐색 방지
  *
  * 규칙
- *  - 프록시가 붙인 주소를 알 수 없으면(로컬 직접 접속 등) 제한을 걸지 않는다.
- *    모든 클라이언트가 한 버킷을 공유해 서로를 잠그는 쪽이 더 위험하다.
+ *  - [P2-12] 주소를 알 수 없으면 로컬(APP_ENV=local)에서만 제한을 건너뛴다. 운영·스테이징에서는
+ *    주소를 모르는 요청 전부가 하나의 공용 버킷(`noip`)을 같은 상한으로 나눠 쓴다.
+ *    예전에는 그냥 통과시켜서, 프록시 단수 오설정이나 XFF 를 짧게 위조하는 것만으로
+ *    로그인·문자 발송 등 모든 IP 제한을 우회할 수 있었다.
  *  - 카운터는 Redis(없으면 인메모리)를 쓴다. 다중 인스턴스에서는 Redis 가 필요하다.
  *  - 실패해도 예외를 밖으로 던지지 않는다. 속도 제한 저장소 장애가 가입 자체를 막으면 안 된다.
  */
@@ -59,7 +61,22 @@ export function clientIpFrom(get: (name: string) => string | null): string | nul
       return normalizeIp(hops[idx]);
     }
   }
-  return normalizeIp(get('cf-connecting-ip') ?? get('x-real-ip'));
+  /**
+   * [P2-12] XFF 가 없을 때의 대체 헤더는 **운영자가 명시적으로 켠 경우에만** 믿는다.
+   * CF-Connecting-IP / X-Real-IP 는 클라이언트가 직접 써 넣을 수 있어, 앞단이 덮어쓰지 않는
+   * 구성에서 믿으면 요청마다 IP 를 바꿔 속도 제한을 피하거나 허용목록 IP 를 사칭할 수 있다.
+   *  - TRUST_CF_HEADER=true      : Cloudflare 가 앞단이고 원본이 Cloudflare 에서만 접근 가능할 때
+   *  - TRUST_REAL_IP_HEADER=true : Nginx 등이 X-Real-IP 를 항상 덮어쓸 때
+   */
+  if (trustCfConnectingIpHeader()) {
+    const cf = normalizeIp(get('cf-connecting-ip'));
+    if (cf) return cf;
+  }
+  if (trustRealIpHeader()) {
+    const real = normalizeIp(get('x-real-ip'));
+    if (real) return real;
+  }
+  return null;
 }
 
 /**
@@ -139,9 +156,13 @@ export interface RateLimitOptions {
   failClosed?: boolean;
 }
 
+/** 주소를 알 수 없는 요청이 함께 쓰는 공용 버킷 키. */
+export const UNKNOWN_CLIENT_BUCKET = 'noip';
+
 /**
  * 카운터를 1 증가시키고 상한을 넘었는지 판정한다.
- * key 가 비어 있으면(주소를 알 수 없으면) 항상 통과시킨다.
+ * key 가 비어 있으면(주소를 알 수 없으면) 로컬에서는 통과시키고, 그 외 환경에서는
+ * 공용 버킷(`noip`) 하나를 같은 상한으로 함께 쓴다(P2-12).
  */
 export async function consumeRateLimit(
   scope: string,
@@ -150,7 +171,10 @@ export async function consumeRateLimit(
   windowSec: number,
   opts: RateLimitOptions = {},
 ): Promise<RateLimitResult> {
-  if (!key) return { ok: true, count: 0 };
+  if (!key) {
+    if (isLocal) return { ok: true, count: 0 };
+    key = UNKNOWN_CLIENT_BUCKET;
+  }
   try {
     const count = await kv.incr(`rl:${scope}:${key}`, windowSec);
     return { ok: count <= max, count };
@@ -160,7 +184,7 @@ export async function consumeRateLimit(
   }
 }
 
-/** 서버 액션용 축약형. IP 를 알 수 없으면 통과한다. */
+/** 서버 액션용 축약형. IP 를 알 수 없으면 로컬에서는 통과, 그 외에는 공용 버킷을 쓴다. */
 export async function consumeIpRateLimit(
   scope: string,
   max: number,

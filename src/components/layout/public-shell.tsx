@@ -20,6 +20,15 @@ export async function PublicShell({
   children: React.ReactNode;
   aside?: React.ReactNode;
 }) {
+  /**
+   * [B-1] 쿠키를 **가장 먼저** 읽는다.
+   *
+   * cookies() 는 이 화면이 요청마다 그려져야 한다(동적)는 신호다. 예전에는 아래 getSessionUser()
+   * 안에서 처음 불렸는데, `.catch(() => null)` 이 그 신호(빌드 중 던지는 예외)까지 삼켰다.
+   * 그러면 Next 가 /reset-password 같은 공개 화면을 **빌드 시점에 미리 그리려 하면서 DB 를 조회**해,
+   * DB 가 없는 빌드 환경(CI·Docker 이미지 빌드)에서 `npm run build` 가 실패했다.
+   */
+  const jar = await cookies();
   const user = await getSessionUser().catch(() => null);
 
   // 크리에이터는 프로필 캐릭터(아바타)를 우측 메뉴 프로필에도 그대로 보여준다.
@@ -56,7 +65,6 @@ export async function PublicShell({
 
   // 문의 이력이 있을 때만 배경 폴링을 돌린다.
   // (모든 방문자가 15초/5분마다 /api/inquiry 를 두드리면 공개 페이지 전체가 불필요한 DB 부하를 진다)
-  const jar = await cookies();
   const hasThread = Boolean(user) || Boolean(jar.get(INQUIRY_GUEST_COOKIE)?.value);
 
   return (
