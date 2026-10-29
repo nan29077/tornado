@@ -217,6 +217,18 @@ describe('P2-11 수동 지급 완료는 락 안에서 승인 상태를 다시 �
     expect(await prisma.settlementLedger.count({ where: { requestId: r.id, entryType: 'PAYOUT' } })).toBe(1);
   });
 
+  it('지급일이 속한 달의 원천징수 신고기한이 지났으면 [수정신고 필요] 표시를 남긴다', async () => {
+    const r = await approved();
+    const oldPaidAt = new Date(Date.now() - 70 * 86_400_000); // 두 달 이상 전 → 그 달 신고기한은 이미 지남
+    const paid = await markSettlementPaid(r.id, 'admin', undefined, { expectedStatus: 'APPROVED', paidAt: oldPaidAt });
+    expect(paid.status).toBe('PAID');
+    expect(paid.adminMemo ?? '').toContain('[수정신고 필요]');
+
+    const r2 = await approved();
+    const fresh = await markSettlementPaid(r2.id, 'admin', undefined, { expectedStatus: 'APPROVED' });
+    expect(fresh.adminMemo ?? '').not.toContain('[수정신고 필요]');
+  });
+
   it('은행 결과 경로(expectedStatus 없음)는 지급실패 건도 그대로 반영한다', async () => {
     const r = await approved();
     await prisma.settlementRequest.update({ where: { id: r.id }, data: { status: 'PAYOUT_FAILED' } });

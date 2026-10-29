@@ -405,13 +405,16 @@ export async function handleMoInbound(inbound: MoInbound): Promise<MoHandleResul
   let moRow;
   try {
     moRow = await createOrReuseMoRow(inbound, routed, ph, dup?.id ?? null);
-  } catch {
-    // 동시 재전송 경합
+  } catch (e) {
+    // 동시 재전송 경합만 중복으로 본다. 그 밖의 오류(DB 연결 등)는 다시 던져 웹훅이 5xx 로
+    // 응답하게 한다 — 200 으로 끝내면 사업자가 재전송하지 않아 문자가 유실된다(4차 검토).
+    if (!isUniqueViolation(e)) throw e;
     const again = await prisma.moInboundMessage.findUnique({
       where: { providerMessageId: inbound.providerMessageId },
       select: { id: true },
     });
-    return { result: 'DUPLICATE', moMessageId: again?.id, message: '중복 수신(경합)으로 무시되었습니다.' };
+    if (!again) throw e;
+    return { result: 'DUPLICATE', moMessageId: again.id, message: '중복 수신(경합)으로 무시되었습니다.' };
   }
 
   try {

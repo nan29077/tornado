@@ -158,6 +158,9 @@ export interface RateLimitOptions {
 
 /** 주소를 알 수 없는 요청이 함께 쓰는 공용 버킷 키. */
 export const UNKNOWN_CLIENT_BUCKET = 'noip';
+/** 공용 버킷의 상한 배수. 여러 사용자가 나눠 쓰므로 개별 IP 상한보다 크게 잡는다. */
+export const UNKNOWN_CLIENT_MULTIPLIER = 20;
+let warnedUnknownClient = false;
 
 /**
  * 카운터를 1 증가시키고 상한을 넘었는지 판정한다.
@@ -174,6 +177,18 @@ export async function consumeRateLimit(
   if (!key) {
     if (isLocal) return { ok: true, count: 0 };
     key = UNKNOWN_CLIENT_BUCKET;
+    /**
+     * 공용 버킷은 주소를 모르는 **모든** 요청이 함께 쓴다. 프록시 단수(TRUSTED_PROXY_HOPS)를
+     * 잘못 잡으면 정상 사용자 전원이 여기로 몰리므로, 상한을 넉넉히 늘리고 경고를 남긴다
+     * (4차 검토: 설정 실수로 로그인·웹 후원이 통째로 막히는 것을 막는다).
+     */
+    max = max * UNKNOWN_CLIENT_MULTIPLIER;
+    if (!warnedUnknownClient) {
+      warnedUnknownClient = true;
+      logger.error('클라이언트 IP 를 알 수 없는 요청 — 공용 속도 제한 버킷 사용. TRUSTED_PROXY_HOPS 설정을 확인하세요.', {
+        scope,
+      });
+    }
   }
   try {
     const count = await kv.incr(`rl:${scope}:${key}`, windowSec);

@@ -172,10 +172,14 @@ describe('P2-12 클라이언트 IP 판정과 속도 제한', () => {
 
     await loadEnv({ APP_ENV: 'staging', NODE_ENV: 'production' });
     const staging = await import('@/server/rate-limit');
-    expect((await staging.consumeRateLimit('r4-noip', null, 2, 60)).ok).toBe(true);
-    expect((await staging.consumeRateLimit('r4-noip', undefined, 2, 60)).ok).toBe(true);
-    const third = await staging.consumeRateLimit('r4-noip', '', 2, 60);
-    expect(third.ok).toBe(false);
-    expect(third.count).toBe(3);
+    // 공용 버킷은 개별 상한의 UNKNOWN_CLIENT_MULTIPLIER 배(2 x 20 = 40)까지 허용한다.
+    const cap = 2 * staging.UNKNOWN_CLIENT_MULTIPLIER;
+    for (let i = 1; i <= cap; i++) {
+      const keyArg = i % 3 === 0 ? '' : i % 2 === 0 ? undefined : null;
+      expect((await staging.consumeRateLimit('r4-noip', keyArg, 2, 60)).ok).toBe(true);
+    }
+    const over = await staging.consumeRateLimit('r4-noip', null, 2, 60);
+    expect(over.ok).toBe(false);
+    expect(over.count).toBe(cap + 1);
   });
 });

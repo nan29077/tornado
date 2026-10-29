@@ -861,6 +861,19 @@ export async function markSettlementPaid(
       const requestedPaidAt =
         opts.paidAt ?? (opts.paidAtFromPayoutIssue ? latestPayoutIssueAt(req) ?? undefined : undefined);
       const paidAt = requestedPaidAt && requestedPaidAt.getTime() <= now.getTime() ? requestedPaidAt : now;
+      // 귀속월(지급일이 속한 달)의 원천징수 신고기한(다음 달 10일, KST)이 이미 지났으면
+      // 신고가 끝난 달에 새 지급이 끼어드는 것이다. 기한 후 신고·수정신고를 놓치지 않게 표시한다.
+      {
+        const [py, pm] = kstMonthKey(paidAt).split('-').map(Number);
+        const ny = pm === 12 ? py + 1 : py;
+        const nm = pm === 12 ? 1 : pm + 1;
+        const deadlineKey = `${ny}-${String(nm).padStart(2, '0')}-10`;
+        if (kstDateKey(now) > deadlineKey) {
+          warnings.push(
+            `${AMENDED_FILING_TAG} 지급일(${kstDateKey(paidAt)})이 속한 달의 원천징수 신고기한(${deadlineKey})이 지났습니다`,
+          );
+        }
+      }
       await appendLedger(
         [
           {
