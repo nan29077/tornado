@@ -8,6 +8,7 @@ import {
 import { autoCloseIfDue } from '@/server/services/games';
 import { buildStudioStateShared, toPublicState, type GameStudioState } from '@/server/services/game-state';
 import { clampOverlayLayout } from '@/lib/overlay-layout';
+import { safeEqual } from '@/lib/crypto';
 
 /**
  * 게임 상태 SSE 스트림 (방송 오버레이 · 참여 페이지 · 크리에이터 컨트롤 공용).
@@ -32,6 +33,11 @@ export function gameStateStream(
   creatorId: string,
   view: GameStreamView,
   kind: OverlayConnectionKind = 'preview',
+  /**
+   * [OV-1] 방송용 연결이 통과한 토큰 해시. 토큰을 재발급하면 이 값이 현재 해시와 달라진다.
+   * 재발급 알림으로 끊을 대상을 고르고, 주기 확인(2초)마다 다시 비교하는 데 쓴다.
+   */
+  tokenHash?: string,
 ): Response {
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | null = null;
@@ -78,7 +84,9 @@ export function gameStateStream(
       // 그래야 토큰이 유출됐을 때 게임 쪽만 무제한으로 붙는 구멍이 생기지 않고,
       // 스튜디오의 [현재 연결] 수치에 게임 브라우저 소스도 함께 잡힌다.
       // 방송용 상한(6)은 후원 소스 + 게임 소스가 동시에 붙는 것을 전제로 잡아 둔 값이다.
-      unregister = registerOverlayConnection(creatorId, teardown, kind, 'game');
+      unregister = registerOverlayConnection(creatorId, teardown, kind, 'game', {
+        tokenHash: kind === 'broadcast' ? tokenHash : undefined,
+      });
 
       // 후원 알림 스트림과 동일하게 요청 취소 신호에도 반드시 정리한다.
       // ReadableStream.cancel() 만 믿으면, OBS 강제 종료나 프록시 리셋처럼 cancel 이
@@ -120,9 +128,24 @@ export function gameStateStream(
             buildStudioStateShared(creatorId),
             prisma.overlaySetting.findUnique({
               where: { creatorId },
-              select: { gameEnabled: true, gameOffsetX: true, gameOffsetY: true, gameScalePct: true },
+              select: {
+                gameEnabled: true,
+                gameOffsetX: true,
+                gameOffsetY: true,
+                gameScalePct: true,
+                tokenHash: true,
+              },
             }),
           ]);
+          /**
+           * [OV-1] 토큰 재확인. 이미 2초마다 읽는 설정 조회에 해시만 더 읽으므로 쿼리가 늘지 않는다.
+           * 재발급 알림(Redis)이 닿지 않은 인스턴스에서도 유출된 게임 소스가 계속 상태를 받지 않게 한다.
+           */
+          if (kind === 'broadcast' && tokenHash && !(setting?.tokenHash && safeEqual(setting.tokenHash, tokenHash))) {
+            logger.info('오버레이 토큰이 바뀌어 게임 연결을 끊습니다.', { creatorId });
+            teardown();
+            return;
+          }
           broadcastEnabled = kind !== 'broadcast' || Boolean(setting?.gameEnabled);
 
           // 배치를 바꿔 저장하면 브라우저 소스를 다시 로드하지 않아도 방송 화면에 반영된다.

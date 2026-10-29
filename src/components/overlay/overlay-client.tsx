@@ -26,6 +26,7 @@ import {
 } from '@/lib/overlay-layout';
 import { effectLevelOf, type OverlayEffectLevel } from '@/lib/overlay-effect-level';
 import { openStream, type StreamHandle, type StreamMessage } from '@/lib/shared-event-source';
+import { createServerTtsGuard, ttsGuardMs, ttsOuterLimitMs } from '@/components/overlay/overlay-tts-timing';
 import {
   DEFAULT_OVERLAY_TEXT_ANIM,
   TEXT_ANIM_CLASS,
@@ -152,29 +153,7 @@ const MAX_QUEUE = 12;
  */
 const HARD_QUEUE_LIMIT = 200;
 /** 대기열이 밀렸을 때 적용하는 짧은 표시 시간. */
-/**
- * TTS 한 건이 붙들 수 있는 최대 시간.
- * 이 시간이 지나면 읽기가 안 끝나도 다음 알림으로 넘어간다(위 playNext 주석 참고).
- */
-const TTS_MAX_MS = 20_000;
-
 const RUSH_DURATION_MS = 2600;
-
-/**
- * [OV-A] TTS 안전장치의 절대 상한. 느린 속도(0.5배)로 긴 문장을 읽어도 이 시간을 넘지 않는다.
- * 대기열 한 건이 방송을 너무 오래 붙잡지 않도록 40초로 둔다.
- */
-const TTS_GUARD_CAP_MS = 40_000;
-
-/** 서로 다른 기기·환경에서 TTS 종료 신호가 오지 않을 때를 대비한 상한. */
-function ttsGuardMs(text: string, speed?: number): number {
-  // 한국어 TTS 는 대략 초당 6~8자. 넉넉히 잡아도 문장 길이의 함수여야 한다.
-  const estimated = 2000 + Math.ceil((text?.length ?? 0) / 5) * 1000;
-  // [OV-A] 예전에는 속도를 무시하고 15초로 잘랐다. 0.7배 속도의 긴 문장은 읽는 도중 다음 알림으로
-  // 넘어가 두 목소리가 겹쳤다. 읽는 시간은 속도에 반비례하므로 속도로 나눈다.
-  const rate = Math.min(2, Math.max(0.5, Number(speed) || 1));
-  return Math.min(TTS_GUARD_CAP_MS, Math.max(3000, Math.ceil(estimated / rate)));
-}
 
 /** [OV-A] 재생 중인 서버 음성을 완전히 멈춘다. src 를 비워 남은 다운로드·재생까지 끊는다. */
 function stopAudio(audio: HTMLAudioElement | null) {
@@ -183,6 +162,7 @@ function stopAudio(audio: HTMLAudioElement | null) {
     audio.onended = null;
     audio.onerror = null;
     audio.onloadedmetadata = null;
+    audio.onplaying = null;
     audio.pause();
     audio.removeAttribute('src');
     audio.load();
@@ -463,6 +443,15 @@ export function OverlayClient({
       stopAudio(currentAudio);
       currentAudio = null;
     };
+    /** [P2-17] 브라우저 음성(Web Speech)도 멈춘다. stopCurrentAudio 는 서버 음성만 멈춘다. */
+    const stopBrowserSpeech = () => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        /* ignore */
+      }
+    };
 
     /**
      * 서버 합성(mp3) 재생. 성공하면 true.
@@ -487,22 +476,22 @@ export function OverlayClient({
           const finish = (ok: boolean, stop: boolean) => {
             if (done) return;
             done = true;
-            clearTimeout(guard);
+            guard.cancel();
             // [OV-A] 안전장치 시간 초과·오류로 끝낼 때는 소리를 실제로 멈춘다. 예전에는 대기열만 넘기고
             // 소리는 계속 나와 다음 알림 음성과 겹쳤다.
             if (stop && currentAudio === audio) stopCurrentAudio();
             resolve(ok);
           };
-          // 재생이 끝나지 않는 경우를 대비한 안전장치.
-          // 60초로 두면 알림 한 건이 대기열을 1분간 막는다. 문장 길이·속도에 맞춘 상한을 쓴다.
-          let guard = setTimeout(() => finish(true, true), ttsGuardMs(tts.text, tts.speed));
-          // [OV-A] 실제 길이를 알면 그 길이 + 여유로 안전장치를 다시 건다(추정보다 정확하다).
-          audio.onloadedmetadata = () => {
-            if (done || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
-            clearTimeout(guard);
-            const ms = Math.min(TTS_GUARD_CAP_MS, Math.ceil(audio.duration * 1000) + 1500);
-            guard = setTimeout(() => finish(true, true), ms);
-          };
+          /**
+           * [P2-16] 재생이 끝나지 않는 경우를 대비한 안전장치.
+           * 재생 전(합성 대기)에는 합성 타임아웃 + 여유만큼 기다리고, 그때까지 소리가 안 나면 실패로 끝내
+           * 브라우저 음성으로 되돌아간다. 문장 길이 기반 상한은 메타데이터·재생 시작 뒤부터 센다.
+           * 예전에는 Audio 를 만든 순간부터 3~6초를 세어 클로바 합성 중에 시간이 다 됐고, 그것을 성공으로
+           * 처리해 브라우저 음성으로도 넘어가지 않았다(무음).
+           */
+          const guard = createServerTtsGuard(tts.text, tts.speed, (ok) => finish(ok, true));
+          audio.onloadedmetadata = () => guard.onMetadata(audio.duration);
+          audio.onplaying = () => guard.onPlaying();
           audio.onended = () => finish(true, false);
           audio.onerror = () => finish(false, true);
           audio.play().catch(() => finish(false, true));
@@ -544,22 +533,24 @@ export function OverlayClient({
           utter.volume = Math.min(1, Math.max(0, Number(tts.volume ?? 1)));
 
           let done = false;
-          const finish = () => {
+          const finish = (cancel: boolean) => {
             if (done) return;
             done = true;
             clearTimeout(guard);
+            clearTimeout(startCheck);
+            // [P2-17] 시간 초과로 끝낼 때는 읽기를 실제로 멈춘다. 대기열만 넘기면 이 음성이 다음 알림과 겹친다.
+            if (cancel) stopBrowserSpeech();
             resolve();
           };
           // onend 가 오지 않는 브라우저를 대비한 안전장치
-          const guard = setTimeout(finish, ttsGuardMs(tts.text, tts.speed));
-          utter.onend = finish;
-          utter.onerror = finish;
+          const guard = setTimeout(() => finish(true), ttsGuardMs(tts.text, tts.speed));
+          utter.onend = () => finish(false);
+          utter.onerror = () => finish(false);
           // 말하기가 실제로 시작되지 않으면(음성 없음·정책 차단) 짧게 확인하고 넘어간다.
           const startCheck = setTimeout(() => {
-            if (!synth.speaking && !synth.pending) finish();
+            if (!synth.speaking && !synth.pending) finish(true);
           }, 1200);
-          const clearStartCheck = () => clearTimeout(startCheck);
-          utter.onstart = clearStartCheck;
+          utter.onstart = () => clearTimeout(startCheck);
           synth.speak(utter);
         } catch {
           resolve();
@@ -620,9 +611,12 @@ export function OverlayClient({
        */
       // [OV-A] 상한은 기본 TTS_MAX_MS 이되, 속도를 반영한 안전장치보다 짧지 않게 둔다
       // (느린 속도의 긴 문장이 바깥 상한에 먼저 잘리지 않도록).
-      const ttsLimit = next.tts?.text
-        ? Math.max(TTS_MAX_MS, ttsGuardMs(next.tts.text, next.tts.speed) + 1000)
-        : TTS_MAX_MS;
+      // [P2-16] 서버 음성은 합성 대기 뒤에 브라우저 음성으로 이어 읽을 수 있으므로 그 시간까지 더한다.
+      const ttsLimit = ttsOuterLimitMs(
+        next.tts?.text,
+        next.tts?.speed,
+        (next.ttsMode ?? 'browser') === 'server' && Boolean(next.eventId),
+      );
       const spoken = Promise.race([
         speak(next).catch(() => undefined),
         new Promise<void>((r) => setTimeout(r, ttsLimit)),
@@ -631,6 +625,8 @@ export function OverlayClient({
       Promise.all([shown, spoken]).then(() => {
         // [OV-A] 알림이 끝났는데 소리가 남아 있으면(바깥 상한에 걸린 경우) 다음 알림과 겹치지 않게 멈춘다.
         stopCurrentAudio();
+        // [P2-17] 브라우저 음성도 같은 이유로 멈춘다(바깥 상한에 걸려 넘어가는 경우).
+        if (!muted) stopBrowserSpeech();
         if (disposed) return;
         setLeaving(true);
         setTimeout(() => {
@@ -663,13 +659,7 @@ export function OverlayClient({
       queue.current = [];
       // [OV-A] 정리되는 파이프라인의 서버 음성도 멈춘다(설정 변경·음소거 전환 직후 이전 음성이 남지 않게).
       stopCurrentAudio();
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        try {
-          window.speechSynthesis.cancel();
-        } catch {
-          /* ignore */
-        }
-      }
+      stopBrowserSpeech();
     };
   }, [defaultDurationMs, creatorId, token, preview, muted]);
 

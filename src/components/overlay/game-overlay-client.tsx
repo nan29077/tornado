@@ -12,6 +12,7 @@ import {
   type OverlayLayout,
 } from '@/lib/overlay-layout';
 import { openStream, type StreamHandle } from '@/lib/shared-event-source';
+import { createSpinGate } from '@/components/overlay/roulette-spin-gate';
 
 /**
  * 게임 오버레이 (OBS / PRISM 브라우저 소스).
@@ -694,12 +695,13 @@ function RouletteBoard({ state }: { state: GamePublicState }) {
   // 결과가 정해지면 그 칸이 위쪽 바늘에 오도록 각도를 계산해 한 번만 회전한다.
   const [angle, setAngle] = React.useState(0);
   const [settled, setSettled] = React.useState(false);
-  const spun = React.useRef<string>('');
+  // [P2-19] StrictMode 의 이중 실행에서도 한 번은 반드시 돈다(roulette-spin-gate.ts 참고).
+  const [gate] = React.useState(createSpinGate);
 
   React.useEffect(() => {
     let frame = 0;
     if (winnerIndex == null || items.length === 0) {
-      spun.current = '';
+      gate.reset();
       frame = requestAnimationFrame(() => {
         setAngle(0);
         setSettled(false);
@@ -707,8 +709,7 @@ function RouletteBoard({ state }: { state: GamePublicState }) {
       return () => cancelAnimationFrame(frame);
     }
     const key = `${state.roundId}:${winnerIndex}`;
-    if (spun.current === key) return;
-    spun.current = key;
+    if (!gate.begin(key)) return;
 
     const seg = 360 / items.length;
     const target = 360 * 6 - (winnerIndex * seg + seg / 2);
@@ -717,12 +718,17 @@ function RouletteBoard({ state }: { state: GamePublicState }) {
       setSettled(false);
       setAngle(target);
     });
-    const t = setTimeout(() => setSettled(true), 4600);
+    const t = setTimeout(() => {
+      gate.settle(key);
+      setSettled(true);
+    }, 4600);
     return () => {
       cancelAnimationFrame(frame);
       clearTimeout(t);
+      // 회전이 끝나기 전에 정리되면 다음 실행이 다시 회전을 걸 수 있게 키를 지운다.
+      gate.abort(key);
     };
-  }, [winnerIndex, items.length, state.roundId]);
+  }, [gate, winnerIndex, items.length, state.roundId]);
 
   return (
     <div className="flex items-center gap-[46px]">

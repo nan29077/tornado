@@ -3,6 +3,7 @@ import { logger } from '@/lib/logger';
 import { subscribeOverlay, type OverlayEventPayload } from '@/server/services/overlay-bus';
 import { authorizeOverlay } from '@/server/services/overlay-access';
 import { registerOverlayConnection } from '@/server/services/overlay-connections';
+import { isOverlayTokenStillValid } from '@/server/services/overlay-token-check';
 import {
   SWEEP_TAKE,
   advanceSweepCursor,
@@ -85,6 +86,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ creatorId: stri
   }
 
   const lastEventId = readLastEventId(req, sp);
+  /**
+   * [OV-1] 이 연결이 통과한 토큰 해시. 방송용(토큰 경로)만 있다.
+   * 재발급 알림으로 끊을 대상을 고르고, 하트비트마다 다시 확인하는 데 쓴다.
+   */
+  const connectedTokenHash = !preview ? (access.setting?.tokenHash ?? '') : '';
 
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | null = null;
@@ -141,6 +147,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ creatorId: stri
         teardown,
         preview ? 'preview' : 'broadcast',
         'donation',
+        { tokenHash: connectedTokenHash || undefined },
       );
 
       /**
@@ -241,6 +248,26 @@ export async function GET(req: Request, ctx: { params: Promise<{ creatorId: stri
       //   EventEmitter 로 이벤트가 전달되지 않는 환경에서는 이 보충 조회가 유일한 경로다.
       //   [테스트 후원 보내기]의 체감 지연이 곧 이 주기이므로 짧게 잡는다.
       //   방송용(OBS/PRISM) → 20초: Redis 전파 실패를 보완하는 용도이므로 20초면 충분.
+      /**
+       * [OV-1] 하트비트마다 토큰을 다시 확인한다(방어 심층화).
+       * 재발급 알림(Redis)이 이 인스턴스에 닿지 않아도, 토큰이 바뀌었으면 늦어도 20초 안에 끊는다.
+       * 같은 크리에이터의 연결이 여러 개여도 조회는 짧은 캐시로 한 번에 묶인다.
+       */
+      let verifying = false;
+      const verifyToken = async () => {
+        if (closed || preview || !connectedTokenHash || verifying) return;
+        verifying = true;
+        try {
+          const valid = await isOverlayTokenStillValid(creatorId, connectedTokenHash);
+          if (!valid && !closed) {
+            logger.info('오버레이 토큰이 바뀌어 연결을 끊습니다.', { creatorId });
+            teardown();
+          }
+        } finally {
+          verifying = false;
+        }
+      };
+
       const TICK_MS = 1000;
       let sweepTick = 0;
       const SWEEP_EVERY = preview ? 1 : 20; // 틱 기준 (1s * 1 = 1s, 1s * 20 = 20s)
@@ -255,7 +282,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ creatorId: stri
             /* 연결 종료 */
           }
         }
-        if (sweepTick % SWEEP_EVERY === 0) void sweepMissed();
+        if (sweepTick % SWEEP_EVERY === 0) {
+          // [OV-1] 토큰 확인이 먼저 끝나야 무효화된 연결에 보충 조회분이 한 번 더 나가지 않는다.
+          if (sweepTick % 20 === 0) void verifyToken().then(() => sweepMissed());
+          else void sweepMissed();
+        }
       }, TICK_MS);
 
       req.signal.addEventListener('abort', teardown);

@@ -15,8 +15,13 @@ import { getPlatformTtsRuntime } from '@/server/services/tts-platform';
 
 const ENDPOINT = 'https://naveropenapi.apigw.ntruss.com/tts-premium/v1/tts';
 
-/** 합성 요청 타임아웃. 방송 알림이므로 오래 기다리지 않는다. */
-const TIMEOUT_MS = 8000;
+/**
+ * 합성 요청 타임아웃. 방송 알림이므로 오래 기다리지 않는다.
+ * 오버레이의 서버 음성 대기 시간(overlay-tts-timing.ts 의 SERVER_TTS_SYNTH_TIMEOUT_MS)이
+ * 이 값보다 짧으면 합성이 끝나기 전에 무음으로 넘어간다. 바꿀 때 함께 맞춘다(테스트가 확인한다).
+ */
+export const NAVER_TTS_TIMEOUT_MS = 8000;
+const TIMEOUT_MS = NAVER_TTS_TIMEOUT_MS;
 
 export interface NaverTtsCredentials {
   clientId: string;
@@ -29,7 +34,11 @@ export interface NaverTtsRequest {
   speaker?: string;
   /** 도네이도 기준 배속(0.5 ~ 2.0) */
   speed?: number;
-  /** 도네이도 기준 음량(0 ~ 1) */
+  /**
+   * 도네이도 기준 음량(0 ~ 1).
+   * [P2-18] 합성에는 쓰지 않는다(클로바에는 항상 기본 음량 0 을 보낸다). 음량은 오버레이가
+   * audio.volume 으로 한 번만 적용한다. 양쪽에서 줄이면 50% 설정이 실제로는 훨씬 작게 들렸다.
+   */
   volume?: number;
   /** 도네이도 기준 피치(0 ~ 2, 1 이 기본) */
   pitch?: number;
@@ -142,7 +151,8 @@ export async function synthesizeWithNaver(
     speaker: normalizeSpeaker(req.speaker) || normalizeSpeaker(env.tts.naver.speaker) || 'nara',
     // 클로바는 값이 클수록 느리다. 도네이도 배속(클수록 빠름)과 방향이 반대다.
     speed: String(toClovaScale(req.speed ?? 1, 1, true)),
-    volume: String(toClovaScale(req.volume ?? 1, 1)),
+    // [P2-18] 음량은 오버레이 재생(audio.volume)에서만 적용한다. 여기서도 줄이면 두 번 줄어든다.
+    volume: '0',
     pitch: String(toClovaScale(req.pitch ?? 1, 1, true)),
     format: 'mp3',
     text,

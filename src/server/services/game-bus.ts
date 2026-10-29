@@ -30,7 +30,54 @@ const globalForGameBus = globalThis as unknown as {
   gamePub?: Redis;
   gameSub?: Redis;
   gamePendingPublish?: Map<string, ReturnType<typeof setTimeout>>;
+  gameLastUpdatedAt?: Map<string, number>;
 };
+
+/**
+ * [OV-2] 크리에이터별로 지금까지 본 가장 늦은 상태 시각(updatedAt, ms).
+ * Redis 로 넘어온 상태가 순서가 뒤바뀌어 도착하면(RESULT 다음에 OPEN) 옛 상태를 버리는 데 쓴다.
+ * 같은 시각은 통과시킨다 — 참여자 수 갱신은 회차 행을 고치지 않아 updatedAt 이 그대로다.
+ */
+const lastUpdatedAt = globalForGameBus.gameLastUpdatedAt ?? new Map<string, number>();
+globalForGameBus.gameLastUpdatedAt = lastUpdatedAt;
+const LAST_UPDATED_MAX = 5000;
+
+function stateTime(state: GameStudioState): number {
+  const t = Date.parse(state.updatedAt);
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** 이 상태가 이미 본 것보다 오래됐으면 false. 새로우면 기록하고 true. */
+function acceptNewer(state: GameStudioState): boolean {
+  const t = stateTime(state);
+  const seen = lastUpdatedAt.get(state.creatorId);
+  if (seen !== undefined && t < seen) return false;
+  if (seen === undefined && lastUpdatedAt.size >= LAST_UPDATED_MAX) {
+    const oldest = lastUpdatedAt.keys().next().value;
+    if (oldest !== undefined) lastUpdatedAt.delete(oldest);
+  }
+  lastUpdatedAt.set(state.creatorId, Math.max(t, seen ?? 0));
+  return true;
+}
+
+/**
+ * Redis 로 받은 게임 상태 처리. 다른 인스턴스가 보낸 메시지를 흉내 내는 테스트에서도 쓴다.
+ *
+ * [OV-2] 받은 상태를 짧은 스냅샷 캐시에 먼저 심는다. 심지 않으면 이 인스턴스의 SSE 연결이
+ * 2초 폴링에서 캐시에 남은 옛 상태(OPEN)를 읽어, 버스로 막 받은 RESULT 를 최대 2초간 덮어쓴다.
+ * 이미 본 것보다 오래된 상태는 캐시도 화면도 건드리지 않고 버린다.
+ */
+export function handleGameBusMessage(raw: string): void {
+  try {
+    const state = JSON.parse(raw) as GameStudioState;
+    if (!state?.creatorId) return;
+    if (!acceptNewer(state)) return;
+    primeStudioStateCache(state.creatorId, state.roundId ? state : null);
+    emitter.emit(state.creatorId, state);
+  } catch {
+    /* ignore */
+  }
+}
 
 const emitter =
   globalForGameBus.gameEmitter ??
@@ -56,14 +103,7 @@ function ensureRedis() {
       globalForGameBus.gameSub = undefined;
     });
     sub.subscribe(CHANNEL).catch((e: Error) => logger.warn('game subscribe 실패', { message: e.message }));
-    sub.on('message', (_ch: string, raw: string) => {
-      try {
-        const state = JSON.parse(raw) as GameStudioState;
-        emitter.emit(state.creatorId, state);
-      } catch {
-        /* ignore */
-      }
-    });
+    sub.on('message', (_ch: string, raw: string) => handleGameBusMessage(raw));
     globalForGameBus.gamePub = pub;
     globalForGameBus.gameSub = sub;
   } catch (e) {
@@ -78,6 +118,8 @@ ensureRedis();
  * 상태 전이(시작·마감·발표)처럼 지연되면 안 되는 변화에 쓴다.
  */
 export function publishGameState(state: GameStudioState) {
+  // [OV-2] 이 인스턴스가 낸 상태도 시각을 기록한다. Redis 로 늦게 도착한 옛 상태를 거르는 기준이 된다.
+  acceptNewer(state);
   emitter.emit(state.creatorId, state);
   globalForGameBus.gamePub?.publish(CHANNEL, JSON.stringify(state)).catch((e: Error) => {
     logger.warn('게임 상태 Redis 전파 실패', { creatorId: state.creatorId, message: e.message });

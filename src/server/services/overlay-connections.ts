@@ -64,6 +64,17 @@ interface Connection {
   openedAt: number;
   kind: OverlayConnectionKind;
   source: OverlayConnectionSource;
+  /**
+   * [OV-1] 연결을 열 때 통과한 토큰의 해시. 방송용(토큰 경로) 연결에만 있다.
+   * 토큰을 재발급하면 이 값이 현재 해시와 달라진 연결만 골라 끊는다.
+   */
+  tokenHash?: string;
+}
+
+/** 연결 등록 시 덧붙이는 정보 */
+export interface OverlayConnectionOptions {
+  /** 방송용 연결이 통과한 토큰 해시 (OV-1) */
+  tokenHash?: string;
 }
 
 const globalForConn = globalThis as unknown as {
@@ -88,11 +99,12 @@ export function registerOverlayConnection(
   close: () => void,
   kind: OverlayConnectionKind = 'broadcast',
   source: OverlayConnectionSource = 'donation',
+  options: OverlayConnectionOptions = {},
 ): () => void {
   const set = registry.get(creatorId) ?? new Set<Connection>();
   registry.set(creatorId, set);
 
-  const conn: Connection = { close, openedAt: Date.now(), kind, source };
+  const conn: Connection = { close, openedAt: Date.now(), kind, source, tokenHash: options.tokenHash };
   set.add(conn);
 
   const limit = overlayConnectionLimit(kind);
@@ -156,6 +168,38 @@ export function closeOverlayConnections(
   if (set.size === 0) registry.delete(creatorId);
   if (targets.length > 0) {
     logger.info('오버레이 연결을 끊었습니다.', { creatorId, kind, closed: targets.length });
+  }
+  return targets.length;
+}
+
+/**
+ * [OV-1] 현재 토큰과 다른 토큰으로 붙은 방송용 연결만 끊는다 (이 프로세스 안에서).
+ *
+ * 토큰 재발급은 Redis 로 모든 인스턴스에 알려지고(overlay-bus.ts 의 revokeOverlayToken),
+ * 각 인스턴스는 이 함수로 자기 연결을 정리한다. 현재 해시와 같은 연결은 새 URL 로 이미
+ * 다시 붙은 정상 소스이므로 남긴다. 해시를 모르는 방송용 연결(예전 방식으로 등록된 연결)은
+ * 안전하게 끊는다 — 다시 붙을 때 토큰 검사를 다시 받는다.
+ *
+ * @returns 끊은 연결 수
+ */
+export function closeStaleOverlayConnections(creatorId: string, currentTokenHash: string | null): number {
+  const set = registry.get(creatorId);
+  if (!set) return 0;
+
+  const targets = [...set].filter(
+    (c) => c.kind === 'broadcast' && (!currentTokenHash || c.tokenHash !== currentTokenHash),
+  );
+  for (const conn of targets) {
+    set.delete(conn);
+    try {
+      conn.close();
+    } catch {
+      /* 이미 닫힌 연결 */
+    }
+  }
+  if (set.size === 0) registry.delete(creatorId);
+  if (targets.length > 0) {
+    logger.info('무효화된 토큰으로 붙은 오버레이 연결을 끊었습니다.', { creatorId, closed: targets.length });
   }
   return targets.length;
 }
