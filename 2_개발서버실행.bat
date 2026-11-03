@@ -50,7 +50,7 @@ if "%NEED_GEN%"=="1" (
     echo.
     echo [오류] Prisma 클라이언트 생성에 실패했습니다.
     echo        원인을 확인하려면 도구_상세진단.bat 을 실행해 주세요.
-    echo        (logs\diag.log 에 상세 로그가 저장됩니다)
+    echo        상세 로그는 logs\diag.log 에 저장됩니다.
     echo.
     pause
     exit /b 1

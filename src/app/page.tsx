@@ -11,21 +11,23 @@ import { HeroSlider } from '@/components/public/hero-slider';
 import { BannerStrip } from '@/components/public/banner-strip';
 import { Card, CardTitle, SectionTitle, LinkButton, Notice } from '@/components/ui';
 import { prisma } from '@/server/db';
+import { siteImageUrl } from '@/lib/site-images';
+import { getSiteImageSelection } from '@/server/services/site-images';
 
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
   // 공개 메인은 DB가 재기동되는 짧은 순간에도 전체 화면이 무너지지 않게 한다.
   // FAQ만 비워서 렌더링하고, 서버 상태는 /api/health에서 별도로 확인한다.
-  const faqs = await prisma.contentPost.findMany({
+  const [banner, faqs] = await Promise.all([getSiteImageSelection('banner'), prisma.contentPost.findMany({
     where: { type: 'FAQ', published: true },
     orderBy: { sortOrder: 'asc' },
     take: 5,
-  }).catch(() => []);
+  }).catch(() => [])]);
 
   return (
     <PublicShell aside={<HomeAside />}>
-      <HeroSlider />
+      <HeroSlider bannerImage={siteImageUrl('banner', banner)} />
 
       {/* 관리자 등록 배너 (HOME_TOP) */}
       <BannerStrip position="HOME_TOP" className="mt-4" />

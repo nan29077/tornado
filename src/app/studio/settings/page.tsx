@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Camera, Music2, Radio, ThumbsUp, Video } from 'lucide-react';
 import { Badge, Card, DataRow, Field, Input, Notice, SectionTitle, Textarea, cx } from '@/components/ui';
 import { DEFAULT_BANNERS, defaultBannerFor } from '@/lib/banners';
+import { siteImageUrl } from '@/lib/site-images';
 import { PageHeader } from '@/components/layout/console-shell';
 import { ActionForm } from '@/components/studio/action-form';
 import { ImageUploadField } from '@/components/studio/image-upload-field';
@@ -28,6 +29,7 @@ import { resolvePolicy } from '@/server/services/limits';
 import { formatWon } from '@/lib/money';
 import { moNumberStatusLabel } from '@/lib/labels';
 import { getPublicBaseUrl } from '@/server/public-base-url';
+import { getSiteImageSelection } from '@/server/services/site-images';
 
 export const dynamic = 'force-dynamic';
 
@@ -136,7 +138,7 @@ export default async function StudioSettingsPage({
     ? (requestedTab as SettingsTab)
     : (LEGACY_TABS[requestedTab ?? ''] ?? 'amount');
 
-  const [creator, moNumbers, policy] = await Promise.all([
+  const [creator, moNumbers, policy, siteBanner] = await Promise.all([
     prisma.creatorProfile.findUnique({
       where: { id: creatorId },
       select: {
@@ -168,6 +170,7 @@ export default async function StudioSettingsPage({
       select: { id: true, phoneNumber: true, keyword: true, mode: true, status: true, assignedAt: true },
     }),
     resolvePolicy(creatorId, null),
+    activeTab === 'page' ? getSiteImageSelection('banner') : null,
   ]);
 
   if (!creator) notFound();
@@ -357,23 +360,33 @@ export default async function StudioSettingsPage({
             </div>
 
             <ActionForm action={updateDonationPageAction} submitLabel="후원페이지 설정 저장">
-              {/* 배너 선택: 기본 5종 + 직접 입력 */}
+              {/* 공용 기본, 고정 프리셋, 직접 입력을 구분한다. */}
               <div>
                 <p className="text-[13px] font-bold text-ink-900">상단 배너</p>
                 <p className="mt-0.5 mb-2 text-[12px] text-ink-400">
-                  기본 배너 5종 중 선택하거나 직접 이미지 주소를 입력할 수 있습니다. 선택하지 않으면 기본 배너가
-                  자동 적용됩니다.
+                  공용 기본 배너를 사용하거나, 후원 페이지에 표시할 이미지를 직접 선택할 수 있습니다.
                 </p>
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                  <label className="group relative cursor-pointer">
+                    <input type="radio" name="bannerPreset" value="" defaultChecked={!creator.bannerUrl} className="peer sr-only" />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={(siteBanner && siteImageUrl('banner', siteBanner)) || defaultBannerFor(creator.id)}
+                      alt="공용 기본 배너"
+                      className="h-16 w-full rounded-xl border-2 border-transparent object-cover peer-checked:border-brand-500 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500"
+                    />
+                    <span className="absolute left-1.5 top-1.5 rounded bg-ink-900/60 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                      공용 기본
+                    </span>
+                  </label>
                   {DEFAULT_BANNERS.map((b, i) => {
-                    const checked = creator.bannerUrl === b || (!creator.bannerUrl && defaultBannerFor(creator.id) === b);
                     return (
                       <label key={b} className="group relative cursor-pointer">
                         <input
                           type="radio"
                           name="bannerPreset"
                           value={b}
-                          defaultChecked={checked}
+                          defaultChecked={creator.bannerUrl === b}
                           className="peer sr-only"
                         />
                         {/* eslint-disable-next-line @next/next/no-img-element */}

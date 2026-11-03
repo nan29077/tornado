@@ -6,6 +6,8 @@ import { PublicShellClient, type ShellViewer } from './public-shell-client';
 import { SupportWidget } from '@/components/public/support-widget';
 import { isServiceInMockMode } from '@/server/service-mode';
 import { env } from '@/lib/env';
+import { siteImageUrl } from '@/lib/site-images';
+import { getSiteImageSelection } from '@/server/services/site-images';
 
 /**
  * 공개 영역 레이아웃 (서버 래퍼).
@@ -29,7 +31,7 @@ export async function PublicShell({
    * DB 가 없는 빌드 환경(CI·Docker 이미지 빌드)에서 `npm run build` 가 실패했다.
    */
   const jar = await cookies();
-  const user = await getSessionUser().catch(() => null);
+  const [user, margin] = await Promise.all([getSessionUser().catch(() => null), getSiteImageSelection('margin')]);
 
   // 크리에이터는 프로필 캐릭터(아바타)를 우측 메뉴 프로필에도 그대로 보여준다.
   const creatorAvatar =
@@ -69,7 +71,7 @@ export async function PublicShell({
 
   return (
     <>
-      <PublicShellClient aside={aside} viewer={viewer} mockMode={isServiceInMockMode()} business={env.business}>
+      <PublicShellClient aside={aside} viewer={viewer} mockMode={isServiceInMockMode()} business={env.business} marginImage={siteImageUrl('margin', margin)}>
         {children}
       </PublicShellClient>
       <SupportWidget faqs={faqs} loggedIn={Boolean(user)} hasThread={hasThread} />

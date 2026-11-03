@@ -30,6 +30,7 @@ function checkUrl(value: string | null, label: string): string | null {
 
 export async function saveBanner(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
+    if (admin.adminPermission !== 'SUPER_ADMIN') throw new Error('최고 관리자만 배너를 변경할 수 있습니다.');
     const id = optText(fd, 'id');
     const position = text(fd, 'position');
     const title = text(fd, 'title');
@@ -64,7 +65,7 @@ export async function saveBanner(_prev: AdminActionState, fd: FormData): Promise
         before: { position: before.position, title: before.title, active: before.active, sortOrder: before.sortOrder },
         after: data,
       });
-      revalidatePath('/admin/banners');
+      revalidatePath('/admin/site');
       return '배너를 저장했습니다.';
     }
 
@@ -76,13 +77,14 @@ export async function saveBanner(_prev: AdminActionState, fd: FormData): Promise
       targetId: created.id,
       after: data,
     });
-    revalidatePath('/admin/banners');
+    revalidatePath('/admin/site');
     return '배너를 등록했습니다.';
   });
 }
 
 export async function deleteBanner(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
+    if (admin.adminPermission !== 'SUPER_ADMIN') throw new Error('최고 관리자만 배너를 삭제할 수 있습니다.');
     const id = requiredId(fd, 'id', '배너');
     const before = await prisma.banner.findUnique({ where: { id } });
     if (!before) throw new Error('배너를 찾을 수 없습니다.');
@@ -95,7 +97,7 @@ export async function deleteBanner(_prev: AdminActionState, fd: FormData): Promi
       targetId: id,
       before: { position: before.position, title: before.title },
     });
-    revalidatePath('/admin/banners');
+    revalidatePath('/admin/site');
     return '배너를 삭제했습니다.';
   });
 }

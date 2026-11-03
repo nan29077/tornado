@@ -390,7 +390,7 @@ a {
 }
 
 @media (min-width: 1180px) {
-  .public-canvas::before {
+  .public-canvas:not(.has-site-margin)::before {
     position: fixed;
     inset: -2.5%;
     z-index: 0;

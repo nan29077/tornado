@@ -11,6 +11,8 @@ import { WebDonationPanel } from '@/components/public/web-donation-panel';
 import { WebDonationPinPanel } from '@/components/public/web-donation-pin-panel';
 import { CreatorDonateShell } from '@/components/public/creator-donate-shell';
 import { defaultBannerFor } from '@/lib/banners';
+import { siteImageUrl } from '@/lib/site-images';
+import { getSiteImageSelection } from '@/server/services/site-images';
 import { maskDisplayName } from '@/components/public/mask';
 import { Logo } from '@/components/brand/logo';
 import { ProfileAvatar } from '@/components/profile/generated-avatar';
@@ -122,7 +124,7 @@ export default async function CreatorDonationPage({ params }: Params) {
   if (!creator) return <NotFoundView />;
 
   const monthFrom = kstStartOfMonth();
-  const [policy, donations, totalCount, monthCount, supporterCount] = await Promise.all([
+  const [policy, donations, totalCount, monthCount, supporterCount, banner] = await Promise.all([
     resolvePolicy(creator.id),
     prisma.donation.findMany({
       where: { creatorId: creator.id, status: { in: [...PAID_STATUSES] } },
@@ -141,6 +143,7 @@ export default async function CreatorDonationPage({ params }: Params) {
       where: { creatorId: creator.id, status: { in: [...PAID_STATUSES] }, paidAt: { gte: monthFrom } },
     }),
     prisma.donorCreatorLink.count({ where: { creatorId: creator.id, totalCount: { gt: 0 } } }),
+    getSiteImageSelection('banner'),
   ]);
 
   // 허용 범위 = 플랫폼 정책 ∩ 크리에이터 설정 (결제 시 checkLimits 가 같은 교집합으로 판정한다).
@@ -153,7 +156,7 @@ export default async function CreatorDonationPage({ params }: Params) {
   const viewerDonor = await currentViewerDonor();
 
   const route = creator.moRoutes[0] ?? null;
-  const bannerUrl = creator.bannerUrl ?? defaultBannerFor(creator.id);
+  const bannerUrl = creator.bannerUrl ?? siteImageUrl('banner', banner) ?? defaultBannerFor(creator.id);
 
   /**
    * SNS 링크와 라이브 상태.

@@ -3,7 +3,7 @@ import { Megaphone, ArrowRight } from 'lucide-react';
 import { prisma } from '@/server/db';
 
 /**
- * 관리자(/admin/banners)에서 등록한 배너를 노출하는 공용 컴포넌트 (서버).
+ * 사이트 관리에서 등록한 기간 지정 배너를 노출하는 공용 컴포넌트 (서버).
  * - position: HOME_TOP / HOME_MIDDLE / SUPPORT_TOP / CONSOLE_TOP
  * - active=true 이면서 노출 기간(startsAt~endsAt) 안에 있는 배너만 표시한다.
  * - DB 장애 시에도 화면 전체가 무너지지 않게 조회 실패는 빈 목록으로 처리한다.

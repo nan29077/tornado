@@ -123,7 +123,7 @@ function buildGroups(c: Awaited<ReturnType<typeof loadPendingCounts>>): NavGroup
     {
       title: '콘텐츠·고객지원',
       items: [
-        { href: '/admin/banners', label: '배너 관리', icon: 'banners' },
+        { href: '/admin/site', label: '사이트 관리', icon: 'banners' },
         { href: '/admin/contents', label: '공지·FAQ', icon: 'contents' },
         { href: '/admin/moderation', label: '신고·금칙어', icon: 'moderation' },
         {
@@ -159,7 +159,7 @@ const permissionLabel: Record<string, string> = {
  * 화면 자체의 권한 검사는 각 페이지가 하고, 여기서는 "보이지도 않게" 한 겹 더 둔다.
  * (세무 관리에는 사업자번호·지급명세서 자료가 들어간다)
  */
-const SUPER_ADMIN_ONLY = new Set(['/admin/inquiries', '/admin/tax']);
+const SUPER_ADMIN_ONLY = new Set(['/admin/inquiries', '/admin/tax', '/admin/site']);
 
 /**
  * 최고관리자 + 운영 등급에게만 보이는 메뉴.

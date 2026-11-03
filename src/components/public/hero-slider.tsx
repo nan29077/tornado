@@ -5,10 +5,11 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cx } from '@/components/ui';
+import { DEFAULT_HOME_BANNER } from '@/lib/site-images';
 
 const slides = [
   {
-    image: '/assets/tornado-hero-creator-v2.png',
+    image: DEFAULT_HOME_BANNER,
     eyebrow: 'MESSAGE TO LIVE',
     title: '문자 한 통이\n방송을 움직입니다',
     description: '진심을 담아 보낸 메시지가 결제 완료 후 라이브 화면과 음성으로 전달됩니다.',
@@ -41,7 +42,7 @@ const slides = [
   },
 ];
 
-export function HeroSlider() {
+export function HeroSlider({ bannerImage }: { bannerImage?: string }) {
   const [current, setCurrent] = React.useState(0);
   const [paused, setPaused] = React.useState(false);
 
@@ -77,7 +78,7 @@ export function HeroSlider() {
             )}
             aria-hidden={current !== index}
           >
-            <Image src={slide.image} alt="" fill priority={index === 0} sizes="(min-width: 768px) 640px, 100vw" className="object-cover" />
+            <Image src={index === 0 && bannerImage ? bannerImage : slide.image} alt="" fill priority={index === 0} sizes="(min-width: 768px) 640px, 100vw" className="object-cover" />
             <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(23,22,26,0)_58%,rgba(23,22,26,0.6)_88%,rgba(23,22,26,1)_100%)] sm:bg-[linear-gradient(90deg,rgba(23,22,26,0.9)_0%,rgba(23,22,26,0.6)_48%,rgba(23,22,26,0.1)_100%)]" />
           </div>
         ))}

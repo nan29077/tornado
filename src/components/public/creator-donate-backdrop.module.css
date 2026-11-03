@@ -2,42 +2,130 @@
   display: none;
 }
 
-/* 셸의 700px 본문 + 104px 메뉴 + 최대 20px 간격을 전부 비워 둔다.
-   좁은 PC에서도 장식이 본문이나 우측 메뉴 안으로 들어가지 않는다. */
+.left {
+  --image-anchor: left;
+  --fade-inward: to right;
+}
+
+.right {
+  --image-anchor: right;
+  --fade-inward: to left;
+}
+
+.preview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  background: #fff8eb;
+}
+
+/* 원본 2:1 이미지의 가로 폭 중 5/12을 각 장면에 사용한다. */
+.preview .art,
+.wing .art {
+  aspect-ratio: 5 / 6;
+}
+
+.preview .art {
+  background: var(--site-margin-image) var(--image-anchor) center / 240% 100% no-repeat;
+}
+
+/* 셸의 700px 본문 + 104px 메뉴 + 최대 20px 간격을 비워 둔다. */
 @media (min-width: 1024px) {
   .scene {
+    --site-content-width: 824px;
     position: fixed;
     inset: 0;
     z-index: 0;
-    display: block;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--site-content-width) minmax(0, 1fr);
     overflow: hidden;
     pointer-events: none;
     user-select: none;
   }
 
-  .side {
+  .publicPage {
+    --site-content-width: 744px;
+  }
+
+  .wing {
+    position: relative;
+    display: grid;
+    place-items: center;
+    isolation: isolate;
+    overflow: hidden;
+  }
+
+  .wing.left {
+    grid-column: 1;
+    grid-template-rows: 2fr auto 3fr;
+  }
+
+  .wing.right {
+    grid-column: 3;
+    grid-template-rows: 3fr auto 2fr;
+  }
+
+  /* 장면 위아래의 색과 배경으로 여백을 채운다. 캐릭터는 중앙 원본에서 표시한다. */
+  .wing::before,
+  .wing::after {
+    content: '';
     position: absolute;
-    top: 50%;
-    aspect-ratio: 2 / 3;
-    transform: translateY(-50%);
-    width: max(0px, calc((100% - 824px) / 2 - 12px));
+    z-index: -1;
+    inset-inline: -10px;
+    height: 60%;
+    background-image: var(--site-margin-image);
     background-repeat: no-repeat;
-    background-position: center;
-    background-size: contain;
-    opacity: 0.78;
-    /* 생성 이미지의 사각 경계를 지우고 기존 크림 배경에 자연스럽게 연결한다. */
-    mask-image: radial-gradient(ellipse at center, #000 42%, transparent 74%);
-    -webkit-mask-image: radial-gradient(ellipse at center, #000 42%, transparent 74%);
+    background-size: 240% 480%;
+    filter: blur(8px);
+    opacity: 0.82;
   }
 
-  .left {
-    left: 0;
-    background-image: url('/assets/donaido-donation-margin-left-v1.webp');
+  .wing::before {
+    top: -10px;
+    background-position: var(--image-anchor) top;
+    mask-image: linear-gradient(#000 38%, transparent);
   }
 
-  .right {
-    right: 0;
-    background-image: url('/assets/donaido-donation-margin-right-v1.webp');
+  .wing::after {
+    bottom: -10px;
+    background-position: var(--image-anchor) bottom;
+    mask-image: linear-gradient(to top, #000 38%, transparent);
+  }
+
+  .wing .art {
+    grid-row: 2;
+    width: min(100%, 78svh);
+    background: var(--site-margin-image) var(--image-anchor) center / 240% 100% no-repeat;
+    mask-image:
+      linear-gradient(to bottom, transparent, #000 7% 93%, transparent),
+      linear-gradient(var(--fade-inward), transparent, #000 3% 89%, transparent);
+    mask-composite: intersect;
+    animation: site-margin-float 8s ease-in-out infinite alternate;
+  }
+
+  .wing.right .art {
+    animation-delay: -4s;
+  }
+
+  .wing.original .art {
+    width: min(100%, 62svh);
+    aspect-ratio: 2 / 3;
+    background-size: 100% 100%;
+  }
+
+  .wing.original::before,
+  .wing.original::after {
+    background-size: 100% 480%;
+  }
+}
+
+@keyframes site-margin-float {
+  from { transform: translateY(-6px); }
+  to { transform: translateY(6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wing .art {
+    animation: none;
   }
 }
 
