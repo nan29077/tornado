@@ -7,7 +7,6 @@ import { BusinessInfo } from '@/components/layout/business-info';
 import { ProfileAvatar } from '@/components/profile/generated-avatar';
 import { Logo } from '@/components/brand/logo';
 import { CreatorDonateBackdrop } from './creator-donate-backdrop';
-import { siteImageUrl } from '@/lib/site-images';
 import { getSiteImageSelection } from '@/server/services/site-images';
 import { attributeFanByCreatorCode } from '@/server/services/creator-fans';
 import { SOCIAL_PROVIDERS, socialProviderStatus, SOCIAL_LABEL } from '@/server/adapters/social';
@@ -193,7 +192,7 @@ export async function CreatorDonateShell({
             'radial-gradient(700px 420px at 82% 12%, rgba(251,185,20,0.16) 0%, rgba(251,185,20,0) 70%), radial-gradient(620px 420px at 12% 88%, rgba(23,22,26,0.07) 0%, rgba(23,22,26,0) 70%)',
         }}
       />
-      <CreatorDonateBackdrop image={siteImageUrl('margin', margin)} />
+      <CreatorDonateBackdrop preset={margin} />
 
       <div className="relative mx-auto min-h-dvh lg:grid lg:w-fit lg:grid-cols-[700px_104px] lg:items-start lg:gap-4 lg:py-6 xl:gap-5">
         <div className="min-h-dvh bg-warm-50 lg:w-[700px] lg:rounded-[2rem] lg:border lg:border-white/80 lg:shadow-panel">

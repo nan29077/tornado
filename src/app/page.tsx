@@ -114,6 +114,38 @@ export default async function HomePage() {
         </Card>
       </section>
 
+      <section id="creator-promo" className="mt-8" aria-labelledby="creator-promo-title">
+        <Card padded={false} className="overflow-hidden">
+          <div className="px-5 py-4 sm:px-6">
+            <h2 id="creator-promo-title" className="text-[19px] font-black tracking-[-0.025em] text-ink-900">
+              팬의 문자, 내 방송의 후원으로
+            </h2>
+          </div>
+          <video
+            controls
+            playsInline
+            preload="none"
+            width={1280}
+            height={720}
+            poster="/videos/donaido-creator-promo-poster.webp"
+            aria-labelledby="creator-promo-title"
+            className="block aspect-video h-auto w-full bg-ink-900"
+          >
+            <source src="/videos/donaido-creator-promo.mp4" type="video/mp4" />
+            <a href="/videos/donaido-creator-promo.mp4">홍보 영상 다운로드</a>
+          </video>
+          <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <p className="text-[13px] leading-relaxed text-ink-600">
+              유튜브를 연동하면 팬이 문자로 보낸 응원 메시지가 PIN 결제 완료 후 실시간 채팅에 표시돼요. OBS · PRISM 오버레이에도 후원 알림을 띄울 수 있어요.
+            </p>
+            <LinkButton href="/creator-apply" className="shrink-0">
+              크리에이터 가입 신청
+              <ArrowRight size={16} strokeWidth={1.8} />
+            </LinkButton>
+          </div>
+        </Card>
+      </section>
+
       {/* 6. 방송 연동 소개 */}
       <section className="mt-8">
         <SectionTitle title="유튜브·OBS·PRISM 연동" description="결제가 완료된 후원만 방송에 노출됩니다." />

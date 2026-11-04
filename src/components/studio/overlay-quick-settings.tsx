@@ -78,7 +78,8 @@ interface EffectOption {
   Icon?: React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }>;
   image?: string;
   animationClass?: string;
-  tint: string;
+  tint?: string;
+  previewBackground?: string;
 }
 
 const EFFECTS: EffectOption[] = [
@@ -95,7 +96,7 @@ const EFFECTS: EffectOption[] = [
     desc: sticker.description,
     image: sticker.image,
     animationClass: sticker.animationClass,
-    tint: 'bg-[linear-gradient(145deg,#fff9e9,#fff2bf)]',
+    previewBackground: `linear-gradient(145deg, rgba(${sticker.palette.soft}, 0.28), rgba(${sticker.palette.glow}, 0.4))`,
   })),
 ];
 
@@ -256,7 +257,10 @@ export function OverlayQuickSettings({
                     캐릭터
                   </span>
                 ) : null}
-                <span className={cx('grid place-items-center rounded-xl', o.image ? 'h-20 w-20' : 'h-11 w-11', o.tint)}>
+                <span
+                  className={cx('grid place-items-center rounded-xl', o.image ? 'h-20 w-20' : 'h-11 w-11', o.tint)}
+                  style={{ background: o.previewBackground }}
+                >
                   {o.image ? (
                     <Image
                       src={o.image}

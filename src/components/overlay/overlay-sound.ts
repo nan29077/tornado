@@ -184,6 +184,49 @@ function playCharacterSound(audio: AudioContext, name: string, t: number, peak: 
       noiseBurst(audio, t + 0.48, 0.06, peak * 0.3);
       return true;
 
+    case 'DONAIDO_METEOR_LANDING':
+      tone(audio, { freq: 1046.5, endFreq: 196, start: t, duration: 0.43, peak: peak * 0.65 });
+      noiseBurst(audio, t + 0.43, 0.18, peak * 0.5);
+      return true;
+
+    case 'DONAIDO_RAINBOW_JUMP':
+      sequence(audio, t, [523.25, 659.25, 783.99, 1046.5, 783.99, 659.25], {
+        step: 0.1, duration: 0.18, peak: peak * 0.7, type: 'triangle',
+      });
+      return true;
+
+    case 'DONAIDO_BUBBLE_FLOAT':
+      [440, 587.33, 880].forEach((freq, i) =>
+        tone(audio, { freq, endFreq: freq * 1.45, start: t + i * 0.16, duration: 0.15, peak: peak * 0.65 }),
+      );
+      return true;
+
+    case 'DONAIDO_CROWN_CEREMONY':
+      sequence(audio, t, [392, 392, 523.25, 659.25], {
+        step: 0.15, duration: 0.23, peak: peak * 0.75, type: 'triangle',
+      });
+      return true;
+
+    case 'DONAIDO_MAGIC_PORTAL':
+      tone(audio, { freq: 220, endFreq: 440, start: t, duration: 0.7, peak: peak * 0.45 });
+      sequence(audio, t + 0.17, [622.25, 932.33, 1244.51], { step: 0.12, duration: 0.4, peak: peak * 0.6 });
+      return true;
+
+    case 'DONAIDO_LIGHTNING_DASH':
+      noiseBurst(audio, t, 0.18, peak * 0.55);
+      tone(audio, { freq: 880, endFreq: 196, start: t + 0.08, duration: 0.24, peak: peak * 0.65, type: 'triangle' });
+      return true;
+
+    case 'DONAIDO_SNOW_SKATE':
+      sequence(audio, t, [1567.98, 1318.51, 1046.5, 1318.51], { step: 0.15, duration: 0.36, peak: peak * 0.53 });
+      return true;
+
+    case 'DONAIDO_FLOWER_WALK':
+      sequence(audio, t, [349.23, 440, 392, 523.25], {
+        step: 0.17, duration: 0.21, peak: peak * 0.68, type: 'triangle',
+      });
+      return true;
+
     default:
       return false;
   }

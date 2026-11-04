@@ -140,10 +140,6 @@ a {
   background: #fff9ec;
 }
 
-.public-canvas::before {
-  content: none;
-}
-
 .public-content {
   min-height: calc(100dvh - 68px);
 }
@@ -390,20 +386,6 @@ a {
 }
 
 @media (min-width: 1180px) {
-  .public-canvas:not(.has-site-margin)::before {
-    position: fixed;
-    inset: -2.5%;
-    z-index: 0;
-    content: '';
-    background:
-      linear-gradient(rgba(255, 251, 241, 0.17), rgba(255, 251, 241, 0.17)),
-      url('/assets/donaido-mascot-world-bg-v1.png') center center / cover no-repeat;
-    transform: scale(1.025);
-    transform-origin: 50% 50%;
-    animation: mascot-world-drift 18s ease-in-out infinite alternate;
-    pointer-events: none;
-  }
-
   .public-mascot-scene {
     position: fixed;
     inset: 0;
@@ -530,11 +512,6 @@ a {
 @keyframes mascot-console-breathe {
   0%, 100% { transform: translateY(0) scale(1); }
   50% { transform: translateY(-7px) scale(1.025); }
-}
-
-@keyframes mascot-world-drift {
-  0% { transform: translate3d(-0.5%, -0.35%, 0) scale(1.025); filter: saturate(0.96); }
-  100% { transform: translate3d(0.5%, 0.4%, 0) scale(1.045); filter: saturate(1.04); }
 }
 
 .card {
@@ -753,6 +730,78 @@ a {
 .animate-sticker-fly-in { animation: donaido-sticker-fly-in 1.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
 .animate-sticker-friend-pop { animation: donaido-sticker-friend-pop 1s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
+@keyframes donaido-sticker-meteor {
+  0% { opacity: 0; transform: translate(54%, -60%) rotate(32deg) scale(0.65); }
+  45% { opacity: 1; transform: translate(0, 3%) rotate(-6deg) scale(1.12, 0.86); }
+  64% { transform: translateY(-12%) rotate(5deg) scale(0.97, 1.06); }
+  84% { transform: translateY(1%) scale(1.04, 0.96); }
+  100% { transform: none; }
+}
+
+@keyframes donaido-sticker-rainbow {
+  0% { opacity: 0; transform: translate(-46%, 22%) rotate(-24deg) scale(0.78); }
+  26% { opacity: 1; transform: translate(-26%, -29%) rotate(-14deg); }
+  49% { transform: translate(2%, -40%) rotate(8deg) scale(1.04); }
+  72% { transform: translate(20%, -8%) rotate(16deg); }
+  86% { transform: translate(12%, 3%) rotate(-4deg) scale(1.08, 0.91); }
+  100% { transform: none; }
+}
+
+@keyframes donaido-sticker-bubble {
+  0% { opacity: 0; transform: translate(-12%, 31%) rotate(-10deg) scale(0.72); }
+  42% { opacity: 1; transform: translate(13%, 6%) rotate(10deg) scale(0.93); }
+  74% { transform: translate(-7%, -9%) rotate(-6deg) scale(1.02); }
+  100% { transform: none; }
+}
+
+@keyframes donaido-sticker-crown {
+  0% { opacity: 0; transform: translateY(15%) scale(0.85); }
+  37% { opacity: 1; transform: translateY(-7%) scale(1.05); }
+  68% { transform: translateY(5%) scaleY(0.86) rotate(-8deg); }
+  100% { transform: none; }
+}
+
+@keyframes donaido-sticker-portal {
+  0% { opacity: 0; transform: rotate(-320deg) scale(0.15); }
+  35% { opacity: 1; transform: rotate(-145deg) scale(0.65); }
+  72% { transform: rotate(12deg) scale(1.08); }
+  100% { transform: rotate(0) scale(1); }
+}
+
+@keyframes donaido-sticker-lightning {
+  0% { opacity: 0; transform: translateX(-68%) skewX(-26deg) scaleX(1.26); }
+  28% { opacity: 1; transform: translateX(17%) skewX(-16deg) scaleX(1.14); }
+  47% { transform: translateX(4%) skewX(12deg) scaleX(0.91); }
+  68% { transform: translateX(-5%) skewX(-5deg); }
+  100% { transform: none; }
+}
+
+@keyframes donaido-sticker-skate {
+  0% { opacity: 0; transform: translate(48%, 6%) rotate(20deg); }
+  33% { opacity: 1; transform: translate(18%, -4%) rotate(-16deg); }
+  60% { transform: translateX(-19%) rotate(-18deg) scaleX(0.84); }
+  80% { transform: translateX(-8%) rotate(10deg); }
+  100% { transform: none; }
+}
+
+@keyframes donaido-sticker-flower {
+  0% { opacity: 0; transform: translateX(-36%) rotate(-9deg) scale(0.88); }
+  22% { opacity: 1; transform: translate(-26%, -9%) rotate(8deg) scale(0.94); }
+  40% { transform: translate(-19%, 2%) rotate(-6deg); }
+  61% { transform: translate(-10%, -8%) rotate(7deg); }
+  79% { transform: translate(-4%, 1%) rotate(-4deg); }
+  100% { transform: none; }
+}
+
+.animate-sticker-meteor { animation: donaido-sticker-meteor 1.25s ease-out both; }
+.animate-sticker-rainbow { animation: donaido-sticker-rainbow 1.35s ease-in-out both; }
+.animate-sticker-bubble { animation: donaido-sticker-bubble 1.5s ease-in-out both; }
+.animate-sticker-crown { animation: donaido-sticker-crown 1.45s ease-in-out both; }
+.animate-sticker-portal { animation: donaido-sticker-portal 1.25s ease-out both; }
+.animate-sticker-lightning { animation: donaido-sticker-lightning 0.9s ease-out both; }
+.animate-sticker-skate { animation: donaido-sticker-skate 1.4s ease-in-out both; }
+.animate-sticker-flower { animation: donaido-sticker-flower 1.5s ease-in-out both; }
+
 /* 등장 뒤 반복 동작 — 캐릭터가 화면에 머무는 동안 계속 살아 움직인다 */
 @keyframes donaido-sticker-idle-hop {
   0%, 100% { transform: translateY(0) scale(1, 1); }
@@ -882,6 +931,14 @@ a {
   .animate-sticker-peek,
   .animate-sticker-fly-in,
   .animate-sticker-friend-pop,
+  .animate-sticker-meteor,
+  .animate-sticker-rainbow,
+  .animate-sticker-bubble,
+  .animate-sticker-crown,
+  .animate-sticker-portal,
+  .animate-sticker-lightning,
+  .animate-sticker-skate,
+  .animate-sticker-flower,
   .animate-aura-pop,
   .animate-backdrop-spotlight { animation-duration: 1ms; }
   .animate-sticker-idle-hop,

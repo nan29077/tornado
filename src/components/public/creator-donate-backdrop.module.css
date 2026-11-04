@@ -2,33 +2,25 @@
   display: none;
 }
 
-.left {
-  --image-anchor: left;
-  --fade-inward: to right;
-}
-
-.right {
-  --image-anchor: right;
-  --fade-inward: to left;
-}
-
 .preview {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  background: #fff8eb;
 }
 
-/* 원본 2:1 이미지의 가로 폭 중 5/12을 각 장면에 사용한다. */
-.preview .art,
-.wing .art {
-  aspect-ratio: 5 / 6;
+.preview img,
+.classicPreview img {
+  width: 100%;
+  height: auto;
 }
 
-.preview .art {
-  background: var(--site-margin-image) var(--image-anchor) center / 240% 100% no-repeat;
+.classicPreview {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 3 / 2;
+  background: #fff6e5;
 }
 
-/* 셸의 700px 본문 + 104px 메뉴 + 최대 20px 간격을 비워 둔다. */
+/* 좌우 장면은 각각 여백 전체를 채우고 가운데 본문과 메뉴의 자리를 비운다. */
 @media (min-width: 1024px) {
   .scene {
     --site-content-width: 824px;
@@ -37,94 +29,78 @@
     z-index: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr) var(--site-content-width) minmax(0, 1fr);
-    overflow: hidden;
     pointer-events: none;
     user-select: none;
   }
 
+  /*
+    공개 화면: 본문(640px) 자리만 비우고, 우측 메뉴(96px) 컬럼 뒤까지 오른쪽 장면이 이어지게 한다.
+    셸은 본문 640px + 메뉴 96px = 736px 를 가운데 정렬하므로 본문 왼쪽 끝은 50% - 368px 이다.
+    메뉴 카드만 장면 위에 떠 있고, 메뉴 컬럼 자체에는 베이지 바탕이 비치지 않는다.
+  */
   .publicPage {
-    --site-content-width: 744px;
+    --site-content-width: 736px;
+    grid-template-columns: minmax(0, calc(50% - 368px)) 640px minmax(0, 1fr);
   }
 
-  .wing {
+  .scene .panel {
     position: relative;
-    display: grid;
-    place-items: center;
-    isolation: isolate;
-    overflow: hidden;
+    background: var(--site-margin-image) center / cover no-repeat;
   }
 
-  .wing.left {
+  .scene .left {
     grid-column: 1;
-    grid-template-rows: 2fr auto 3fr;
   }
 
-  .wing.right {
+  .scene .right {
     grid-column: 3;
-    grid-template-rows: 3fr auto 2fr;
   }
 
-  /* 장면 위아래의 색과 배경으로 여백을 채운다. 캐릭터는 중앙 원본에서 표시한다. */
-  .wing::before,
-  .wing::after {
+  .classic.publicPage {
+    background: var(--site-margin-image) center / cover no-repeat;
+  }
+
+  .scene.classic .panel {
+    background-size: contain;
+    background-position: center;
+  }
+
+  .animated .panel::after {
     content: '';
     position: absolute;
-    z-index: -1;
-    inset-inline: -10px;
-    height: 60%;
-    background-image: var(--site-margin-image);
-    background-repeat: no-repeat;
-    background-size: 240% 480%;
-    filter: blur(8px);
-    opacity: 0.82;
+    inset-block-start: 27%;
+    inset-inline-start: 55%;
+    width: 5px;
+    aspect-ratio: 1;
+    border-radius: 1px;
+    background: #fff5bd;
+    animation: site-margin-sparkle 4s ease-in-out infinite alternate;
   }
 
-  .wing::before {
-    top: -10px;
-    background-position: var(--image-anchor) top;
-    mask-image: linear-gradient(#000 38%, transparent);
-  }
-
-  .wing::after {
-    bottom: -10px;
-    background-position: var(--image-anchor) bottom;
-    mask-image: linear-gradient(to top, #000 38%, transparent);
-  }
-
-  .wing .art {
-    grid-row: 2;
-    width: min(100%, 78svh);
-    background: var(--site-margin-image) var(--image-anchor) center / 240% 100% no-repeat;
-    mask-image:
-      linear-gradient(to bottom, transparent, #000 7% 93%, transparent),
-      linear-gradient(var(--fade-inward), transparent, #000 3% 89%, transparent);
-    mask-composite: intersect;
-    animation: site-margin-float 8s ease-in-out infinite alternate;
-  }
-
-  .wing.right .art {
-    animation-delay: -4s;
-  }
-
-  .wing.original .art {
-    width: min(100%, 62svh);
-    aspect-ratio: 2 / 3;
-    background-size: 100% 100%;
-  }
-
-  .wing.original::before,
-  .wing.original::after {
-    background-size: 100% 480%;
+  .animated .right::after {
+    inset-block-start: 70%;
+    inset-inline-start: 40%;
+    animation-delay: -2s;
   }
 }
 
-@keyframes site-margin-float {
-  from { transform: translateY(-6px); }
-  to { transform: translateY(6px); }
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .scene:not(.publicPage) {
+    --site-content-width: 820px;
+  }
+
+  .scene .panel {
+    background-position-x: var(--site-margin-narrow-focus);
+  }
+}
+
+@keyframes site-margin-sparkle {
+  from { opacity: 0.25; transform: translateY(4px) rotate(45deg); }
+  to { opacity: 1; transform: translateY(-4px) rotate(45deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .wing .art {
+  .animated .panel::after {
     animation: none;
   }
 }

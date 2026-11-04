@@ -611,6 +611,64 @@ function AuraShape({ kind, color }: { kind: StickerAura; color: string }) {
           />
         </svg>
       );
+    case 'comet':
+      return (
+        <svg viewBox="0 0 24 24" className="h-full w-full">
+          <path d="m3 18 10-8M5 22l8-7M2 12l8-6" stroke={color} strokeWidth={1.8} strokeLinecap="round" opacity={0.75} />
+          <path d="m16 2 1.7 4.5 4.8 1-3.6 3.2.6 4.8-4.2-2.4-4.4 2 1-4.7-3.2-3.5 4.8-.5Z" fill={color} stroke="#fff1bd" strokeWidth={0.9} strokeLinejoin="round" />
+        </svg>
+      );
+    case 'rainbow':
+      return (
+        <svg viewBox="0 0 24 24" className="h-full w-full" fill="none" strokeLinecap="round">
+          <path d="M2 17a10 10 0 0 1 20 0" stroke="#f47c9a" strokeWidth={2.4} />
+          <path d="M5.2 17a6.8 6.8 0 0 1 13.6 0" stroke="#ffd265" strokeWidth={2.4} />
+          <path d="M8.4 17a3.6 3.6 0 0 1 7.2 0" stroke="#75d8e7" strokeWidth={2.4} />
+          <path d="M2 19h4m12 0h4" stroke="#fff" strokeWidth={2.5} />
+        </svg>
+      );
+    case 'bubble':
+      return (
+        <svg viewBox="0 0 24 24" className="h-full w-full">
+          <circle cx={12} cy={12} r={9.4} fill={color} fillOpacity={0.24} stroke={color} strokeWidth={1.5} />
+          <path d="M6 10a6 6 0 0 1 4-4.2m4 12a5.5 5.5 0 0 0 3-2.4" stroke="#f3fdff" strokeWidth={1.5} strokeLinecap="round" fill="none" />
+        </svg>
+      );
+    case 'crown':
+      return (
+        <svg viewBox="0 0 24 24" className="h-full w-full">
+          <path d="m3 7 4.7 4.1L12 5l4.3 6.1L21 7l-2.2 11H5.2Z" fill={color} stroke="#fff2b5" strokeWidth={1.3} strokeLinejoin="round" />
+          <path d="M5 15.6h14m-7-4v1" stroke="#a95b08" strokeWidth={1.4} strokeLinecap="round" />
+        </svg>
+      );
+    case 'portal':
+      return (
+        <svg viewBox="0 0 24 24" className="h-full w-full" fill="none" stroke={color} strokeLinejoin="round">
+          <circle cx={12} cy={12} r={10} strokeWidth={1.6} />
+          <path d="m12 3.5 7.4 12.8H4.6ZM12 20.5 4.6 7.7h14.8Z" strokeWidth={1.3} />
+          <circle cx={12} cy={12} r={1.5} fill="#f5e9ff" stroke="none" />
+        </svg>
+      );
+    case 'bolt':
+      return (
+        <svg viewBox="0 0 24 24" className="h-full w-full">
+          <path d="m13 2-9 12h7l-1 8 10-12h-7l2-8Z" fill={color} stroke="#fff8c4" strokeWidth={1.2} strokeLinejoin="round" />
+        </svg>
+      );
+    case 'snowflake':
+      return (
+        <svg viewBox="0 0 24 24" className="h-full w-full" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2v20M3.3 7l17.4 10M3.3 17 20.7 7M9.5 4.5 12 7l2.5-2.5m-5 15L12 17l2.5 2.5M4.2 10.4l3.4-.9-.9-3.4m13.1 7.5-3.4.9.9 3.4m-13.1-4.3 3.4.9-.9 3.4m13.1-7.5-3.4-.9.9-3.4" />
+          <circle cx={12} cy={12} r={1.5} fill="#f0fbff" stroke="none" />
+        </svg>
+      );
+    case 'flower':
+      return (
+        <svg viewBox="0 0 24 24" className="h-full w-full">
+          <path d="M12 7C8 1 3 5 6 10c-7 0-6 7 0 7-1 6 6 6 7 1 5 5 10 0 6-4 6-3 2-9-3-6 1-5-4-6-4-1Z" fill={color} stroke="#fff1f5" strokeWidth={0.9} strokeLinejoin="round" />
+          <circle cx={12} cy={12.5} r={3.1} fill="#ffe080" />
+        </svg>
+      );
     case 'sparkle':
     default:
       return (

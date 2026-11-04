@@ -6,7 +6,6 @@ import { PublicShellClient, type ShellViewer } from './public-shell-client';
 import { SupportWidget } from '@/components/public/support-widget';
 import { isServiceInMockMode } from '@/server/service-mode';
 import { env } from '@/lib/env';
-import { siteImageUrl } from '@/lib/site-images';
 import { getSiteImageSelection } from '@/server/services/site-images';
 
 /**
@@ -71,7 +70,7 @@ export async function PublicShell({
 
   return (
     <>
-      <PublicShellClient aside={aside} viewer={viewer} mockMode={isServiceInMockMode()} business={env.business} marginImage={siteImageUrl('margin', margin)}>
+      <PublicShellClient aside={aside} viewer={viewer} mockMode={isServiceInMockMode()} business={env.business} marginPreset={margin}>
         {children}
       </PublicShellClient>
       <SupportWidget faqs={faqs} loggedIn={Boolean(user)} hasThread={hasThread} />

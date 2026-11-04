@@ -1,4 +1,6 @@
 export const DEFAULT_SITE_IMAGE = 'default';
+export const CLASSIC_MARGIN_IMAGE = 'classic';
+export const CLASSIC_PUBLIC_MARGIN_URL = '/assets/donaido-mascot-world-bg-v1.png';
 export const DEFAULT_HOME_BANNER = '/assets/tornado-hero-creator-v2.png';
 
 export const SITE_IMAGE_PRESETS = {
@@ -31,10 +33,19 @@ export const SITE_IMAGE_PRESETS = {
 export type SiteImageKind = keyof typeof SITE_IMAGE_PRESETS;
 
 export function isSiteImageSelection(kind: SiteImageKind, value: unknown): value is string {
-  return value === DEFAULT_SITE_IMAGE || SITE_IMAGE_PRESETS[kind].some((preset) => preset.id === value);
+  return value === DEFAULT_SITE_IMAGE
+    || (kind === 'margin' && value === CLASSIC_MARGIN_IMAGE)
+    || SITE_IMAGE_PRESETS[kind].some((preset) => preset.id === value);
 }
 
 export function siteImageUrl(kind: SiteImageKind, value: string): string | undefined {
   if (value === DEFAULT_SITE_IMAGE || !isSiteImageSelection(kind, value)) return undefined;
+  if (value === CLASSIC_MARGIN_IMAGE) return CLASSIC_PUBLIC_MARGIN_URL;
   return `/site-images/${kind}/${value}.webp`;
+}
+
+export function siteMarginPanelUrl(value: string, side: 'left' | 'right'): string {
+  if (value === CLASSIC_MARGIN_IMAGE) return `/assets/donaido-donation-margin-${side}-v1.webp`;
+  const preset = isSiteImageSelection('margin', value) ? value : DEFAULT_SITE_IMAGE;
+  return `/site-images/margin/full/${preset}-${side}.webp`;
 }

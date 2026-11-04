@@ -12,6 +12,7 @@ import {
 import { Logo, TornadoMark } from '@/components/brand/logo';
 import { PublicMarginMascots } from '@/components/brand/mascot-decorations';
 import { CreatorDonateBackdrop } from '@/components/public/creator-donate-backdrop';
+import { CLASSIC_MARGIN_IMAGE, DEFAULT_SITE_IMAGE } from '@/lib/site-images';
 import { DonationLookupSheet } from '@/components/public/donation-lookup-sheet';
 import { NotificationBell } from '@/components/notifications/notification-bell';
 import { ProfileAvatar } from '@/components/profile/generated-avatar';
@@ -81,7 +82,7 @@ export function PublicShellClient({
   viewer,
   mockMode = false,
   business,
-  marginImage,
+  marginPreset = DEFAULT_SITE_IMAGE,
 }: {
   children: React.ReactNode;
   aside?: React.ReactNode;
@@ -90,7 +91,7 @@ export function PublicShellClient({
   mockMode?: boolean;
   /** 하단 사업자 정보(환경변수 BUSINESS_*) */
   business?: BusinessInfoData;
-  marginImage?: string;
+  marginPreset?: string;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
@@ -104,8 +105,11 @@ export function PublicShellClient({
   }, []);
 
   return (
-    <div className={cx('public-canvas min-h-dvh pb-20 lg:pb-0', marginImage && 'has-site-margin')}>
-      {marginImage ? <CreatorDonateBackdrop image={marginImage} publicPage /> : <PublicMarginMascots home={pathname === '/'} />}
+    <div className="public-canvas min-h-dvh pb-20 lg:pb-0">
+      <CreatorDonateBackdrop preset={marginPreset} publicPage />
+      {marginPreset === DEFAULT_SITE_IMAGE || marginPreset === CLASSIC_MARGIN_IMAGE
+        ? <PublicMarginMascots home={pathname === '/'} />
+        : null}
       <div className="relative z-[2] mx-auto flex w-full max-w-[744px] items-start justify-center">
         <div className="public-app-surface min-h-dvh w-full min-w-0 max-w-[640px] shadow-[0_0_60px_rgba(74,49,25,0.12)]">
       <header className="public-header sticky top-0 z-40 border-b backdrop-blur-xl">

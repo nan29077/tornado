@@ -8,7 +8,7 @@ import { saveSiteImage } from '@/app/actions/admin/site-images';
 import { requireAdminPage } from '@/server/admin-guard';
 import { getSiteImageSelection } from '@/server/services/site-images';
 import {
-  DEFAULT_HOME_BANNER, DEFAULT_SITE_IMAGE, SITE_IMAGE_PRESETS, siteImageUrl, type SiteImageKind,
+  CLASSIC_MARGIN_IMAGE, DEFAULT_HOME_BANNER, DEFAULT_SITE_IMAGE, SITE_IMAGE_PRESETS, siteImageUrl, type SiteImageKind,
 } from '@/lib/site-images';
 import { ScheduledBanners } from './scheduled-banners';
 
@@ -46,7 +46,6 @@ export default async function AdminSitePage() {
 function SiteImageGallery({ kind, selected }: { kind: SiteImageKind; selected: string }) {
   const isMargin = kind === 'margin';
   const title = isMargin ? '여백 이미지 관리' : '배너 이미지 관리';
-  const defaultImage = isMargin ? '/assets/donaido-mascot-world-bg-v1.png' : DEFAULT_HOME_BANNER;
   const presets = SITE_IMAGE_PRESETS[kind];
   const groups = [
     { title: isMargin ? '움직이는 도네이도' : '도네이도 캐릭터', presets: presets.filter(({ id }) => !id.startsWith('photo-')) },
@@ -54,16 +53,15 @@ function SiteImageGallery({ kind, selected }: { kind: SiteImageKind; selected: s
   ];
 
   function option(preset: { id: string; name: string; description?: string }) {
-    const image = siteImageUrl(kind, preset.id);
     return (
       <label key={preset.id} className="block cursor-pointer">
         <input type="radio" name="preset" value={preset.id} defaultChecked={selected === preset.id} className="peer sr-only" />
         <span className="block overflow-hidden rounded-xl border-2 border-ink-100 bg-white peer-checked:border-brand-500 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500">
-          {isMargin && image ? (
-            <SiteMarginPreview image={image} />
+          {isMargin ? (
+            <SiteMarginPreview preset={preset.id} />
           ) : (
             <Image
-              src={image ?? defaultImage}
+              src={siteImageUrl('banner', preset.id) ?? DEFAULT_HOME_BANNER}
               alt=""
               width={480}
               height={240}
@@ -94,7 +92,17 @@ function SiteImageGallery({ kind, selected }: { kind: SiteImageKind; selected: s
           <input type="hidden" name="kind" value={kind} />
           <fieldset className="space-y-4">
             <legend className="sr-only">{title}</legend>
-            <div className="max-w-48">{option({ id: DEFAULT_SITE_IMAGE, name: '기존 기본 이미지' })}</div>
+            {isMargin ? (
+              <div>
+                <h3 className="mb-2 text-sm font-bold text-ink-900">기본 이미지</h3>
+                <div className="grid max-w-96 grid-cols-2 gap-2">
+                  {option({ id: DEFAULT_SITE_IMAGE, name: '현재 기본 이미지' })}
+                  {option({ id: CLASSIC_MARGIN_IMAGE, name: '이전 기본 이미지' })}
+                </div>
+              </div>
+            ) : (
+              <div className="max-w-48">{option({ id: DEFAULT_SITE_IMAGE, name: '기존 기본 이미지' })}</div>
+            )}
             {groups.map((group) => (
               <div key={group.title}>
                 <h3 className="mb-2 text-sm font-bold text-ink-900">{group.title}</h3>

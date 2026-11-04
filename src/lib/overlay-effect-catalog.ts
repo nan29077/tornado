@@ -22,6 +22,14 @@ export const OVERLAY_EFFECT_VALUES = [
   'DONAIDO_LETTER_FLY',
   'DONAIDO_FRIENDS',
   'DONAIDO_PARADE',
+  'DONAIDO_METEOR_LANDING',
+  'DONAIDO_RAINBOW_JUMP',
+  'DONAIDO_BUBBLE_FLOAT',
+  'DONAIDO_CROWN_CEREMONY',
+  'DONAIDO_MAGIC_PORTAL',
+  'DONAIDO_LIGHTNING_DASH',
+  'DONAIDO_SNOW_SKATE',
+  'DONAIDO_FLOWER_WALK',
 ] as const;
 
 export type OverlayEffectValue = (typeof OVERLAY_EFFECT_VALUES)[number];
@@ -30,9 +38,13 @@ export type OverlayEffectValue = (typeof OVERLAY_EFFECT_VALUES)[number];
  * 캐릭터 주변을 맴도는 소품 종류. 이모지를 쓰지 않으므로 모두 SVG 도형으로 그린다.
  *  - sparkle: 반짝이(4각 별)    - heart: 하트      - note: 음표
  *  - coin: 동전                 - ribbon: 리본 조각 - letter: 편지 봉투
- *  - star: 5각 별
+ *  - star: 5각 별              - comet: 별똥별     - rainbow: 무지개
+ *  - bubble: 비눗방울           - crown: 왕관       - portal: 마법진
+ *  - bolt: 번개                - snowflake: 눈꽃   - flower: 꽃
  */
-export type StickerAura = 'sparkle' | 'heart' | 'note' | 'coin' | 'ribbon' | 'letter' | 'star';
+export type StickerAura =
+  | 'sparkle' | 'heart' | 'note' | 'coin' | 'ribbon' | 'letter' | 'star'
+  | 'comet' | 'rainbow' | 'bubble' | 'crown' | 'portal' | 'bolt' | 'snowflake' | 'flower';
 
 /** 캐릭터 뒤 배경 연출 색. `r,g,b` 형식(투명도는 컴포넌트가 정한다). */
 export interface StickerPalette {
@@ -174,6 +186,86 @@ export const DONAIDO_CHARACTER_STICKERS: readonly CharacterStickerDefinition[] =
     aura: 'note',
     palette: GOLD,
     ensemble: 'parade',
+  },
+  {
+    value: 'DONAIDO_METEOR_LANDING',
+    label: '별똥별 착륙',
+    description: '별빛 꼬리를 따라 비스듬히 내려와 쿵 착지해요',
+    image: '/stickers/donaido/message-fly.webp',
+    animationClass: 'animate-sticker-meteor',
+    idleClass: 'animate-sticker-idle-hop',
+    aura: 'comet',
+    palette: { glow: '255,163,92', accent: '255,109,88', soft: '255,229,166' },
+  },
+  {
+    value: 'DONAIDO_RAINBOW_JUMP',
+    label: '무지개 점프',
+    description: '무지개처럼 큰 포물선을 그리며 폴짝 뛰어요',
+    image: '/stickers/donaido/gift-pop.webp',
+    animationClass: 'animate-sticker-rainbow',
+    idleClass: 'animate-sticker-idle-hop',
+    aura: 'rainbow',
+    palette: PARTY,
+  },
+  {
+    value: 'DONAIDO_BUBBLE_FLOAT',
+    label: '비눗방울 여행',
+    description: '비눗방울 사이에서 좌우로 흔들리며 떠올라요',
+    image: '/stickers/donaido/coin-cloud.webp',
+    animationClass: 'animate-sticker-bubble',
+    idleClass: 'animate-sticker-idle-float',
+    aura: 'bubble',
+    palette: { glow: '101,224,240', accent: '168,142,255', soft: '215,250,255' },
+  },
+  {
+    value: 'DONAIDO_CROWN_CEREMONY',
+    label: '황금 왕관식',
+    description: '황금 왕관이 반짝이는 가운데 정중하게 인사해요',
+    image: '/stickers/donaido/thanks-bow.webp',
+    animationClass: 'animate-sticker-crown',
+    idleClass: 'animate-sticker-idle-nod',
+    aura: 'crown',
+    palette: GOLD,
+  },
+  {
+    value: 'DONAIDO_MAGIC_PORTAL',
+    label: '마법진 소환',
+    description: '보랏빛 마법진 사이에서 한 바퀴 돌며 나타나요',
+    image: '/stickers/donaido/heart-peek.webp',
+    animationClass: 'animate-sticker-portal',
+    idleClass: 'animate-sticker-idle-float',
+    aura: 'portal',
+    palette: { glow: '183,130,255', accent: '126,115,255', soft: '231,203,255' },
+  },
+  {
+    value: 'DONAIDO_LIGHTNING_DASH',
+    label: '번개 질주',
+    description: '번개를 뿌리며 옆에서 쏜살같이 들어와 멈춰요',
+    image: '/stickers/donaido/cheer.webp',
+    animationClass: 'animate-sticker-lightning',
+    idleClass: 'animate-sticker-idle-sway',
+    aura: 'bolt',
+    palette: { glow: '255,238,101', accent: '100,228,255', soft: '255,248,184' },
+  },
+  {
+    value: 'DONAIDO_SNOW_SKATE',
+    label: '눈꽃 스케이트',
+    description: '눈송이 사이를 미끄러지다가 빙글 방향을 바꿔요',
+    image: '/stickers/donaido/mic-dance.webp',
+    animationClass: 'animate-sticker-skate',
+    idleClass: 'animate-sticker-idle-sway',
+    aura: 'snowflake',
+    palette: { glow: '153,217,255', accent: '121,175,255', soft: '236,248,255' },
+  },
+  {
+    value: 'DONAIDO_FLOWER_WALK',
+    label: '꽃길 산책',
+    description: '꽃잎이 피어나는 길을 사뿐사뿐 걸어와요',
+    image: '/stickers/donaido/heart-hug.webp',
+    animationClass: 'animate-sticker-flower',
+    idleClass: 'animate-sticker-idle-beat',
+    aura: 'flower',
+    palette: { glow: '255,170,201', accent: '255,128,166', soft: '221,248,172' },
   },
 ];
 
