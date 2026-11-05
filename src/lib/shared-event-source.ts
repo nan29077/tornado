@@ -55,6 +55,14 @@ interface Hub {
 /** undefined: 아직 시도 전 · null: 쓸 수 없음 */
 let hubPromise: Promise<Hub | null> | undefined;
 let seq = 0;
+/** 공유기를 거친 연결이 한 번이라도 열린 적 있는지 */
+let hubEverOpened = false;
+/**
+ * 공유기는 응답(hello)은 하지만 그 안에서 연결을 전혀 못 여는 환경이 있다.
+ * (일부 내장 브라우저·웹뷰는 SharedWorker 안의 네트워크 요청이 모두 실패한다)
+ * 이때는 화면마다 직접 연결로 돌린다. 예전에는 공유기로 재연결만 무한 반복해 미리보기가 비었다.
+ */
+let hubDisabled = false;
 
 function startHub(): Promise<Hub | null> {
   if (hubPromise) return hubPromise;
@@ -158,20 +166,39 @@ function openDirect(url: string, opts: StreamOptions): StreamHandle {
 }
 
 export function openStream(url: string, opts: StreamOptions): StreamHandle {
-  if (!opts.share) return openDirect(url, opts);
+  if (!opts.share || hubDisabled) return openDirect(url, opts);
 
   let closed = false;
   let inner: StreamHandle | null = null;
 
   void startHub().then((hub) => {
     if (closed) return;
-    if (!hub) {
+    if (!hub || hubDisabled) {
       inner = openDirect(url, opts);
       return;
     }
     seq += 1;
     const id = `s${Date.now().toString(36)}${seq}`;
-    hub.handlers.set(id, opts);
+    let opened = false;
+    hub.handlers.set(id, {
+      ...opts,
+      onOpen: () => {
+        opened = true;
+        hubEverOpened = true;
+        opts.onOpen?.();
+      },
+      onError: () => {
+        // 공유기로 한 번도 연결을 열지 못한 채 끊겼다면 공유기 쪽 네트워크가 막힌 환경으로 본다.
+        // 이 화면은 곧바로 직접 연결로 다시 열고, 이후 화면들도 직접 연결을 쓴다.
+        if (!opened && !hubEverOpened) {
+          hubDisabled = true;
+          console.warn('[sse] 연결 공유기를 쓸 수 없어 화면별 직접 연결로 전환합니다.');
+          if (!closed) inner = openDirect(url, opts);
+          return;
+        }
+        opts.onError();
+      },
+    });
     // 공유기는 같은 출처에서 돌므로 상대 주소를 절대 주소로 바꿔 넘긴다.
     const absolute = new URL(url, window.location.href).toString();
     hub.port.postMessage({ type: 'sub', id, url: absolute, events: opts.events });
