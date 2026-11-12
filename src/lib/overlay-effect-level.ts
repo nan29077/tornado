@@ -68,6 +68,9 @@ export interface EffectLevelSpec {
   colors: readonly string[];
   /** 캐릭터 등장 크기 */
   mascot: MascotSize;
+  /** 1920×1080 기준 인라인 캐릭터 크기와 화면 소품 수 */
+  stickerSize: number;
+  ambientParticles: number;
   /** 폭죽(2차 폭발) 추가 여부 */
   firework: boolean;
   /** 화면 테두리 빛나기 */
@@ -86,6 +89,8 @@ export const EFFECT_LEVELS: Record<OverlayEffectLevel, EffectLevelSpec> = {
     shape: 'CIRCLE',
     colors: ['#ffffff', '#e7e7ea', '#c9c9d1'],
     mascot: 'none',
+    stickerSize: 136,
+    ambientParticles: 4,
     firework: false,
     screenGlow: false,
     tornado: false,
@@ -95,6 +100,8 @@ export const EFFECT_LEVELS: Record<OverlayEffectLevel, EffectLevelSpec> = {
     shape: 'STAR',
     colors: ['#4ba3f2', '#7cc4ff', '#2f7fd4'],
     mascot: 'small',
+    stickerSize: 172,
+    ambientParticles: 8,
     firework: false,
     screenGlow: false,
     tornado: false,
@@ -104,6 +111,8 @@ export const EFFECT_LEVELS: Record<OverlayEffectLevel, EffectLevelSpec> = {
     shape: 'HEART',
     colors: ['#ffc632', '#eda600', '#ffd97a'],
     mascot: 'large',
+    stickerSize: 210,
+    ambientParticles: 12,
     firework: false,
     screenGlow: false,
     tornado: false,
@@ -113,6 +122,8 @@ export const EFFECT_LEVELS: Record<OverlayEffectLevel, EffectLevelSpec> = {
     shape: 'MIXED',
     colors: ['#f4506b', '#fbb914', '#4ba3f2', '#5ecf8b', '#a06bf0', '#ff8f4d'],
     mascot: 'huge',
+    stickerSize: 244,
+    ambientParticles: 16,
     firework: true,
     screenGlow: true,
     tornado: false,
@@ -121,8 +132,10 @@ export const EFFECT_LEVELS: Record<OverlayEffectLevel, EffectLevelSpec> = {
   5: {
     particles: 42,
     shape: 'MIXED',
-    colors: ['#ffd24a', '#ff8f4d', '#f4506b', '#a06bf0', '#4ba3f2', '#5ecf8b', '#ffffff'],
+    colors: ['#ffd24a', '#ffac54', '#ffe5a3', '#a06bf0', '#ce9bff', '#fff6d2'],
     mascot: 'giant',
+    stickerSize: 296,
+    ambientParticles: 20,
     firework: true,
     screenGlow: true,
     tornado: true,

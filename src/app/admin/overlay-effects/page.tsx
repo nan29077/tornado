@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import { PageHeader } from '@/components/layout/console-shell';
 import { Card, CardTitle, Notice, SectionTitle, StatTile } from '@/components/ui';
 import { ActionForm } from '@/components/admin/action-form';
@@ -8,7 +9,7 @@ import { formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
 import { requireAdminPage } from '@/server/admin-guard';
 import { getOverlayLadderView } from '@/server/services/overlay-ladder';
-import { DONAIDO_CHARACTER_STICKERS, overlayEffectLabel } from '@/lib/overlay-effect-catalog';
+import { DONAIDO_CHARACTER_STICKERS, findCharacterSticker, overlayEffectLabel } from '@/lib/overlay-effect-catalog';
 import {
   LADDER_LIMITS,
   OVERLAY_LEVELS,
@@ -87,13 +88,21 @@ export default async function AdminOverlayEffectsPage() {
                 <tbody>
                   {OVERLAY_LEVELS.map((lv) => {
                     const spec = ladder.levels[lv - 1]!;
+                    const sticker = findCharacterSticker(spec.effect);
                     return (
                       <tr key={lv} className="border-t border-ink-100">
                         <td className="whitespace-nowrap py-2 pr-3 font-semibold text-ink-900">
                           {lv}단계 · {OVERLAY_LEVEL_LABEL[lv]}
                         </td>
                         <td className="whitespace-nowrap py-2 pr-3 tabular-nums text-ink-700">{ladderRangeText(ladder, lv)}</td>
-                        <td className="py-2 pr-3 text-ink-700">{overlayEffectLabel(spec.effect)}</td>
+                        <td className="py-2 pr-3 text-ink-700">
+                          <div className="flex items-center gap-2">
+                            {sticker ? (
+                              <Image src={sticker.image} alt="" width={48} height={48} unoptimized className="shrink-0" />
+                            ) : null}
+                            <span>{overlayEffectLabel(spec.effect)}</span>
+                          </div>
+                        </td>
                         <td className="whitespace-nowrap py-2 text-right tabular-nums text-ink-700">
                           {(spec.durationMs / 1000).toLocaleString('ko-KR')}초
                         </td>

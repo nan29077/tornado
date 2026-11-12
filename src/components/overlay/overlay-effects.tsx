@@ -43,10 +43,14 @@ function rand(i: number, salt: number) {
 export function EffectLayer({
   effect,
   theme = 'TORNADO',
+  level,
+  light = false,
   paradeEdge = 'bottom',
 }: {
   effect: string;
   theme?: string;
+  level?: OverlayEffectLevel;
+  light?: boolean;
   /** 캐릭터 퍼레이드가 지나갈 가장자리. 알림 배너와 반대쪽을 준다. */
   paradeEdge?: 'top' | 'bottom';
 }) {
@@ -69,11 +73,12 @@ export function EffectLayer({
   // 여기서는 캐릭터 효과가 재생되는 동안 **화면 전체에 은은한 배경 연출**(반짝이·보케·소품 비)을
   // 깔고, 퍼레이드 효과면 화면 아래 행진을 그린다 (2026-10-01).
   if (characterSticker) {
+    if (light) return null;
     // 퍼레이드는 CharacterParadeLayer 가 알림과 별도 수명으로 그린다(OV-8). paradeEdge 는 호환용이다.
     void paradeEdge;
     return (
       <div aria-hidden className={`pointer-events-none fixed inset-0 overflow-hidden ${themeClass}`}>
-        <CharacterAmbient sticker={characterSticker} theme={theme} />
+        <CharacterAmbient sticker={characterSticker} theme={theme} level={level} />
       </div>
     );
   }
@@ -258,12 +263,6 @@ function Fireworks() {
 
 // -------------------------------------------------- 캐릭터 스티커 인라인 (배너 위에)
 
-/** 캐릭터 스티커 효과인지 여부 확인. */
-export function isCharacterStickerEffect(effect: string): boolean {
-  const name = (effect || 'DEFAULT').toUpperCase();
-  return Boolean(findCharacterSticker(name));
-}
-
 /**
  * 캐릭터 스티커를 배너 바로 위에 인라인으로 렌더링한다.
  * fixed 레이어가 아니므로 배너와 자연스럽게 붙는다.
@@ -277,7 +276,9 @@ export function isCharacterStickerEffect(effect: string): boolean {
  * 모두 투명 배경 위에서 동작하도록 반투명 그라데이션만 쓴다(방송 화면을 가리지 않는다).
  */
 export function CharacterStickerInline({
-  effect,
+  sticker,
+  level,
+  light = false,
   theme = 'TORNADO',
   /**
    * 배치 방식.
@@ -288,18 +289,16 @@ export function CharacterStickerInline({
    * 방송 화면을 위아래로 가로지른다. 투네이션이 뱃지를 첫 줄 왼쪽에 두는 것과 같은 이유다.
    */
   placement = 'stack',
-  /** 알림이 퇴장 중이면 카드와 함께 사라진다(카드형). 배경 없는 알림은 부모가 함께 사라진다. */
+  /** 배너와 별도로 렌더링될 때 캐릭터 자체에 퇴장 동작을 적용한다. */
   leaving = false,
 }: {
-  effect: string;
+  sticker: CharacterStickerDefinition;
+  level?: OverlayEffectLevel;
+  light?: boolean;
   theme?: string;
   placement?: 'stack' | 'side';
   leaving?: boolean;
 }) {
-  const name = (effect || 'DEFAULT').toUpperCase() as EffectName;
-  const characterSticker = findCharacterSticker(name);
-  if (!characterSticker) return null;
-
   const themeClass =
     theme === 'MINIMAL'
       ? 'opacity-50'
@@ -311,8 +310,9 @@ export function CharacterStickerInline({
   // 상대적으로 커져(322px 틀에서 화면의 31%) 위쪽이 잘렸다. 1920 에서는 clamp 결과가
   // 260px 이므로 방송 화면의 크기는 그대로다.
   // 옆에 붙일 때는 글자 두세 줄 높이에 맞춰 200px 로 줄인다.
-  const size = placement === 'side' ? 200 : 260;
-  const friends = characterSticker.ensemble === 'friends';
+  const size = level ? EFFECT_LEVELS[level].stickerSize : placement === 'side' ? 200 : 260;
+  const friends = sticker.ensemble === 'friends';
+  const auraCount = level ? level * 2 + 1 : friends ? 9 : 7;
 
   return (
     <div
@@ -321,19 +321,22 @@ export function CharacterStickerInline({
       className={`relative isolate shrink-0 ${themeClass} ${leaving ? 'animate-tornado-out' : ''}`}
       style={{ width: friends ? Math.round(size * 1.7) : size, height: size }}
     >
-      <CharacterBackdrop palette={characterSticker.palette} size={size} theme={theme} />
+      {!light && level !== 1 ? (
+        <CharacterBackdrop palette={sticker.palette} size={size} theme={theme} subtle={level === 2} />
+      ) : null}
       {friends ? <FriendSide side="left" size={size} /> : null}
       {friends ? <FriendSide side="right" size={size} /> : null}
       <div className="absolute inset-y-0 left-1/2 -translate-x-1/2" style={{ width: size }}>
         <StickerShadow size={size} />
-        <div className={`relative h-full w-full ${characterSticker.animationClass}`}>
+        <div className={`relative h-full w-full ${sticker.animationClass}`}>
           <div
-            className={`h-full w-full drop-shadow-[0_20px_28px_rgba(15,10,0,0.24)] ${characterSticker.idleClass}`}
+            className={`h-full w-full drop-shadow-[0_20px_28px_rgba(15,10,0,0.24)] ${light ? '' : sticker.idleClass}`}
             // 등장이 끝난 뒤 반복 동작을 시작한다(등장 애니메이션은 1.4~1.8초).
             style={{ animationDelay: '1.6s' }}
           >
             <Image
-              src={characterSticker.image}
+              src={sticker.image}
+              data-overlay-sticker=""
               alt=""
               width={640}
               height={640}
@@ -344,7 +347,7 @@ export function CharacterStickerInline({
           </div>
         </div>
       </div>
-      <CharacterAura sticker={characterSticker} size={size} placement={placement} />
+      {light ? null : <CharacterAura sticker={sticker} size={size} placement={placement} count={auraCount} />}
     </div>
   );
 }
@@ -406,9 +409,9 @@ function StickerShadow({ size }: { size: number }) {
  *
  * 방송 화면(게임·캠) 위에 겹치므로 불투명한 색면은 쓰지 않는다. 미니멀 테마는 빛줄기를 뺀다.
  */
-function CharacterBackdrop({ palette, size, theme }: { palette: StickerPalette; size: number; theme: string }) {
+function CharacterBackdrop({ palette, size, theme, subtle }: { palette: StickerPalette; size: number; theme: string; subtle: boolean }) {
   const box = Math.round(size * 2.2);
-  const minimal = theme === 'MINIMAL';
+  const minimal = theme === 'MINIMAL' || subtle;
   const glow = theme === 'NEON' ? '34,211,238' : palette.glow;
   return (
     <div
@@ -434,7 +437,7 @@ function CharacterBackdrop({ palette, size, theme }: { palette: StickerPalette; 
         />
       )}
       {/* 3) 퍼지는 고리 */}
-      {[0, 0.45].map((delay) => (
+      {(subtle ? [0] : [0, 0.45]).map((delay) => (
         <div
           key={delay}
           className="animate-backdrop-ring absolute left-1/2 top-1/2 rounded-full"
@@ -449,7 +452,7 @@ function CharacterBackdrop({ palette, size, theme }: { palette: StickerPalette; 
         />
       ))}
       {/* 4) 보케 */}
-      {Array.from({ length: 9 }, (_, i) => {
+      {Array.from({ length: subtle ? 4 : 9 }, (_, i) => {
         const d = Math.round(size * (0.07 + rand(i, 41) * 0.1));
         return (
           <span
@@ -468,7 +471,7 @@ function CharacterBackdrop({ palette, size, theme }: { palette: StickerPalette; 
         );
       })}
       {/* 5) 반짝이 */}
-      {Array.from({ length: 10 }, (_, i) => {
+      {Array.from({ length: subtle ? 5 : 10 }, (_, i) => {
         const d = Math.round(size * (0.06 + rand(i, 51) * 0.06));
         return (
           <span
@@ -499,13 +502,14 @@ function CharacterBackdrop({ palette, size, theme }: { palette: StickerPalette; 
 function CharacterAura({
   sticker,
   size,
+  count,
   placement = 'stack',
 }: {
   sticker: CharacterStickerDefinition;
   size: number;
+  count: number;
   placement?: 'stack' | 'side';
 }) {
-  const count = sticker.ensemble ? 9 : 7;
   // 글자 왼쪽에 붙는 배치에서는 오른쪽(글자 쪽)으로 소품을 보내지 않는다(OV-2).
   const fromDeg = placement === 'side' ? -215 : -200;
   const spanDeg = placement === 'side' ? 155 : 220;
@@ -689,17 +693,19 @@ function AuraShape({ kind, color }: { kind: StickerAura; color: string }) {
  *  - 아래쪽 가장자리에서 퍼지는 부드러운 빛 안개
  * 방송 화면을 가리지 않도록 개수와 투명도를 낮게 둔다.
  */
-function CharacterAmbient({ sticker, theme }: { sticker: CharacterStickerDefinition; theme: string }) {
+function CharacterAmbient({ sticker, theme, level }: { sticker: CharacterStickerDefinition; theme: string; level?: OverlayEffectLevel }) {
   const glow = theme === 'NEON' ? '34,211,238' : sticker.palette.glow;
+  const count = level ? EFFECT_LEVELS[level].ambientParticles : 14;
+  const haze = level ? Math.min(0.28, 0.06 * level) : 0.28;
   return (
     <>
       <div
         className="animate-ambient-haze absolute inset-x-0 bottom-0 h-[45%]"
         style={{
-          background: `radial-gradient(ellipse 70% 100% at 50% 100%, rgba(${glow},0.28), rgba(${glow},0) 70%)`,
+          background: `radial-gradient(ellipse 70% 100% at 50% 100%, rgba(${glow},${haze}), rgba(${glow},0) 70%)`,
         }}
       />
-      {Array.from({ length: 14 }, (_, i) => {
+      {Array.from({ length: count }, (_, i) => {
         const d = 22 + Math.round(rand(i, 71) * 22);
         return (
           <span
@@ -723,7 +729,7 @@ function CharacterAmbient({ sticker, theme }: { sticker: CharacterStickerDefinit
           </span>
         );
       })}
-      {Array.from({ length: 12 }, (_, i) => {
+      {Array.from({ length: Math.min(count, 12) }, (_, i) => {
         const d = 16 + Math.round(rand(i, 81) * 20);
         return (
           <span
@@ -942,16 +948,13 @@ export function ParticleBurst({
 
     // 레벨 4 이상은 폭죽처럼 2차 폭발이 이어진다. 가벼운 효과 모드에서는 뺀다.
     if (spec.firework && !light) {
-      const secondary = Math.max(8, Math.round(count * 0.45));
+      const room = MAX_PARTICLES - count;
+      // 회오리의 마지막 폭발 몫도 처음부터 남겨 콤보에서도 세 차례 모두 보이게 한다.
+      const finale = spec.tornado ? Math.min(Math.floor(room / 3), Math.round(count * 0.4)) : 0;
+      const secondary = Math.min(Math.floor((room - finale) / 2), Math.round(count * 0.45));
       burst(w * 0.24, h * 0.3, secondary, 0.42, 0.85);
       burst(w * 0.76, h * 0.34, secondary, 0.78, 0.85);
-      // 5단계는 회오리가 지나간 자리에서 3차 폭발이 한 번 더 터진다.
-      // 합계가 캔버스 상한(MAX_PARTICLES)을 넘지 않도록 남은 만큼만 뿌린다.
-      if (spec.tornado) {
-        const room = Math.max(0, MAX_PARTICLES - particles.length);
-        const third = Math.min(room, Math.max(8, Math.round(count * 0.4)));
-        if (third > 0) burst(w * 0.5, h * 0.24, third, 1.5, 1.05);
-      }
+      if (finale > 0) burst(w * 0.5, h * 0.24, finale, 1.5, 1.05);
     }
 
     const GRAVITY = 620;
@@ -1190,21 +1193,23 @@ export function MascotEntrance({
   );
 }
 
-// -------------------------------------------------- 화면 테두리 빛나기 (레벨 4)
+// -------------------------------------------------- 화면 테두리 빛나기 (레벨 4~5)
 
 /**
- * 최고 구간에서만 방송 화면 가장자리가 빛난다.
+ * 상위 구간에서 방송 화면 가장자리가 빛난다.
  * 바깥으로 그림자를 주면 OBS 브라우저 소스 밖으로 나가 잘리므로 안쪽(inset)으로 준다.
  */
 export function ScreenGlow({ level, theme = 'TORNADO' }: { level: OverlayEffectLevel; theme?: string }) {
   if (!EFFECT_LEVELS[level].screenGlow) return null;
   const color = theme === 'NEON' ? '34,211,238' : theme === 'MINIMAL' ? '255,255,255' : '255,198,50';
+  const royal = level === 5 && theme !== 'MINIMAL';
+  const accent = royal ? '194,128,255' : color;
   return (
     <div
       aria-hidden
       className="animate-screen-glow pointer-events-none absolute inset-0"
       style={{
-        boxShadow: `inset 0 0 120px 24px rgba(${color},0.55), inset 0 0 320px 60px rgba(${color},0.22)`,
+        boxShadow: `inset 0 0 120px 24px rgba(${color},0.55), inset 0 0 320px 60px rgba(${accent},0.22)`,
       }}
     />
   );
@@ -1234,7 +1239,7 @@ const TORNADO_RINGS: readonly { cy: number; rx: number; ry: number; w: number; o
 export function TornadoSweep({ level, theme = 'TORNADO' }: { level: OverlayEffectLevel; theme?: string }) {
   if (!EFFECT_LEVELS[level].tornado) return null;
   const main = theme === 'NEON' ? '#22d3ee' : theme === 'MINIMAL' ? '#ffffff' : '#ffc632';
-  const sub = theme === 'NEON' ? '#a06bf0' : theme === 'MINIMAL' ? '#d6d6de' : '#ff8f4d';
+  const sub = theme === 'MINIMAL' ? '#d6d6de' : '#be91ff';
   return (
     <div
       aria-hidden
@@ -1254,7 +1259,7 @@ export function TornadoSweep({ level, theme = 'TORNADO' }: { level: OverlayEffec
             strokeLinecap="round"
             strokeDasharray={`${Math.round(r.rx * 1.9)} ${Math.round(r.rx * 0.7)}`}
             opacity={r.o}
-            className={i % 2 === 0 ? 'animate-tornado-spin' : 'animate-tornado-spin-slow'}
+            className={i % 2 === 0 ? 'animate-tornado-dash' : 'animate-tornado-dash-slow'}
           />
         ))}
         {/* 바닥에서 이는 먼지 */}

@@ -797,6 +797,14 @@ a {
 .animate-sticker-rainbow { animation: donaido-sticker-rainbow 1.35s ease-in-out both; }
 .animate-sticker-bubble { animation: donaido-sticker-bubble 1.5s ease-in-out both; }
 .animate-sticker-crown { animation: donaido-sticker-crown 1.45s ease-in-out both; }
+
+@keyframes donaido-sticker-royal {
+  0% { opacity: 0; transform: translateY(68px) rotate(-22deg) scale(0.45); }
+  38% { opacity: 1; transform: translateY(-18px) rotate(7deg) scale(1.1); }
+  68% { transform: translateY(4px) rotate(-3deg) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) rotate(0) scale(1); }
+}
+.animate-sticker-royal { animation: donaido-sticker-royal 1.55s cubic-bezier(0.16, 1, 0.3, 1) both; }
 .animate-sticker-portal { animation: donaido-sticker-portal 1.25s ease-out both; }
 .animate-sticker-lightning { animation: donaido-sticker-lightning 0.9s ease-out both; }
 .animate-sticker-skate { animation: donaido-sticker-skate 1.4s ease-in-out both; }
@@ -935,6 +943,7 @@ a {
   .animate-sticker-rainbow,
   .animate-sticker-bubble,
   .animate-sticker-crown,
+  .animate-sticker-royal,
   .animate-sticker-portal,
   .animate-sticker-lightning,
   .animate-sticker-skate,
@@ -1079,9 +1088,9 @@ a {
 }
 .animate-tornado-sweep { animation: donaido-tornado-sweep 3.4s cubic-bezier(0.45, 0.05, 0.3, 1) both; }
 
-@keyframes donaido-tornado-spin { to { stroke-dashoffset: -720; } }
-.animate-tornado-spin { animation: donaido-tornado-spin 0.9s linear infinite; }
-.animate-tornado-spin-slow { animation: donaido-tornado-spin 1.5s linear infinite; }
+@keyframes donaido-tornado-dash { to { stroke-dashoffset: -720; } }
+.animate-tornado-dash { animation: donaido-tornado-dash 0.9s linear infinite; }
+.animate-tornado-dash-slow { animation: donaido-tornado-dash 1.5s linear infinite; }
 
 @keyframes donaido-tornado-wobble {
   0%, 100% { transform: translateX(-14px) rotate(-2deg); }
@@ -1123,8 +1132,8 @@ a {
   .animate-mascot-wave,
   .animate-mascot-sway,
   .animate-combo-flame,
-  .animate-tornado-spin,
-  .animate-tornado-spin-slow,
+  .animate-tornado-dash,
+  .animate-tornado-dash-slow,
   .animate-tornado-wobble,
   .animate-crown-shine { animation: none; }
   .animate-tornado-sweep { display: none; }

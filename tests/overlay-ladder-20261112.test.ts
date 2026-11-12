@@ -252,11 +252,11 @@ describe('신규 크리에이터 기본값', () => {
 
   it('설정 없이도 금액에 따라 5단계가 갈린다 (테스트 후원)', async () => {
     const amounts: [bigint, number, string][] = [
-      [3_000n, 1, 'DONAIDO_HEART_PEEK'],
-      [10_000n, 2, 'DONAIDO_THANKS_BOW'],
-      [30_000n, 3, 'DONAIDO_GIFT_POP'],
-      [50_000n, 4, 'DONAIDO_FRIENDS'],
-      [100_000n, 5, 'DONAIDO_CROWN_CEREMONY'],
+      [3_000n, 1, 'DONAIDO_WAVE'],
+      [10_000n, 2, 'DONAIDO_STARLIGHT'],
+      [30_000n, 3, 'DONAIDO_HEARTBURST'],
+      [50_000n, 4, 'DONAIDO_FESTIVAL'],
+      [100_000n, 5, 'DONAIDO_ROYAL_TORNADO'],
     ];
     for (const [amount, level, effect] of amounts) {
       const p = await sendTestOverlay(fx.creatorId, { donorName: '테스트', amount, message: 'm' });
@@ -384,6 +384,35 @@ describe('기존 크리에이터의 화면은 바뀌지 않는다', () => {
 });
 
 describe('최고관리자 기준 변경', () => {
+  it('원화 마이그레이션은 기존 기본 효과만 교체하고 저장된 구간과 사용자 효과를 보존한다', async () => {
+    const migration = fs.readFileSync(
+      'prisma/migrations/20261113010000_overlay_default_character_art/migration.sql', 'utf8',
+    );
+    const oldEffects = ['DONAIDO_HEART_PEEK', 'DONAIDO_THANKS_BOW', 'DONAIDO_GIFT_POP', 'DONAIDO_FRIENDS', 'DONAIDO_CROWN_CEREMONY'] as const;
+    const legacy = {
+      levels: DEFAULT_OVERLAY_LADDER.levels.map((level, i) => ({
+        ...level, effect: oldEffects[i]!, minAmount: level.minAmount + 500, durationMs: level.durationMs + 500,
+      })),
+      combo: { ...DEFAULT_OVERLAY_LADDER.combo, windowSec: 120 },
+    };
+    await saveOverlayLadder(legacy, fx.creatorUserId);
+    await prisma.$executeRawUnsafe(migration);
+    invalidateOverlayLadderCache();
+    expect(await getOverlayLadder()).toEqual({
+      ...legacy,
+      levels: legacy.levels.map((level, i) => ({ ...level, effect: DEFAULT_OVERLAY_LADDER.levels[i]!.effect })),
+    });
+
+    const custom = {
+      ...legacy,
+      levels: legacy.levels.map((level, i) => i === 2 ? { ...level, effect: 'DONAIDO_PARADE' as const } : level),
+    };
+    await saveOverlayLadder(custom, fx.creatorUserId);
+    await prisma.$executeRawUnsafe(migration);
+    invalidateOverlayLadderCache();
+    expect(await getOverlayLadder()).toEqual(custom);
+  });
+
   it('저장한 기준이 다음 후원부터 적용되고, 되돌리면 기본 기준으로 돌아온다', async () => {
     const custom = JSON.parse(JSON.stringify(DEFAULT_OVERLAY_LADDER));
     custom.levels[1].minAmount = 5_000; // 2단계를 5,000원부터로 당긴다

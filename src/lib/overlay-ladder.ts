@@ -87,11 +87,11 @@ export const LADDER_LIMITS = {
  */
 export const DEFAULT_OVERLAY_LADDER: OverlayLadder = {
   levels: [
-    { minAmount: 1_000, effect: 'DONAIDO_HEART_PEEK', durationMs: 5000 },
-    { minAmount: 10_000, effect: 'DONAIDO_THANKS_BOW', durationMs: 7000 },
-    { minAmount: 30_000, effect: 'DONAIDO_GIFT_POP', durationMs: 8000 },
-    { minAmount: 50_000, effect: 'DONAIDO_FRIENDS', durationMs: 10000 },
-    { minAmount: 100_000, effect: 'DONAIDO_CROWN_CEREMONY', durationMs: 12000 },
+    { minAmount: 1_000, effect: 'DONAIDO_WAVE', durationMs: 5000 },
+    { minAmount: 10_000, effect: 'DONAIDO_STARLIGHT', durationMs: 7000 },
+    { minAmount: 30_000, effect: 'DONAIDO_HEARTBURST', durationMs: 8000 },
+    { minAmount: 50_000, effect: 'DONAIDO_FESTIVAL', durationMs: 10000 },
+    { minAmount: 100_000, effect: 'DONAIDO_ROYAL_TORNADO', durationMs: 12000 },
   ],
   combo: { enabled: true, windowSec: 180, plusOneAt: 2, plusTwoAt: 4 },
 };

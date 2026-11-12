@@ -38,9 +38,9 @@ async function waitStage(overlay, timeout = 15_000) {
     light: (await stage.getAttribute('data-light-effects')) === '1',
     tornado: await overlay.locator('[data-tornado-sweep]').count(),
     sticker: await overlay
-      .locator('img[src*="/stickers/donaido/"]')
+      .locator('img[data-overlay-sticker]')
       .first()
-      .getAttribute('src')
+      .getAttribute('src', { timeout: 2000 })
       .catch(() => null),
   };
 }
@@ -124,12 +124,13 @@ try {
   await saveMode(studio, { mode: 'AUTO', light: false, combo: true });
 
   const ladder = [
-    [3000, 1, 'heart-peek'],
-    [10000, 2, 'thanks-bow'],
-    [30000, 3, 'gift-pop'],
-    [50000, 4, null],
-    [100000, 5, null],
+    [3000, 1, 'tier-1-wave'],
+    [10000, 2, 'tier-2-starlight'],
+    [30000, 3, 'tier-3-heartburst'],
+    [50000, 4, 'tier-4-festival'],
+    [100000, 5, 'tier-5-royal'],
   ];
+  let previousStickerWidth = 0;
   for (const [amount, level, stickerHint] of ladder) {
     const name = `단계${level}`;
     await sendTest(studio, amount, name);
@@ -141,12 +142,16 @@ try {
       continue;
     }
     r.ok(`${amount.toLocaleString('ko-KR')}원 → ${level}단계 재생`, got.level === level, `실제 ${got.level}단계`);
-    if (stickerHint) {
-      r.ok(`${level}단계 캐릭터 효과`, Boolean(got.sticker && got.sticker.includes(stickerHint)), String(got.sticker));
-    }
+    r.ok(`${level}단계 캐릭터 원화`, got.sticker === `/stickers/donaido/${stickerHint}.webp`, String(got.sticker));
     r.ok(`${level}단계 회오리 연출 ${level === 5 ? '있음' : '없음'}`, level === 5 ? got.tornado === 1 : got.tornado === 0, `개수 ${got.tornado}`);
 
     await overlay.waitForTimeout(1500);
+    const stickerWidth = await overlay.locator('img[data-overlay-sticker]').evaluate(async (img) => {
+      await img.decode();
+      return img.offsetWidth;
+    }).catch(() => 0);
+    r.ok(`${level}단계 캐릭터 이미지 로드 및 크기 증가`, stickerWidth > previousStickerWidth, `${stickerWidth}px`);
+    previousStickerWidth = stickerWidth;
     await overlay.screenshot({ path: path.join(SHOT_DIR, `level-${level}.png`) });
     const vis = await nameVisible(overlay, name);
     r.ok(`${level}단계 글자가 화면 안에 있고 가려지지 않는다`, vis.found && vis.inside && !vis.covered, JSON.stringify(vis));
@@ -169,6 +174,7 @@ try {
   {
     const got = await waitStage(overlay).catch(() => null);
     r.ok('가벼운 효과 모드: 5단계지만 회오리 · 테두리 빛을 뺀다', got?.level === 5 && got.light && got.tornado === 0, JSON.stringify(got));
+    r.ok('가벼운 효과 모드에서도 5단계 원화가 보인다', got?.sticker === '/stickers/donaido/tier-5-royal.webp');
     await overlay.waitForTimeout(1200);
     await overlay.screenshot({ path: path.join(SHOT_DIR, 'level-5-light.png') });
     await waitIdle(overlay);
@@ -243,9 +249,10 @@ try {
     at = await submit();
     r.ok('금액이 오름차순이 아니면 거절한다', at.includes('3단계 시작 금액은 2단계'), at.slice(-200));
 
-    // 올바른 값: 2단계를 5,000원부터
+    // 올바른 값: 2단계를 5,000원부터 시작하고 5단계 원화를 배정한다.
     await gotoReady(admin, `${BASE}/admin/overlay-effects`);
     await form.locator('input[name=minAmount2]').fill('5000');
+    await form.locator('select[name=effect2]').selectOption('DONAIDO_ROYAL_TORNADO');
     at = await submit();
     r.ok('기준 저장', at.includes('후원 연출 기준을 저장했습니다'), at.slice(-200));
     await gotoReady(admin, `${BASE}/admin/overlay-effects`);
@@ -259,6 +266,7 @@ try {
     {
       const got = await waitStage(overlay).catch(() => null);
       r.ok('기준 변경 뒤 5,000원 → 2단계', got?.level === 2, JSON.stringify(got));
+      r.ok('최고관리자가 배정한 원화를 사용한다', got?.sticker === '/stickers/donaido/tier-5-royal.webp' && got.tornado === 0);
       await waitIdle(overlay);
     }
 

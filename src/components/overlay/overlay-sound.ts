@@ -108,6 +108,7 @@ function sequence(
 function playCharacterSound(audio: AudioContext, name: string, t: number, peak: number): boolean {
   switch (name) {
     case 'DONAIDO_CHEER':
+    case 'DONAIDO_STARLIGHT':
       // 응원: 밝게 올라가는 세 음 + 응원봉을 흔드는 듯한 짧은 노이즈
       sequence(audio, t, [587.33, 739.99, 987.77], { step: 0.08, duration: 0.24, peak, type: 'triangle' });
       noiseBurst(audio, t + 0.05, 0.18, peak * 0.35);
@@ -115,6 +116,7 @@ function playCharacterSound(audio: AudioContext, name: string, t: number, peak: 
       return true;
 
     case 'DONAIDO_HEART_HUG':
+    case 'DONAIDO_HEARTBURST':
       // 하트 포옹: 부드러운 벨 뒤에 두근거리는 저음 두 번
       tone(audio, { freq: 659.25, start: t, duration: 0.7, peak: peak * 0.85 });
       tone(audio, { freq: 146.83, start: t + 0.22, duration: 0.18, peak: peak * 0.7, type: 'sine' });
@@ -139,6 +141,7 @@ function playCharacterSound(audio: AudioContext, name: string, t: number, peak: 
       return true;
 
     case 'DONAIDO_THANKS_BOW':
+    case 'DONAIDO_WAVE':
       // 감사 인사: 차분하게 내려오는 두 음
       tone(audio, { freq: 783.99, start: t, duration: 0.5, peak: peak * 0.9 });
       tone(audio, { freq: 523.25, start: t + 0.26, duration: 0.8, peak: peak * 0.8 });
@@ -164,6 +167,7 @@ function playCharacterSound(audio: AudioContext, name: string, t: number, peak: 
       return true;
 
     case 'DONAIDO_FRIENDS':
+    case 'DONAIDO_FESTIVAL':
       // 친구들 총출동: 세 친구가 차례로 튀어나오는 팝 세 번 + 화음
       [0, 0.18, 0.36].forEach((d, i) =>
         tone(audio, { freq: 200 + i * 60, start: t + d, duration: 0.09, peak: peak * 0.8, endFreq: 700 + i * 120, type: 'triangle' }),
@@ -202,6 +206,7 @@ function playCharacterSound(audio: AudioContext, name: string, t: number, peak: 
       return true;
 
     case 'DONAIDO_CROWN_CEREMONY':
+    case 'DONAIDO_ROYAL_TORNADO':
       sequence(audio, t, [392, 392, 523.25, 659.25], {
         step: 0.15, duration: 0.23, peak: peak * 0.75, type: 'triangle',
       });

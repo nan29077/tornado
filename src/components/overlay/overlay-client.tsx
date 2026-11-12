@@ -7,7 +7,6 @@ import {
   CharacterStickerInline,
   CharacterParadeLayer,
   PARADE_TOTAL_MS,
-  isCharacterStickerEffect,
   LevelEffectStage,
   useTypewriter,
   sliceSegments,
@@ -25,6 +24,7 @@ import {
   type OverlayLayout,
 } from '@/lib/overlay-layout';
 import { effectLevelOf, type OverlayEffectLevel } from '@/lib/overlay-effect-level';
+import { findCharacterSticker } from '@/lib/overlay-effect-catalog';
 import { openStream, type StreamHandle, type StreamMessage } from '@/lib/shared-event-source';
 import { createServerTtsGuard, ttsGuardMs, ttsOuterLimitMs } from '@/components/overlay/overlay-tts-timing';
 import {
@@ -866,6 +866,10 @@ export function OverlayClient({
 
   /** 금액 구간이 정한 연출 세기. 값이 없는 예전 이벤트는 레벨 1이다. */
   const effectLevel: OverlayEffectLevel = effectLevelOf(current?.effectLevel);
+  const stickerLevel = current?.tierLabel || effectLevel > 1 ? effectLevel : undefined;
+  const currentEffect = current ? effectOf(current).toUpperCase() : 'NONE';
+  const currentSticker = findCharacterSticker(currentEffect);
+  const lightEffects = current?.lightEffects === true;
   /** 크리에이터가 고른 텍스트 애니메이션(AUTO 면 레벨에 맞춰 자동). */
   const activeTextAnim: ResolvedTextAnim = resolveTextAnim(current?.textAnim ?? textAnim, effectLevel);
 
@@ -950,6 +954,18 @@ export function OverlayClient({
   const plainTheme: Exclude<OverlayTheme, 'CARD'> | null = themeHasCard(themeName)
     ? null
     : (themeName as Exclude<OverlayTheme, 'CARD'>);
+  const stickerBesideText = Boolean(plainTheme && current && bannerOf(current));
+  const sticker = current && currentSticker ? (
+    <CharacterStickerInline
+      key={current.eventId}
+      sticker={currentSticker}
+      level={stickerLevel}
+      theme={themeName}
+      placement={stickerBesideText ? 'side' : 'stack'}
+      leaving={leaving && !stickerBesideText}
+      light={lightEffects}
+    />
+  ) : null;
 
   const standalone = useStandalone();
 
@@ -974,8 +990,10 @@ export function OverlayClient({
       {/* 파티클은 배너를 끈 구간에서도 재생된다. 캐릭터 스티커는 배너 위 인라인으로 처리. */}
       {current && !leaving ? (
         <EffectLayer
-          effect={effectOf(current)}
+          effect={currentEffect}
           theme={themeName}
+          level={stickerLevel}
+          light={lightEffects}
         />
       ) : null}
 
@@ -999,15 +1017,15 @@ export function OverlayClient({
         캐릭터 스티커(이미지)를 쓰는 효과에서는 SVG 마스코트를 빼 캐릭터가 둘로 겹치지 않게 한다.
         leaving 중에도 유지해야 캐릭터가 퇴장 애니메이션을 재생할 수 있다.
       */}
-      {current ? (
+      {current && currentEffect !== 'NONE' ? (
         <LevelEffectStage
           key={current.eventId}
           level={effectLevel}
           multiplier={combo.multiplier}
           theme={themeName}
           leaving={leaving}
-          withMascot={!isCharacterStickerEffect(effectOf(current))}
-          light={current.lightEffects === true}
+          withMascot={!currentSticker}
+          light={lightEffects}
         />
       ) : null}
 
@@ -1040,28 +1058,11 @@ export function OverlayClient({
                 maxMessageLen={shown.maxMessageLen ?? maxMessageLen}
                 theme={plainTheme}
                 textAnim={activeTextAnim}
-                sticker={
-                  /*
-                    퇴장 중에도 캐릭터를 남겨 둔다(OV-1). 예전에는 퇴장이 시작되자마자 캐릭터가 빠져
-                    글자가 왼쪽으로 200px 넘게 순간이동했다. 캐릭터는 글자와 같은 묶음 안에 있어
-                    함께 사라진다.
-                  */
-                  current && isCharacterStickerEffect(effectOf(current)) ? (
-                    <CharacterStickerInline
-                      effect={effectOf(current)}
-                      theme={plainTheme}
-                      placement="side"
-                    />
-                  ) : null
-                }
+                sticker={sticker}
               />
             ) : (
               <>
-                {/* 카드형: 캐릭터 스티커를 배너 바로 위에 얹는다 (예전 방식 그대로) */}
-                {/* 퇴장 중에도 남겨 두고 카드와 함께 사라지게 한다(OV-1). */}
-                {current && isCharacterStickerEffect(effectOf(current)) ? (
-                  <CharacterStickerInline effect={effectOf(current)} theme={themeName} leaving={leaving} />
-                ) : null}
+                {sticker}
                 <DonationCard
                   key={shown.eventId}
                   payload={shown}
@@ -1073,7 +1074,7 @@ export function OverlayClient({
               </>
             )}
           </div>
-        ) : null}
+        ) : sticker}
       </div>
 
       {/*

@@ -85,13 +85,15 @@ describe('캐릭터 스티커', () => {
   it('배경 없는 알림에서는 글자 옆에 작게 붙는다', () => {
     // 위에 크게 얹으면 세로로 길어져 방송 화면을 위아래로 가로지른다.
     const src = read(EFFECTS);
-    // 옆 배치는 200px, 카드형에서 쓰던 크기(260px)는 그대로 남는다.
-    // (2026-10-01 배경 연출을 붙이면서 클래스 대신 크기 값으로 계산한다)
-    expect(src).toContain("const size = placement === 'side' ? 200 : 260;");
+    // 연출 단계가 없는 알림(금액별 연출 끄기 · 예전 이벤트)은 옆 배치 200px, 카드형 260px 를 그대로 쓴다.
+    // 단계가 있으면 단계별 크기(EFFECT_LEVELS[level].stickerSize)로 커진다 (2026-11-13 단계별 원화).
+    expect(src).toContain("const size = level ? EFFECT_LEVELS[level].stickerSize : placement === 'side' ? 200 : 260;");
   });
 
-  it('알림 화면이 옆 배치로 넘긴다', () => {
-    expect(read(OVERLAY)).toContain('placement="side"');
+  it('알림 화면이 배경 없는 글자 알림에서는 옆 배치로 넘긴다', () => {
+    const src = read(OVERLAY);
+    expect(src).toContain('const stickerBesideText = Boolean(plainTheme && current && bannerOf(current));');
+    expect(src).toContain("placement={stickerBesideText ? 'side' : 'stack'}");
   });
 });
 
