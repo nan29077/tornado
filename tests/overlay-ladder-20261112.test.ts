@@ -341,6 +341,46 @@ describe('기존 크리에이터의 화면은 바뀌지 않는다', () => {
     // 기존 마이그레이션 규칙: 순서에 의존하는 DROP 을 넣지 않는다.
     expect(sql.toUpperCase()).not.toContain('DROP ');
   });
+
+  it('뒤따르는 마이그레이션이 전 크리에이터를 자동 방식으로 일괄 전환한다 (2026-11-13 결정)', () => {
+    const dir = path.resolve(process.cwd(), 'prisma/migrations/20261113000000_overlay_auto_for_all');
+    const sql = fs.readFileSync(path.join(dir, 'migration.sql'), 'utf8');
+    expect(sql).toContain(`"overlay_tier_mode" = 'AUTO'`);
+    expect(sql).toContain(`"overlay_combo_boost" = true`);
+    // 크리에이터가 만든 금액 구간은 지우지 않는다(직접 설정으로 돌아오면 다시 쓸 수 있어야 한다).
+    const statements = sql
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('--'))
+      .join('\n')
+      .toUpperCase();
+    expect(statements).not.toContain('DELETE');
+    expect(statements).not.toContain('DROP ');
+    expect(statements).not.toContain('OVERLAY_TIER"');
+  });
+
+  it('일괄 전환 뒤에도 만들어 둔 구간은 남아 있고, 직접 설정으로 바꾸면 그대로 적용된다', async () => {
+    await setMode('CUSTOM');
+    await prisma.overlayTier.create({
+      data: { id: newId(), creatorId: fx.creatorId, minAmount: 1_000n, label: '내 구간', effect: 'COIN', durationMs: 6000 },
+    });
+    // 마이그레이션의 UPDATE 문을 그대로 실행한다.
+    await prisma.$executeRawUnsafe(
+      `UPDATE "creator_profile" SET "overlay_tier_mode" = 'AUTO', "overlay_combo_boost" = true`,
+    );
+    const c = await prisma.creatorProfile.findUniqueOrThrow({ where: { id: fx.creatorId } });
+    expect(c.overlayTierMode).toBe('AUTO');
+    expect(c.overlayComboBoost).toBe(true);
+    expect(await prisma.overlayTier.count({ where: { creatorId: fx.creatorId } })).toBe(1);
+
+    const auto = await sendTestOverlay(fx.creatorId, { donorName: '테스트', amount: 100_000n, message: 'm' });
+    expect(auto.effectLevel).toBe(5);
+    expect(auto.effect).toBe(DEFAULT_OVERLAY_LADDER.levels[4]!.effect);
+
+    await setMode('CUSTOM');
+    const custom = await sendTestOverlay(fx.creatorId, { donorName: '테스트', amount: 100_000n, message: 'm' });
+    expect(custom.effect).toBe('COIN');
+    expect(custom.tierLabel).toBe('내 구간');
+  });
 });
 
 describe('최고관리자 기준 변경', () => {

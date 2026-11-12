@@ -661,7 +661,7 @@ model CreatorProfile {
   ///   CUSTOM 크리에이터가 만든 금액 구간(overlay_tier)을 따른다
   ///   OFF    금액과 무관하게 전역 표시 설정 하나로 재생한다
   /// 오버레이 설정 행(overlay_setting)은 주소를 발급해야 생기므로, 행이 없는 신규 크리에이터도
-  /// 기본값을 갖도록 여기에 둔다. 신규는 AUTO, 기존 크리에이터는 마이그레이션이 CUSTOM/OFF 로 옮긴다.
+  /// 기본값을 갖도록 여기에 둔다. 신규는 AUTO. 기존 크리에이터도 2026-11-13 마이그레이션으로 AUTO 로 일괄 전환했다.
   overlayTierMode     String        @default("AUTO") @map("overlay_tier_mode")
   /// 연속 후원 단계 상승 사용 여부. 같은 후원자가 이어서 후원하면 연출 단계를 올린다.
   overlayComboBoost   Boolean       @default(true) @map("overlay_combo_boost")
