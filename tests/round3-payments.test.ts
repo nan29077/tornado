@@ -420,6 +420,17 @@ describe('PAY-H 진행 중인 거래 없이 멈춘 PENDING_PAYMENT 는 실패로
   it('마지막 거래가 FAILED 인 고아 건 → PAYMENT_FAILED + 예약 1회 되돌림(배치 재실행에도 1회)', async () => {
     const { donor, donationId, txnId, amount } = await stuckDonationWithoutAttempts();
     const reservedAt = new Date(Date.now() - 20 * 60_000);
+    /**
+     * 예약 2건을 **같은 시각(reservedAt)** 으로 다시 만든다 (2026-11-13).
+     *
+     * 예전에는 준비 함수가 "지금" 시각으로 만든 예약 1건에, 여기서 "20분 전" 예약 1건을 더했다.
+     * 한국 시간 00:00~00:20 사이에 실행하면 20분 전이 어제라 두 예약이 서로 다른 날짜에 쌓이고,
+     * 아래의 "같은 날 2건" 전제가 깨져 서비스 코드와 무관하게 실패했다.
+     * 두 건을 같은 시각에 쌓으면 언제 실행해도 같은 날짜에 들어간다.
+     */
+    await prisma.donationCounter.deleteMany({ where: { donorId: donor.id } });
+    // 멈춘 후원 자신의 예약
+    await commitCounters(donor.id, fx.creatorId, amount, reservedAt);
     // 같은 날 다른 후원 1건이 더 예약되어 있다(되돌림이 두 번 일어나면 이 건까지 깎인다).
     await commitCounters(donor.id, fx.creatorId, amount, reservedAt);
     // 거래를 FAILED 로 바꾼 직후 프로세스가 죽은 상태.
