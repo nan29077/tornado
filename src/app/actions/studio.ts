@@ -10,6 +10,7 @@ import { env } from '@/lib/env';
 import { accountTail4, decrypt, encrypt, generateToken, isValidResident, maskName, maskSecret, normalizeResident, tokenHash } from '@/lib/crypto';
 import { sendTestOverlay } from '@/server/services/broadcast-dispatch';
 import { revokeOverlayToken } from '@/server/services/overlay-bus';
+import { OVERLAY_TIER_MODES, tierModeOf } from '@/lib/overlay-ladder';
 import { DISPLAY_PAID_STATUSES } from '@/components/studio/shared';
 import { OVERLAY_EFFECTS } from '@/server/services/overlay-tiers';
 import { OVERLAY_TEXT_ANIM_VALUES, textAnimOf } from '@/lib/overlay-text-anim';
@@ -671,6 +672,8 @@ const tierSchema = z.object({
   ttsVoice: z.string().max(120),
   ttsSpeed: z.coerce.number().min(0.5).max(2),
   ttsPitch: z.coerce.number().min(0).max(2),
+  // 연출 단계 1~5. 값이 없으면(null) 예전처럼 구간 순서로 정한다.
+  intensity: z.number().int().min(1).max(5).nullable().optional(),
 });
 
 /**
@@ -721,9 +724,27 @@ export async function saveOverlayTiersAction(
           ttsVoice: t.ttsVoice,
           ttsSpeed: t.ttsSpeed,
           ttsPitch: t.ttsPitch,
+          intensity: t.intensity ?? null,
         })),
       });
     });
+
+    /**
+     * 연출 방식과 맞춘다 (2026-11-12).
+     *  - 금액별 연출을 꺼 둔(OFF) 크리에이터가 구간을 처음 만들면 [직접 설정]으로 바꾼다.
+     *    구간을 만들었는데 아무 일도 일어나지 않으면 고장으로 보인다(예전에는 구간을 만들면 곧바로 적용됐다).
+     *  - [자동] 방식은 건드리지 않는다. 자동으로 잘 쓰고 있는 화면이 구간 저장 한 번으로 바뀌면 안 된다.
+     */
+    const profile = await prisma.creatorProfile.findUnique({
+      where: { id: creatorId },
+      select: { overlayTierMode: true },
+    });
+    const mode = tierModeOf(profile?.overlayTierMode);
+    let switched = false;
+    if (tiers.length > 0 && mode === 'OFF') {
+      await prisma.creatorProfile.update({ where: { id: creatorId }, data: { overlayTierMode: 'CUSTOM' } });
+      switched = true;
+    }
 
     revalidatePath('/studio/overlay');
     return {
@@ -731,7 +752,52 @@ export async function saveOverlayTiersAction(
       message:
         tiers.length === 0
           ? '구간을 모두 삭제했습니다. 이제 전역 표시 설정으로만 재생됩니다.'
-          : `금액 구간 ${tiers.length}개를 저장했습니다.`,
+          : `금액 구간 ${tiers.length}개를 저장했습니다.` +
+            (switched ? ' 금액별 연출 방식을 [직접 설정]으로 바꿨습니다.' : '') +
+            (mode === 'AUTO'
+              ? ' 지금은 금액별 연출 방식이 [자동]이라 이 구간은 쓰이지 않습니다. [직접 설정]으로 바꾸면 적용됩니다.'
+              : ''),
+    };
+  });
+}
+
+/**
+ * 금액별 연출 방식 저장 (2026-11-12).
+ *  - 방식: 자동(AUTO) / 직접 설정(CUSTOM) / 끄기(OFF)
+ *  - 연속 후원 단계 상승, 가벼운 효과 모드
+ * 오버레이 주소를 아직 발급하지 않은 크리에이터도 저장할 수 있다(creator_profile 에 둔다).
+ */
+export async function updateOverlayPlayModeAction(
+  _prev: StudioActionState,
+  formData: FormData,
+): Promise<StudioActionState> {
+  return withCreator(async (creatorId) => {
+    const parsed = z.enum(OVERLAY_TIER_MODES).safeParse(text(formData, 'tierMode'));
+    if (!parsed.success) {
+      return { ok: false, message: '연출 방식을 다시 선택해 주세요.' };
+    }
+    const mode = parsed.data;
+
+    const tierCount = mode === 'CUSTOM' ? await prisma.overlayTier.count({ where: { creatorId } }) : 0;
+
+    await prisma.creatorProfile.update({
+      where: { id: creatorId },
+      data: {
+        overlayTierMode: mode,
+        overlayComboBoost: checked(formData, 'comboBoost'),
+        overlayLightEffects: checked(formData, 'lightEffects'),
+      },
+    });
+
+    revalidatePath('/studio/overlay');
+    const label = mode === 'AUTO' ? '자동' : mode === 'CUSTOM' ? '직접 설정' : '끄기';
+    return {
+      ok: true,
+      message:
+        `금액별 연출 방식을 [${label}](으)로 저장했습니다. 다음 후원부터 적용됩니다.` +
+        (mode === 'CUSTOM' && tierCount === 0
+          ? ' 아직 만든 금액 구간이 없어 전역 표시 설정으로 재생됩니다. 아래 [금액 구간별 효과]에서 구간을 만들어 주세요.'
+          : ''),
     };
   });
 }

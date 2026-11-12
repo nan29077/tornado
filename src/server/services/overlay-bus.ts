@@ -58,9 +58,16 @@ export interface OverlayEventPayload {
   /// 감사 텍스트 등장 애니메이션 (AUTO | SLIDE_UP | SLIDE_DOWN | BOUNCE | TYPEWRITER | FADE_ZOOM | SHAKE)
   /// AUTO 면 오버레이가 아래 effectLevel 에 맞춰 자동으로 고른다.
   textAnim: string;
-  /// 금액 구간이 정한 연출 세기 1~4. 구간을 쓰지 않으면 언제나 1이다.
-  /// 파티클 수·색, 캐릭터 등장 여부와 크기, 화면 테두리 빛나기가 이 값으로 갈린다.
+  /// 연출 단계 1~5 (2026-11-12 부터 5단계). 금액과 연속 후원 상승으로 정해진다.
+  /// 파티클 수·색, 캐릭터 등장 여부와 크기, 화면 테두리 빛나기, 회오리 연출이 이 값으로 갈린다.
   effectLevel: number;
+  /// 연속 후원 상승 전 단계. effectLevel 과 다르면 연속 후원으로 단계가 오른 것이다.
+  baseLevel?: number;
+  /// 서버가 후원자 식별값으로 센 연속 후원 횟수(이번 건 포함). 값이 있으면 오버레이는
+  /// 표시 이름으로 세지 않고 이 값을 쓴다. 후원자를 구분하는 정보는 싣지 않는다.
+  comboCount?: number;
+  /// 가벼운 효과 모드. 저사양 방송 PC 를 위해 파티클과 화면 전체 연출을 줄인다.
+  lightEffects?: boolean;
   /// 배치 미세 조정(캔버스 대비 백분율 이동 + 크기 배율 %). 이벤트마다 실어 보내므로
   /// 스튜디오에서 저장하면 브라우저 소스를 다시 로드하지 않아도 다음 알림부터 적용된다.
   offsetX: number;

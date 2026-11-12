@@ -97,10 +97,14 @@ export interface OverlayPayload {
    */
   textAnim?: string;
   /**
-   * 금액 구간 효과 레벨 1~4. 값이 없는 예전 이벤트는 레벨 1로 본다.
-   * 구간을 쓰지 않는 크리에이터도 항상 레벨 1이다(기존 연출 그대로).
+   * 연출 단계 1~5. 값이 없는 예전 이벤트는 1단계로 본다.
+   * 금액별 연출을 끈 크리에이터도 항상 1단계다(기존 연출 그대로).
    */
   effectLevel?: number;
+  /** 서버가 센 연속 후원 횟수(이번 건 포함). 있으면 표시 이름 대신 이 값으로 콤보를 센다. */
+  comboCount?: number;
+  /** 가벼운 효과 모드. 파티클과 화면 전체 연출을 줄인다. */
+  lightEffects?: boolean;
   /** 배치 미세 조정. 없으면(예전 이벤트) 페이지 로드 시 값을 쓴다. */
   offsetX?: number;
   offsetY?: number;
@@ -414,7 +418,7 @@ export function OverlayClient({
    * **재생을 시작하는 그 자리에서** 불러야 한다. 화면에 뜬 뒤에 세면 파티클·캐릭터가
    * 직전 후원의 배율로 먼저 한 번 그려지고, 콤보가 갱신되면서 또 한 번 그려진다.
    */
-  const registerComboRef = React.useRef<(donorName: string, anonymous?: boolean) => number>(() => 1);
+  const registerComboRef = React.useRef<(donorName: string, anonymous?: boolean, serverCount?: number) => number>(() => 1);
   /**
    * 마지막으로 받은 이벤트 ID.
    * 재연결할 때 서버에 알려 주면 끊긴 사이에 쌓인 후원 알림을 다시 받아 재생한다.
@@ -580,7 +584,7 @@ export function OverlayClient({
       busy.current = true;
       setLeaving(false);
       // 콤보를 먼저 센다. setCurrent 와 같은 갱신으로 묶여 첫 화면부터 올바른 배율로 그려진다.
-      registerComboRef.current(next.donorName, next.anonymous);
+      registerComboRef.current(next.donorName, next.anonymous, next.comboCount);
       setCurrent(next);
       if (effectOf(next) === 'DONAIDO_PARADE') {
         if (paradeTimer.current) clearTimeout(paradeTimer.current);
@@ -1003,6 +1007,7 @@ export function OverlayClient({
           theme={themeName}
           leaving={leaving}
           withMascot={!isCharacterStickerEffect(effectOf(current))}
+          light={current.lightEffects === true}
         />
       ) : null}
 

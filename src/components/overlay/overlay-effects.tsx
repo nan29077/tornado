@@ -12,6 +12,7 @@ import {
 } from '@/lib/overlay-effect-catalog';
 import {
   EFFECT_LEVELS,
+  MAX_PARTICLES,
   effectLevelOf,
   particleCountFor,
   type MascotSize,
@@ -876,10 +877,13 @@ function paintShape(ctx: CanvasRenderingContext2D, shape: Particle['shape'], siz
 export function ParticleBurst({
   level,
   multiplier = 1,
+  light = false,
 }: {
   level: OverlayEffectLevel;
   /** 콤보 증폭 배율 */
   multiplier?: number;
+  /** 가벼운 효과 모드 — 알갱이 수를 줄이고 2차 폭발·빛무리를 뺀다 */
+  light?: boolean;
 }) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   /**
@@ -908,7 +912,7 @@ export function ParticleBurst({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const spec = EFFECT_LEVELS[level];
-    const count = particleCountFor(level, burstMultiplier);
+    const count = particleCountFor(level, burstMultiplier, light);
     const particles: Particle[] = [];
 
     /** 한 점에서 사방으로 터뜨린다. */
@@ -936,11 +940,18 @@ export function ParticleBurst({
     // 1차 폭발은 화면 가운데보다 조금 위에서. 알림 배너(보통 아래쪽)를 덮지 않는다.
     burst(w / 2, h * 0.42, count, 0, 1);
 
-    // 레벨 4 는 폭죽처럼 2차 폭발이 이어진다.
-    if (spec.firework) {
+    // 레벨 4 이상은 폭죽처럼 2차 폭발이 이어진다. 가벼운 효과 모드에서는 뺀다.
+    if (spec.firework && !light) {
       const secondary = Math.max(8, Math.round(count * 0.45));
       burst(w * 0.24, h * 0.3, secondary, 0.42, 0.85);
       burst(w * 0.76, h * 0.34, secondary, 0.78, 0.85);
+      // 5단계는 회오리가 지나간 자리에서 3차 폭발이 한 번 더 터진다.
+      // 합계가 캔버스 상한(MAX_PARTICLES)을 넘지 않도록 남은 만큼만 뿌린다.
+      if (spec.tornado) {
+        const room = Math.max(0, MAX_PARTICLES - particles.length);
+        const third = Math.min(room, Math.max(8, Math.round(count * 0.4)));
+        if (third > 0) burst(w * 0.5, h * 0.24, third, 1.5, 1.05);
+      }
     }
 
     const GRAVITY = 620;
@@ -984,7 +995,7 @@ export function ParticleBurst({
         ctx.rotate(p.rot);
         ctx.fillStyle = p.color;
         // 레벨 4 는 알갱이마다 빛무리를 준다. 낮은 레벨에 주면 화면이 탁해진다.
-        if (spec.screenGlow) {
+        if (spec.screenGlow && !light) {
           ctx.shadowColor = p.color;
           ctx.shadowBlur = 18;
         }
@@ -1000,7 +1011,7 @@ export function ParticleBurst({
       cancelAnimationFrame(raf);
       ctx.clearRect(0, 0, w, h);
     };
-  }, [level, burstMultiplier]);
+  }, [level, burstMultiplier, light]);
 
   return <canvas ref={canvasRef} aria-hidden className="absolute inset-0 h-full w-full" />;
 }
@@ -1012,6 +1023,8 @@ const MASCOT_WIDTH: Record<Exclude<MascotSize, 'none'>, number> = {
   small: 200,
   large: 290,
   huge: 380,
+  // 5단계. 화면 높이(1080)의 절반을 넘지 않게 둔다 — 캐릭터가 방송 화면을 가리면 안 된다.
+  giant: 440,
 };
 
 /**
@@ -1135,6 +1148,42 @@ export function MascotEntrance({
           {/* 반대쪽 팔 */}
           <path d="M58 100c-9 4-15 12-17 22" stroke={stroke} strokeWidth={5} strokeLinecap="round" />
           <circle cx={39} cy={126} r={8} fill={body} stroke={stroke} strokeWidth={4.5} />
+
+          {/* 5단계 전용: 망토와 왕관. 가장 높은 단계임을 한눈에 알 수 있게 한다. */}
+          {spec.mascot === 'giant' ? (
+            <>
+              <path
+                d="M62 104c-14 22-20 52-16 86 12-6 22-8 34-4"
+                fill={theme === 'MINIMAL' ? '#8d8d99' : theme === 'NEON' ? '#a06bf0' : '#f4506b'}
+                stroke={stroke}
+                strokeWidth={4.5}
+                strokeLinejoin="round"
+                opacity={0.92}
+              />
+              <path
+                d="M70 40l-6-30 20 16 16-22 16 22 20-16-6 30Z"
+                fill={theme === 'MINIMAL' ? '#ffffff' : '#ffd24a'}
+                stroke={stroke}
+                strokeWidth={4.5}
+                strokeLinejoin="round"
+              />
+              <circle cx={100} cy={30} r={4} fill="#f4506b" stroke={stroke} strokeWidth={2} />
+              <circle cx={82} cy={33} r={3} fill="#4ba3f2" stroke={stroke} strokeWidth={2} />
+              <circle cx={118} cy={33} r={3} fill="#5ecf8b" stroke={stroke} strokeWidth={2} />
+              {/* 왕관 반짝이 */}
+              <path
+                className={leaving ? undefined : 'animate-crown-shine'}
+                d="M140 6l3 8 8 3-8 3-3 8-3-8-8-3 8-3Z"
+                fill="#ffffff"
+              />
+              <path
+                className={leaving ? undefined : 'animate-crown-shine'}
+                style={{ animationDelay: '0.45s' }}
+                d="M56 2l2 6 6 2-6 2-2 6-2-6-6-2 6-2Z"
+                fill="#ffffff"
+              />
+            </>
+          ) : null}
         </g>
       </svg>
     </div>
@@ -1161,6 +1210,60 @@ export function ScreenGlow({ level, theme = 'TORNADO' }: { level: OverlayEffectL
   );
 }
 
+// ------------------------------------------------------ 회오리 휩쓸기 (5단계)
+
+/** 회오리 고리 한 줄. 위가 넓고 아래로 갈수록 좁아지는 깔때기를 만든다. */
+const TORNADO_RINGS: readonly { cy: number; rx: number; ry: number; w: number; o: number }[] = [
+  { cy: 70, rx: 250, ry: 38, w: 16, o: 0.85 },
+  { cy: 150, rx: 212, ry: 34, w: 15, o: 0.8 },
+  { cy: 228, rx: 174, ry: 30, w: 14, o: 0.75 },
+  { cy: 302, rx: 138, ry: 26, w: 13, o: 0.7 },
+  { cy: 372, rx: 104, ry: 22, w: 12, o: 0.65 },
+  { cy: 436, rx: 74, ry: 18, w: 11, o: 0.6 },
+  { cy: 494, rx: 48, ry: 14, w: 10, o: 0.55 },
+  { cy: 544, rx: 26, ry: 10, w: 9, o: 0.5 },
+];
+
+/**
+ * 5단계 전용 화면 전체 연출 — 회오리가 화면을 한 번 가로지른다.
+ *
+ * 서비스 이름(토네이도)과 같은 모티프다. 반투명 선으로만 그려 방송 화면을 가리지 않고,
+ * 지나가는 높이를 화면 위쪽 절반에 두어 아래쪽 알림 글자와 겹치지 않는다.
+ * 애니메이션이 끝나면 opacity 0 으로 남으므로 따로 지울 필요가 없다(알림마다 다시 마운트된다).
+ */
+export function TornadoSweep({ level, theme = 'TORNADO' }: { level: OverlayEffectLevel; theme?: string }) {
+  if (!EFFECT_LEVELS[level].tornado) return null;
+  const main = theme === 'NEON' ? '#22d3ee' : theme === 'MINIMAL' ? '#ffffff' : '#ffc632';
+  const sub = theme === 'NEON' ? '#a06bf0' : theme === 'MINIMAL' ? '#d6d6de' : '#ff8f4d';
+  return (
+    <div
+      aria-hidden
+      data-tornado-sweep
+      className="animate-tornado-sweep pointer-events-none absolute left-0 right-0 top-[2%] flex justify-center"
+    >
+      <svg viewBox="0 0 600 600" width={600} height={600} fill="none" className="animate-tornado-wobble">
+        {TORNADO_RINGS.map((r, i) => (
+          <ellipse
+            key={r.cy}
+            cx={300}
+            cy={r.cy}
+            rx={r.rx}
+            ry={r.ry}
+            stroke={i % 2 === 0 ? main : sub}
+            strokeWidth={r.w}
+            strokeLinecap="round"
+            strokeDasharray={`${Math.round(r.rx * 1.9)} ${Math.round(r.rx * 0.7)}`}
+            opacity={r.o}
+            className={i % 2 === 0 ? 'animate-tornado-spin' : 'animate-tornado-spin-slow'}
+          />
+        ))}
+        {/* 바닥에서 이는 먼지 */}
+        <ellipse cx={300} cy={572} rx={120} ry={14} fill={main} opacity={0.22} />
+      </svg>
+    </div>
+  );
+}
+
 // ------------------------------------------------------------ 효과 무대 통합
 
 /**
@@ -1176,21 +1279,31 @@ export function LevelEffectStage({
   leaving = false,
   /** 캐릭터 스티커 효과를 이미 쓰고 있으면 SVG 마스코트는 겹치지 않게 뺀다. */
   withMascot = true,
+  /** 가벼운 효과 모드 — 화면 전체 연출(테두리 빛·회오리)을 빼고 파티클을 줄인다. */
+  light = false,
 }: {
   level: number;
   multiplier?: number;
   theme?: string;
   leaving?: boolean;
   withMascot?: boolean;
+  light?: boolean;
 }) {
   const lv = effectLevelOf(level);
   // [minor] 알림(eventId) 단위로 마운트되므로 시작 시점의 콤보 배율로 고정한다. 콤보 시간이 끝나도
   // 이 알림의 파티클이 다시 터지거나 캐릭터 크기가 줄지 않는다.
   const [startMultiplier] = React.useState(multiplier);
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-      <ScreenGlow level={lv} theme={theme} />
-      <ParticleBurst level={lv} multiplier={startMultiplier} />
+    // data-* 는 점검·시뮬레이션에서 "지금 몇 단계로 재생 중인가"를 읽는 용도다(화면에는 영향 없음).
+    <div
+      aria-hidden
+      data-effect-level={lv}
+      data-light-effects={light ? '1' : '0'}
+      className="pointer-events-none absolute inset-0 overflow-hidden"
+    >
+      {light ? null : <ScreenGlow level={lv} theme={theme} />}
+      {light || leaving ? null : <TornadoSweep level={lv} theme={theme} />}
+      <ParticleBurst level={lv} multiplier={startMultiplier} light={light} />
       {withMascot ? (
         <MascotEntrance level={lv} multiplier={startMultiplier} theme={theme} leaving={leaving} />
       ) : null}

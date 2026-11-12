@@ -285,3 +285,20 @@ export function findCharacterSticker(effect: string): CharacterStickerDefinition
   const normalized = effect.toUpperCase();
   return DONAIDO_CHARACTER_STICKERS.find((sticker) => sticker.value === normalized) ?? null;
 }
+
+/** 파티클 효과의 화면 표시 이름. 캐릭터 효과는 DONAIDO_CHARACTER_STICKERS 의 label 을 쓴다. */
+const BASIC_EFFECT_LABEL: Record<string, string> = {
+  NONE: '효과 없음',
+  HEART: '하트',
+  STAR: '별',
+  FIREWORK: '폭죽',
+  CONFETTI: '꽃가루',
+  COIN: '동전',
+};
+
+/** 효과 값 → 화면 표시 이름. 모르는 값은 그대로 돌려준다. */
+export function overlayEffectLabel(value: string): string {
+  const sticker = DONAIDO_CHARACTER_STICKERS.find((s) => s.value === value);
+  if (sticker) return `캐릭터 · ${sticker.label}`;
+  return BASIC_EFFECT_LABEL[value] ?? value;
+}

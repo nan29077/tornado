@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   Activity, BadgeCheck, BookOpenText, CalendarDays, ClipboardList, CreditCard, FlaskConical,
   FilePen, Flag, Gamepad2, Gauge, HeartHandshake, Home, Images, KeyRound, LayoutDashboard, LogOut,
-  Menu, MessageCircleQuestion, MessageSquareText, PanelsTopLeft, Percent, PhoneCall,
+  Menu, MessageCircleQuestion, MessageSquareText, PanelsTopLeft, Percent, Sparkles, PhoneCall,
   ReceiptText, ScrollText, Send, ServerCog, ShieldAlert, ShieldBan,
   SlidersHorizontal, Undo2, UserCog, CircleUserRound, UserRoundCog,
   UsersRound, Video, Volume2, WalletCards, X,
@@ -47,7 +47,7 @@ export interface NavGroup {
 
 export type ConsoleIconName =
   | 'activity' | 'admins' | 'audit' | 'banners' | 'codes' | 'contents' | 'creators'
-  | 'dashboard' | 'donations' | 'donors' | 'fees' | 'game' | 'holidays' | 'inquiries' | 'messages'
+  | 'dashboard' | 'donations' | 'donors' | 'effects' | 'fees' | 'game' | 'holidays' | 'inquiries' | 'messages'
   | 'moderation' | 'numbers' | 'overlay' | 'payments' | 'policies' | 'profile'
   | 'refunds' | 'reports' | 'risk' | 'settlement' | 'simulator'
   | 'system' | 'tax' | 'templates' | 'terms' | 'tts' | 'users' | 'youtube' | 'settings' | 'send';
@@ -71,6 +71,7 @@ const CONSOLE_ICONS = {
   moderation: ShieldBan,
   numbers: PhoneCall,
   overlay: PanelsTopLeft,
+  effects: Sparkles,
   payments: CreditCard,
   policies: Gauge,
   profile: UserRoundCog,

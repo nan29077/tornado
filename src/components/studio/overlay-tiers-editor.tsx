@@ -7,6 +7,12 @@ import { SaveButtonLabel, SaveToast, useSaveFeedback } from '@/components/studio
 import { previewOverlayTierAction, saveOverlayTiersAction } from '@/app/actions/studio';
 import type { StudioActionState } from '@/app/actions/studio';
 import { DONAIDO_CHARACTER_STICKERS } from '@/lib/overlay-effect-catalog';
+import {
+  DEFAULT_OVERLAY_LADDER,
+  OVERLAY_LEVELS,
+  OVERLAY_LEVEL_LABEL,
+  type OverlayLevel,
+} from '@/lib/overlay-ladder';
 
 /**
  * 금액 구간별 오버레이 효과 편집기 + 미리보기.
@@ -30,6 +36,8 @@ export interface TierDraft {
   ttsVoice: string;
   ttsSpeed: string;
   ttsPitch: string;
+  /** 연출 단계 '1'~'5'. 빈 문자열이면 구간 순서대로 자동(최대 4단계). */
+  intensity: string;
 }
 
 export interface TierInput {
@@ -42,6 +50,8 @@ export interface TierInput {
   ttsVoice: string;
   ttsSpeed: number;
   ttsPitch: number;
+  /** 연출 단계 1~5. null 이면 구간 순서대로 자동(최대 4단계). */
+  intensity: number | null;
 }
 
 const EFFECT_OPTIONS = [
@@ -54,11 +64,26 @@ const EFFECT_OPTIONS = [
   { value: 'NONE', label: '효과 없음' },
 ];
 
-const SUGGESTED: TierInput[] = [
-  { minAmount: 1000, label: '기본', effect: 'HEART', banner: true, durationMs: 5000, ttsEnabled: false, ttsVoice: '', ttsSpeed: 1, ttsPitch: 1 },
-  { minAmount: 5000, label: '감사', effect: 'STAR', banner: true, durationMs: 7000, ttsEnabled: true, ttsVoice: '', ttsSpeed: 1, ttsPitch: 1 },
-  { minAmount: 10000, label: '최고', effect: 'FIREWORK', banner: true, durationMs: 10000, ttsEnabled: true, ttsVoice: '', ttsSpeed: 1, ttsPitch: 1.1 },
+/** 구간 수 상한과 같아야 한다 — 추천 구간 5개가 한 번에 들어간다. */
+const INTENSITY_OPTIONS = [
+  { value: '', label: '자동 (구간 순서대로)' },
+  ...OVERLAY_LEVELS.map((lv) => ({ value: String(lv), label: `${lv}단계 · ${OVERLAY_LEVEL_LABEL[lv]}` })),
 ];
+
+function fallbackSuggested(): TierInput[] {
+  return DEFAULT_OVERLAY_LADDER.levels.map((l, i) => ({
+    minAmount: l.minAmount,
+    label: OVERLAY_LEVEL_LABEL[(i + 1) as OverlayLevel],
+    effect: l.effect,
+    banner: true,
+    durationMs: l.durationMs,
+    ttsEnabled: i > 0,
+    ttsVoice: '',
+    ttsSpeed: 1,
+    ttsPitch: 1,
+    intensity: i + 1,
+  }));
+}
 
 const MAX_TIERS = 6;
 /** 서버(tierSchema)의 시작 금액 상한과 같아야 한다. */
@@ -82,6 +107,7 @@ function toDraft(t: TierInput): TierDraft {
     ttsVoice: t.ttsVoice,
     ttsSpeed: String(t.ttsSpeed),
     ttsPitch: String(t.ttsPitch),
+    intensity: t.intensity === null || t.intensity === undefined ? '' : String(t.intensity),
   };
 }
 
@@ -103,6 +129,7 @@ function serialize(list: TierDraft[]): string {
       ttsVoice: t.ttsVoice,
       ttsSpeed: Number(t.ttsSpeed) || 1,
       ttsPitch: Number(t.ttsPitch) || 1,
+      intensity: t.intensity === '' ? null : Number(t.intensity),
     })),
   );
 }
@@ -110,9 +137,12 @@ function serialize(list: TierDraft[]): string {
 export function OverlayTiersEditor({
   creatorId,
   initialTiers,
+  suggested,
 }: {
   creatorId: string;
   initialTiers: TierInput[];
+  /** [추천 구간 불러오기]에 쓸 값. 플랫폼 자동 기준(5단계)과 같은 구간을 넘겨받는다. */
+  suggested?: TierInput[];
 }) {
   const [tiers, setTiers] = React.useState<TierDraft[]>(() => initialTiers.map(toDraft));
   const [voices, setVoices] = React.useState<SpeechSynthesisVoice[]>([]);
@@ -166,12 +196,14 @@ export function OverlayTiersEditor({
         ttsVoice: '',
         ttsSpeed: 1,
         ttsPitch: 1,
+        intensity: null,
       }),
     ]);
   };
 
   const applySuggested = () => {
-    setTiers(SUGGESTED.map(toDraft));
+    const list = suggested && suggested.length > 0 ? suggested : fallbackSuggested();
+    setTiers(list.slice(0, MAX_TIERS).map(toDraft));
   };
 
   /** 로컬에서 목소리만 들어본다. 오버레이로 이벤트를 보내지 않는다. */
@@ -226,7 +258,7 @@ export function OverlayTiersEditor({
         <div className="rounded-xl border border-dashed border-ink-200 px-4 py-8 text-center">
           <p className="text-[14px] font-semibold text-ink-700">아직 만든 금액 구간이 없습니다</p>
           <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-400">
-            추천 구간(1,000원 / 5,000원 / 10,000원)으로 시작하거나 직접 추가해 주세요.
+            추천 구간(5단계)으로 시작하거나 직접 추가해 주세요.
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             <Button type="button" variant="primary" size="sm" onClick={applySuggested}>
@@ -391,6 +423,15 @@ function TierRow({
             value={tier.durationMs}
             onChange={(e) => onChange({ durationMs: e.target.value })}
           />
+        </Field>
+        <Field label="연출 단계" hint="단계가 높을수록 화려합니다. 5단계는 회오리 연출이 나옵니다.">
+          <Select value={tier.intensity} onChange={(e) => onChange({ intensity: e.target.value })}>
+            {INTENSITY_OPTIONS.map((o) => (
+              <option key={o.value || 'auto'} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
         </Field>
       </div>
 

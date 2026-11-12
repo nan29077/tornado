@@ -24,6 +24,8 @@ export interface ResolvedTier {
   ttsVoice: string;
   ttsSpeed: number;
   ttsPitch: number;
+  /** 연출 단계 1~5. null 이면 구간 순위로 정한다(예전 구간). */
+  intensity: number | null;
 }
 
 export async function listOverlayTiers(creatorId: string): Promise<ResolvedTier[]> {
@@ -42,6 +44,7 @@ export async function listOverlayTiers(creatorId: string): Promise<ResolvedTier[
     ttsVoice: r.ttsVoice,
     ttsSpeed: r.ttsSpeed,
     ttsPitch: r.ttsPitch,
+    intensity: r.intensity,
   }));
 }
 
@@ -74,5 +77,6 @@ export async function resolveOverlayTier(creatorId: string, amount: bigint): Pro
     ttsVoice: row.ttsVoice,
     ttsSpeed: row.ttsSpeed,
     ttsPitch: row.ttsPitch,
+    intensity: row.intensity,
   };
 }

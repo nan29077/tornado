@@ -9,6 +9,13 @@ import { notifyUser } from '@/server/services/notifications';
 import { getPlatformTtsRuntime, savePlatformTtsSetting } from '@/server/services/tts-platform';
 import { normalizeSpeaker, synthesizeWithNaver } from '@/server/services/tts/naver';
 import type { AdminActionState } from '@/components/admin/state';
+import { OVERLAY_LEVELS, validateLadder } from '@/lib/overlay-ladder';
+import {
+  OVERLAY_LADDER_KEY,
+  getOverlayLadder,
+  resetOverlayLadder,
+  saveOverlayLadder,
+} from '@/server/services/overlay-ladder';
 import { run, requiredId, bool, int, money, text, optText, enumValue, assertOperationAdmin } from './shared';
 
 /**
@@ -238,5 +245,85 @@ export async function updateCreatorTtsSetting(_prev: AdminActionState, fd: FormD
 
     revalidatePath('/admin/tts');
     return `${creator.displayName} 의 TTS 읽기 옵션을 저장했습니다. 음성·속도·제공사는 크리에이터 설정을 그대로 유지합니다.`;
+  });
+}
+
+// ===========================================================================
+// 금액별 후원 연출 기준 (2026-11-12)
+// ===========================================================================
+
+/** 전 크리에이터의 방송 연출이 한 번에 바뀌는 값이다. 최고관리자만 고칠 수 있다. */
+function assertSuperAdmin(admin: { adminPermission?: string | null }, what: string) {
+  if (admin.adminPermission !== 'SUPER_ADMIN') {
+    throw new Error(`${what}은(는) 최고관리자만 가능합니다.`);
+  }
+}
+
+/**
+ * 자동 모드 금액 구간 · 단계별 효과 · 연속 후원 규칙 저장.
+ * 검증(금액 오름차순 등)은 lib/overlay-ladder.ts 의 validateLadder 가 맡는다.
+ */
+export async function updateOverlayLadder(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
+  return run(async (admin) => {
+    assertSuperAdmin(admin, '후원 연출 기준 변경');
+
+    const num = (key: string) => {
+      const raw = text(fd, key).replace(/[,\s원]/g, '');
+      return /^\d{1,9}$/.test(raw) ? Number(raw) : Number.NaN;
+    };
+
+    const input = {
+      levels: OVERLAY_LEVELS.map((lv) => ({
+        minAmount: num(`minAmount${lv}`),
+        effect: text(fd, `effect${lv}`),
+        durationMs: num(`durationMs${lv}`),
+      })),
+      combo: {
+        enabled: bool(fd, 'comboEnabled'),
+        windowSec: num('comboWindowSec'),
+        plusOneAt: num('comboPlusOneAt'),
+        plusTwoAt: num('comboPlusTwoAt'),
+      },
+    };
+
+    const checked = validateLadder(input);
+    if (!checked.ok) throw new Error(checked.message);
+
+    const before = await getOverlayLadder();
+    await saveOverlayLadder(checked.ladder, admin.id);
+
+    await writeAudit({
+      adminUserId: admin.id,
+      action: 'OVERLAY_LADDER_UPDATE',
+      targetType: 'SystemSetting',
+      targetId: OVERLAY_LADDER_KEY,
+      before,
+      after: checked.ladder,
+    });
+
+    revalidatePath('/admin/overlay-effects');
+    return '후원 연출 기준을 저장했습니다. 자동 방식을 쓰는 크리에이터의 다음 후원부터 적용됩니다(서버가 여러 대면 몇 초 걸릴 수 있습니다).';
+  });
+}
+
+/** 기본 기준으로 되돌린다. */
+export async function resetOverlayLadderAction(_prev: AdminActionState, _fd: FormData): Promise<AdminActionState> {
+  return run(async (admin) => {
+    assertSuperAdmin(admin, '후원 연출 기준 초기화');
+
+    const before = await getOverlayLadder();
+    const after = await resetOverlayLadder(admin.id);
+
+    await writeAudit({
+      adminUserId: admin.id,
+      action: 'OVERLAY_LADDER_RESET',
+      targetType: 'SystemSetting',
+      targetId: OVERLAY_LADDER_KEY,
+      before,
+      after,
+    });
+
+    revalidatePath('/admin/overlay-effects');
+    return '후원 연출 기준을 기본값으로 되돌렸습니다.';
   });
 }

@@ -10,7 +10,7 @@
  * 이 파일에는 React 를 넣지 않는다 — 서버(broadcast-dispatch)와 오버레이가 함께 쓴다.
  */
 
-export type OverlayEffectLevel = 1 | 2 | 3 | 4;
+export type OverlayEffectLevel = 1 | 2 | 3 | 4 | 5;
 
 /** 콤보로 인정하는 시간 간격. 같은 후원자가 이 안에 다시 후원하면 콤보가 이어진다. */
 export const COMBO_WINDOW_MS = 30_000;
@@ -22,6 +22,10 @@ export const COMBO_SUMMARY_MS = 2_600;
  * 후원 금액 이하인 구간의 개수(rank) → 효과 레벨.
  *  - 0 (구간을 안 쓰거나 최저 구간에도 못 미침) → 레벨 1
  *  - 1 → 1, 2 → 2, 3 → 3, 4 이상 → 4
+ *
+ * **5단계(2026-11-12)는 여기서 나오지 않는다.** 구간에 연출 단계를 직접 지정하지 않은
+ * 예전 구간은 지금까지와 똑같이 최대 4단계로 재생돼야 하기 때문이다.
+ * 5단계는 자동 모드, 구간에 직접 지정한 단계, 연속 후원 상승으로만 도달한다.
  */
 export function effectLevelOfRank(rank: number): OverlayEffectLevel {
   const n = Number.isFinite(rank) ? Math.floor(rank) : 0;
@@ -31,11 +35,12 @@ export function effectLevelOfRank(rank: number): OverlayEffectLevel {
   return 1;
 }
 
-/** 페이로드로 실려 온 값을 안전한 레벨로 좁힌다. 값이 없는 예전 이벤트는 레벨 1. */
+/** 페이로드로 실려 온 값을 안전한 레벨(1~5)로 좁힌다. 값이 없는 예전 이벤트는 레벨 1. */
 export function effectLevelOf(value: unknown): OverlayEffectLevel {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 1;
-  return effectLevelOfRank(n);
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n <= 1) return 1;
+  if (n >= 5) return 5;
+  return n as OverlayEffectLevel;
 }
 
 /**
@@ -52,7 +57,7 @@ export function comboMultiplier(combo: number): number {
 }
 
 /** 캐릭터 등장 크기. none = 등장하지 않음. */
-export type MascotSize = 'none' | 'small' | 'large' | 'huge';
+export type MascotSize = 'none' | 'small' | 'large' | 'huge' | 'giant';
 
 export interface EffectLevelSpec {
   /** 기본 파티클 개수 (콤보 배율을 곱하기 전) */
@@ -67,6 +72,8 @@ export interface EffectLevelSpec {
   firework: boolean;
   /** 화면 테두리 빛나기 */
   screenGlow: boolean;
+  /** 회오리 화면 전체 연출 (5단계 전용) */
+  tornado: boolean;
 }
 
 /**
@@ -81,6 +88,7 @@ export const EFFECT_LEVELS: Record<OverlayEffectLevel, EffectLevelSpec> = {
     mascot: 'none',
     firework: false,
     screenGlow: false,
+    tornado: false,
   },
   2: {
     particles: 15,
@@ -89,6 +97,7 @@ export const EFFECT_LEVELS: Record<OverlayEffectLevel, EffectLevelSpec> = {
     mascot: 'small',
     firework: false,
     screenGlow: false,
+    tornado: false,
   },
   3: {
     particles: 20,
@@ -97,6 +106,7 @@ export const EFFECT_LEVELS: Record<OverlayEffectLevel, EffectLevelSpec> = {
     mascot: 'large',
     firework: false,
     screenGlow: false,
+    tornado: false,
   },
   4: {
     particles: 30,
@@ -105,15 +115,33 @@ export const EFFECT_LEVELS: Record<OverlayEffectLevel, EffectLevelSpec> = {
     mascot: 'huge',
     firework: true,
     screenGlow: true,
+    tornado: false,
+  },
+  // 5단계 — 가장 화려하다. 회오리가 화면을 한 번 휩쓸고, 왕관을 쓴 캐릭터가 가장 크게 등장한다.
+  5: {
+    particles: 42,
+    shape: 'MIXED',
+    colors: ['#ffd24a', '#ff8f4d', '#f4506b', '#a06bf0', '#4ba3f2', '#5ecf8b', '#ffffff'],
+    mascot: 'giant',
+    firework: true,
+    screenGlow: true,
+    tornado: true,
   },
 };
 
 /** 캔버스가 한 번에 그리는 파티클 상한. 넘으면 OBS 프레임이 떨어진다. */
 export const MAX_PARTICLES = 140;
 
-/** 레벨 + 콤보 배율 → 실제로 뿌릴 파티클 개수. */
-export function particleCountFor(level: OverlayEffectLevel, multiplier: number): number {
+/** 가벼운 효과 모드의 파티클 상한. 저사양 방송 PC 에서도 프레임이 떨어지지 않는 수준이다. */
+export const LIGHT_MAX_PARTICLES = 36;
+
+/**
+ * 레벨 + 콤보 배율 → 실제로 뿌릴 파티클 개수.
+ * 가벼운 효과 모드(light)에서는 절반만 뿌리고 상한도 낮춘다.
+ */
+export function particleCountFor(level: OverlayEffectLevel, multiplier: number, light = false): number {
   const base = EFFECT_LEVELS[level].particles;
   const m = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+  if (light) return Math.min(LIGHT_MAX_PARTICLES, Math.max(6, Math.round((base * m) / 2)));
   return Math.min(MAX_PARTICLES, Math.round(base * m));
 }

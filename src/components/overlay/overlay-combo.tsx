@@ -34,7 +34,7 @@ export interface ComboTracker {
    * 알림이 재생되기 시작할 때 부른다.
    * @returns 이번 후원까지 포함한 콤보 수 (1 이면 첫 후원)
    */
-  register: (donorName: string, anonymous?: boolean) => number;
+  register: (donorName: string, anonymous?: boolean, serverCount?: number) => number;
   /** 화면에 그릴 콤보 상태. 2콤보 미만이면 null 이다. */
   combo: ComboView | null;
   /** 현재 콤보의 효과 증폭 배율 */
@@ -63,9 +63,19 @@ export function useComboTracker(): ComboTracker {
   React.useEffect(() => clearTimers, [clearTimers]);
 
   const register = React.useCallback(
-    (donorName: string, anonymous?: boolean): number => {
+    (donorName: string, anonymous?: boolean, serverCount?: number): number => {
       const now = Date.now();
       const prev = current.current;
+      /**
+       * 서버가 센 연속 후원 횟수가 실려 오면 그 값을 그대로 쓴다 (2026-11-12).
+       * 서버는 표시 이름이 아니라 후원자 식별값으로 세므로, 익명 후원자도 같은 사람이면 이어지고
+       * 서로 다른 익명 후원자는 묶이지 않는다. 연출 단계 상승과 배지 숫자가 같은 기준을 본다.
+       * 값이 없는 이벤트(테스트 후원 · 예전 이벤트 · 상승을 끈 크리에이터)는 아래의 기존 방식으로 센다.
+       */
+      const fromServer =
+        typeof serverCount === 'number' && Number.isFinite(serverCount) && serverCount >= 1
+          ? Math.floor(serverCount)
+          : null;
       /**
        * [OV-B] 익명 후원은 콤보를 잇지 않는다. 익명 후원의 표시명은 모두 '익명의 후원자'라 이름으로 비교하면
        * 서로 다른 후원자가 하나의 콤보로 합쳐졌다. 누가 보냈는지 알 수 없으므로 매번 새 후원(1콤보)으로 본다.
@@ -75,7 +85,7 @@ export function useComboTracker(): ComboTracker {
       const key = isAnon ? null : donorName;
       const continuing =
         prev !== null && key !== null && prev.key === key && now - prev.at <= COMBO_WINDOW_MS;
-      const count = continuing ? prev.count + 1 : 1;
+      const count = fromServer ?? (continuing ? prev.count + 1 : 1);
 
       current.current = { donorName, key, count, at: now };
       clearTimers();

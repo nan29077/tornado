@@ -656,6 +656,17 @@ model CreatorProfile {
   onboardingObsLinked Boolean       @default(false) @map("onboarding_obs_linked")
   /// 테스트 후원 미리보기로 실제 화면에 표시되는 것까지 확인했는지 여부.
   onboardingTestDone  Boolean       @default(false) @map("onboarding_test_done")
+  /// 금액별 후원 연출 방식 (2026-11-12). AUTO | CUSTOM | OFF
+  ///   AUTO   플랫폼 기준 금액 구간(system_setting overlay.ladder)으로 연출 단계 1~5 를 자동 배정
+  ///   CUSTOM 크리에이터가 만든 금액 구간(overlay_tier)을 따른다
+  ///   OFF    금액과 무관하게 전역 표시 설정 하나로 재생한다
+  /// 오버레이 설정 행(overlay_setting)은 주소를 발급해야 생기므로, 행이 없는 신규 크리에이터도
+  /// 기본값을 갖도록 여기에 둔다. 신규는 AUTO, 기존 크리에이터는 마이그레이션이 CUSTOM/OFF 로 옮긴다.
+  overlayTierMode     String        @default("AUTO") @map("overlay_tier_mode")
+  /// 연속 후원 단계 상승 사용 여부. 같은 후원자가 이어서 후원하면 연출 단계를 올린다.
+  overlayComboBoost   Boolean       @default(true) @map("overlay_combo_boost")
+  /// 가벼운 효과 모드. 저사양 방송 PC 에서 파티클·화면 전체 연출을 줄인다.
+  overlayLightEffects Boolean       @default(false) @map("overlay_light_effects")
   approvedAt          DateTime?     @map("approved_at") @db.Timestamptz(3)
   suspendedAt         DateTime?     @map("suspended_at") @db.Timestamptz(3)
   createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -1360,6 +1371,8 @@ model OverlayTier {
   ttsVoice   String   @default("") @map("tts_voice")
   ttsSpeed   Float    @default(1.0) @map("tts_speed")
   ttsPitch   Float    @default(1.0) @map("tts_pitch")
+  /// 연출 단계 1~5. null 이면 예전처럼 "몇 번째 구간인가"로 정한다(최대 4단계).
+  intensity  Int?
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 

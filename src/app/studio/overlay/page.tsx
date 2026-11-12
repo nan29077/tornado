@@ -23,6 +23,9 @@ import { formatKst } from '@/lib/datetime';
 import { deliveryStatusLabel } from '@/lib/labels';
 import { findCharacterSticker } from '@/lib/overlay-effect-catalog';
 import { listOverlayTiers } from '@/server/services/overlay-tiers';
+import { getOverlayLadder } from '@/server/services/overlay-ladder';
+import { OVERLAY_LEVEL_LABEL, tierModeOf, type OverlayLevel } from '@/lib/overlay-ladder';
+import { OverlayPlayModeCard } from '@/components/studio/overlay-play-mode';
 import { countOverlayConnections, MAX_OVERLAY_CONNECTIONS } from '@/server/services/overlay-connections';
 import { clampOverlayLayout } from '@/lib/overlay-layout';
 
@@ -78,7 +81,7 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
   const sp = await searchParams;
   const rawTab = Array.isArray(sp.tab) ? sp.tab[0] : sp.tab;
   const tab: 'donation' | 'game' = rawTab === 'game' ? 'game' : 'donation';
-  const [setting, ttsSetting, tiers, testEvents] = await Promise.all([
+  const [setting, ttsSetting, tiers, testEvents, playProfile, ladder] = await Promise.all([
     prisma.overlaySetting.findUnique({ where: { creatorId } }),
     /**
      * select 를 명시해 `naverClientSecretEnc` 암호문이 이 화면의 메모리로 올라오지 않게 한다.
@@ -103,6 +106,11 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
       take: TEST_HISTORY_SIZE,
       select: { id: true, createdAt: true, status: true, payload: true },
     }),
+    prisma.creatorProfile.findUnique({
+      where: { id: creatorId },
+      select: { overlayTierMode: true, overlayComboBoost: true, overlayLightEffects: true },
+    }),
+    getOverlayLadder(),
   ]);
 
   const testHistory: OverlayTestHistoryRow[] = testEvents.map((e) => {
@@ -131,6 +139,21 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
     ttsVoice: t.ttsVoice,
     ttsSpeed: t.ttsSpeed,
     ttsPitch: t.ttsPitch,
+    intensity: t.intensity,
+  }));
+
+  // [추천 구간 불러오기]는 플랫폼 자동 기준과 같은 5구간을 넣는다.
+  const suggestedTiers = ladder.levels.map((l, i) => ({
+    minAmount: l.minAmount,
+    label: OVERLAY_LEVEL_LABEL[(i + 1) as OverlayLevel],
+    effect: l.effect as string,
+    banner: true,
+    durationMs: l.durationMs,
+    ttsEnabled: i > 0,
+    ttsVoice: '',
+    ttsSpeed: 1,
+    ttsPitch: 1,
+    intensity: i + 1,
   }));
 
   // OBS 브라우저 소스가 실제로 붙어 있는지 크리에이터가 확인할 수 있게 현재 연결 수를 보여 준다.
@@ -455,6 +478,21 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
           )}
         </section>
 
+        {/* ── 4-2. 금액별 연출 방식 (2026-11-12) ───────────────── */}
+        <section>
+          <SectionTitle
+            title="금액별 연출"
+            description="후원 금액이 클수록 더 화려한 연출이 나옵니다. 자동으로 맡기거나 직접 정할 수 있습니다."
+          />
+          <OverlayPlayModeCard
+            mode={tierModeOf(playProfile?.overlayTierMode)}
+            comboBoost={playProfile?.overlayComboBoost ?? true}
+            lightEffects={playProfile?.overlayLightEffects ?? false}
+            ladder={ladder}
+            tierCount={tiers.length}
+          />
+        </section>
+
         {/* ── 5. 고급 설정 (금액 구간별 효과) ─────────────────── */}
         <section>
           <details className="group rounded-2xl border border-ink-100 bg-white">
@@ -462,7 +500,7 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
               <span>
                 <span className="block text-[14px] font-bold text-ink-900">고급 설정 — 금액 구간별 효과</span>
                 <span className="block text-[12px] text-ink-400">
-                  금액대별로 다른 효과 · 배너 · TTS 를 적용하려면 여기서 설정하세요.
+                  금액별 연출을 [직접 설정]으로 쓸 때 적용됩니다. 금액대별 효과 · 연출 단계 · 배너 · TTS 를 정합니다.
                 </span>
               </span>
               <ChevronDown size={18} strokeWidth={1.7} className="text-ink-400 transition-transform group-open:rotate-180" />
@@ -472,7 +510,7 @@ export default async function StudioOverlayPage({ searchParams }: { searchParams
                 후원 금액에 따라 스티커 효과, 배너, TTS 를 다르게 재생합니다. 설정을 바꾼 뒤에는 [구간 저장]을 눌러야
                 미리보기와 실제 방송에 반영됩니다.
               </p>
-              <OverlayTiersEditor creatorId={creatorId} initialTiers={tierInputs} />
+              <OverlayTiersEditor creatorId={creatorId} initialTiers={tierInputs} suggested={suggestedTiers} />
             </div>
           </details>
         </section>

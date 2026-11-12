@@ -118,6 +118,7 @@ function buildGroups(c: Awaited<ReturnType<typeof loadPendingCounts>>): NavGroup
         { href: '/admin/tts', label: 'TTS·음성 연동', icon: 'tts' },
         { href: '/admin/youtube', label: '유튜브 연동', icon: 'youtube' },
         { href: '/admin/overlay', label: '오버레이 현황', icon: 'overlay' },
+        { href: '/admin/overlay-effects', label: '후원 연출 기준', icon: 'effects' },
       ],
     },
     {

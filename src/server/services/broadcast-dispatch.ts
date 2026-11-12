@@ -5,7 +5,8 @@ import { logger } from '@/lib/logger';
 import { getYouTubeAdapter, formatChatMessage } from '@/server/adapters/youtube';
 import { buildTtsText } from '@/server/adapters/tts';
 import { publishOverlayEvent, type OverlayEventPayload } from './overlay-bus';
-import { resolveOverlayTier, countOverlayTiersAtOrBelow, type ResolvedTier } from './overlay-tiers';
+import { type ResolvedTier } from './overlay-tiers';
+import { resolveOverlayPlay } from './overlay-ladder';
 import { broadcastDonorName } from '@/lib/donor-name';
 import {
   ensureYouTubeAccessToken,
@@ -17,7 +18,6 @@ import { reserveYouTubeQuota, releaseYouTubeQuota, getYouTubeQuotaUsage, type Qu
 import { resolveEffectiveTtsProvider } from './tts/naver';
 import { clampOverlayLayout } from '@/lib/overlay-layout';
 import { textAnimOf } from '@/lib/overlay-text-anim';
-import { effectLevelOfRank } from '@/lib/overlay-effect-level';
 import { joinFromDonation, refreshDonationGauge } from '@/server/services/games';
 
 /**
@@ -184,21 +184,8 @@ function displayOf(
   };
 }
 
-/**
- * 금액 구간과 전역 설정을 합쳐 오버레이 재생값을 정한다.
- * 구간이 없으면 전역 설정만으로 기존과 동일하게 동작한다.
- */
-function mergeTier(
-  tier: ResolvedTier | null,
-  overlay: { durationMs: number; stickerSet: string } | null,
-): { effect: string; banner: boolean; durationMs: number; tierLabel: string } {
-  return {
-    effect: tier?.effect ?? overlay?.stickerSet ?? 'DEFAULT',
-    banner: tier ? tier.banner : true,
-    durationMs: tier?.durationMs ?? overlay?.durationMs ?? 7000,
-    tierLabel: tier?.label ?? '',
-  };
-}
+// 금액 구간·연출 단계·연속 후원 상승은 services/overlay-ladder.ts 의 resolveOverlayPlay 가 정한다
+// (2026-11-12). 실제 후원과 테스트 후원이 같은 함수를 쓴다.
 
 /**
  * TTS 재생값.
@@ -248,11 +235,12 @@ export async function buildOverlayPayload(donationId: string, isTest = false): P
   const donorName = anonymous ? '익명의 후원자' : overlayDonorName(donation.displayName);
   const message = overlay?.showMessage === false ? '' : donation.message;
 
-  const [tier, tierRank] = await Promise.all([
-    resolveOverlayTier(donation.creatorId, donation.amount),
-    countOverlayTiersAtOrBelow(donation.creatorId, donation.amount),
-  ]);
-  const merged = mergeTier(tier, overlay);
+  const merged = await resolveOverlayPlay(donation.creator, overlay, donation.amount, {
+    id: donation.id,
+    donorId: donation.donorId,
+    paidAt: donation.paidAt,
+  });
+  const tier = merged.tier;
 
   return {
     eventId: newId(),
@@ -273,8 +261,12 @@ export async function buildOverlayPayload(donationId: string, isTest = false): P
     ...soundOf(overlay),
     durationMs: merged.durationMs,
     ...displayOf(overlay),
-    // 몇 번째 금액 구간인가로 연출 세기를 정한다. 구간을 안 쓰면 언제나 레벨 1.
-    effectLevel: effectLevelOfRank(tierRank),
+    // 연출 단계 1~5. 금액(자동 기준 또는 크리에이터 구간)과 연속 후원 상승으로 정한다.
+    effectLevel: merged.level,
+    baseLevel: merged.baseLevel,
+    // 서버가 후원자 식별값으로 센 연속 후원 횟수. 세지 않은 경우(상승 끔 등)에는 싣지 않는다.
+    ...(merged.comboCount !== null ? { comboCount: merged.comboCount } : {}),
+    lightEffects: merged.lightEffects,
     occurredAt: new Date().toISOString(),
     isTest,
     anonymous,
@@ -538,11 +530,9 @@ export async function sendTestOverlay(
   if (!creator) throw new Error('크리에이터를 찾을 수 없습니다.');
 
   const overlay = creator.overlaySetting;
-  const [tier, tierRank] = await Promise.all([
-    resolveOverlayTier(creatorId, input.amount),
-    countOverlayTiersAtOrBelow(creatorId, input.amount),
-  ]);
-  const merged = mergeTier(tier, overlay);
+  // 테스트는 연속 후원을 세지 않는다(실제 후원자가 없다). 그 밖의 재생값은 실제 후원과 같다.
+  const merged = await resolveOverlayPlay(creator, overlay, input.amount, null);
+  const tier = merged.tier;
 
   // 테스트는 "실제 방송에 나갈 화면"을 그대로 보여 주는 것이 목적이므로
   // 익명 처리 · 금액 표시 · 메시지 표시 설정을 실제 후원과 똑같이 적용한다.
@@ -566,8 +556,10 @@ export async function sendTestOverlay(
     ...soundOf(overlay),
     durationMs: merged.durationMs,
     ...displayOf(overlay),
-    // 테스트도 실제 방송과 같은 레벨로 재생한다. 구간별 연출 확인이 목적이다.
-    effectLevel: effectLevelOfRank(tierRank),
+    // 테스트도 실제 방송과 같은 단계로 재생한다. 단계별 연출 확인이 목적이다.
+    effectLevel: merged.level,
+    baseLevel: merged.baseLevel,
+    lightEffects: merged.lightEffects,
     occurredAt: new Date().toISOString(),
     isTest: true,
     anonymous,
