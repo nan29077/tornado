@@ -1,0 +1,130 @@
+/* 공통 윤곽은 currentColor를 따라 버튼과 상태의 대비를 유지한다. */
+svg.lucide {
+  --donaido-icon-gold: #d08710;
+  --donaido-icon-detail: #a06a00;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+:where(.text-white, .text-white\/85, .text-white\/90) > svg.lucide,
+svg.lucide:where(.text-white, .text-white\/85, .text-white\/90) {
+  --donaido-icon-gold: #ffcb62;
+  --donaido-icon-detail: #ffd684;
+}
+
+/* 오류·성공·경고, 실시간, 찜은 색으로도 상태를 구분한다. */
+:where(.text-danger-600, .text-success-600, .text-warning-600, .hover\:text-danger-600:hover) > svg.lucide,
+svg.lucide:where(.text-danger-600, .text-success-600, .text-warning-600, .hover\:text-danger-600:hover) {
+  --donaido-icon-gold: currentColor;
+  --donaido-icon-detail: currentColor;
+}
+
+/* 시안에 포함된 아이콘. 문·슬레이트·차양처럼 기능을 떠올리게 하는 면을 채운다. */
+.lucide-house > path:first-child { fill: color-mix(in srgb, var(--donaido-icon-gold) 36%, transparent); }
+.lucide-clapperboard > path:nth-child(2) { fill: color-mix(in srgb, var(--donaido-icon-gold) 52%, transparent); }
+.lucide-heart-handshake > path { fill: color-mix(in srgb, var(--donaido-icon-gold) 25%, transparent); }
+.lucide-store > path:nth-child(2) { fill: color-mix(in srgb, var(--donaido-icon-gold) 46%, transparent); }
+.lucide-compass > path,
+.lucide-circle-user-round > circle[r="4"],
+.lucide-radio > circle {
+  fill: var(--donaido-icon-gold);
+  stroke: var(--donaido-icon-detail);
+}
+.lucide-gamepad-2 > line:nth-child(n + 3) { stroke: var(--donaido-icon-detail); stroke-width: 2.5; }
+.lucide-package > path:last-child { stroke: var(--donaido-icon-detail); }
+
+/* 아래 선택자는 Lucide의 기본 도형 중 강조할 부위만 고른다. */
+:where(.lucide-camera, .lucide-eye, .lucide-map-pin, .lucide-user-plus) > circle,
+.lucide-clipboard-list > rect,
+.lucide-database > ellipse,
+.lucide-disc-3 > circle[r="2"],
+.lucide-hand-coins > circle:last-child,
+.lucide-images > circle,
+.lucide-key-round > circle,
+.lucide-message-circle-heart > path:last-child,
+.lucide-music-2 > circle,
+.lucide-network > rect:nth-child(3),
+.lucide-percent > circle:last-child,
+.lucide-picture-in-picture-2 > rect,
+.lucide-qr-code > rect:nth-child(2),
+.lucide-shapes > circle,
+.lucide-share-2 > circle:nth-child(2),
+.lucide-sparkles > path:first-child,
+.lucide-target > circle:last-child,
+.lucide-user-cog > circle:last-child,
+.lucide-user-round-cog > circle[r="5"] {
+  fill: var(--donaido-icon-gold);
+  stroke: var(--donaido-icon-detail);
+}
+
+:where(.lucide-crown, .lucide-flame, .lucide-flag, .lucide-phone, .lucide-play, .lucide-square, .lucide-zap) > :first-child,
+.lucide-copy > rect,
+.lucide-search > circle,
+.lucide-star:not(.fill-current) > path {
+  fill: color-mix(in srgb, var(--donaido-icon-gold) 25%, transparent);
+}
+
+.lucide-arrow-left > path:first-child,
+.lucide-audio-lines > path:nth-child(3),
+.lucide-bell-off > path:first-child,
+.lucide-bell-plus > path:is(:nth-child(2), :nth-child(3)),
+.lucide-calendar-clock > path:first-child,
+.lucide-check-check > path:last-child,
+.lucide-circle-alert > line:last-child,
+.lucide-clock > path,
+.lucide-coins > path:nth-child(2),
+.lucide-external-link > path:first-child,
+.lucide-file-pen > path:last-child,
+.lucide-flask-conical > path:nth-child(2),
+.lucide-globe > path:last-child,
+.lucide-hash > line:nth-child(2),
+.lucide-hourglass > path:first-child,
+.lucide-image-plus > path:is(:first-child, :nth-child(2)),
+.lucide-landmark > path:nth-child(2),
+.lucide-life-buoy > path:nth-child(2),
+.lucide-link-2 > line,
+.lucide-list-ordered > path:nth-child(n + 4),
+.lucide-loader > path:first-child,
+.lucide-maximize-2 > path:first-child,
+.lucide-menu > path:nth-child(2),
+.lucide-monitor > line:nth-child(2),
+.lucide-mouse-pointer-click > path:nth-child(3),
+.lucide-move > path:nth-child(3),
+.lucide-party-popper > path:nth-child(4),
+.lucide-phone-call > path:nth-child(2),
+.lucide-plug-zap > path:last-child,
+.lucide-refresh-cw > path:nth-child(2),
+.lucide-rows-3 > path:first-of-type,
+.lucide-save > path:last-child,
+.lucide-scroll-text > path:first-child,
+.lucide-send > path:last-child,
+.lucide-server > line,
+.lucide-server-cog > path:is(:nth-child(9), :nth-child(10)),
+.lucide-shield-alert > path:last-child,
+.lucide-shield-ban > path:last-child,
+.lucide-signal > path:last-child,
+.lucide-sliders-horizontal > path:is(:nth-child(3), :nth-child(4), :nth-child(8)),
+.lucide-trash-2 > path:nth-child(4),
+.lucide-trophy > path:nth-child(4),
+.lucide-undo-2 > path:first-child,
+.lucide-volume-2 > path:nth-child(2),
+.lucide-wifi > path:first-child,
+.lucide-x > path:last-child,
+:where(
+  .lucide-arrow-down, .lucide-arrow-right, .lucide-badge-check, .lucide-ban,
+  .lucide-circle-check, .lucide-circle-x, .lucide-download, .lucide-eye-off,
+  .lucide-info, .lucide-log-in, .lucide-log-out, .lucide-mail-check,
+  .lucide-megaphone, .lucide-pencil, .lucide-plus, .lucide-rotate-ccw,
+  .lucide-rotate-cw, .lucide-search-x, .lucide-thumbs-up, .lucide-triangle-alert
+) > :last-child {
+  stroke: var(--donaido-icon-detail);
+}
+
+.lucide-mail-x > path:nth-child(n + 3),
+.lucide-shield-off > path:first-child { stroke: var(--donaido-icon-detail); }
+
+.lucide-circle > circle,
+.lucide-pin > path:last-child { fill: color-mix(in srgb, var(--donaido-icon-gold) 25%, transparent); }
+
+/* 찜을 선택한 경우 하트 전체가 상태 색을 표시한다. */
+.lucide-donaido-heart.fill-current > path:last-child { fill: currentColor; }

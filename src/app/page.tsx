@@ -3,8 +3,8 @@ import { cookies } from 'next/headers';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
-  MessageSquare, ShieldCheck, Radio, Wallet, ArrowRight,
-  CreditCard, BellRing, ListChecks, PlayCircle, MonitorPlay, Volume2,
+  SmsDonation, ShieldCheck, Radio, Wallet, ArrowRight,
+  CreditCard, BellRing, ListChecks, PlayCircle, DonationOverlay, Volume2,
 } from '@/components/brand/icons';
 import { PublicShell } from '@/components/layout/public-shell';
 import { MascotAccent } from '@/components/brand/mascot-decorations';
@@ -82,7 +82,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <div className="space-y-2.5">
           <StepCard
             no={1}
-            icon={<MessageSquare size={18} strokeWidth={1.7} />}
+            icon={<SmsDonation size={18} strokeWidth={1.7} />}
             title="크리에이터 번호로 문자 보내기"
             body="방송 화면에 안내된 후원 번호로 응원 메시지를 보냅니다."
           />
@@ -183,7 +183,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           />
           <div className="space-y-2.5 p-5">
             <FeatureLine icon={<PlayCircle size={17} strokeWidth={1.7} />} title="유튜브 라이브 채팅 등록" body="후원 메시지가 라이브 채팅에 자동으로 올라갑니다. 유튜브 공식 슈퍼챗이 아닌 외부 후원으로 표시됩니다." />
-            <FeatureLine icon={<MonitorPlay size={17} strokeWidth={1.7} />} title="OBS · PRISM 오버레이" body="브라우저 소스 주소 하나만 추가하면 회오리 애니메이션과 후원 알림이 표시됩니다." />
+            <FeatureLine icon={<DonationOverlay size={17} strokeWidth={1.7} />} title="OBS · PRISM 오버레이" body="브라우저 소스 주소 하나만 추가하면 회오리 애니메이션과 후원 알림이 표시됩니다." />
             <FeatureLine icon={<Volume2 size={17} strokeWidth={1.7} />} title="TTS 음성 안내" body="후원 메시지를 음성으로 읽어줍니다. 음성·속도·볼륨·최소 후원금을 설정할 수 있습니다." />
             <FeatureLine icon={<Radio size={17} strokeWidth={1.7} />} title="도네이도 자체 방송" body="RTMPS 송출과 자체 플레이어에서도 동일한 후원 효과를 확인할 수 있습니다. (준비 중)" />
           </div>
@@ -195,7 +195,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <SectionTitle title="크리에이터를 위한 기능" />
         <div className="grid grid-cols-2 gap-2.5">
           {[
-            { icon: <MessageSquare size={17} strokeWidth={1.7} />, title: '전용 후원 번호', body: '크리에이터마다 고유 번호 또는 코드를 배정합니다.' },
+            { icon: <SmsDonation size={17} strokeWidth={1.7} />, title: '전용 후원 번호', body: '크리에이터마다 고유 번호 또는 코드를 배정합니다.' },
             { icon: <BellRing size={17} strokeWidth={1.7} />, title: '실시간 후원 알림', body: '오버레이·TTS·감사 스티커를 자유롭게 설정합니다.' },
             { icon: <Wallet size={17} strokeWidth={1.7} />, title: '정산 관리', body: '후원금, 수수료, 정산 가능 금액을 한눈에 확인합니다.' },
             { icon: <ShieldCheck size={17} strokeWidth={1.7} />, title: '금칙어·차단', body: '부적절한 메시지와 후원자를 즉시 차단합니다.' },

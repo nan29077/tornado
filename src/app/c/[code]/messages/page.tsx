@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { MessageCircleHeart } from '@/components/brand/icons';
+import { SmsDonation } from '@/components/brand/icons';
 import { CreatorDonateShell } from '@/components/public/creator-donate-shell';
 import { DonationReply } from '@/components/public/donation-reply';
 import { Badge, LinkButton } from '@/components/ui';
@@ -22,7 +22,7 @@ export default async function CreatorMessagesPage({ params, searchParams }: { pa
   const data = await listMyCreatorMessages(user.id, creator.id, Number((await searchParams).page ?? 1));
   return <CreatorDonateShell creator={creator} activeMenu="messages">
     <section className="py-7 sm:py-9">
-      <p className="mb-3 flex items-center gap-2 text-sm font-bold text-brand-700"><MessageCircleHeart size={19} />나의 응원 기록</p>
+      <p className="mb-3 flex items-center gap-2 text-sm font-bold text-brand-700"><SmsDonation size={19} />나의 응원 기록</p>
       <h1 className="text-2xl font-extrabold tracking-tight text-ink-900">내 문자후원 내역</h1>
       <p className="mt-3 text-sm leading-relaxed text-ink-600">{creator.displayName}님에게 보낸 문자와 크리에이터의 답글을 확인하세요. 이 화면은 나에게만 보입니다.</p>
       <div className="mt-4 flex flex-wrap gap-2"><LinkButton href={`/c/${creator.code}`} variant="secondary" size="sm">후원 페이지로</LinkButton><LinkButton href={`/c/${creator.code}/account`} variant="secondary" size="sm">내 정보</LinkButton></div>

@@ -35,12 +35,13 @@ export function MyNav() {
             <Link
               key={t.href}
               href={t.href}
+              aria-current={active ? 'page' : undefined}
               className={cx(
                 'flex min-w-[4.5rem] flex-1 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 py-2 text-center text-[12.5px] font-bold transition-colors',
                 active ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500 hover:text-ink-900',
               )}
             >
-              <Icon size={15} strokeWidth={1.85} />
+              <Icon size={16} strokeWidth={1.65} className="text-ink-800" />
               {t.label}
             </Link>
           );

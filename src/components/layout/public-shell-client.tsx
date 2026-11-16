@@ -6,8 +6,8 @@ import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Bell, CircleHelp, CircleUserRound, HeartHandshake, House, LayoutDashboard,
-  Clapperboard, LifeBuoy, LogIn, LogOut, Map, Menu, UserPlus, X,
+  Bell, CircleHelp, CircleUserRound, HeartHandshake, House,
+  Clapperboard, Compass, LifeBuoy, LogIn, LogOut, Menu, UserPlus, X,
 } from '@/components/brand/icons';
 import { Logo, TornadoMark } from '@/components/brand/logo';
 import { PublicMarginMascots } from '@/components/brand/mascot-decorations';
@@ -60,7 +60,7 @@ function buildNav(myHref: string, videoHubEnabled: boolean): NavItem[] {
   return [
     { href: '/', label: '홈', icon: House },
     ...(videoHubEnabled ? [{ href: '/videos', label: '방송국', icon: Clapperboard }] : []),
-    { href: '/how-it-works', label: '이용방법', icon: Map },
+    { href: '/how-it-works', label: '이용방법', icon: Compass },
     { href: '#lookup', label: '후원확인', icon: HeartHandshake, sheet: true },
     // (2026-11-17) 모바일 하단 탭바에서는 뺀다. 우측 메뉴(드로어)·PC 레일에만 보인다.
     { href: '/faq', label: 'FAQ', icon: CircleHelp, bottom: false },
@@ -255,8 +255,8 @@ export function PublicShellClient({
                     className={cx(
                       'grid h-8 w-8 place-items-center rounded-[11px] border transition-all group-hover:-translate-y-0.5',
                       active
-                        ? 'border-brand-300/80 bg-brand-400 text-ink-900 shadow-[0_4px_10px_rgba(237,166,0,0.22)]'
-                        : 'border-ink-100 bg-white text-ink-400 group-hover:border-brand-200 group-hover:bg-brand-50 group-hover:text-brand-700',
+                        ? 'border-brand-200 bg-brand-100 text-ink-800'
+                        : 'border-ink-100 bg-white text-ink-800 group-hover:border-brand-200 group-hover:bg-brand-50',
                     )}
                   >
                     <Icon size={17} strokeWidth={active ? 2 : 1.7} />
@@ -352,21 +352,17 @@ export function PublicShellClient({
             const active = isActive(pathname, t.href, t.my);
             const cls = cx(
               'flex min-h-16 flex-col items-center justify-center gap-1 whitespace-nowrap py-2 text-[10px] font-semibold min-[375px]:text-[11px]',
-              active ? 'text-brand-700' : 'text-ink-400',
+              active ? 'text-brand-800' : 'text-ink-600',
             );
             const inner = (
               <>
                 <span
                   className={cx(
-                    'grid h-8 w-8 place-items-center rounded-[11px] border',
-                    active ? 'border-brand-300 bg-brand-400 text-ink-900 shadow-sm' : 'border-transparent bg-ink-50 text-ink-400',
+                    'grid h-8 w-8 place-items-center rounded-[10px] text-ink-800',
+                    active && 'bg-brand-100',
                   )}
                 >
-                  {t.my && viewer && viewer.myHref !== '/my' ? (
-                    <LayoutDashboard size={18} strokeWidth={1.75} />
-                  ) : (
-                    <Icon size={18} strokeWidth={1.75} />
-                  )}
+                  <Icon size={20} strokeWidth={1.65} />
                 </span>
                 {t.label}
               </>

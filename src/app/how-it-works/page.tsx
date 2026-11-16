@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import {
-  MessageSquare, CreditCard, ShieldCheck, BellRing, Ban, Gauge,
+  SmsDonation, CreditCard, ShieldCheck, BellRing, Ban, Gauge,
   Undo2, ScrollText, CircleAlert, Landmark, Clock, Smartphone,
 } from '@/components/brand/icons';
 import { PublicShell } from '@/components/layout/public-shell';
@@ -41,7 +41,7 @@ export default async function HowItWorksPage() {
         <div className="space-y-2.5">
           <Step
             no={1}
-            icon={<MessageSquare size={18} strokeWidth={1.7} />}
+            icon={<SmsDonation size={18} strokeWidth={1.7} />}
             title="크리에이터 후원 번호로 문자 보내기"
             body="방송 화면이나 크리에이터 후원 페이지에 안내된 번호로 응원 메시지를 보냅니다. 대표번호를 쓰는 크리에이터는 메시지 맨 앞에 안내된 키워드를 붙여야 후원 대상이 구분됩니다."
             note="이 최초 문자는 후원으로 접수되지 않으며, 결제도 발생하지 않습니다."

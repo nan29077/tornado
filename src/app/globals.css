@@ -1,9 +1,10 @@
 @import "tailwindcss";
+@import "./honey-icons.css";
 
 /* ---------------------------------------------------------------------------
    토네이도 디자인 토큰
    - 모바일 우선. PC 에서도 중앙 콘텐츠 폭을 앱과 유사하게 유지
-   - 이모지 미사용. 아이콘은 라인형 스트로크(lucide) 1.5px
+   - 이모지 미사용. 공통 아이콘은 둥근 선에 꿀빛 포인트를 사용한다.
    - 결제/출금 관련 정보는 대비를 높여 명확히 표기
 --------------------------------------------------------------------------- */
 
@@ -149,22 +150,6 @@ a {
 .public-home-video-rail {
   width: min(340px, calc((100vw - var(--public-layout-width)) / 2 - 36px));
   margin-right: 20px;
-}
-
-/* 라운드 라인 아이콘. 작은 컨트롤과 상태 아이콘은 기존 의미 색상을 사용한다. */
-svg.lucide {
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-svg[class*="lucide-donaido-"] {
-  --donaido-icon-gold: #efa724;
-  stroke: #211e30;
-}
-
-:where(.text-white, .text-white\/85, .text-white\/90, .bg-ink-900) svg[class*="lucide-donaido-"],
-svg[class*="lucide-donaido-"].text-white {
-  stroke: #fffaf1;
 }
 
 .public-canvas {

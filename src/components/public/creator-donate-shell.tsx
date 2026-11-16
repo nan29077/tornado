@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Heart, LifeBuoy, Radio, MessageCircleHeart, Bell, LogIn, LogOut, BookOpen, ShoppingBag } from '@/components/brand/icons';
+import { Heart, LifeBuoy, Radio, SmsDonation, Bell, LogIn, LogOut, Compass, ShoppingBag } from '@/components/brand/icons';
 import { getSessionUser } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { env } from '@/lib/env';
@@ -169,7 +169,7 @@ export async function CreatorDonateShell({
   /** 메뉴는 전부 후원 페이지 안쪽 경로다. 밖으로 나가는 항목을 여기에 넣지 않는다. */
   const nav: { key: CreatorShellMenu; href: string; label: string; icon: typeof Heart }[] = [
     { key: 'donate', href: base, label: '후원하기', icon: Heart },
-    { key: 'messages', href: `${base}/messages`, label: '내 문자후원', icon: MessageCircleHeart },
+    { key: 'messages', href: `${base}/messages`, label: '내 문자후원', icon: SmsDonation },
     { key: 'notifications', href: `${base}/notifications`, label: '알림', icon: Bell },
     { key: 'support', href: `${base}/support`, label: '문의하기', icon: LifeBuoy },
   ];
@@ -353,7 +353,7 @@ export async function CreatorDonateShell({
                 aria-current={activeMenu === n.key ? 'page' : undefined}
                 className={`relative flex min-h-[58px] w-full flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-center text-[11px] font-semibold transition-colors hover:bg-brand-50 hover:text-brand-700 ${activeMenu === n.key ? 'bg-brand-100 text-brand-900' : 'text-ink-600'}`}
               >
-                <n.icon className="h-5 w-5" strokeWidth={1.75} />
+                <n.icon size={20} strokeWidth={1.65} className="text-ink-800" />
                 <span className="leading-tight">{n.label}</span>
                 {n.key === 'notifications' && viewer && unread > 0 ? (
                   <span className="absolute top-1.5 right-2 grid h-4 min-w-4 place-items-center rounded-full bg-[#e5342f] px-1 text-[9px] font-black text-white tabular-nums">
@@ -367,7 +367,7 @@ export async function CreatorDonateShell({
               aria-current={activeMenu === 'how-it-works' ? 'page' : undefined}
               className={`flex min-h-[58px] w-full flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-center text-[11px] font-semibold transition-colors hover:bg-brand-50 hover:text-brand-700 ${activeMenu === 'how-it-works' ? 'bg-brand-100 text-brand-900' : 'text-ink-600'}`}
             >
-              <BookOpen className="h-5 w-5" strokeWidth={1.75} />
+              <Compass size={20} strokeWidth={1.65} className="text-ink-800" />
               <span className="leading-tight">이용방법</span>
             </Link>
           </nav>
@@ -446,8 +446,8 @@ export async function CreatorDonateShell({
                 aria-current={active ? 'page' : undefined}
                 className={`relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-bold transition-colors ${active ? 'text-brand-900' : 'text-ink-500 hover:text-ink-900'}`}
               >
-                <span className={`grid h-8 w-12 place-items-center rounded-full ${active ? 'bg-brand-100' : ''}`}>
-                  <n.icon size={18} strokeWidth={active ? 2 : 1.7} />
+                <span className={`grid h-8 w-8 place-items-center rounded-[10px] text-ink-800 ${active ? 'bg-brand-100' : ''}`}>
+                  <n.icon size={20} strokeWidth={1.65} />
                 </span>
                 {n.label}
                 {n.key === 'notifications' && viewer && unread > 0 ? (

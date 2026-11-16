@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Check, Heart, MessageSquare, Pencil, ShieldCheck, Smartphone } from '@/components/brand/icons';
+import { Check, Heart, Pencil, ShieldCheck, Smartphone, SmsDonation } from '@/components/brand/icons';
 import { cx, Notice } from '@/components/ui';
 import { formatWon } from '@/lib/money';
 import {
@@ -138,7 +138,7 @@ export function WebDonationPanel({
       {phase === 'idle' ? (
         <div>
           <button type="button" onClick={() => setStarted(true)} className={ctaClass}>
-            <MessageSquare size={18} strokeWidth={1.7} />
+            <SmsDonation size={18} strokeWidth={1.7} />
             문자후원하기
           </button>
           <p className="mt-2.5 text-center text-[11.5px] leading-relaxed text-ink-400">

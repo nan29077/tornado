@@ -6,11 +6,11 @@ import { usePathname } from 'next/navigation';
 import {
   Activity, BadgeCheck, BookOpenText, CalendarDays, ClipboardList, CreditCard, FlaskConical,
   BarChart3, FilePen, Gamepad2, Gauge, HeartHandshake, Home, Images, KeyRound, LayoutDashboard, LogOut,
-  Menu, MessageCircleQuestion, MessageSquareText, PanelsTopLeft, Percent, Sparkles, PhoneCall,
+  DonationOverlay, Menu, MessageCircleQuestion, Percent, SmsDonation, Sparkles, PhoneCall,
   ReceiptText, ScrollText, Send, ServerCog, ShieldAlert, ShieldBan,
   Settings, Undo2, UserCog, CircleUserRound, UserRoundCog,
   UsersRound, Video, Volume2, WalletCards, X,
-  Store, Package, Truck,
+  Store, Package, ShoppingBag, Truck,
 } from '@/components/brand/icons';
 import { Logo } from '@/components/brand/logo';
 import { ConsoleCornerMascot, MascotAccent } from '@/components/brand/mascot-decorations';
@@ -69,10 +69,10 @@ const CONSOLE_ICONS = {
   game: Gamepad2,
   holidays: CalendarDays,
   inquiries: MessageCircleQuestion,
-  messages: MessageSquareText,
+  messages: SmsDonation,
   moderation: ShieldBan,
   numbers: PhoneCall,
-  overlay: PanelsTopLeft,
+  overlay: DonationOverlay,
   effects: Sparkles,
   payments: CreditCard,
   policies: Gauge,
@@ -92,8 +92,8 @@ const CONSOLE_ICONS = {
   settings: Settings,
   send: Send,
   shop: Store,
-  products: Package,
-  orders: ReceiptText,
+  products: ShoppingBag,
+  orders: Package,
   truck: Truck,
 } satisfies Record<ConsoleIconName, typeof Home>;
 
@@ -182,6 +182,7 @@ export function ConsoleShell({
                       key={item.href}
                       href={item.href}
                       onClick={() => setOpen(false)}
+                      aria-current={active ? 'page' : undefined}
                       className={cx(
                         'group flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px] font-semibold transition-all',
                         active
@@ -191,13 +192,13 @@ export function ConsoleShell({
                     >
                       <span
                         className={cx(
-                          'grid h-8 w-8 shrink-0 place-items-center rounded-[10px] border transition-all',
+                          'grid h-8 w-8 shrink-0 place-items-center rounded-[10px] border text-ink-800 transition-all',
                           active
-                            ? 'border-brand-300/70 bg-brand-400 text-ink-900 shadow-[0_4px_10px_rgba(237,166,0,0.2)]'
-                            : 'border-ink-100 bg-white text-ink-400 group-hover:border-brand-200 group-hover:bg-brand-50 group-hover:text-brand-700',
+                            ? 'border-brand-200 bg-brand-50'
+                            : 'border-ink-100 bg-white group-hover:border-brand-200 group-hover:bg-brand-50',
                         )}
                       >
-                        <ItemIcon size={16} strokeWidth={active ? 2 : 1.7} />
+                        <ItemIcon size={17} strokeWidth={1.65} />
                       </span>
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
                       {badge ? (

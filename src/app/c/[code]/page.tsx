@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import {
-  MessageSquare, CreditCard, ShieldCheck, CircleAlert,
+  SmsDonation, CreditCard, ShieldCheck, CircleAlert, ChevronRight,
   Gauge, Flag, Phone, BellRing, Smartphone, Users, CalendarDays, HandCoins,
   Video, Camera, Music2, ThumbsUp,
 } from '@/components/brand/icons';
@@ -238,7 +238,7 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
                 href={smsHref}
                 className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-brand-400 text-[15px] font-extrabold text-ink-900 shadow-[0_8px_20px_rgba(237,166,0,0.28)] transition-colors hover:bg-brand-500 active:bg-brand-600"
               >
-                <MessageSquare size={17} strokeWidth={1.7} />
+                <SmsDonation size={17} strokeWidth={1.7} />
                 문자후원하기
               </a>
             </div>
@@ -591,7 +591,7 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
         <div className="mt-3 hidden space-y-2.5 sm:block">
           <Step
             no="1"
-            icon={<MessageSquare size={17} strokeWidth={1.7} />}
+            icon={<SmsDonation size={17} strokeWidth={1.7} />}
             title="금액과 응원 메시지를 고릅니다"
             body="문자후원하기를 누르면 금액(직접 입력 포함)과 방송에 표시될 응원 메시지를 고를 수 있습니다."
           />
@@ -625,7 +625,7 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
           />
           <Step
             no="2"
-            icon={<MessageSquare size={17} strokeWidth={1.7} />}
+            icon={<SmsDonation size={17} strokeWidth={1.7} />}
             title="응원 문자를 보냅니다"
             body={`위 번호로 메시지를 보내면 문자 1통당 ${formatWon(creator.donationAmount)}의 결제 PIN 입력 문자가 도착합니다.`}
           />
@@ -647,7 +647,8 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
       {/* ── 최근 후원 ───────────────────────────────────────────────── */}
       <section id="recent" className="mt-8 scroll-mt-20">
         <Link href={`/c/${creator.code}/messages`} className="mb-5 flex min-h-14 items-center justify-between gap-3 rounded-2xl border border-brand-200 bg-brand-50 px-5 py-4 text-sm font-bold text-brand-900">
-          <span>내 문자후원 · 크리에이터 답글 확인</span><span aria-hidden>→</span>
+          <span>내 문자후원 · 크리에이터 답글 확인</span>
+          <ChevronRight size={17} strokeWidth={1.65} className="shrink-0" />
         </Link>
         <div className="flex items-end justify-between px-1">
           <h2 className="text-[16px] font-black tracking-[-0.02em] text-ink-900">최근 후원</h2>

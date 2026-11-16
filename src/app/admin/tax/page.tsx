@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { ChevronLeft, ChevronRight } from '@/components/brand/icons';
 import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle, EmptyState, Notice, SectionTitle, StatTile, Table, Td, Th } from '@/components/ui';
 import { AdminField, AdminInput, AdminSelect, FilterBar } from '@/components/admin/controls';
@@ -114,18 +115,18 @@ export default async function AdminTaxPage({
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <Link
             href={hrefWith({ tab, month: prevKey })}
-            className="rounded-lg border border-ink-200 px-3 py-1.5 text-[12px] font-bold text-ink-700 hover:bg-ink-50"
+            className="inline-flex items-center gap-1 rounded-lg border border-ink-200 px-3 py-1.5 text-[12px] font-bold text-ink-700 hover:bg-ink-50"
           >
-            ← {prevKey}
+            <ChevronLeft size={14} strokeWidth={1.65} /> {prevKey}
           </Link>
           <span className="rounded-lg bg-ink-50 px-3 py-1.5 text-[13px] font-black tabular-nums text-ink-900">
             {month}
           </span>
           <Link
             href={hrefWith({ tab, month: nextKey })}
-            className="rounded-lg border border-ink-200 px-3 py-1.5 text-[12px] font-bold text-ink-700 hover:bg-ink-50"
+            className="inline-flex items-center gap-1 rounded-lg border border-ink-200 px-3 py-1.5 text-[12px] font-bold text-ink-700 hover:bg-ink-50"
           >
-            {nextKey} →
+            {nextKey} <ChevronRight size={14} strokeWidth={1.65} />
           </Link>
           <span className="text-[11.5px] text-ink-400">
             기준: 원장은 발생일, 원천징수는 <strong>지급일</strong>

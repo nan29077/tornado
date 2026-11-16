@@ -9,7 +9,7 @@ import {
   Loader2,
   Maximize2,
   Monitor,
-  MonitorPlay,
+  DonationOverlay,
   Move,
   PictureInPicture2,
   PlugZap,
@@ -1654,7 +1654,7 @@ export function BroadcastPreview({
         {/* 감출 때도 마운트를 유지한다. 다시 마운트되면 SSE 가 끊긴다. */}
         <div role="tabpanel" hidden={!isPc && !pip} className={cx('space-y-2.5', !isPc && !pip && 'hidden')}>
           <p className={cx('flex items-center gap-1.5 text-[13px] font-bold text-ink-900', pip && 'hidden')}>
-            <MonitorPlay size={16} strokeWidth={1.7} className="shrink-0 text-brand-700" />
+            <DonationOverlay size={16} strokeWidth={1.7} className="shrink-0" />
             OBS · PRISM 에 나가는 화면과 같습니다 (1920x1080 을 그대로 그린 뒤 축소)
           </p>
 
