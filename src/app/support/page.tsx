@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { ShieldAlert, Clock, FileText } from 'lucide-react';
+import { ShieldAlert, Clock, FileText } from '@/components/brand/icons';
 import { PublicShell } from '@/components/layout/public-shell';
 import { PageHeader } from '@/components/public/page-header';
 import { SupportForm } from '@/components/public/support-form';

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { HeartHandshake } from 'lucide-react';
+import { HeartHandshake } from '@/components/brand/icons';
 import { CreatorDonateShell } from '@/components/public/creator-donate-shell';
 import { SocialAuthButtons } from '@/components/public/social-auth';
 import { DonorTestLogin } from '@/components/public/donor-test-login';
@@ -23,7 +23,8 @@ export default async function DonorLoginPage({ params, searchParams }: { params:
         {sp.error ? <p role="alert" className="mb-4 rounded-xl bg-warm-100 p-3 text-sm text-ink-800">{sp.error === 'social_not_ready' ? '간편 로그인 연동을 준비 중입니다. 이메일 또는 아래 테스트 로그인을 이용해 주세요.' : '로그인을 완료하지 못했습니다. 다시 시도해 주세요.'}</p> : null}
         <SocialAuthButtons mode="login" nextPath={next} />
         <Link href={`/login?next=${encodeURIComponent(next)}`} className="mt-5 block rounded-xl border border-ink-200 px-4 py-3 text-center text-sm font-bold text-ink-800">이메일로 로그인</Link>
-        <p className="mt-4 text-center text-xs leading-relaxed text-ink-500">처음 이용하시나요? 간편 로그인 후 후원자 계정을 만들 수 있어요.<br />기존 이메일 계정과는 자동으로 합쳐지지 않습니다.</p>
+        <Link href={`/c/${creator.code}/signup?next=${encodeURIComponent(next)}`} className="mt-2.5 block rounded-xl bg-brand-400 px-4 py-3 text-center text-sm font-extrabold text-ink-900">회원가입</Link>
+        <p className="mt-4 text-center text-xs leading-relaxed text-ink-500">도네이도 회원 한 번 가입으로 모든 크리에이터 샵을 이용할 수 있어요.<br />기존 이메일 계정과 간편 로그인 계정은 자동으로 합쳐지지 않습니다.</p>
       </div>
       {isLocal ? <DonorTestLogin nextPath={next} /> : null}
       <Link href={`/c/${creator.code}`} className="mt-6 block text-center text-sm font-semibold text-ink-600">로그인 없이 후원 페이지 보기</Link>

@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { KeyRound, MailCheck, ShieldCheck } from 'lucide-react';
+import { KeyRound, MailCheck, ShieldCheck } from '@/components/brand/icons';
 import { Button, Field, Input, LinkButton, Notice } from '@/components/ui';
 import {
   confirmPasswordResetAction,

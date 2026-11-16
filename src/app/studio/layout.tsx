@@ -23,6 +23,14 @@ const groups: NavGroup[] = [
     ],
   },
   {
+    title: '도네이도 샵',
+    items: [
+      { href: '/studio/shop', label: '도네이도 샵 관리', icon: 'shop' },
+      { href: '/studio/shop/products', label: '상품 관리', icon: 'products' },
+      { href: '/studio/shop/orders', label: '주문·배송', icon: 'orders' },
+    ],
+  },
+  {
     title: '방송',
     items: [
       { href: '/studio/youtube', label: '유튜브 채널 연결', icon: 'youtube' },

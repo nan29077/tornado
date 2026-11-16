@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { CreditCard, ShieldCheck } from 'lucide-react';
+import { CreditCard, ShieldCheck } from '@/components/brand/icons';
 import { Button, Card, CardTitle, Checkbox, Field, Input, Notice } from '@/components/ui';
 import { registerCardBillKeyAction } from '@/app/actions/card-registration';
 import { checkDonorName, DONOR_NAME_MAX } from '@/lib/donor-name';

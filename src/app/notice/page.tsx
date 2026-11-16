@@ -1,6 +1,6 @@
 import { isServiceInMockMode } from '@/server/service-mode';
 import type { Metadata } from 'next';
-import { Megaphone, Pin } from 'lucide-react';
+import { Megaphone, Pin } from '@/components/brand/icons';
 import { PublicShell } from '@/components/layout/public-shell';
 import { PageHeader } from '@/components/public/page-header';
 import { Card, CardTitle, EmptyState, Badge, LinkButton } from '@/components/ui';

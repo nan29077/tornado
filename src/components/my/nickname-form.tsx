@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Sparkles } from 'lucide-react';
+import { Sparkles } from '@/components/brand/icons';
 import { Button, Card, Field, Input, Notice } from '@/components/ui';
 import { updateDonorNickname, type DonorActionState } from '@/app/actions/donor';
 import { broadcastDonorName, checkDonorName, DONOR_NAME_MAX } from '@/lib/donor-name';

@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Check, Copy, Eye, EyeOff } from 'lucide-react';
+import { Check, Copy, Eye, EyeOff } from '@/components/brand/icons';
 import { cx } from '@/components/ui';
 
 /**

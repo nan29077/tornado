@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ChevronRight, Circle, CircleCheck, ListChecks } from 'lucide-react';
+import { ChevronRight, Circle, CircleCheck, ListChecks } from '@/components/brand/icons';
 import { Card, cx } from '@/components/ui';
 import { InlineActionForm } from '@/components/studio/action-form';
 import { completeOnboardingStepAction } from '@/app/actions/studio';

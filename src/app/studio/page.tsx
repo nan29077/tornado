@@ -4,7 +4,7 @@ import {
   CircleCheck,
   ChevronRight,
   Info,
-} from 'lucide-react';
+} from '@/components/brand/icons';
 import { Badge, Card, EmptyState, LinkButton } from '@/components/ui';
 import { PageHeader } from '@/components/layout/console-shell';
 import { BannerStrip } from '@/components/public/banner-strip';
@@ -52,6 +52,7 @@ function mockNotice(): { mocked: string[]; live: string[] } {
  */
 export default async function StudioDashboardPage() {
   const { creatorId } = await requireCreator();
+  const shopCode = (await prisma.creatorProfile.findUnique({ where: { id: creatorId }, select: { code: true } }))?.code ?? null;
   const todayStart = kstStartOfDay();
 
   const [
@@ -201,9 +202,16 @@ export default async function StudioDashboardPage() {
         title="대시보드"
         description="오늘 들어온 문자후원과 연동 상태를 한눈에 확인합니다. (KST 기준)"
         action={
-          <LinkButton href="/studio/donations" variant="secondary" size="sm">
-            후원 내역 전체 보기
-          </LinkButton>
+          <div className="flex flex-wrap gap-2">
+            {shopCode ? (
+              <LinkButton href={`/c/${shopCode}`} target="_blank" size="sm">
+                도네이도 샵 바로가기
+              </LinkButton>
+            ) : null}
+            <LinkButton href="/studio/donations" variant="secondary" size="sm">
+              후원 내역 전체 보기
+            </LinkButton>
+          </div>
         }
       />
 

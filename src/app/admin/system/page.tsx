@@ -1,4 +1,4 @@
-import { Database, Server, Signal, TriangleAlert } from 'lucide-react';
+import { Database, Server, Signal, TriangleAlert } from '@/components/brand/icons';
 import { logger } from '@/lib/logger';
 import { PageHeader } from '@/components/layout/console-shell';
 import { Card, CardTitle, SectionTitle, StatTile, Table, Th, Td, Badge, EmptyState, Notice, DataRow } from '@/components/ui';

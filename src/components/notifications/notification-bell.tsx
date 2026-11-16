@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Bell, CheckCheck, X } from 'lucide-react';
+import { Bell, CheckCheck, X } from '@/components/brand/icons';
 import { cx } from '@/components/ui';
 
 interface NotificationItem {

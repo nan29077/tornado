@@ -99,7 +99,9 @@ export async function signupDonor(_prev: SignupFormState, formData: FormData): P
   // 기존에 문자만으로 생성된 후원자 프로필이 있다면 이후 연결은 계좌 등록 흐름에서 처리한다.
   await createSession(userId);
 
-  redirect('/my');
+  // 도네이도 샵(/c/코드/signup)에서 가입하면 그 샵으로 돌아간다. 같은 계정이므로 다른 샵도 바로 이용할 수 있다.
+  // (유입 크리에이터 기록은 샵 화면 셸이 한 곳에서 처리한다 — creator-fans)
+  redirect(authReturnPath(formData.get('next'), '/my'));
 }
 
 /* ---------------------------------------------------------------------------

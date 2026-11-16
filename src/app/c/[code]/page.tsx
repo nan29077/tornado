@@ -4,7 +4,7 @@ import {
   MessageSquare, CreditCard, ShieldCheck, CircleAlert,
   Gauge, Flag, Phone, BellRing, Smartphone, Users, CalendarDays, HandCoins,
   Video, Camera, Music2, ThumbsUp,
-} from 'lucide-react';
+} from '@/components/brand/icons';
 import { CreatorCodeForm } from '@/components/creator-code-form';
 import { CopyButton } from '@/components/public/copy-button';
 import { WebDonationPanel } from '@/components/public/web-donation-panel';
@@ -28,6 +28,16 @@ import { resolvePolicy } from '@/server/services/limits';
 import { getPaymentAdapter } from '@/server/adapters/payment';
 import { resolveWebDonationChannel } from '@/server/services/web-donation';
 import { readSnsLinks, type SnsPlatform } from '@/lib/sns-platforms';
+import { ShopTabs, resolveShopTab } from '@/components/shop/shop-tabs';
+import { FollowButton } from '@/components/shop/follow-button';
+import { ShopVideoTab } from '@/components/shop/shop-video-tab';
+import { ShopProductGrid } from '@/components/shop/shop-product-grid';
+import { followerCount, isFollowing } from '@/server/services/shop/follow';
+import { getShopVideos } from '@/server/services/shop/videos';
+import { listShopProducts } from '@/server/services/shop/catalog';
+import { parseDonationPresets } from '@/server/services/shop/video-donation';
+import { isShopPaymentMock } from '@/server/adapters/shop-payment';
+import { formatViews, timeAgo } from '@/lib/video-hub';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,7 +54,7 @@ export const dynamic = 'force-dynamic';
  * 모바일에서는 하단 고정 CTA(문자 보내기)가 탭바를 대신한다.
  */
 
-type Params = { params: Promise<{ code: string }> };
+type Params = { params: Promise<{ code: string }>; searchParams?: Promise<{ tab?: string; cat?: string }> };
 
 /** SNS 링크 버튼 아이콘. lucide 에는 브랜드 로고가 없어 성격이 가까운 일반 아이콘을 쓰고, 구분은 색으로 한다. */
 const SNS_ICONS: Record<SnsPlatform, typeof Video> = {
@@ -117,11 +127,17 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   };
 }
 
-export default async function CreatorDonationPage({ params }: Params) {
+export default async function CreatorDonationPage({ params, searchParams }: Params) {
   const { code } = await params;
+  const sp = (await searchParams) ?? {};
   const creator = await findCreator(code);
 
   if (!creator) return <NotFoundView />;
+
+  // 도네이도 샵 탭 (2026-11-17): 영상 / 쇼핑 / 문자 후원(기존 화면)
+  const tab = resolveShopTab(sp.tab, creator.shopDefaultTab);
+  const shopViewer = await getSessionUser().catch(() => null);
+  const [following, followers] = await Promise.all([isFollowing(shopViewer?.id, creator.id), followerCount(creator.id)]);
 
   const monthFrom = kstStartOfMonth();
   const [policy, donations, totalCount, monthCount, supporterCount, banner] = await Promise.all([
@@ -170,6 +186,20 @@ export default async function CreatorDonationPage({ params }: Params) {
   const onAir = liveLinks.length > 0;
   const primaryLive = liveLinks[0] ?? null;
 
+  // 영상 탭: 유튜브 자동 + 직접 등록 영상 / 라이브 플레이어(유튜브 채널 ID 를 알면 임베드)
+  const shopVideos = tab === 'video' ? await getShopVideos(creator.id).catch(() => []) : [];
+  const ytChannelId = tab === 'video'
+    ? (await prisma.creatorChannel.findFirst({ where: { creatorId: creator.id, platform: 'YOUTUBE', externalId: { not: null } }, orderBy: { isPrimary: 'desc' }, select: { externalId: true } }))?.externalId ?? null
+    : null;
+  const youtubeLive = liveLinks.find((l) => l.platform.value === 'YOUTUBE');
+  const liveEmbedUrl = youtubeLive && ytChannelId ? `https://www.youtube.com/embed/live_stream?channel=${ytChannelId}` : null;
+  const nowMs = requestNowMs();
+  // 쇼핑 탭
+  const shopProducts = tab === 'shop' ? await listShopProducts(creator.id, { category: sp.cat ?? null }).catch(() => []) : [];
+  const shopCategories = tab === 'shop'
+    ? [...new Set((await listShopProducts(creator.id).catch(() => [])).map((p) => p.category).filter((c): c is string => Boolean(c)))]
+    : [];
+
   // 결제 연동이 mock 이면 후원 화면에 반드시 표시한다 (가짜 성공 처리 금지 원칙)
   let paymentMock = true;
   try {
@@ -192,10 +222,11 @@ export default async function CreatorDonationPage({ params }: Params) {
         avatarIndex: creator.user.avatarIndex,
         description: creator.description,
         liveUrl: primaryLive?.url ?? null,
+        marginPreset: creator.shopMarginPreset,
       }}
       bottomBar={
-        smsHref && route ? (
-          <div className="fixed inset-x-0 bottom-0 z-40 border-t border-warm-300/70 bg-white/95 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),12px)] backdrop-blur-xl sm:hidden">
+        tab === 'donate' && smsHref && route ? (
+          <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 border-t border-warm-300/70 bg-white/95 px-4 py-3 backdrop-blur-xl sm:hidden">
             <div className="mx-auto flex max-w-[560px] items-center gap-3">
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold text-ink-400">문자 1통당</p>
@@ -301,6 +332,15 @@ export default async function CreatorDonationPage({ params }: Params) {
         {creator.channelName ? (
           <p className="mt-1 text-[13px] font-semibold text-ink-400">{creator.channelName}</p>
         ) : null}
+        <div className="mt-3 flex justify-center">
+          <FollowButton
+            creatorId={creator.id}
+            following={following}
+            loggedIn={Boolean(shopViewer)}
+            loginHref={`/c/${creator.code}/login?next=${encodeURIComponent(`/c/${creator.code}`)}`}
+            count={followers}
+          />
+        </div>
         {creator.description ? (
           <p className="mx-auto mt-3 max-w-lg text-[13.5px] leading-relaxed whitespace-pre-line text-ink-700">
             {creator.description}
@@ -357,6 +397,7 @@ export default async function CreatorDonationPage({ params }: Params) {
           />
         </div>
 
+        {tab === 'donate' ? (<>
         <p className="mx-auto mt-6 max-w-lg rounded-2xl bg-brand-50 px-4 py-3 text-[13px] leading-relaxed font-semibold text-brand-800">
           보내주신 응원은 {creator.displayName} 님의 방송 화면에 그대로 전해집니다.
         </p>
@@ -466,7 +507,42 @@ export default async function CreatorDonationPage({ params }: Params) {
             </p>
           </div>
         )}
+        </>) : null}
       </div>
+
+      <ShopTabs code={creator.code} active={tab} live={onAir} />
+
+      {tab === 'video' ? (
+        <ShopVideoTab
+          creatorId={creator.id}
+          creatorCode={creator.code}
+          creatorName={creator.displayName}
+          videos={shopVideos.map((v) => ({
+            key: v.key,
+            platform: v.platform,
+            externalId: v.externalId,
+            url: v.url,
+            title: v.title,
+            thumbnail: v.thumbnail,
+            meta: [formatViews(v.views), v.publishedAt ? timeAgo(v.publishedAt, nowMs) : null].filter(Boolean).join(' · '),
+            pinned: v.pinned,
+          }))}
+          liveEmbedUrl={liveEmbedUrl}
+          liveUrl={primaryLive?.url ?? null}
+          donationEnabled={creator.shopVideoDonation}
+          presets={parseDonationPresets(creator.shopDonationPresets).map((v) => v.toString())}
+          minAmount={(creator.shopDonationMin > 0n ? creator.shopDonationMin : 1000n).toString()}
+          loggedIn={Boolean(shopViewer)}
+          defaultNickname={viewerDonor?.displayName ?? shopViewer?.name ?? ''}
+          paymentMock={isShopPaymentMock()}
+        />
+      ) : null}
+
+      {tab === 'shop' ? (
+        <ShopProductGrid code={creator.code} products={shopProducts} categories={shopCategories} activeCategory={sp.cat ?? null} />
+      ) : null}
+
+      {tab === 'donate' ? (<>
 
       {/*
         방송 닉네임 안내.
@@ -645,6 +721,7 @@ export default async function CreatorDonationPage({ params }: Params) {
           </LinkButton>
         </div>
       </section>
+      </>) : null}
     </CreatorDonateShell>
   );
 }
@@ -729,4 +806,9 @@ function NotFoundView() {
       </div>
     </div>
   );
+}
+
+/** 서버 렌더 1회 기준 시각 (영상 '몇 분 전' 표시용). 컴포넌트 밖에 두어 렌더 순수성 규칙을 지킨다. */
+function requestNowMs(): number {
+  return Date.now();
 }

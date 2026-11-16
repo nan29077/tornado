@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { LayoutGrid, Rows3, Search } from 'lucide-react';
+import { LayoutGrid, Rows3, Search } from '@/components/brand/icons';
 import { Badge, Button, Card, EmptyState, Field, Input, Select, Table, Td, Th, cx } from '@/components/ui';
 import { PageHeader } from '@/components/layout/console-shell';
 import { buildQuery, one, pageParam, type SearchParamsRecord } from '@/components/studio/shared';

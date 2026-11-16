@@ -7,12 +7,22 @@ import { createSession, getSessionUser, hashPassword } from '@/server/auth';
 import { consumeIpRateLimit, clientIpFromHeaders } from '@/server/rate-limit';
 import { activeSignupTerms, recordSignupConsents, SignupTermsMissingError } from '@/server/services/signup-consent';
 import { notifySuperAdmins } from '@/server/services/notifications';
+import {
+  findTakenChannel,
+  parseChannelsFromForm,
+  replaceCreatorChannels,
+  type ChannelInput,
+} from '@/server/services/creator-application';
+import { CONTENT_CATEGORY_SLUGS, type VideoCategorySlug } from '@/lib/video-hub';
+import { revalidatePath } from 'next/cache';
 
 /**
  * 크리에이터 가입 신청.
  * - 로그인 상태면 해당 계정에 크리에이터 프로필을 붙인다.
  * - 비로그인 상태면 이메일/비밀번호로 계정을 만들고 로그인 처리한다.
  * - 프로필은 PENDING 으로 생성되며 MO 번호는 관리자 승인 후 배정된다.
+ * - (2026-11-17) 채널을 여러 개(플랫폼·주소·구독자 수) 받는다. 승인 전까지 계정은 일반회원(DONOR)이고,
+ *   최고관리자가 승인할 때 CREATOR 로 바뀐다. 그동안 마이페이지에서 신청 상태를 본다(/my/creator).
  */
 
 export interface CreatorApplyState {
@@ -78,6 +88,7 @@ export async function applyCreator(_prev: CreatorApplyState, formData: FormData)
     channelUrl: String(formData.get('channelUrl') ?? ''),
     contactEmail: String(formData.get('contactEmail') ?? ''),
     description: String(formData.get('description') ?? ''),
+    contentCategory: String(formData.get('contentCategory') ?? ''),
     isBusiness: formData.get('isBusiness') ? 'on' : undefined,
     businessNo: String(formData.get('businessNo') ?? ''),
     agree: formData.get('agree') ? 'on' : undefined,
@@ -91,8 +102,20 @@ export async function applyCreator(_prev: CreatorApplyState, formData: FormData)
     channelUrl: raw.channelUrl.trim(),
     contactEmail: raw.contactEmail.trim(),
     description: raw.description.trim(),
+    contentCategory: raw.contentCategory.trim(),
     businessNo: raw.businessNo.trim(),
   };
+
+  // 채널 여러 개 (플랫폼·주소·채널명·구독자 수)
+  let channels: ChannelInput[];
+  try {
+    channels = parseChannelsFromForm(formData);
+  } catch (e) {
+    return { ok: false, message: (e as Error).message, values };
+  }
+  const contentCategory = (CONTENT_CATEGORY_SLUGS as string[]).includes(values.contentCategory)
+    ? (values.contentCategory as VideoCategorySlug)
+    : null;
 
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
@@ -110,7 +133,7 @@ export async function applyCreator(_prev: CreatorApplyState, formData: FormData)
 
   // ------------------------------------------------------------ 계정 확보
   let userId: string;
-  let newUser: { id: string; email: string; name: string; role: 'CREATOR'; passwordHash: string } | null = null;
+  let newUser: { id: string; email: string; name: string; role: 'DONOR'; passwordHash: string } | null = null;
   if (session) {
     if (session.role === 'ADMIN') {
       return { ok: false, message: '관리자 계정으로는 크리에이터를 신청할 수 없습니다.', values };
@@ -157,7 +180,8 @@ export async function applyCreator(_prev: CreatorApplyState, formData: FormData)
       id: newId(),
       email: data.contactEmail,
       name: data.displayName,
-      role: 'CREATOR' as const,
+      // 승인 전까지는 일반회원. 승인 시 updateCreatorStatus 가 CREATOR 로 바꾼다.
+      role: 'DONOR' as const,
       passwordHash: await hashPassword(password),
     };
     userId = newUser.id;
@@ -177,7 +201,6 @@ export async function applyCreator(_prev: CreatorApplyState, formData: FormData)
   // 소개를 300자로 검증하므로 크리에이터가 손대지도 않은 필드 때문에
   // 이후 모든 설정 저장이 영구히 실패한다. 반드시 별도 컬럼에 보관한다.
   const description = data.description?.trim() || null;
-  const channelUrl = data.channelUrl?.trim() || null;
 
   const ip = await clientIpFromHeaders();
   try {
@@ -188,30 +211,33 @@ export async function applyCreator(_prev: CreatorApplyState, formData: FormData)
       if (newUser) await tx.user.create({ data: newUser });
       await recordSignupConsents(tx, userId, terms, { ip });
 
+      const taken = await findTakenChannel(tx, channels, null);
+      if (taken) throw new ChannelTakenError(taken);
+
       const profile = await tx.creatorProfile.create({
         data: {
           id: newId(),
           userId,
           code,
           displayName: data.displayName,
-          channelName: data.channelName?.trim() || null,
-          channelPlatform: data.channelPlatform?.trim() || null,
           description,
-          channelUrl,
           status: 'PENDING',
           businessNo,
+          appliedVia: session ? 'CONVERT' : 'SIGNUP',
+          contentCategory,
+          submittedAt: new Date(),
         },
         select: { id: true, code: true, displayName: true },
       });
+      // 채널 목록 저장 + 대표 채널을 기존 단일 채널 컬럼에도 반영 (기존 화면 호환)
+      const primary = await replaceCreatorChannels(tx, profile.id, channels);
+      await tx.creatorProfile.update({ where: { id: profile.id }, data: primary });
 
       await tx.creatorCode.create({
         data: { id: newId(), creatorId: profile.id, code: profile.code, active: true },
       });
 
-      // 로그인 사용자의 역할을 크리에이터로 승격 (관리자는 위에서 차단)
-      if (session && session.role !== 'CREATOR') {
-        await tx.user.update({ where: { id: userId }, data: { role: 'CREATOR' } });
-      }
+      // (2026-11-17) 역할은 승인 시점에 바꾼다. 신청만으로 일반회원 기능(마이페이지)을 잃지 않게 한다.
       return profile;
     });
 
@@ -227,13 +253,93 @@ export async function applyCreator(_prev: CreatorApplyState, formData: FormData)
      */
     await notifySuperAdmins({
       title: '새 크리에이터 심사 신청이 접수되었습니다',
-      body: `${creator.displayName}(${creator.code})${channelUrl ? ` · 채널 ${channelUrl}` : ' · 채널 주소 미기재'}`,
+      body: `${creator.displayName}(${creator.code}) · ${session ? '일반회원 전환 신청' : '신규 크리에이터 가입'} · 채널 ${channels.length}개`,
       linkUrl: `/admin/creators/${creator.id}`,
     }).catch(() => undefined);
 
+    revalidatePath('/my/creator');
     return { ok: true, code: creator.code, displayName: creator.displayName };
   } catch (e) {
     if (e instanceof SignupTermsMissingError) return { ok: false, message: e.message, values };
+    if (e instanceof ChannelTakenError) return { ok: false, message: e.message, values };
     return { ok: false, message: '신청 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.', values };
   }
+}
+
+
+class ChannelTakenError extends Error {
+  constructor(url: string) {
+    super(`이미 다른 크리에이터가 등록한 채널입니다: ${url} — 본인 채널이 맞다면 고객센터로 문의해 주세요.`);
+  }
+}
+
+export interface ResubmitState {
+  ok: boolean;
+  message?: string;
+}
+
+/**
+ * 보완요청·반려 후 재제출 (마이페이지 > 크리에이터 전환).
+ * 채널·소개·카테고리를 고쳐 다시 심사 대기로 보낸다. 승인·정지 상태에서는 쓸 수 없다.
+ */
+export async function resubmitCreatorApplication(_prev: ResubmitState, formData: FormData): Promise<ResubmitState> {
+  const session = await getSessionUser();
+  if (!session) return { ok: false, message: '로그인이 필요합니다.' };
+  const profile = await prisma.creatorProfile.findUnique({
+    where: { userId: session.id },
+    select: { id: true, status: true, displayName: true, code: true },
+  });
+  if (!profile) return { ok: false, message: '신청 내역이 없습니다.' };
+  if (profile.status !== 'PENDING' && profile.status !== 'REJECTED') {
+    return { ok: false, message: '심사 대기·반려 상태에서만 다시 제출할 수 있습니다.' };
+  }
+
+  let channels: ChannelInput[];
+  try {
+    channels = parseChannelsFromForm(formData);
+  } catch (e) {
+    return { ok: false, message: (e as Error).message };
+  }
+  const description = String(formData.get('description') ?? '').trim().slice(0, 300) || null;
+  const displayName = String(formData.get('displayName') ?? '').trim();
+  if (!displayName || displayName.length > 30) return { ok: false, message: '표시명은 1~30자로 입력해 주세요.' };
+  const catRaw = String(formData.get('contentCategory') ?? '').trim();
+  const contentCategory = (CONTENT_CATEGORY_SLUGS as string[]).includes(catRaw) ? catRaw : null;
+
+  const limited = await consumeIpRateLimit('creator-resubmit', 5, 60);
+  if (!limited.ok) return { ok: false, message: '잠시 후 다시 시도해 주세요.' };
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const taken = await findTakenChannel(tx, channels, profile.id);
+      if (taken) throw new ChannelTakenError(taken);
+      const primary = await replaceCreatorChannels(tx, profile.id, channels);
+      // 상태가 그 사이 바뀌었으면(예: 관리자가 방금 승인) 덮어쓰지 않는다
+      const moved = await tx.creatorProfile.updateMany({
+        where: { id: profile.id, status: profile.status },
+        data: {
+          ...primary,
+          displayName,
+          description,
+          contentCategory,
+          status: 'PENDING',
+          rejectReason: null,
+          reviewNote: null,
+          reviewRequestedAt: null,
+          submittedAt: new Date(),
+        },
+      });
+      if (moved.count === 0) throw new Error('심사 상태가 방금 바뀌었습니다. 새로고침 후 확인해 주세요.');
+    });
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : '제출하지 못했습니다.' };
+  }
+
+  await notifySuperAdmins({
+    title: '크리에이터 신청이 다시 제출되었습니다',
+    body: `${displayName}(${profile.code}) · 채널 ${channels.length}개`,
+    linkUrl: `/admin/creators/${profile.id}`,
+  }).catch(() => undefined);
+  revalidatePath('/my/creator');
+  return { ok: true, message: '다시 제출했습니다. 심사 결과를 알림으로 알려 드릴게요.' };
 }

@@ -7,6 +7,7 @@ import { SupportWidget } from '@/components/public/support-widget';
 import { isServiceInMockMode } from '@/server/service-mode';
 import { env } from '@/lib/env';
 import { getSiteImageSelection } from '@/server/services/site-images';
+import { isVideoHubEnabled } from '@/server/services/video-hub';
 
 /**
  * 공개 영역 레이아웃 (서버 래퍼).
@@ -17,9 +18,19 @@ import { getSiteImageSelection } from '@/server/services/site-images';
 export async function PublicShell({
   children,
   aside,
+  home = false,
+  leftPane,
+  mobileVideoPreview,
 }: {
   children: React.ReactNode;
   aside?: React.ReactNode;
+  home?: boolean;
+  /**
+   * PC(xl 이상) 화면 왼쪽 여백에 놓을 영역 (메인 화면의 영상 영역).
+   * 중앙 앱 패널의 위치를 유지하면서 여백에 작은 미리보기를 띄운다.
+   */
+  leftPane?: React.ReactNode;
+  mobileVideoPreview?: React.ReactNode;
 }) {
   /**
    * [B-1] 쿠키를 **가장 먼저** 읽는다.
@@ -69,11 +80,11 @@ export async function PublicShell({
   const hasThread = Boolean(user) || Boolean(jar.get(INQUIRY_GUEST_COOKIE)?.value);
 
   return (
-    <>
-      <PublicShellClient aside={aside} viewer={viewer} mockMode={isServiceInMockMode()} business={env.business} marginPreset={margin}>
+    <div className="public-page" data-public-home={home || undefined}>
+      <PublicShellClient aside={aside} home={home} leftPane={leftPane} videoHubEnabled={isVideoHubEnabled()} viewer={viewer} mockMode={isServiceInMockMode()} business={env.business} marginPreset={margin}>
         {children}
       </PublicShellClient>
-      <SupportWidget faqs={faqs} loggedIn={Boolean(user)} hasThread={hasThread} />
-    </>
+      <SupportWidget faqs={faqs} loggedIn={Boolean(user)} hasThread={hasThread} mobileVideoPreview={mobileVideoPreview} />
+    </div>
   );
 }

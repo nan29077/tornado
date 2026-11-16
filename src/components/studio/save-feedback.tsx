@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Check, CircleAlert, Loader2 } from 'lucide-react';
+import { Check, CircleAlert, Loader2 } from '@/components/brand/icons';
 import { cx } from '@/components/ui';
 import { Portal } from '@/components/ui/portal';
 

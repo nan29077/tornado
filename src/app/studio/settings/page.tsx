@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { Camera, Music2, Radio, ThumbsUp, Video } from 'lucide-react';
+import { Camera, Music2, Radio, ThumbsUp, Video } from '@/components/brand/icons';
 import { Badge, Card, DataRow, Field, Input, Notice, SectionTitle, Textarea, cx } from '@/components/ui';
 import { DEFAULT_BANNERS, defaultBannerFor } from '@/lib/banners';
 import { siteImageUrl } from '@/lib/site-images';

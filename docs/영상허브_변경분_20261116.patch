@@ -1,0 +1,2055 @@
+diff --git a/src/app/page.tsx b/src/app/page.tsx
+index d77f826..5ff335f 100644
+--- a/src/app/page.tsx
++++ b/src/app/page.tsx
+@@ -1,3 +1,4 @@
++import { Suspense } from 'react';
+ import Image from 'next/image';
+ import Link from 'next/link';
+ import {
+@@ -13,6 +14,9 @@ import { Card, CardTitle, SectionTitle, LinkButton, Notice } from '@/components/
+ import { prisma } from '@/server/db';
+ import { siteImageUrl } from '@/lib/site-images';
+ import { getSiteImageSelection } from '@/server/services/site-images';
++import { isVideoHubEnabled } from '@/server/services/video-hub';
++import { HomeVideoPaneLoader, HomeVideoSectionLoader } from '@/components/video-hub/home-video-loaders';
++import { HomeVideoPaneSkeleton, HomeVideoSectionSkeleton } from '@/components/video-hub/home-video-section';
+ 
+ export const dynamic = 'force-dynamic';
+ 
+@@ -25,8 +29,20 @@ export default async function HomePage() {
+     take: 5,
+   }).catch(() => [])]);
+ 
++  // 영상 허브 (VIDEO_HUB_ENABLED=false 면 영상 영역·섹션 없이 예전 메인 그대로)
++  const videoHub = isVideoHubEnabled();
++
+   return (
+-    <PublicShell aside={<HomeAside />}>
++    <PublicShell
++      aside={<HomeAside />}
++      leftPane={
++        videoHub ? (
++          <Suspense fallback={<HomeVideoPaneSkeleton />}>
++            <HomeVideoPaneLoader />
++          </Suspense>
++        ) : undefined
++      }
++    >
+       <HeroSlider bannerImage={siteImageUrl('banner', banner)} />
+ 
+       {/* 관리자 등록 배너 (HOME_TOP) */}
+@@ -52,6 +68,13 @@ export default async function HomePage() {
+         </Card>
+       </section>
+ 
++      {/* 3-1. 크리에이터 영상 (모바일·태블릿 전용. PC xl 이상은 왼쪽 영상 영역이 대신한다) */}
++      {videoHub ? (
++        <Suspense fallback={<HomeVideoSectionSkeleton />}>
++          <HomeVideoSectionLoader />
++        </Suspense>
++      ) : null}
++
+       {/* 4. 문자 한 통으로 후원하는 방법 */}
+       <section className="mt-8">
+         <SectionTitle title="문자 한 통으로 후원하는 방법" description="처음 한 번만 등록하면, 그 다음부터는 문자만 보내면 됩니다." />
+diff --git a/src/components/layout/public-shell-client.tsx b/src/components/layout/public-shell-client.tsx
+index 76dbf8e..e023593 100644
+--- a/src/components/layout/public-shell-client.tsx
++++ b/src/components/layout/public-shell-client.tsx
+@@ -79,6 +79,7 @@ function isActive(pathname: string, href: string, my?: boolean) {
+ export function PublicShellClient({
+   children,
+   aside,
++  leftPane,
+   viewer,
+   mockMode = false,
+   business,
+@@ -86,6 +87,8 @@ export function PublicShellClient({
+ }: {
+   children: React.ReactNode;
+   aside?: React.ReactNode;
++  /** PC(xl 이상) 왼쪽 여백 영역. 있을 때만 앱 패널이 오른쪽으로 이동한다. 없으면 기존 배치 그대로. */
++  leftPane?: React.ReactNode;
+   viewer: ShellViewer | null;
+   /** 결제·문자 발송이 모의(mock) 상태일 때만 하단에 안내를 보여 준다. */
+   mockMode?: boolean;
+@@ -108,9 +111,24 @@ export function PublicShellClient({
+     <div className="public-canvas min-h-dvh pb-20 lg:pb-0">
+       <CreatorDonateBackdrop preset={marginPreset} publicPage />
+       {marginPreset === DEFAULT_SITE_IMAGE || marginPreset === CLASSIC_MARGIN_IMAGE
+-        ? <PublicMarginMascots home={pathname === '/'} />
++        ? (
++            leftPane
++              // 왼쪽 여백을 영상 영역이 쓰는 xl 이상에서는 여백 마스코트를 숨긴다 (겹침 방지)
++              ? <div className="xl:hidden"><PublicMarginMascots home={pathname === '/'} /></div>
++              : <PublicMarginMascots home={pathname === '/'} />
++          )
+         : null}
+-      <div className="relative z-[2] mx-auto flex w-full max-w-[744px] items-start justify-center">
++      <div
++        className={cx(
++          'relative z-[2] mx-auto flex w-full max-w-[744px] items-start justify-center',
++          Boolean(leftPane) && 'xl:max-w-[1840px] xl:justify-end xl:gap-6 xl:px-6',
++        )}
++      >
++        {leftPane ? (
++          <div className="sticky top-0 hidden h-dvh min-w-0 flex-1 overflow-y-auto overscroll-contain py-6 [scrollbar-width:thin] xl:block">
++            {leftPane}
++          </div>
++        ) : null}
+         <div className="public-app-surface min-h-dvh w-full min-w-0 max-w-[640px] shadow-[0_0_60px_rgba(74,49,25,0.12)]">
+       <header className="public-header sticky top-0 z-40 border-b backdrop-blur-xl">
+         <div className="flex h-[68px] w-full items-center justify-between px-4 sm:px-6">
+diff --git a/src/components/layout/public-shell.tsx b/src/components/layout/public-shell.tsx
+index c819189..4a1a0a8 100644
+--- a/src/components/layout/public-shell.tsx
++++ b/src/components/layout/public-shell.tsx
+@@ -17,9 +17,15 @@ import { getSiteImageSelection } from '@/server/services/site-images';
+ export async function PublicShell({
+   children,
+   aside,
++  leftPane,
+ }: {
+   children: React.ReactNode;
+   aside?: React.ReactNode;
++  /**
++   * PC(xl 이상) 화면 왼쪽 여백에 놓을 영역 (메인 화면의 영상 영역).
++   * 넘기면 앱 패널이 오른쪽으로 비켜서고, 안 넘기면 지금까지와 완전히 같다.
++   */
++  leftPane?: React.ReactNode;
+ }) {
+   /**
+    * [B-1] 쿠키를 **가장 먼저** 읽는다.
+@@ -70,7 +76,7 @@ export async function PublicShell({
+ 
+   return (
+     <>
+-      <PublicShellClient aside={aside} viewer={viewer} mockMode={isServiceInMockMode()} business={env.business} marginPreset={margin}>
++      <PublicShellClient aside={aside} leftPane={leftPane} viewer={viewer} mockMode={isServiceInMockMode()} business={env.business} marginPreset={margin}>
+         {children}
+       </PublicShellClient>
+       <SupportWidget faqs={faqs} loggedIn={Boolean(user)} hasThread={hasThread} />
+diff --git a/src/app/videos/page.tsx b/src/app/videos/page.tsx
+new file mode 100755
+index 0000000..47a527e
+--- /dev/null
++++ b/src/app/videos/page.tsx
+@@ -0,0 +1,136 @@
++import type { Metadata } from 'next';
++import Link from 'next/link';
++import { notFound } from 'next/navigation';
++import { ArrowDown, Info, SearchX } from 'lucide-react';
++import { VideoHubShell, VideoCategoryChips } from '@/components/video-hub/video-hub-shell';
++import { VideoCard } from '@/components/video-hub/video-card';
++import { categoryLabel, isVideoCategory, videosHref, type VideoItem } from '@/lib/video-hub';
++import { getVideos, isVideoHubEnabled } from '@/server/services/video-hub';
++
++export const dynamic = 'force-dynamic';
++
++export const metadata: Metadata = {
++  title: '크리에이터 영상',
++  description: '카테고리별 크리에이터 최신 영상을 모아 보고, 도네이도 가입 크리에이터에게는 바로 후원하세요.',
++};
++
++const PAGE = 24;
++const MAX = 240;
++
++function first(v: string | string[] | undefined): string {
++  return (Array.isArray(v) ? v[0] : v) ?? '';
++}
++
++export default async function VideosPage({
++  searchParams,
++}: {
++  searchParams: Promise<{ c?: string | string[]; q?: string | string[]; limit?: string | string[] }>;
++}) {
++  if (!isVideoHubEnabled()) notFound();
++  const sp = await searchParams;
++  const cRaw = first(sp.c);
++  const c = isVideoCategory(cRaw) ? cRaw : 'all';
++  const q = first(sp.q).trim().slice(0, 50);
++  const limitNum = Number.parseInt(first(sp.limit), 10);
++  const limit = Number.isFinite(limitNum) ? Math.min(Math.max(limitNum, PAGE), MAX) : PAGE;
++
++  const { items, sample, now } = await getVideos({ c, q }).catch(() => ({ items: [] as VideoItem[], sample: false, now: 0 }));
++
++  // 유튜브 홈처럼: 전체 보기 첫 화면에서는 일반 영상 사이에 쇼츠 선반을 끼운다.
++  const showShelf = c === 'all' && !q;
++  const shorts = showShelf ? items.filter((v) => v.isShort).slice(0, 12) : [];
++  const main = showShelf && shorts.length > 0 ? items.filter((v) => !v.isShort) : items;
++  const visible = main.slice(0, limit);
++  const head = visible.slice(0, 8);
++  const rest = visible.slice(8);
++
++  return (
++    <VideoHubShell activeCategory={c} q={q}>
++      <VideoCategoryChips active={c} q={q} />
++
++      {q ? (
++        <h1 className="mt-2 text-[15px] font-bold text-ink-700">
++          <span className="text-ink-900">&lsquo;{q}&rsquo;</span> 검색 결과 {items.length.toLocaleString('ko-KR')}개
++          {c !== 'all' ? <span className="text-ink-400"> · {categoryLabel(c)}</span> : null}
++        </h1>
++      ) : (
++        <h1 className="sr-only">{c === 'all' ? '전체 영상' : `${categoryLabel(c)} 영상`}</h1>
++      )}
++
++      {sample ? (
++        <p className="mt-2 flex items-start gap-1.5 rounded-xl bg-warm-50 px-3 py-2 text-[12.5px] leading-relaxed text-ink-500">
++          <Info size={15} strokeWidth={1.8} className="mt-0.5 shrink-0 text-brand-700" />
++          아직 등록된 유튜브 채널이 없어 샘플 영상을 보여 주고 있어요. 샘플은 재생되지 않습니다.
++        </p>
++      ) : null}
++
++      {visible.length === 0 && shorts.length === 0 ? (
++        <div className="mx-auto mt-16 max-w-sm text-center">
++          <SearchX size={40} strokeWidth={1.4} className="mx-auto text-ink-300" />
++          <p className="mt-3 text-[15px] font-extrabold text-ink-900">{q ? '검색 결과가 없어요' : '아직 영상이 없어요'}</p>
++          <p className="mt-1 text-[13px] text-ink-500">다른 카테고리를 골라 보거나 검색어를 바꿔 보세요.</p>
++          <Link href="/videos" className="mt-4 inline-block text-[13.5px] font-extrabold text-brand-700">
++            전체 영상 보기
++          </Link>
++        </div>
++      ) : (
++        <>
++          <VideoGrid items={head} now={now} />
++          {shorts.length > 0 ? (
++            <section className="mt-6" aria-labelledby="shorts-title">
++              <h2 id="shorts-title" className="mb-2 px-1 text-[17px] font-black text-ink-900">쇼츠</h2>
++              <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-2 [scrollbar-width:none] sm:-mx-5 sm:px-5">
++                {shorts.map((v) => (
++                  <ShortCard key={v.id} item={v} />
++                ))}
++              </div>
++            </section>
++          ) : null}
++          {rest.length > 0 ? <VideoGrid items={rest} now={now} /> : null}
++          {main.length > visible.length ? (
++            <div className="mt-6 flex justify-center">
++              <Link
++                href={videosHref({ c, q, limit: limit + PAGE })}
++                scroll={false}
++                className="inline-flex h-11 items-center gap-1.5 rounded-full border border-ink-200 bg-white px-6 text-[13.5px] font-extrabold text-ink-900 shadow-sm hover:bg-ink-50"
++              >
++                더 불러오기
++                <ArrowDown size={15} strokeWidth={2} />
++              </Link>
++            </div>
++          ) : null}
++        </>
++      )}
++    </VideoHubShell>
++  );
++}
++
++function VideoGrid({ items, now }: { items: VideoItem[]; now: number }) {
++  if (items.length === 0) return null;
++  return (
++    <div className="mt-3 grid grid-cols-1 gap-x-3 gap-y-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 min-[1900px]:grid-cols-5">
++      {items.map((v) => (
++        <VideoCard key={v.id} item={v} now={now} />
++      ))}
++    </div>
++  );
++}
++
++function ShortCard({ item }: { item: VideoItem }) {
++  return (
++    <Link href={`/watch/${encodeURIComponent(item.id)}`} prefetch={false} className="w-[150px] shrink-0 sm:w-[180px]">
++      <div className="relative aspect-[9/16] overflow-hidden rounded-xl bg-ink-100">
++        {item.thumbnail ? (
++          // eslint-disable-next-line @next/next/no-img-element
++          <img src={item.thumbnail} alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover" />
++        ) : (
++          <div className="absolute inset-0 bg-[linear-gradient(160deg,#fff3cf_0%,#ffd77a_55%,#f2b541_100%)]" />
++        )}
++        {item.source === 'sample' ? (
++          <span className="absolute left-1.5 top-1.5 rounded-md bg-ink-900/80 px-1.5 py-0.5 text-[10.5px] font-bold text-white">샘플</span>
++        ) : null}
++      </div>
++      <p className="mt-1.5 line-clamp-2 text-[13px] font-bold leading-snug text-ink-900">{item.title}</p>
++    </Link>
++  );
++}
+diff --git a/src/app/watch/[id]/page.tsx b/src/app/watch/[id]/page.tsx
+new file mode 100755
+index 0000000..a80d46c
+--- /dev/null
++++ b/src/app/watch/[id]/page.tsx
+@@ -0,0 +1,139 @@
++import type { Metadata } from 'next';
++import Link from 'next/link';
++import { notFound } from 'next/navigation';
++import { ExternalLink, HeartHandshake, Info, Sparkles, UserPlus } from 'lucide-react';
++import { VideoHubShell } from '@/components/video-hub/video-hub-shell';
++import { ChannelAvatar, VideoCard } from '@/components/video-hub/video-card';
++import { VideoPlayer } from '@/components/video-hub/video-player';
++import {
++  categoryLabel,
++  formatViews,
++  timeAgo,
++  videosHref,
++  youtubeChannelUrl,
++  youtubeWatchUrl,
++} from '@/lib/video-hub';
++import { getVideoWithRelated, isVideoHubEnabled } from '@/server/services/video-hub';
++
++export const dynamic = 'force-dynamic';
++
++async function load(id: string) {
++  if (!isVideoHubEnabled()) return null;
++  const safeId = decodeURIComponent(id).slice(0, 40);
++  return getVideoWithRelated(safeId).catch(() => null);
++}
++
++export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
++  const { id } = await params;
++  const data = await load(id);
++  return data?.item ? { title: data.item.title, description: `${data.item.channelTitle} · 도네이도 크리에이터 영상` } : { title: '영상' };
++}
++
++export default async function WatchPage({ params }: { params: Promise<{ id: string }> }) {
++  const { id } = await params;
++  const data = await load(id);
++  if (!data?.item) notFound();
++  const { item, related, now } = data;
++  const meta = [formatViews(item.views), timeAgo(item.publishedAt, now)].filter(Boolean).join(' · ');
++
++  return (
++    <VideoHubShell current="watch" activeCategory={item.category}>
++      <div className="mx-auto flex max-w-[1760px] flex-col gap-6 pt-4 lg:flex-row lg:pt-6">
++        <div className="min-w-0 flex-1">
++          {/* 모바일은 유튜브처럼 화면 가장자리까지, PC 는 둥근 카드 */}
++          <div className="-mx-3 sm:mx-0">
++            <VideoPlayer item={item} rounded="rounded-none sm:rounded-2xl" />
++          </div>
++
++          <h1 className="mt-3 text-[18px] font-black leading-snug tracking-[-0.02em] text-ink-900 sm:text-[20px]">{item.title}</h1>
++
++          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
++            <div className="flex min-w-0 items-center gap-3">
++              <ChannelAvatar title={item.channelTitle} className="h-10 w-10 text-[15px]" />
++              <div className="min-w-0">
++                <p className="truncate text-[15px] font-extrabold text-ink-900">{item.channelTitle}</p>
++                <p className="text-[12px] text-ink-400">
++                  {item.creator ? '도네이도 크리에이터' : '도네이도 미가입 크리에이터'}
++                </p>
++              </div>
++            </div>
++            <div className="flex flex-wrap gap-2">
++              {item.creator ? (
++                <Link
++                  href={`/c/${encodeURIComponent(item.creator.code)}`}
++                  className="inline-flex h-10 items-center gap-1.5 rounded-full bg-brand-400 px-4 text-[13.5px] font-extrabold text-ink-900 shadow-[0_6px_14px_rgba(237,166,0,0.28)] hover:bg-brand-500"
++                >
++                  <HeartHandshake size={16} strokeWidth={1.9} />
++                  후원하기
++                </Link>
++              ) : null}
++              {item.source === 'youtube' ? (
++                <>
++                  <a
++                    href={youtubeChannelUrl(item.channelId, true)}
++                    target="_blank"
++                    rel="noopener noreferrer"
++                    className="inline-flex h-10 items-center gap-1.5 rounded-full bg-ink-900 px-4 text-[13.5px] font-extrabold text-white hover:opacity-90"
++                  >
++                    <UserPlus size={16} strokeWidth={1.9} />
++                    유튜브에서 구독
++                  </a>
++                  <a
++                    href={youtubeWatchUrl(item.id)}
++                    target="_blank"
++                    rel="noopener noreferrer"
++                    className="inline-flex h-10 items-center gap-1.5 rounded-full border border-ink-200 bg-white px-4 text-[13.5px] font-bold text-ink-700 hover:bg-ink-50"
++                  >
++                    <ExternalLink size={15} strokeWidth={1.8} />
++                    유튜브에서 보기
++                  </a>
++                </>
++              ) : null}
++            </div>
++          </div>
++
++          <div className="mt-3 rounded-2xl bg-warm-50 px-4 py-3 text-[13px] text-ink-700">
++            <p className="font-bold">
++              {meta}
++              <Link href={videosHref({ c: item.category })} className="ml-2 text-brand-700">
++                #{categoryLabel(item.category)}
++              </Link>
++            </p>
++            {item.creator ? (
++              <p className="mt-1.5 leading-relaxed text-ink-500">
++                문자 한 통으로 {item.creator.displayName} 님을 응원할 수 있어요. 후원하기를 누르면 후원 방법이 안내됩니다.
++              </p>
++            ) : item.source === 'sample' ? (
++              <p className="mt-1.5 flex items-start gap-1.5 leading-relaxed text-ink-500">
++                <Info size={15} strokeWidth={1.8} className="mt-0.5 shrink-0 text-brand-700" />
++                화면 구성을 보여 주기 위한 샘플입니다. 실제 채널이 등록되면 유튜브 영상이 재생됩니다.
++              </p>
++            ) : (
++              <p className="mt-1.5 leading-relaxed text-ink-500">
++                이 크리에이터는 아직 도네이도에 가입하지 않아 영상만 볼 수 있고 후원은 받을 수 없어요. 영상 정보는 유튜브에서
++                제공합니다.
++                <Link href="/creator-apply" className="ml-1 inline-flex items-center gap-0.5 font-extrabold text-brand-700">
++                  <Sparkles size={13} strokeWidth={1.9} />
++                  내 채널인가요? 크리에이터 가입
++                </Link>
++              </p>
++            )}
++          </div>
++        </div>
++
++        <aside className="w-full shrink-0 lg:w-[380px] 2xl:w-[420px]" aria-labelledby="related-title">
++          <h2 id="related-title" className="mb-2 px-1 text-[16px] font-black text-ink-900">관련 영상</h2>
++          {related.length > 0 ? (
++            <div className="space-y-1">
++              {related.map((v) => (
++                <VideoCard key={v.id} item={v} now={now} layout="row" />
++              ))}
++            </div>
++          ) : (
++            <p className="rounded-2xl bg-ink-50 px-4 py-6 text-center text-[13px] text-ink-500">관련 영상이 아직 없어요.</p>
++          )}
++        </aside>
++      </div>
++    </VideoHubShell>
++  );
++}
+diff --git a/src/components/video-hub/home-video-loaders.tsx b/src/components/video-hub/home-video-loaders.tsx
+new file mode 100755
+index 0000000..753dba8
+--- /dev/null
++++ b/src/components/video-hub/home-video-loaders.tsx
+@@ -0,0 +1,30 @@
++import * as React from 'react';
++import { getVideoFeed } from '@/server/services/video-hub';
++import { HomeVideoPane } from './home-video-pane';
++import { HomeVideoSection } from './home-video-section';
++
++/**
++ * 메인 화면용 데이터 로더 (서버 컴포넌트).
++ * 메인에서는 <Suspense> 로 감싸 쓴다 — 유튜브 피드를 기다리는 동안에도 메인 화면은 먼저 뜬다.
++ * 어떤 오류든 영상 영역만 비우고 메인 화면은 그대로 둔다.
++ */
++async function loadHomeVideos() {
++  try {
++    const feed = await getVideoFeed();
++    return { items: feed.items.slice(0, 60), sample: feed.sample, now: feed.now };
++  } catch {
++    return { items: [], sample: false, now: 0 };
++  }
++}
++
++export async function HomeVideoPaneLoader() {
++  const { items, sample, now } = await loadHomeVideos();
++  if (items.length === 0) return null;
++  return <HomeVideoPane items={items} sample={sample} now={now} />;
++}
++
++export async function HomeVideoSectionLoader() {
++  const { items, sample, now } = await loadHomeVideos();
++  if (items.length === 0) return null;
++  return <HomeVideoSection items={items} sample={sample} now={now} />;
++}
+diff --git a/src/components/video-hub/home-video-pane.tsx b/src/components/video-hub/home-video-pane.tsx
+new file mode 100755
+index 0000000..b41b64f
+--- /dev/null
++++ b/src/components/video-hub/home-video-pane.tsx
+@@ -0,0 +1,159 @@
++'use client';
++
++import * as React from 'react';
++import Link from 'next/link';
++import { ArrowRight, Clapperboard, ExternalLink, HeartHandshake, Maximize2, X } from 'lucide-react';
++import { cx } from '@/components/ui';
++import { VIDEO_CATEGORIES, videosHref, type VideoItem } from '@/lib/video-hub';
++import { ChannelAvatar, VideoCard } from './video-card';
++import { VideoPlayer } from './video-player';
++
++/**
++ * PC 메인 좌측 영상 영역 (xl 이상에서만 보인다).
++ * - 카테고리 칩으로 바로 거르고, 카드를 누르면 이 영역 위쪽에서 바로 재생한다
++ *   (오른쪽 메인 패널의 후원 동선이 계속 보이게).
++ * - [더보기] 는 유튜브형 전용 화면(/videos)으로 이동한다. 모바일과 같은 화면이다.
++ */
++export function HomeVideoPane({ items, sample, now }: { items: VideoItem[]; sample: boolean; now: number }) {
++  const [cat, setCat] = React.useState<string>('all');
++  const [selected, setSelected] = React.useState<VideoItem | null>(null);
++  const playerRef = React.useRef<HTMLDivElement>(null);
++
++  const chips = React.useMemo(() => {
++    const present = new Set(items.map((v) => v.category));
++    const hasCreator = items.some((v) => v.creator);
++    return VIDEO_CATEGORIES.filter((c) => c.slug === 'all' || (c.slug === 'donaido' ? hasCreator : present.has(c.slug)));
++  }, [items]);
++
++  const filtered = React.useMemo(
++    () => items.filter((v) => (cat === 'all' ? true : cat === 'donaido' ? Boolean(v.creator) : v.category === cat)),
++    [items, cat],
++  );
++  const shown = filtered.slice(0, 12);
++
++  const select = React.useCallback((v: VideoItem) => {
++    setSelected(v);
++    // 재생 영역이 보이도록 영역 맨 위로 올린다.
++    requestAnimationFrame(() => playerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
++  }, []);
++
++  return (
++    <section
++      aria-label="크리에이터 영상"
++      className="@container rounded-[26px] border border-warm-200 bg-white/92 p-4 shadow-[0_0_60px_rgba(74,49,25,0.10)] backdrop-blur-xl 2xl:p-5"
++    >
++      <div className="flex items-start justify-between gap-3">
++        <div className="min-w-0">
++          <h2 className="flex items-center gap-2 text-[19px] font-black tracking-[-0.025em] text-ink-900">
++            <span className="grid h-8 w-8 place-items-center rounded-[11px] bg-brand-400 text-ink-900">
++              <Clapperboard size={17} strokeWidth={1.8} />
++            </span>
++            크리에이터 영상
++          </h2>
++          <p className="mt-1 text-[12.5px] text-ink-500">카테고리별 최신 영상을 모았어요. 누르면 바로 재생돼요.</p>
++        </div>
++        <Link
++          href={videosHref({ c: cat })}
++          className="inline-flex h-9 shrink-0 items-center gap-1 rounded-xl border border-ink-200 bg-white px-3 text-[12.5px] font-extrabold text-ink-900 shadow-sm transition-all hover:-translate-y-0.5 hover:bg-ink-50"
++        >
++          더보기
++          <ArrowRight size={14} strokeWidth={2} />
++        </Link>
++      </div>
++
++      <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]" role="tablist" aria-label="영상 카테고리">
++        {chips.map((c) => (
++          <button
++            key={c.slug}
++            type="button"
++            role="tab"
++            aria-selected={cat === c.slug}
++            onClick={() => setCat(c.slug)}
++            className={cx(
++              'h-8 shrink-0 rounded-lg px-3 text-[12.5px] font-bold transition-colors',
++              cat === c.slug ? 'bg-ink-900 text-white' : 'bg-ink-100 text-ink-700 hover:bg-ink-200',
++            )}
++          >
++            {c.label}
++          </button>
++        ))}
++      </div>
++
++      <div ref={playerRef} className="scroll-mt-4">
++        {selected ? (
++          <div className="mt-3 rounded-2xl border border-warm-200 bg-warm-50 p-2.5">
++            <VideoPlayer item={selected} autoplay />
++            <div className="mt-2.5 flex items-start gap-2.5 px-1">
++              <ChannelAvatar title={selected.channelTitle} />
++              <div className="min-w-0 flex-1">
++                <p className="line-clamp-2 text-[14.5px] font-extrabold leading-snug text-ink-900">{selected.title}</p>
++                <p className="mt-0.5 truncate text-[12.5px] text-ink-500">{selected.channelTitle}</p>
++              </div>
++              <button
++                type="button"
++                onClick={() => setSelected(null)}
++                aria-label="재생 닫기"
++                className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-500 hover:bg-ink-100"
++              >
++                <X size={16} strokeWidth={1.8} />
++              </button>
++            </div>
++            <div className="mt-2.5 flex flex-wrap gap-1.5 px-1 pb-1">
++              {selected.creator ? (
++                <Link
++                  href={`/c/${encodeURIComponent(selected.creator.code)}`}
++                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-brand-400 px-3.5 text-[12.5px] font-extrabold text-ink-900 shadow-[0_6px_14px_rgba(237,166,0,0.25)] hover:bg-brand-500"
++                >
++                  <HeartHandshake size={15} strokeWidth={1.9} />
++                  {selected.creator.displayName} 후원하기
++                </Link>
++              ) : null}
++              <Link
++                href={`/watch/${encodeURIComponent(selected.id)}`}
++                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-ink-200 bg-white px-3 text-[12.5px] font-bold text-ink-700 hover:bg-ink-50"
++              >
++                <Maximize2 size={14} strokeWidth={1.8} />
++                크게 보기
++              </Link>
++              {selected.source === 'youtube' ? (
++                <a
++                  href={`https://www.youtube.com/watch?v=${selected.id}`}
++                  target="_blank"
++                  rel="noopener noreferrer"
++                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-ink-200 bg-white px-3 text-[12.5px] font-bold text-ink-700 hover:bg-ink-50"
++                >
++                  <ExternalLink size={14} strokeWidth={1.8} />
++                  유튜브에서 보기
++                </a>
++              ) : null}
++            </div>
++          </div>
++        ) : null}
++      </div>
++
++      {shown.length > 0 ? (
++        <div className="mt-3 grid grid-cols-1 gap-x-2 gap-y-3 @sm:grid-cols-2 @3xl:grid-cols-3 @6xl:grid-cols-4">
++          {shown.map((v) => (
++            <VideoCard key={v.id} item={v} now={now} onSelect={select} active={selected?.id === v.id} />
++          ))}
++        </div>
++      ) : (
++        <p className="mt-6 rounded-2xl bg-ink-50 px-4 py-8 text-center text-[13px] text-ink-500">이 카테고리에는 아직 영상이 없어요.</p>
++      )}
++
++      <Link
++        href={videosHref({ c: cat })}
++        className="mt-4 flex h-11 items-center justify-center gap-1.5 rounded-xl border border-ink-200 bg-white text-[13.5px] font-extrabold text-ink-900 shadow-sm transition-all hover:-translate-y-0.5 hover:bg-ink-50"
++      >
++        영상 더보기
++        <ArrowRight size={15} strokeWidth={2} />
++      </Link>
++
++      {sample ? (
++        <p className="mt-3 text-center text-[11.5px] leading-relaxed text-ink-400">
++          아직 등록된 채널이 없어 샘플 영상을 보여 주고 있어요. 샘플은 재생되지 않습니다.
++        </p>
++      ) : null}
++    </section>
++  );
++}
+diff --git a/src/components/video-hub/home-video-section.tsx b/src/components/video-hub/home-video-section.tsx
+new file mode 100755
+index 0000000..83ea88c
+--- /dev/null
++++ b/src/components/video-hub/home-video-section.tsx
+@@ -0,0 +1,102 @@
++import * as React from 'react';
++import Link from 'next/link';
++import { ArrowRight, Clapperboard } from 'lucide-react';
++import { VIDEO_CATEGORIES, videosHref, type VideoItem } from '@/lib/video-hub';
++import { VideoCard } from './video-card';
++
++/**
++ * 모바일·태블릿 메인의 영상 섹션 (xl 미만에서만 보인다. xl 이상은 좌측 영상 영역이 대신한다).
++ * 가로로 넘겨 보는 카드 + 카테고리 칩. [더보기] 는 /videos 로 간다.
++ */
++export function HomeVideoSection({ items, sample, now }: { items: VideoItem[]; sample: boolean; now: number }) {
++  const present = new Set(items.map((v) => v.category));
++  const hasCreator = items.some((v) => v.creator);
++  const chips = VIDEO_CATEGORIES.filter(
++    (c) => c.slug !== 'all' && (c.slug === 'donaido' ? hasCreator : present.has(c.slug)),
++  ).slice(0, 10);
++
++  return (
++    <section className="mt-8 xl:hidden" aria-labelledby="home-videos-title">
++      <div className="mb-3 flex items-end justify-between gap-3">
++        <div className="min-w-0">
++          <h2 id="home-videos-title" className="flex items-center gap-2 text-[18px] font-black tracking-[-0.025em] text-ink-900 sm:text-[19px]">
++            <Clapperboard size={19} strokeWidth={1.8} className="text-brand-700" />
++            크리에이터 영상
++          </h2>
++          <p className="mt-1 text-[13px] text-ink-500">카테고리별 최신 영상을 모았어요.</p>
++        </div>
++        <Link href="/videos" className="inline-flex shrink-0 items-center gap-0.5 text-[13px] font-bold text-brand-700">
++          더보기
++          <ArrowRight size={14} strokeWidth={2} />
++        </Link>
++      </div>
++
++      {chips.length > 0 ? (
++        <div className="-mx-4 mb-2 flex gap-1.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:-mx-6 sm:px-6">
++          {chips.map((c) => (
++            <Link
++              key={c.slug}
++              href={videosHref({ c: c.slug })}
++              className="inline-flex h-8 shrink-0 items-center rounded-lg bg-ink-100 px-3 text-[12.5px] font-bold text-ink-700"
++            >
++              {c.label}
++            </Link>
++          ))}
++        </div>
++      ) : null}
++
++      <div className="-mx-4 flex snap-x snap-mandatory gap-1 overflow-x-auto px-3 pb-2 [scrollbar-width:none] sm:-mx-6 sm:px-5">
++        {items.slice(0, 8).map((v) => (
++          <VideoCard key={v.id} item={v} now={now} className="w-[248px] shrink-0 snap-start" />
++        ))}
++        <Link
++          href="/videos"
++          className="grid w-[120px] shrink-0 snap-start place-items-center rounded-2xl border border-dashed border-ink-200 text-center text-[12.5px] font-bold text-ink-500"
++        >
++          <span>
++            <ArrowRight size={18} strokeWidth={1.8} className="mx-auto mb-1" />
++            전체 영상
++          </span>
++        </Link>
++      </div>
++
++      {sample ? (
++        <p className="mt-1 text-[11.5px] text-ink-400">아직 등록된 채널이 없어 샘플 영상을 보여 주고 있어요.</p>
++      ) : null}
++    </section>
++  );
++}
++
++/** 불러오는 동안 자리 표시 (레이아웃이 튀지 않게 같은 높이) */
++export function HomeVideoSectionSkeleton() {
++  return (
++    <section className="mt-8 xl:hidden" aria-hidden>
++      <div className="mb-3 h-6 w-36 animate-pulse rounded-md bg-ink-100" />
++      <div className="flex gap-2 overflow-hidden">
++        {[0, 1].map((i) => (
++          <div key={i} className="w-[248px] shrink-0">
++            <div className="aspect-video w-full animate-pulse rounded-xl bg-ink-100" />
++            <div className="mt-2.5 h-4 w-4/5 animate-pulse rounded bg-ink-100" />
++            <div className="mt-1.5 h-3 w-1/2 animate-pulse rounded bg-ink-100" />
++          </div>
++        ))}
++      </div>
++    </section>
++  );
++}
++
++export function HomeVideoPaneSkeleton() {
++  return (
++    <div className="rounded-[26px] border border-warm-200 bg-white/92 p-4 backdrop-blur-xl" aria-hidden>
++      <div className="h-7 w-40 animate-pulse rounded-md bg-ink-100" />
++      <div className="mt-4 grid grid-cols-2 gap-3">
++        {[0, 1, 2, 3].map((i) => (
++          <div key={i}>
++            <div className="aspect-video w-full animate-pulse rounded-xl bg-ink-100" />
++            <div className="mt-2.5 h-4 w-4/5 animate-pulse rounded bg-ink-100" />
++          </div>
++        ))}
++      </div>
++    </div>
++  );
++}
+diff --git a/src/components/video-hub/video-card.tsx b/src/components/video-hub/video-card.tsx
+new file mode 100755
+index 0000000..22ae7c3
+--- /dev/null
++++ b/src/components/video-hub/video-card.tsx
+@@ -0,0 +1,135 @@
++import * as React from 'react';
++import Link from 'next/link';
++import { HeartHandshake, PlayCircle } from 'lucide-react';
++import { cx } from '@/components/ui';
++import { formatViews, timeAgo, type VideoItem } from '@/lib/video-hub';
++
++/**
++ * 영상 카드 (유튜브형).
++ * 서버·클라이언트 양쪽에서 쓰는 표시 전용 컴포넌트라 훅을 쓰지 않는다.
++ * - onSelect 가 있으면 버튼(메인 좌측 영역의 바로 재생), 없으면 /watch 로 가는 링크.
++ * - now 는 서버가 정한 기준 시각. 서버·브라우저의 "N분 전" 표기가 어긋나지 않게 한다.
++ */
++
++export function VideoThumb({ item, className, rounded = 'rounded-xl' }: { item: VideoItem; className?: string; rounded?: string }) {
++  return (
++    <div className={cx('relative aspect-video w-full overflow-hidden bg-ink-100', rounded, className)}>
++      {item.thumbnail ? (
++        // 유튜브 썸네일(i.ytimg.com)은 next/image 최적화 대상에서 뺀다 (원격 도메인 설정을 늘리지 않는다).
++        // eslint-disable-next-line @next/next/no-img-element
++        <img
++          src={item.thumbnail}
++          alt=""
++          loading="lazy"
++          decoding="async"
++          width={480}
++          height={360}
++          className="absolute inset-0 h-full w-full object-cover"
++        />
++      ) : (
++        <div className="absolute inset-0 grid place-items-center bg-[linear-gradient(135deg,#fff3cf_0%,#ffd77a_55%,#f2b541_100%)] text-brand-800">
++          <PlayCircle size={34} strokeWidth={1.5} />
++        </div>
++      )}
++      <div className="absolute left-1.5 top-1.5 flex gap-1">
++        {item.source === 'sample' ? (
++          <span className="rounded-md bg-ink-900/80 px-1.5 py-0.5 text-[10.5px] font-bold text-white">샘플</span>
++        ) : null}
++        {item.isShort ? (
++          <span className="rounded-md bg-ink-900/80 px-1.5 py-0.5 text-[10.5px] font-bold text-white">쇼츠</span>
++        ) : null}
++      </div>
++      {item.creator ? (
++        <span className="absolute bottom-1.5 right-1.5 inline-flex items-center gap-1 rounded-md bg-brand-400 px-1.5 py-0.5 text-[10.5px] font-extrabold text-ink-900 shadow-sm">
++          <HeartHandshake size={12} strokeWidth={2} />
++          후원 가능
++        </span>
++      ) : null}
++    </div>
++  );
++}
++
++export function ChannelAvatar({ title, className }: { title: string; className?: string }) {
++  // 채널 아이콘은 RSS 에 없다. 채널명 첫 글자로 대신한다.
++  return (
++    <span
++      aria-hidden
++      className={cx(
++        'grid shrink-0 place-items-center rounded-full bg-brand-100 font-extrabold text-brand-800',
++        className ?? 'h-9 w-9 text-[13px]',
++      )}
++    >
++      {Array.from(title.trim())[0] ?? '?'}
++    </span>
++  );
++}
++
++function Meta({ item, now }: { item: VideoItem; now: number }) {
++  const views = formatViews(item.views);
++  const ago = timeAgo(item.publishedAt, now);
++  return (
++    <p className="mt-0.5 truncate text-[12px] text-ink-400">
++      {[views, ago].filter(Boolean).join(' · ')}
++    </p>
++  );
++}
++
++export function VideoCard({
++  item,
++  now,
++  onSelect,
++  active = false,
++  layout = 'grid',
++  className,
++}: {
++  item: VideoItem;
++  now: number;
++  onSelect?: (item: VideoItem) => void;
++  active?: boolean;
++  /** grid: 유튜브 홈형(세로) / row: 시청 화면 우측 목록형(가로) */
++  layout?: 'grid' | 'row';
++  className?: string;
++}) {
++  const body =
++    layout === 'row' ? (
++      <div className="flex gap-2.5 text-left">
++        {/* 폭은 감싸는 상자가 정한다 (VideoThumb 기본 w-full 과 폭 클래스가 충돌하지 않게) */}
++        <div className="w-[168px] shrink-0">
++          <VideoThumb item={item} rounded="rounded-lg" />
++        </div>
++        <div className="min-w-0 flex-1">
++          <p className="line-clamp-2 text-[13.5px] font-bold leading-snug text-ink-900">{item.title}</p>
++          <p className="mt-1 truncate text-[12px] text-ink-500">{item.channelTitle}</p>
++          <Meta item={item} now={now} />
++        </div>
++      </div>
++    ) : (
++      <div className="text-left">
++        <VideoThumb item={item} />
++        <div className="mt-2.5 flex gap-2.5">
++          <ChannelAvatar title={item.channelTitle} />
++          <div className="min-w-0 flex-1">
++            <p className="line-clamp-2 text-[14px] font-bold leading-snug text-ink-900">{item.title}</p>
++            <p className="mt-1 truncate text-[12.5px] text-ink-500">{item.channelTitle}</p>
++            <Meta item={item} now={now} />
++          </div>
++        </div>
++      </div>
++    );
++
++  const cls = cx(
++    'group block w-full rounded-2xl p-1.5 transition-colors hover:bg-brand-50/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500',
++    active && 'bg-brand-50 ring-1 ring-brand-200',
++    className,
++  );
++
++  return onSelect ? (
++    <button type="button" onClick={() => onSelect(item)} className={cls} aria-pressed={active} aria-label={`${item.title} 재생`}>
++      {body}
++    </button>
++  ) : (
++    <Link href={`/watch/${encodeURIComponent(item.id)}`} className={cls} prefetch={false}>
++      {body}
++    </Link>
++  );
++}
+diff --git a/src/components/video-hub/video-hub-header.tsx b/src/components/video-hub/video-hub-header.tsx
+new file mode 100755
+index 0000000..55fbdaf
+--- /dev/null
++++ b/src/components/video-hub/video-hub-header.tsx
+@@ -0,0 +1,111 @@
++'use client';
++
++import * as React from 'react';
++import Link from 'next/link';
++import { ArrowLeft, CircleUserRound, House, LogIn, Search } from 'lucide-react';
++import { Logo } from '@/components/brand/logo';
++import { cx } from '@/components/ui';
++
++/**
++ * 영상 화면(/videos, /watch) 상단 바. 유튜브처럼 로고 · 검색 · 계정.
++ * 모바일에서는 검색 아이콘을 누르면 검색창이 상단 전체로 펼쳐진다.
++ * 검색은 일반 GET 폼이라 자바스크립트가 없어도 동작한다.
++ */
++export function VideoHubHeader({
++  q = '',
++  myHref,
++  loggedIn,
++}: {
++  q?: string;
++  myHref: string;
++  loggedIn: boolean;
++}) {
++  const [searchOpen, setSearchOpen] = React.useState(false);
++  const inputRef = React.useRef<HTMLInputElement>(null);
++
++  React.useEffect(() => {
++    if (searchOpen) inputRef.current?.focus();
++  }, [searchOpen]);
++
++  // 모바일 펼침 검색창과 PC 검색창이 동시에 DOM 에 있을 수 있어 id 를 나눈다 (중복 id 방지)
++  const renderForm = (id: string, withRef: boolean) => (
++    <form action="/videos" method="get" role="search" className="flex w-full items-center">
++      {/* 검색은 유튜브처럼 전체 카테고리에서 한다. 결과 화면의 칩으로 다시 좁힐 수 있다. */}
++      <label className="sr-only" htmlFor={id}>영상 검색</label>
++      <input
++        ref={withRef ? inputRef : undefined}
++        id={id}
++        name="q"
++        type="search"
++        defaultValue={q}
++        maxLength={50}
++        placeholder="영상 · 채널 검색"
++        className="h-10 min-w-0 flex-1 rounded-l-full border border-r-0 border-ink-200 bg-white px-4 text-[14px] text-ink-900 outline-none placeholder:text-ink-300 focus:border-brand-400"
++      />
++      <button
++        type="submit"
++        aria-label="검색"
++        className="grid h-10 w-14 shrink-0 place-items-center rounded-r-full border border-ink-200 bg-ink-50 text-ink-700 hover:bg-ink-100"
++      >
++        <Search size={18} strokeWidth={1.8} />
++      </button>
++    </form>
++  );
++
++  return (
++    <header className="sticky top-0 z-40 border-b border-warm-200 bg-white/95 backdrop-blur-xl">
++      {searchOpen ? (
++        <div className="flex h-14 items-center gap-2 px-2 sm:hidden">
++          <button
++            type="button"
++            aria-label="검색 닫기"
++            onClick={() => setSearchOpen(false)}
++            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink-700 hover:bg-ink-100"
++          >
++            <ArrowLeft size={20} strokeWidth={1.8} />
++          </button>
++          {renderForm('video-search-mobile', true)}
++        </div>
++      ) : null}
++
++      <div className={cx('flex h-14 items-center gap-3 px-3 sm:h-16 sm:px-5', searchOpen && 'hidden sm:flex')}>
++        <Link href="/" aria-label="도네이도 홈" className="shrink-0">
++          <Logo />
++        </Link>
++        <Link
++          href="/videos"
++          className="hidden shrink-0 rounded-lg bg-brand-100 px-2 py-1 text-[12px] font-extrabold text-brand-800 sm:inline-block"
++        >
++          영상
++        </Link>
++
++        <div className="mx-auto hidden w-full max-w-[600px] sm:block">{renderForm('video-search', false)}</div>
++
++        <div className="ml-auto flex shrink-0 items-center gap-1 sm:ml-0">
++          <button
++            type="button"
++            aria-label="검색 열기"
++            onClick={() => setSearchOpen(true)}
++            className="grid h-10 w-10 place-items-center rounded-full text-ink-700 hover:bg-ink-100 sm:hidden"
++          >
++            <Search size={20} strokeWidth={1.8} />
++          </button>
++          <Link
++            href="/"
++            className="hidden h-10 items-center gap-1.5 rounded-full px-3 text-[13px] font-bold text-ink-700 hover:bg-ink-100 md:inline-flex"
++          >
++            <House size={17} strokeWidth={1.8} />
++            후원 홈
++          </Link>
++          <Link
++            href={loggedIn ? myHref : '/login'}
++            className="inline-flex h-10 items-center gap-1.5 rounded-full border border-ink-200 px-3 text-[13px] font-bold text-ink-700 hover:bg-ink-50"
++          >
++            {loggedIn ? <CircleUserRound size={17} strokeWidth={1.8} /> : <LogIn size={17} strokeWidth={1.8} />}
++            <span className="hidden sm:inline">{loggedIn ? '마이페이지' : '로그인'}</span>
++          </Link>
++        </div>
++      </div>
++    </header>
++  );
++}
+diff --git a/src/components/video-hub/video-hub-shell.tsx b/src/components/video-hub/video-hub-shell.tsx
+new file mode 100755
+index 0000000..7c94c0d
+--- /dev/null
++++ b/src/components/video-hub/video-hub-shell.tsx
+@@ -0,0 +1,151 @@
++import * as React from 'react';
++import Link from 'next/link';
++import { CircleUserRound, Clapperboard, HeartHandshake, House, LayoutGrid, Map } from 'lucide-react';
++import { cx } from '@/components/ui';
++import { getSessionUser } from '@/server/auth';
++import { VIDEO_CATEGORIES, videosHref } from '@/lib/video-hub';
++import { VideoHubHeader } from './video-hub-header';
++
++/**
++ * 영상 전용 화면 틀 (유튜브형). PC·모바일이 같은 화면이고 폭에 따라 배치만 바뀐다.
++ *  - PC(lg 이상): 왼쪽 카테고리 사이드바 + 본문
++ *  - 모바일: 상단 바 + 본문 + 하단 탭
++ * 기존 공개 화면 틀(PublicShell)과 분리되어 있어 서로 영향을 주지 않는다.
++ */
++export async function VideoHubShell({
++  children,
++  activeCategory = 'all',
++  q = '',
++  current = 'videos',
++}: {
++  children: React.ReactNode;
++  activeCategory?: string;
++  q?: string;
++  current?: 'videos' | 'watch';
++}) {
++  const user = await getSessionUser().catch(() => null);
++  const myHref = user?.role === 'ADMIN' ? '/admin' : user?.role === 'CREATOR' ? '/studio' : '/my';
++
++  return (
++    <div className="min-h-dvh bg-[#fffdf7] text-ink-900">
++      <VideoHubHeader q={q} myHref={myHref} loggedIn={Boolean(user)} />
++
++      <div className="mx-auto flex w-full max-w-[2000px]">
++        <aside
++          className="sticky top-16 hidden h-[calc(100dvh-4rem)] w-[224px] shrink-0 overflow-y-auto border-r border-warm-100 px-3 py-4 lg:block"
++          aria-label="영상 카테고리"
++        >
++          <nav className="space-y-0.5">
++            <SideLink href="/" icon={<House size={18} strokeWidth={1.8} />} label="도네이도 홈" />
++            <SideLink
++              href="/videos"
++              icon={<LayoutGrid size={18} strokeWidth={1.8} />}
++              label="전체 영상"
++              active={current === 'videos' && activeCategory === 'all' && !q}
++            />
++            <SideLink
++              href={videosHref({ c: 'donaido' })}
++              icon={<HeartHandshake size={18} strokeWidth={1.8} />}
++              label="후원 가능"
++              active={current === 'videos' && activeCategory === 'donaido'}
++            />
++          </nav>
++          <p className="mb-1.5 mt-5 px-3 text-[12px] font-extrabold text-ink-400">카테고리</p>
++          <nav className="space-y-0.5">
++            {VIDEO_CATEGORIES.filter((c) => c.slug !== 'all' && c.slug !== 'donaido').map((c) => (
++              <SideLink
++                key={c.slug}
++                href={videosHref({ c: c.slug })}
++                label={c.label}
++                active={current === 'videos' && activeCategory === c.slug}
++              />
++            ))}
++          </nav>
++          <div className="mt-6 rounded-2xl border border-warm-200 bg-warm-50 p-3 text-[12px] leading-relaxed text-ink-500">
++            <p className="font-extrabold text-ink-700">크리에이터이신가요?</p>
++            <p className="mt-1">도네이도에 가입하면 영상 옆에 후원하기 버튼이 붙어요.</p>
++            <Link href="/creator-apply" className="mt-2 inline-block font-extrabold text-brand-700">
++              크리에이터 가입
++            </Link>
++          </div>
++        </aside>
++
++        <main className="min-w-0 flex-1 px-3 pb-28 pt-0 sm:px-5 lg:pb-12">{children}</main>
++      </div>
++
++      <nav
++        className="fixed inset-x-0 bottom-0 z-40 border-t border-warm-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
++        aria-label="하단 메뉴"
++      >
++        <div className="mx-auto grid max-w-[640px] grid-cols-4">
++          <BottomLink href="/" icon={<House size={19} strokeWidth={1.75} />} label="홈" />
++          <BottomLink href="/videos" icon={<Clapperboard size={19} strokeWidth={1.75} />} label="영상" active />
++          <BottomLink href="/how-it-works" icon={<Map size={19} strokeWidth={1.75} />} label="이용방법" />
++          <BottomLink href={user ? myHref : '/login'} icon={<CircleUserRound size={19} strokeWidth={1.75} />} label="마이페이지" />
++        </div>
++      </nav>
++    </div>
++  );
++}
++
++function SideLink({ href, label, icon, active = false }: { href: string; label: string; icon?: React.ReactNode; active?: boolean }) {
++  return (
++    <Link
++      href={href}
++      aria-current={active ? 'page' : undefined}
++      className={cx(
++        'flex h-10 items-center gap-3 rounded-xl px-3 text-[14px] transition-colors',
++        active ? 'bg-brand-100 font-extrabold text-ink-900' : 'font-semibold text-ink-700 hover:bg-ink-50',
++      )}
++    >
++      {icon ?? <span className="h-1.5 w-1.5 rounded-full bg-ink-300" aria-hidden />}
++      {label}
++    </Link>
++  );
++}
++
++function BottomLink({ href, label, icon, active = false }: { href: string; label: string; icon: React.ReactNode; active?: boolean }) {
++  return (
++    <Link
++      href={href}
++      className={cx('flex min-h-16 flex-col items-center justify-center gap-1 py-2 text-[11px] font-semibold', active ? 'text-brand-700' : 'text-ink-400')}
++    >
++      <span
++        className={cx(
++          'grid h-8 w-8 place-items-center rounded-[11px] border',
++          active ? 'border-brand-300 bg-brand-400 text-ink-900 shadow-sm' : 'border-transparent bg-ink-50 text-ink-400',
++        )}
++      >
++        {icon}
++      </span>
++      {label}
++    </Link>
++  );
++}
++
++/** 상단 고정 카테고리 칩 줄 (유튜브 홈 상단과 같은 역할) */
++export function VideoCategoryChips({ active, q }: { active: string; q?: string }) {
++  return (
++    <div className="sticky top-14 z-30 -mx-3 bg-[#fffdf7]/95 px-3 py-2.5 backdrop-blur sm:top-16 sm:-mx-5 sm:px-5">
++      <div className="flex gap-2 overflow-x-auto [scrollbar-width:none]" role="tablist" aria-label="영상 카테고리">
++        {VIDEO_CATEGORIES.map((c) => {
++          const on = active === c.slug;
++          return (
++            <Link
++              key={c.slug}
++              href={videosHref({ c: c.slug, q })}
++              role="tab"
++              aria-selected={on}
++              className={cx(
++                'inline-flex h-8 shrink-0 items-center rounded-lg px-3 text-[13px] font-bold transition-colors',
++                on ? 'bg-ink-900 text-white' : 'bg-ink-100 text-ink-700 hover:bg-ink-200',
++              )}
++            >
++              {c.label}
++            </Link>
++          );
++        })}
++      </div>
++    </div>
++  );
++}
+diff --git a/src/components/video-hub/video-player.tsx b/src/components/video-hub/video-player.tsx
+new file mode 100755
+index 0000000..de40207
+--- /dev/null
++++ b/src/components/video-hub/video-player.tsx
+@@ -0,0 +1,47 @@
++import * as React from 'react';
++import { PlayCircle } from 'lucide-react';
++import { cx } from '@/components/ui';
++import { youtubeEmbedUrl, type VideoItem } from '@/lib/video-hub';
++
++/**
++ * 유튜브 공식 임베드 플레이어.
++ * 샘플 항목은 실제 영상이 없으므로 재생하지 않고 안내만 보여 준다.
++ */
++export function VideoPlayer({
++  item,
++  autoplay = false,
++  className,
++  rounded = 'rounded-2xl',
++}: {
++  item: VideoItem;
++  autoplay?: boolean;
++  className?: string;
++  /** 모서리 클래스. 모바일 시청 화면처럼 가장자리까지 붙일 때 바꾼다 */
++  rounded?: string;
++}) {
++  return (
++    <div className={cx('relative aspect-video w-full overflow-hidden bg-ink-900', rounded, className)}>
++      {item.source === 'youtube' ? (
++        <iframe
++          key={item.id}
++          src={youtubeEmbedUrl(item.id, autoplay)}
++          title={item.title}
++          className="absolute inset-0 h-full w-full"
++          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
++          referrerPolicy="strict-origin-when-cross-origin"
++          allowFullScreen
++        />
++      ) : (
++        <div className="absolute inset-0 grid place-items-center bg-[linear-gradient(135deg,#2a2622_0%,#17161a_100%)] p-6 text-center text-white">
++          <div>
++            <PlayCircle size={44} strokeWidth={1.4} className="mx-auto text-brand-300" />
++            <p className="mt-3 text-[15px] font-extrabold">샘플 영상은 재생되지 않습니다</p>
++            <p className="mt-1.5 text-[12.5px] leading-relaxed text-white/75">
++              실제 유튜브 채널이 등록되면 이 자리에서 영상이 재생됩니다.
++            </p>
++          </div>
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/src/lib/video-hub.ts b/src/lib/video-hub.ts
+new file mode 100755
+index 0000000..a0b61c1
+--- /dev/null
++++ b/src/lib/video-hub.ts
+@@ -0,0 +1,135 @@
++/**
++ * 영상 허브 — 화면(클라이언트)과 서버가 함께 쓰는 타입·카테고리·표시 도우미.
++ *
++ * 이 파일은 브라우저 번들에도 실린다. 그래서 env·DB·node 모듈을 절대 import 하지 않는다.
++ * (tests/client-bundle-safety.test.ts 가 검사한다)
++ *
++ * 데이터를 모으는 쪽은 src/server/services/video-hub.ts 다.
++ */
++
++export type VideoSource = 'youtube' | 'sample';
++
++export interface VideoItem {
++  /** 유튜브 videoId(11자). 샘플은 'sample-' 접두사 */
++  id: string;
++  source: VideoSource;
++  title: string;
++  channelId: string;
++  channelTitle: string;
++  /** 썸네일 URL. 없으면 화면에서 그러데이션 대체 이미지를 그린다 */
++  thumbnail: string | null;
++  /** ISO 시각 */
++  publishedAt: string;
++  /** 조회수. 출처가 주지 않으면 null */
++  views: number | null;
++  /** 카테고리 slug (VIDEO_CATEGORIES 의 값) */
++  category: VideoCategorySlug;
++  /** 쇼츠 여부 (피드 링크가 /shorts/ 인 경우) */
++  isShort: boolean;
++  /** 도네이도에 가입·승인된 크리에이터면 후원 페이지로 연결한다. 미가입이면 null */
++  creator: { code: string; displayName: string } | null;
++}
++
++/**
++ * 카테고리.
++ * - 'all' 은 필터 없음, 'donaido' 는 "후원 가능(가입 크리에이터)" 모아보기다.
++ * - 성인 카테고리는 법률 검토(본인인증 게이트) 결정 전까지 넣지 않는다.
++ */
++export const VIDEO_CATEGORIES = [
++  { slug: 'all', label: '전체' },
++  { slug: 'donaido', label: '후원 가능' },
++  { slug: 'humor', label: '유머' },
++  { slug: 'talk', label: '소통' },
++  { slug: 'news', label: '시사' },
++  { slug: 'politics', label: '정치' },
++  { slug: 'mukbang', label: '먹방' },
++  { slug: 'game', label: '게임' },
++  { slug: 'music', label: '노래' },
++  { slug: 'beauty', label: '뷰티' },
++  { slug: 'travel', label: '여행' },
++  { slug: 'pet', label: '반려동물' },
++  { slug: 'sports', label: '운동' },
++  { slug: 'study', label: '공부' },
++  { slug: 'finance', label: '주식·코인' },
++  { slug: 'fishing', label: '낚시' },
++] as const;
++
++export type VideoCategorySlug = (typeof VIDEO_CATEGORIES)[number]['slug'];
++
++/** 실제 영상에 붙일 수 있는 카테고리 (모아보기용 all·donaido 제외) */
++export const CONTENT_CATEGORY_SLUGS = VIDEO_CATEGORIES.map((c) => c.slug).filter(
++  (s) => s !== 'all' && s !== 'donaido',
++) as VideoCategorySlug[];
++
++export function isVideoCategory(value: unknown): value is VideoCategorySlug {
++  return typeof value === 'string' && VIDEO_CATEGORIES.some((c) => c.slug === value);
++}
++
++export function categoryLabel(slug: string): string {
++  return VIDEO_CATEGORIES.find((c) => c.slug === slug)?.label ?? '기타';
++}
++
++/** 유튜브 videoId 형식 (11자, 영문·숫자·-·_) */
++export function isYouTubeVideoId(value: unknown): value is string {
++  return typeof value === 'string' && /^[A-Za-z0-9_-]{11}$/.test(value);
++}
++
++/** 유튜브 채널 ID 형식 (UC + 22자) */
++export function isYouTubeChannelId(value: unknown): value is string {
++  return typeof value === 'string' && /^UC[A-Za-z0-9_-]{22}$/.test(value);
++}
++
++/** 조회수 표기: 1,234 → 1.2천회, 12,345 → 1.2만회, 123,456,789 → 1.2억회 */
++export function formatViews(views: number | null): string | null {
++  if (views == null || !Number.isFinite(views) || views < 0) return null;
++  const trim = (n: number) => (n >= 10 ? Math.floor(n).toString() : (Math.floor(n * 10) / 10).toString());
++  if (views >= 100_000_000) return `조회수 ${trim(views / 100_000_000)}억회`;
++  if (views >= 10_000) return `조회수 ${trim(views / 10_000)}만회`;
++  if (views >= 1_000) return `조회수 ${trim(views / 1_000)}천회`;
++  return `조회수 ${views}회`;
++}
++
++/** 경과 시간 표기 (유튜브식): 방금 전 / 5분 전 / 3시간 전 / 2일 전 / 3주 전 / 4개월 전 / 1년 전 */
++export function timeAgo(iso: string, now: number = Date.now()): string {
++  const t = Date.parse(iso);
++  if (!Number.isFinite(t)) return '';
++  const sec = Math.max(0, Math.floor((now - t) / 1000));
++  if (sec < 60) return '방금 전';
++  const min = Math.floor(sec / 60);
++  if (min < 60) return `${min}분 전`;
++  const hour = Math.floor(min / 60);
++  if (hour < 24) return `${hour}시간 전`;
++  const day = Math.floor(hour / 24);
++  if (day < 7) return `${day}일 전`;
++  if (day < 30) return `${Math.floor(day / 7)}주 전`;
++  if (day < 365) return `${Math.floor(day / 30)}개월 전`;
++  return `${Math.floor(day / 365)}년 전`;
++}
++
++/** /videos 링크 (카테고리·검색어 유지) */
++export function videosHref(params: { c?: string | null; q?: string | null; limit?: number | null } = {}): string {
++  const sp = new URLSearchParams();
++  if (params.c && params.c !== 'all') sp.set('c', params.c);
++  if (params.q) sp.set('q', params.q);
++  if (params.limit) sp.set('limit', String(params.limit));
++  const qs = sp.toString();
++  return qs ? `/videos?${qs}` : '/videos';
++}
++
++/**
++ * 유튜브 공식 임베드 주소. 쿠키를 덜 남기는 youtube-nocookie 도메인을 쓴다.
++ * 영상 파일을 내려받거나 재호스팅하지 않는다(유튜브 정책).
++ */
++export function youtubeEmbedUrl(id: string, autoplay = false): string {
++  const sp = new URLSearchParams({ rel: '0', playsinline: '1', modestbranding: '1' });
++  if (autoplay) sp.set('autoplay', '1');
++  return `https://www.youtube-nocookie.com/embed/${id}?${sp.toString()}`;
++}
++
++export function youtubeWatchUrl(id: string): string {
++  return `https://www.youtube.com/watch?v=${id}`;
++}
++
++export function youtubeChannelUrl(channelId: string, subscribe = false): string {
++  return `https://www.youtube.com/channel/${channelId}${subscribe ? '?sub_confirmation=1' : ''}`;
++}
+diff --git a/src/server/services/video-hub-channels.ts b/src/server/services/video-hub-channels.ts
+new file mode 100755
+index 0000000..391d657
+--- /dev/null
++++ b/src/server/services/video-hub-channels.ts
+@@ -0,0 +1,15 @@
++/**
++ * 영상 허브 — 기본 노출 채널 목록 (미가입 크리에이터).
++ *
++ * 다음 단계(관리자 "채널 관리" 화면 + DB 테이블)가 생기기 전까지 임시로 여기서 관리한다.
++ * 코드 수정 없이 시험하려면 .env 에 VIDEO_HUB_CHANNELS 를 쓴다 (둘 다 합쳐진다).
++ *   VIDEO_HUB_CHANNELS="UCxxxxxxxxxxxxxxxxxxxxxx:mukbang,UCyyyyyyyyyyyyyyyyyyyyyy:humor"
++ *
++ * 채널 ID 는 유튜브 채널 주소 youtube.com/channel/UC… 의 UC 로 시작하는 24자다.
++ * 카테고리 값은 src/lib/video-hub.ts 의 VIDEO_CATEGORIES slug 중 하나 (all·donaido 제외).
++ *
++ * 도네이도에 가입·승인되고 유튜브를 연동한 크리에이터는 여기 적지 않아도 자동으로 들어간다.
++ */
++import type { VideoCategorySlug } from '@/lib/video-hub';
++
++export const SEED_CHANNELS: Array<{ channelId: string; category: VideoCategorySlug }> = [];
+diff --git a/src/server/services/video-hub-parse.ts b/src/server/services/video-hub-parse.ts
+new file mode 100755
+index 0000000..67df015
+--- /dev/null
++++ b/src/server/services/video-hub-parse.ts
+@@ -0,0 +1,166 @@
++/**
++ * 영상 허브 — 순수 함수 모음 (DB·네트워크 없음, 단위 테스트 대상).
++ *
++ *  - parseYouTubeFeed : 유튜브 채널 공개 RSS(Atom) → 영상 목록
++ *  - parseChannelSpecs: 환경변수 VIDEO_HUB_CHANNELS → 채널·카테고리 목록
++ *  - channelIdFromUrl : 크리에이터가 입력한 채널 주소에서 UC… 채널 ID 추출
++ *  - filterVideos     : 카테고리·검색어 필터
++ *
++ * 유튜브 RSS(https://www.youtube.com/feeds/videos.xml?channel_id=…)는 유튜브가 공개로 제공하는 피드라
++ * 화면을 긁는 스크래핑이 아니며 Data API 할당량도 쓰지 않는다. 라이브 채팅 등록에 쓰는 일일 할당량과
++ * 완전히 분리된다.
++ */
++import {
++  CONTENT_CATEGORY_SLUGS,
++  isVideoCategory,
++  isYouTubeChannelId,
++  isYouTubeVideoId,
++  type VideoCategorySlug,
++  type VideoItem,
++} from '@/lib/video-hub';
++
++export interface RawFeedVideo {
++  id: string;
++  title: string;
++  channelId: string;
++  channelTitle: string;
++  thumbnail: string | null;
++  publishedAt: string;
++  views: number | null;
++  isShort: boolean;
++}
++
++export interface ChannelSpec {
++  channelId: string;
++  category: VideoCategorySlug;
++  creator: { code: string; displayName: string } | null;
++}
++
++const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
++
++export function decodeXml(s: string): string {
++  return s
++    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
++    .replace(/&(#x[0-9a-fA-F]+|#\d+|[a-z]+);/g, (m, e: string) => {
++      if (e.startsWith('#x')) return safeCodePoint(parseInt(e.slice(2), 16), m);
++      if (e.startsWith('#')) return safeCodePoint(parseInt(e.slice(1), 10), m);
++      return ENTITIES[e] ?? m;
++    })
++    .trim();
++}
++
++function safeCodePoint(n: number, fallback: string): string {
++  try {
++    return Number.isFinite(n) && n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : fallback;
++  } catch {
++    return fallback;
++  }
++}
++
++function tag(block: string, name: string): string | null {
++  const m = block.match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`));
++  return m ? decodeXml(m[1]) : null;
++}
++
++function attr(block: string, name: string, attribute: string): string | null {
++  const m = block.match(new RegExp(`<${name}\\s[^>]*?${attribute}="([^"]*)"`));
++  return m ? decodeXml(m[1]) : null;
++}
++
++/** 썸네일은 유튜브 이미지 서버(https://i.ytimg.com …)만 허용한다. 다른 주소는 버린다. */
++function safeThumb(url: string | null): string | null {
++  if (!url) return null;
++  try {
++    const u = new URL(url);
++    return u.protocol === 'https:' && /(^|\.)ytimg\.com$/.test(u.hostname) ? u.toString() : null;
++  } catch {
++    return null;
++  }
++}
++
++/**
++ * 유튜브 채널 RSS(Atom) 파싱.
++ * 형식이 깨졌거나 필수 값이 없는 항목은 건너뛴다(예외를 던지지 않는다).
++ */
++export function parseYouTubeFeed(xml: string, expectedChannelId?: string): RawFeedVideo[] {
++  if (typeof xml !== 'string' || !xml.includes('<feed')) return [];
++  const head = xml.split('<entry')[0];
++  const feedChannelId = tag(head, 'yt:channelId');
++  const feedTitle = tag(head, 'title') ?? '';
++  const out: RawFeedVideo[] = [];
++
++  for (const m of xml.matchAll(/<entry[\s>]([\s\S]*?)<\/entry>/g)) {
++    const block = m[1];
++    const id = tag(block, 'yt:videoId');
++    if (!isYouTubeVideoId(id)) continue;
++    const channelId = tag(block, 'yt:channelId') ?? feedChannelId ?? '';
++    if (!isYouTubeChannelId(channelId)) continue;
++    if (expectedChannelId && channelId !== expectedChannelId) continue;
++    const published = tag(block, 'published');
++    const publishedAt = published && Number.isFinite(Date.parse(published)) ? new Date(published).toISOString() : null;
++    if (!publishedAt) continue;
++    const viewsRaw = attr(block, 'media:statistics', 'views');
++    const views = viewsRaw != null && /^\d+$/.test(viewsRaw) ? Number(viewsRaw) : null;
++    const link = attr(block, 'link', 'href') ?? '';
++    const author = block.match(/<author>([\s\S]*?)<\/author>/);
++    out.push({
++      id,
++      title: (tag(block, 'title') ?? tag(block, 'media:title') ?? '').slice(0, 200) || '제목 없음',
++      channelId,
++      channelTitle: ((author ? tag(author[1], 'name') : null) ?? feedTitle).slice(0, 80) || '채널',
++      thumbnail: safeThumb(attr(block, 'media:thumbnail', 'url')) ?? `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
++      publishedAt,
++      views,
++      isShort: /\/shorts\//.test(link),
++    });
++  }
++  return out;
++}
++
++/**
++ * VIDEO_HUB_CHANNELS="UCxxxx:mukbang,UCyyyy:humor" 형식.
++ * 카테고리를 생략하거나 잘못 쓰면 'talk'(소통)으로 둔다. 형식이 틀린 채널 ID 는 버린다.
++ */
++export function parseChannelSpecs(raw: string | undefined | null): Array<{ channelId: string; category: VideoCategorySlug }> {
++  if (!raw) return [];
++  const seen = new Set<string>();
++  const out: Array<{ channelId: string; category: VideoCategorySlug }> = [];
++  for (const part of raw.split(/[,\n]/)) {
++    const [idRaw, catRaw] = part.trim().split(':').map((v) => v?.trim());
++    if (!isYouTubeChannelId(idRaw) || seen.has(idRaw)) continue;
++    seen.add(idRaw);
++    const category = isVideoCategory(catRaw) && CONTENT_CATEGORY_SLUGS.includes(catRaw) ? catRaw : 'talk';
++    out.push({ channelId: idRaw, category });
++  }
++  return out;
++}
++
++/** https://www.youtube.com/channel/UC… 형태의 주소에서 채널 ID 를 꺼낸다. @핸들 주소는 ID 를 알 수 없어 null. */
++export function channelIdFromUrl(url: string | null | undefined): string | null {
++  if (!url) return null;
++  const m = url.match(/youtube\.com\/channel\/(UC[A-Za-z0-9_-]{22})/);
++  return m ? m[1] : null;
++}
++
++export function toVideoItem(raw: RawFeedVideo, spec: ChannelSpec): VideoItem {
++  return { ...raw, source: 'youtube', category: spec.category, creator: spec.creator };
++}
++
++/** 카테고리·검색어 필터. 검색은 제목·채널명에 대해 대소문자 무시 부분 일치. */
++export function filterVideos(items: VideoItem[], opts: { c?: string | null; q?: string | null }): VideoItem[] {
++  const c = opts.c && opts.c !== 'all' ? opts.c : null;
++  const q = (opts.q ?? '').trim().toLowerCase().slice(0, 50);
++  return items.filter((v) => {
++    if (c === 'donaido' && !v.creator) return false;
++    if (c && c !== 'donaido' && v.category !== c) return false;
++    if (q && !v.title.toLowerCase().includes(q) && !v.channelTitle.toLowerCase().includes(q)) return false;
++    return true;
++  });
++}
++
++/** 최신순 정렬 + 같은 영상 중복 제거 */
++export function mergeVideos(lists: VideoItem[][]): VideoItem[] {
++  const map = new Map<string, VideoItem>();
++  for (const list of lists) for (const v of list) if (!map.has(v.id)) map.set(v.id, v);
++  return [...map.values()].sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
++}
+diff --git a/src/server/services/video-hub-sample.ts b/src/server/services/video-hub-sample.ts
+new file mode 100755
+index 0000000..6a69a7e
+--- /dev/null
++++ b/src/server/services/video-hub-sample.ts
+@@ -0,0 +1,52 @@
++/**
++ * 영상 허브 — 샘플 데이터.
++ *
++ * 실제 채널이 하나도 등록되지 않았거나 유튜브 피드에 닿지 못할 때만 쓴다(VIDEO_HUB_SAMPLE=auto 기본).
++ * 실존 인물·채널을 쓰지 않으며, 화면에는 반드시 "샘플" 배지가 붙고 재생되지 않는다.
++ * (CLAUDE.md 절대 규칙 2: 실제 연동이 아닌 것을 성공처럼 보이지 않는다)
++ */
++import type { VideoCategorySlug, VideoItem } from '@/lib/video-hub';
++
++const SAMPLES: Array<[VideoCategorySlug, string]> = [
++  ['humor', '퇴근길에 생긴 일 레전드 모음'],
++  ['humor', '친구 몰래카메라 2탄 반응 정리'],
++  ['talk', '오늘은 구독자 질문에 전부 답해 봤어요'],
++  ['talk', '새벽 소통 방송 하이라이트'],
++  ['news', '이번 주 주요 이슈 10분 정리'],
++  ['news', '경제 뉴스 쉽게 읽는 법'],
++  ['politics', '국회 본회의 쟁점 한눈에 보기'],
++  ['politics', '정책 토론 하이라이트 요약'],
++  ['mukbang', '매운 떡볶이 3단계 도전 먹방'],
++  ['mukbang', '시장 투어하며 길거리 음식 전부 먹기'],
++  ['game', '신작 RPG 첫 플레이 3시간 압축'],
++  ['game', '랭크 게임 역전승 하이라이트'],
++  ['music', '비 오는 날 듣기 좋은 커버곡 모음'],
++  ['music', '라이브 노래방 신청곡 특집'],
++  ['beauty', '5분 데일리 메이크업 루틴'],
++  ['travel', '1박 2일 바다 여행 브이로그'],
++  ['pet', '강아지 첫 산책 성공기'],
++  ['sports', '집에서 하는 20분 전신 운동'],
++  ['study', '같이 공부해요 50분 집중 타이머'],
++  ['finance', '초보를 위한 투자 용어 정리'],
++  ['fishing', '새벽 방파제 낚시 조과 공개'],
++  ['fishing', '루어 고르는 법 기초편'],
++  ['mukbang', '혼밥 브이로그 집밥 레시피'],
++  ['game', '시청자 참여 게임 대결'],
++];
++
++/** 고정 기준 시각으로부터 몇 시간씩 이전으로 배치한다 (화면에서 "N시간 전"으로 보인다). */
++export function sampleVideos(now: number = Date.now()): VideoItem[] {
++  return SAMPLES.map(([category, title], i) => ({
++    id: `sample-${String(i + 1).padStart(2, '0')}`,
++    source: 'sample' as const,
++    title,
++    channelId: `sample-channel-${(i % 8) + 1}`,
++    channelTitle: `샘플 채널 ${(i % 8) + 1}`,
++    thumbnail: null,
++    publishedAt: new Date(now - (i * 5 + 2) * 3600_000).toISOString(),
++    views: 1200 + ((i * 7919) % 480_000),
++    category,
++    isShort: i % 9 === 4,
++    creator: null,
++  }));
++}
+diff --git a/src/server/services/video-hub.ts b/src/server/services/video-hub.ts
+new file mode 100755
+index 0000000..7434119
+--- /dev/null
++++ b/src/server/services/video-hub.ts
+@@ -0,0 +1,204 @@
++/**
++ * 영상 허브 — 영상 목록을 모으는 서버 서비스.
++ *
++ * 출처
++ *  1) 도네이도 가입·승인 크리에이터 중 유튜브 채널 ID 를 알 수 있는 채널 (후원 가능 배지 + 후원 페이지 연결)
++ *  2) SEED_CHANNELS + 환경변수 VIDEO_HUB_CHANNELS (미가입 크리에이터, 영상만 노출)
++ *  3) 위에서 영상이 하나도 안 나오면 샘플 (VIDEO_HUB_SAMPLE=auto 기본, 화면에 "샘플" 표시)
++ *
++ * 성능·안정성 원칙
++ *  - 유튜브 피드는 채널별로 30분 메모리 캐시. 오래된 값은 먼저 보여 주고 뒤에서 갱신한다.
++ *  - 처음 불러올 때도 전체 2.5초 안에 끝낸다. 늦은 채널은 다음 요청부터 보인다.
++ *  - 어떤 실패도 메인 화면을 깨뜨리지 않는다. (DB 오류·네트워크 오류 → 빈 목록 → 샘플)
++ *
++ * 끄기: .env 에 VIDEO_HUB_ENABLED=false → 메인 영상 영역·섹션이 사라지고 /videos·/watch 는 404.
++ */
++import * as React from 'react';
++import { prisma } from '@/server/db';
++import { logger } from '@/lib/logger';
++import { isYouTubeChannelId, type VideoItem } from '@/lib/video-hub';
++import { SEED_CHANNELS } from './video-hub-channels';
++import { sampleVideos } from './video-hub-sample';
++import {
++  channelIdFromUrl,
++  filterVideos,
++  mergeVideos,
++  parseChannelSpecs,
++  parseYouTubeFeed,
++  toVideoItem,
++  type ChannelSpec,
++  type RawFeedVideo,
++} from './video-hub-parse';
++
++const FEED_TTL_MS = 30 * 60_000;
++const FAIL_TTL_MS = 5 * 60_000;
++const FETCH_TIMEOUT_MS = 3_500;
++const FIRST_LOAD_BUDGET_MS = 2_500;
++const MAX_CHANNELS = 200;
++const CONCURRENCY = 6;
++
++export function isVideoHubEnabled(): boolean {
++  return (process.env.VIDEO_HUB_ENABLED ?? '').trim().toLowerCase() !== 'false';
++}
++
++function sampleMode(): 'auto' | 'always' | 'off' {
++  const v = (process.env.VIDEO_HUB_SAMPLE ?? 'auto').trim().toLowerCase();
++  return v === 'always' || v === 'off' ? v : 'auto';
++}
++
++interface CacheEntry {
++  at: number;
++  ok: boolean;
++  videos: RawFeedVideo[];
++}
++
++const g = globalThis as unknown as {
++  __videoHubCache?: Map<string, CacheEntry>;
++  __videoHubInflight?: Map<string, Promise<void>>;
++};
++const cache: Map<string, CacheEntry> = (g.__videoHubCache ??= new Map<string, CacheEntry>());
++const inflight: Map<string, Promise<void>> = (g.__videoHubInflight ??= new Map<string, Promise<void>>());
++
++/** 테스트용: 캐시 초기화 */
++export function __resetVideoHubCache() {
++  cache.clear();
++  inflight.clear();
++}
++
++async function fetchChannel(channelId: string): Promise<void> {
++  const existing = inflight.get(channelId);
++  if (existing) return existing;
++  const job = (async () => {
++    try {
++      const res = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`, {
++        cache: 'no-store',
++        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
++        headers: { accept: 'application/atom+xml, application/xml;q=0.9' },
++      });
++      if (!res.ok) throw new Error(`HTTP ${res.status}`);
++      const videos = parseYouTubeFeed(await res.text(), channelId);
++      cache.set(channelId, { at: Date.now(), ok: true, videos });
++    } catch (e) {
++      const prev = cache.get(channelId);
++      // 실패해도 이전에 받아 둔 영상은 지우지 않는다. 재시도만 5분 뒤로 미룬다.
++      cache.set(channelId, { at: Date.now() - (FEED_TTL_MS - FAIL_TTL_MS), ok: false, videos: prev?.videos ?? [] });
++      logger.warn('video-hub: 유튜브 피드 조회 실패', { channelId, error: e instanceof Error ? e.message : String(e) });
++    } finally {
++      inflight.delete(channelId);
++    }
++  })();
++  inflight.set(channelId, job);
++  return job;
++}
++
++async function runLimited(ids: string[]): Promise<void> {
++  let i = 0;
++  const workers = Array.from({ length: Math.min(CONCURRENCY, ids.length) }, async () => {
++    while (i < ids.length) await fetchChannel(ids[i++]);
++  });
++  await Promise.all(workers);
++}
++
++/** 채널 목록: 가입 크리에이터 + 기본 채널 (같은 채널이면 가입 정보가 우선, 카테고리는 기본 목록 값 유지) */
++async function loadChannelSpecs(): Promise<ChannelSpec[]> {
++  const seeds = [...SEED_CHANNELS, ...parseChannelSpecs(process.env.VIDEO_HUB_CHANNELS)];
++  const categoryOf = new Map(seeds.map((s) => [s.channelId, s.category]));
++  const specs = new Map<string, ChannelSpec>();
++
++  const creators = await prisma.creatorProfile
++    .findMany({
++      where: { status: 'APPROVED' },
++      select: {
++        code: true,
++        displayName: true,
++        channelUrl: true,
++        youtubeLiveUrl: true,
++        youtubeConnection: { select: { channelId: true, status: true } },
++      },
++      take: MAX_CHANNELS,
++    })
++    .catch((e) => {
++      logger.warn('video-hub: 크리에이터 목록 조회 실패', { error: e instanceof Error ? e.message : String(e) });
++      return [];
++    });
++
++  for (const c of creators) {
++    const connected = c.youtubeConnection?.status === 'CONNECTED' ? c.youtubeConnection.channelId : null;
++    const channelId = [connected, channelIdFromUrl(c.channelUrl), channelIdFromUrl(c.youtubeLiveUrl)].find(isYouTubeChannelId);
++    if (!channelId || specs.has(channelId)) continue;
++    specs.set(channelId, {
++      channelId,
++      category: categoryOf.get(channelId) ?? 'talk',
++      creator: { code: c.code, displayName: c.displayName },
++    });
++  }
++  for (const s of seeds) {
++    if (!specs.has(s.channelId)) specs.set(s.channelId, { ...s, creator: null });
++  }
++  return [...specs.values()].slice(0, MAX_CHANNELS);
++}
++
++export interface VideoFeed {
++  items: VideoItem[];
++  /** 샘플이 섞여 있는가 (화면 안내용) */
++  sample: boolean;
++  /** 등록된 실제 채널 수 */
++  channelCount: number;
++  /** 목록을 만든 기준 시각. 화면의 "N분 전" 표기는 이 값으로 계산한다(서버·브라우저 표기 일치) */
++  now: number;
++}
++
++/**
++ * 한 요청 안에서는 한 번만 계산한다(메인의 PC 영역·모바일 섹션이 함께 부른다).
++ * React.cache 가 없는 환경(단위 테스트 등)에서는 그냥 함수를 쓴다.
++ */
++const requestCache: <T extends (...args: never[]) => unknown>(fn: T) => T =
++  (React as unknown as { cache?: <T>(fn: T) => T }).cache ?? ((fn) => fn);
++
++export const getVideoFeed = requestCache(async function getVideoFeedUncached(): Promise<VideoFeed> {
++  const specs = await loadChannelSpecs();
++  const now = Date.now();
++  const cold = specs.filter((s) => !cache.has(s.channelId)).map((s) => s.channelId);
++  const stale = specs
++    .filter((s) => {
++      const e = cache.get(s.channelId);
++      return e && now - e.at > FEED_TTL_MS;
++    })
++    .map((s) => s.channelId);
++
++  // 오래된 것은 기다리지 않고 뒤에서 갱신한다.
++  if (stale.length) void runLimited(stale).catch(() => undefined);
++  // 처음 보는 채널만 시간 예산 안에서 기다린다.
++  if (cold.length) {
++    await Promise.race([runLimited(cold), new Promise((r) => setTimeout(r, FIRST_LOAD_BUDGET_MS))]).catch(() => undefined);
++  }
++
++  const real = mergeVideos(specs.map((s) => (cache.get(s.channelId)?.videos ?? []).map((v) => toVideoItem(v, s))));
++  const mode = sampleMode();
++  const useSample = mode === 'always' || (mode === 'auto' && real.length === 0);
++  return {
++    items: useSample ? [...real, ...sampleVideos(now)] : real,
++    sample: useSample,
++    channelCount: specs.length,
++    now,
++  };
++});
++
++export async function getVideos(opts: { c?: string | null; q?: string | null } = {}) {
++  const feed = await getVideoFeed();
++  return { ...feed, items: filterVideos(feed.items, opts) };
++}
++
++/** 시청 화면용: 영상 1건 + 같은 카테고리 우선 관련 영상 */
++export async function getVideoWithRelated(id: string, relatedLimit = 20) {
++  const feed = await getVideoFeed();
++  const item = feed.items.find((v) => v.id === id) ?? null;
++  if (!item) return { item: null, related: [] as VideoItem[], sample: feed.sample, now: feed.now };
++  const others = feed.items.filter((v) => v.id !== id);
++  const related = [
++    ...others.filter((v) => v.channelId === item.channelId),
++    ...others.filter((v) => v.channelId !== item.channelId && v.category === item.category),
++    ...others.filter((v) => v.channelId !== item.channelId && v.category !== item.category),
++  ].slice(0, relatedLimit);
++  return { item, related, sample: feed.sample, now: feed.now };
++}
+diff --git a/tests/video-hub.test.ts b/tests/video-hub.test.ts
+new file mode 100755
+index 0000000..cd39ee9
+--- /dev/null
++++ b/tests/video-hub.test.ts
+@@ -0,0 +1,251 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++import { prisma } from '@/server/db';
++import { resetDb, seedBasics, type Fixture } from './helpers';
++import {
++  formatViews,
++  isVideoCategory,
++  timeAgo,
++  videosHref,
++  youtubeEmbedUrl,
++  type VideoItem,
++} from '@/lib/video-hub';
++import {
++  channelIdFromUrl,
++  filterVideos,
++  mergeVideos,
++  parseChannelSpecs,
++  parseYouTubeFeed,
++} from '@/server/services/video-hub-parse';
++import { sampleVideos } from '@/server/services/video-hub-sample';
++import {
++  __resetVideoHubCache,
++  getVideoFeed,
++  getVideoWithRelated,
++  isVideoHubEnabled,
++} from '@/server/services/video-hub';
++
++/**
++ * 영상 허브 (2026-11-16).
++ * - 유튜브 RSS 파싱이 깨진 입력에도 예외 없이 동작하는가
++ * - 가입 크리에이터 영상에만 후원 연결이 붙는가 (미가입은 절대 후원 연결 없음)
++ * - 피드 실패·채널 없음 → 샘플로 대체되고, 샘플은 반드시 source='sample' 인가
++ * - 끄기 스위치(VIDEO_HUB_ENABLED=false)
++ */
++
++const CH_A = 'UCaaaaaaaaaaaaaaaaaaaaaa';
++const CH_B = 'UCbbbbbbbbbbbbbbbbbbbbbb';
++
++function feedXml(channelId: string, title: string, entries: Array<{ id: string; title: string; published: string; views?: number; short?: boolean }>) {
++  return `<?xml version="1.0" encoding="UTF-8"?>
++<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
++ <yt:channelId>${channelId}</yt:channelId>
++ <title>${title}</title>
++ ${entries
++   .map(
++     (e) => `<entry>
++  <id>yt:video:${e.id}</id>
++  <yt:videoId>${e.id}</yt:videoId>
++  <yt:channelId>${channelId}</yt:channelId>
++  <title>${e.title}</title>
++  <link rel="alternate" href="https://www.youtube.com/${e.short ? 'shorts/' : 'watch?v='}${e.id}"/>
++  <author><name>${title}</name><uri>https://www.youtube.com/channel/${channelId}</uri></author>
++  <published>${e.published}</published>
++  <media:group>
++   <media:title>${e.title}</media:title>
++   <media:thumbnail url="https://i1.ytimg.com/vi/${e.id}/hqdefault.jpg" width="480" height="360"/>
++   <media:community>${e.views != null ? `<media:statistics views="${e.views}"/>` : ''}</media:community>
++  </media:group>
++ </entry>`,
++   )
++   .join('\n')}
++</feed>`;
++}
++
++describe('영상 허브 — 순수 함수', () => {
++  it('유튜브 RSS 를 파싱한다 (엔티티 해제·쇼츠·조회수·썸네일)', () => {
++    const xml = feedXml(CH_A, '먹방 &amp; 여행', [
++      { id: 'abcdefghijk', title: '라면 &lt;매운맛&gt; 도전 &#x1F35C;', published: '2026-11-15T10:00:00+00:00', views: 12345 },
++      { id: 'ABCDEFGHIJK', title: '쇼츠', published: '2026-11-14T10:00:00+00:00', short: true },
++    ]);
++    const v = parseYouTubeFeed(xml, CH_A);
++    expect(v).toHaveLength(2);
++    expect(v[0]).toMatchObject({ id: 'abcdefghijk', channelId: CH_A, channelTitle: '먹방 & 여행', views: 12345, isShort: false });
++    expect(v[0].title).toBe('라면 <매운맛> 도전 \u{1F35C}');
++    expect(v[0].thumbnail).toBe('https://i1.ytimg.com/vi/abcdefghijk/hqdefault.jpg');
++    expect(v[1]).toMatchObject({ isShort: true, views: null });
++  });
++
++  it('깨진 입력·형식이 틀린 항목·다른 채널 항목은 버리고 예외를 던지지 않는다', () => {
++    expect(parseYouTubeFeed('')).toEqual([]);
++    expect(parseYouTubeFeed('<html>not a feed</html>')).toEqual([]);
++    expect(parseYouTubeFeed(undefined as unknown as string)).toEqual([]);
++    const xml = feedXml(CH_A, 'A', [
++      { id: 'short', title: '잘못된 ID', published: '2026-11-15T10:00:00Z' },
++      { id: 'abcdefghijk', title: '날짜 없음', published: 'not-a-date' },
++      { id: 'zzzzzzzzzzz', title: '정상', published: '2026-11-15T10:00:00Z' },
++    ]);
++    expect(parseYouTubeFeed(xml).map((v) => v.id)).toEqual(['zzzzzzzzzzz']);
++    expect(parseYouTubeFeed(xml, CH_B)).toEqual([]);
++  });
++
++  it('유튜브 이미지 서버가 아닌 썸네일 주소는 쓰지 않는다', () => {
++    const xml = feedXml(CH_A, 'A', [{ id: 'zzzzzzzzzzz', title: 't', published: '2026-11-15T10:00:00Z' }]).replace(
++      'https://i1.ytimg.com/vi/zzzzzzzzzzz/hqdefault.jpg',
++      'javascript:alert(1)',
++    );
++    expect(parseYouTubeFeed(xml)[0].thumbnail).toBe('https://i.ytimg.com/vi/zzzzzzzzzzz/hqdefault.jpg');
++  });
++
++  it('VIDEO_HUB_CHANNELS 를 해석한다 (잘못된 ID 제외·중복 제거·카테고리 기본값)', () => {
++    expect(parseChannelSpecs(`${CH_A}:mukbang, bad:humor, ${CH_B}:없는카테고리, ${CH_A}:humor, ${CH_B.replace('b', 'c')}:all`)).toEqual([
++      { channelId: CH_A, category: 'mukbang' },
++      { channelId: CH_B, category: 'talk' },
++      { channelId: CH_B.replace('b', 'c'), category: 'talk' },
++    ]);
++    expect(parseChannelSpecs(undefined)).toEqual([]);
++  });
++
++  it('채널 주소에서 채널 ID 를 꺼낸다', () => {
++    expect(channelIdFromUrl(`https://www.youtube.com/channel/${CH_A}/live`)).toBe(CH_A);
++    expect(channelIdFromUrl('https://www.youtube.com/@handle')).toBeNull();
++    expect(channelIdFromUrl(null)).toBeNull();
++  });
++
++  it('필터: 카테고리·후원 가능·검색어', () => {
++    const items = sampleVideos(Date.parse('2026-11-16T00:00:00Z'));
++    const withCreator: VideoItem[] = [{ ...items[0], id: 'creatorvid1', creator: { code: 'TOR-1', displayName: 'A' } }, ...items];
++    expect(filterVideos(withCreator, { c: 'mukbang' }).every((v) => v.category === 'mukbang')).toBe(true);
++    expect(filterVideos(withCreator, { c: 'donaido' }).map((v) => v.id)).toEqual(['creatorvid1']);
++    expect(filterVideos(withCreator, { q: '떡볶이' })).toHaveLength(1);
++    expect(filterVideos(withCreator, { q: '샘플 채널 1' }).length).toBeGreaterThan(0);
++    expect(filterVideos(withCreator, { c: 'all', q: '' })).toHaveLength(withCreator.length);
++  });
++
++  it('병합: 최신순 + 중복 제거', () => {
++    const [a, b] = sampleVideos();
++    const merged = mergeVideos([[b], [a, b]]);
++    expect(merged.map((v) => v.id)).toEqual([a.id, b.id]);
++  });
++
++  it('표시 도우미', () => {
++    expect(formatViews(null)).toBeNull();
++    expect(formatViews(999)).toBe('조회수 999회');
++    expect(formatViews(1234)).toBe('조회수 1.2천회');
++    expect(formatViews(12345)).toBe('조회수 1.2만회');
++    expect(formatViews(1_234_567)).toBe('조회수 123만회');
++    expect(formatViews(123_456_789)).toBe('조회수 1.2억회');
++    const now = Date.parse('2026-11-16T12:00:00Z');
++    expect(timeAgo('2026-11-16T11:59:30Z', now)).toBe('방금 전');
++    expect(timeAgo('2026-11-16T09:00:00Z', now)).toBe('3시간 전');
++    expect(timeAgo('2026-11-13T12:00:00Z', now)).toBe('3일 전');
++    expect(timeAgo('2025-11-01T12:00:00Z', now)).toBe('1년 전');
++    expect(timeAgo('garbage', now)).toBe('');
++    expect(videosHref({ c: 'all', q: '' })).toBe('/videos');
++    expect(videosHref({ c: 'mukbang', q: '라면', limit: 48 })).toBe('/videos?c=mukbang&q=%EB%9D%BC%EB%A9%B4&limit=48');
++    expect(youtubeEmbedUrl('abcdefghijk')).toMatch(/^https:\/\/www\.youtube-nocookie\.com\/embed\/abcdefghijk\?/);
++    expect(isVideoCategory('adult')).toBe(false);
++  });
++
++  it('샘플은 모두 source=sample, 썸네일 없음, 후원 연결 없음', () => {
++    for (const v of sampleVideos()) {
++      expect(v.source).toBe('sample');
++      expect(v.thumbnail).toBeNull();
++      expect(v.creator).toBeNull();
++      expect(v.id.startsWith('sample-')).toBe(true);
++    }
++  });
++});
++
++describe('영상 허브 — 피드 조립 (DB·네트워크)', () => {
++  let fx: Fixture;
++  const env = { ...process.env };
++
++  beforeEach(async () => {
++    await resetDb();
++    fx = await seedBasics();
++    __resetVideoHubCache();
++    delete process.env.VIDEO_HUB_CHANNELS;
++    delete process.env.VIDEO_HUB_SAMPLE;
++    delete process.env.VIDEO_HUB_ENABLED;
++  });
++
++  afterEach(() => {
++    vi.unstubAllGlobals();
++    process.env = { ...env };
++  });
++
++  it('등록된 채널이 없으면 샘플로 채운다 (형식이 틀린 연동 채널 ID 는 무시)', async () => {
++    const fetchSpy = vi.fn();
++    vi.stubGlobal('fetch', fetchSpy);
++    const feed = await getVideoFeed();
++    expect(feed.sample).toBe(true);
++    expect(feed.channelCount).toBe(0);
++    expect(feed.items.every((v) => v.source === 'sample')).toBe(true);
++    expect(fetchSpy).not.toHaveBeenCalled();
++  });
++
++  it('가입 크리에이터 채널 영상에는 후원 연결이, 미가입 채널 영상에는 없다', async () => {
++    await prisma.youTubeConnection.update({ where: { creatorId: fx.creatorId }, data: { channelId: CH_A } });
++    process.env.VIDEO_HUB_CHANNELS = `${CH_B}:mukbang,${CH_A}:humor`;
++    vi.stubGlobal(
++      'fetch',
++      vi.fn(async (url: string) => {
++        const ch = new URL(url).searchParams.get('channel_id');
++        const xml =
++          ch === CH_A
++            ? feedXml(CH_A, '가입채널', [{ id: 'aaaaaaaaaa1', title: '가입 영상', published: '2026-11-15T10:00:00Z', views: 10 }])
++            : feedXml(CH_B, '미가입채널', [{ id: 'bbbbbbbbbb1', title: '미가입 영상', published: '2026-11-16T10:00:00Z' }]);
++        return new Response(xml, { status: 200 });
++      }),
++    );
++    const feed = await getVideoFeed();
++    expect(feed.sample).toBe(false);
++    expect(feed.items.map((v) => v.id)).toEqual(['bbbbbbbbbb1', 'aaaaaaaaaa1']);
++    const joined = feed.items.find((v) => v.id === 'aaaaaaaaaa1')!;
++    expect(joined.creator).toEqual({ code: fx.creatorCode, displayName: '테스트크리에이터' });
++    expect(joined.category).toBe('humor');
++    const notJoined = feed.items.find((v) => v.id === 'bbbbbbbbbb1')!;
++    expect(notJoined.creator).toBeNull();
++    expect(notJoined.category).toBe('mukbang');
++
++    const { item, related } = await getVideoWithRelated('aaaaaaaaaa1');
++    expect(item?.id).toBe('aaaaaaaaaa1');
++    expect(related.map((v) => v.id)).toEqual(['bbbbbbbbbb1']);
++    expect((await getVideoWithRelated('nope')).item).toBeNull();
++  });
++
++  it('승인되지 않은(정지) 크리에이터는 후원 연결을 붙이지 않는다', async () => {
++    await prisma.youTubeConnection.update({ where: { creatorId: fx.creatorId }, data: { channelId: CH_A } });
++    await prisma.creatorProfile.update({ where: { id: fx.creatorId }, data: { status: 'SUSPENDED' } });
++    vi.stubGlobal('fetch', vi.fn(async () => new Response(feedXml(CH_A, 'A', [{ id: 'aaaaaaaaaa1', title: 't', published: '2026-11-15T10:00:00Z' }]))));
++    const feed = await getVideoFeed();
++    expect(feed.items.some((v) => v.creator)).toBe(false);
++  });
++
++  it('유튜브 피드가 실패하면 예외 없이 샘플로 대체하고, 실패는 재시도 간격을 둔다', async () => {
++    process.env.VIDEO_HUB_CHANNELS = `${CH_B}:game`;
++    const fetchSpy = vi.fn(async () => new Response('down', { status: 503 }));
++    vi.stubGlobal('fetch', fetchSpy);
++    const first = await getVideoFeed();
++    expect(first.sample).toBe(true);
++    expect(first.channelCount).toBe(1);
++    await getVideoFeed();
++    expect(fetchSpy).toHaveBeenCalledTimes(1); // 5분 안에는 다시 두드리지 않는다
++  });
++
++  it('VIDEO_HUB_SAMPLE=off 면 실패해도 샘플을 섞지 않는다', async () => {
++    process.env.VIDEO_HUB_SAMPLE = 'off';
++    vi.stubGlobal('fetch', vi.fn());
++    const feed = await getVideoFeed();
++    expect(feed.items).toEqual([]);
++    expect(feed.sample).toBe(false);
++  });
++
++  it('끄기 스위치', () => {
++    expect(isVideoHubEnabled()).toBe(true);
++    process.env.VIDEO_HUB_ENABLED = 'false';
++    expect(isVideoHubEnabled()).toBe(false);
++    process.env.VIDEO_HUB_ENABLED = 'FALSE ';
++    expect(isVideoHubEnabled()).toBe(false);
++  });
++});

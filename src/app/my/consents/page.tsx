@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import {FileText, Check, X, ChevronLeft } from 'lucide-react';
+import {FileText, Check, X, ChevronLeft } from '@/components/brand/icons';
 import { Card, CardTitle, Badge, EmptyState, Notice, LinkButton } from '@/components/ui';
 import { MarketingConsentForm } from '@/components/my/marketing-consent-form';
 import { requireDonorContext } from '@/components/my/donor';

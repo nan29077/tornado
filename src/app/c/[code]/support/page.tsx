@@ -1,4 +1,4 @@
-import { LifeBuoy, ShieldCheck } from 'lucide-react';
+import { LifeBuoy, ShieldCheck } from '@/components/brand/icons';
 import { CreatorDonateShell } from '@/components/public/creator-donate-shell';
 import { SupportForm } from '@/components/public/support-form';
 import { Notice } from '@/components/ui';

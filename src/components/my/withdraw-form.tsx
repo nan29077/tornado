@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle } from '@/components/brand/icons';
 import { Button, Card, Input, Notice } from '@/components/ui';
 import { withdrawAccount, type DonorActionState } from '@/app/actions/donor';
 

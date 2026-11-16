@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, Search } from 'lucide-react';
+import { ChevronRight, Search } from '@/components/brand/icons';
 import { Button, Input, Notice } from '@/components/ui';
 import { lookupCreatorCode, type CreatorSearchItem } from '@/app/actions/creator-lookup';
 import { ProfileAvatar } from '@/components/profile/generated-avatar';

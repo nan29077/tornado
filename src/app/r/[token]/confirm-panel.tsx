@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { CircleCheck, CircleX, Clock, ShieldCheck } from 'lucide-react';
+import { CircleCheck, CircleX, Clock, ShieldCheck } from '@/components/brand/icons';
 import { Button, Card, DataRow, Field, Input, Notice } from '@/components/ui';
 import { confirmDonationAction, updateDonorNicknameAction, type ConfirmActionResult } from '@/app/actions/confirm';
 import { checkDonorName, DONOR_NAME_MAX, isDefaultDonorName } from '@/lib/donor-name';

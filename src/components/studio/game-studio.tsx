@@ -29,7 +29,7 @@ import {
   Users,
   X,
   Zap,
-} from 'lucide-react';
+} from '@/components/brand/icons';
 import { Badge, Button, Card, CardTitle, EmptyState, Notice, SectionTitle, cx } from '@/components/ui';
 import { formatKst } from '@/lib/datetime';
 import { Portal } from '@/components/ui/portal';

@@ -5,6 +5,11 @@ export const DEFAULT_HOME_BANNER = '/assets/tornado-hero-creator-v2.png';
 
 export const SITE_IMAGE_PRESETS = {
   margin: [
+    { id: 'airy-cloud-post', name: '구름 위 편지', description: '크림빛 구름과 작은 응원 편지' },
+    { id: 'airy-paper-stars', name: '종이별 모빌', description: '라벤더 종이공예와 별자리 장식' },
+    { id: 'airy-heart-ribbon', name: '살구빛 하트 리본', description: '부드러운 리본 곡선과 하트 패턴' },
+    { id: 'airy-watercolor-garden', name: '수채화 꽃바람', description: '세이지 잎사귀와 노란 들꽃' },
+    { id: 'airy-retro-music', name: '레트로 음악 산책', description: '민트·코랄 음표와 레코드 패턴' },
     { id: 'clouds', name: '구름 위 하트', description: '움직이는 3D 일러스트' },
     { id: 'garden', name: '햇살 정원', description: '움직이는 정원 속 도네이도' },
     { id: 'cafe', name: '창가의 카페', description: '움직이는 카페 속 도네이도' },
@@ -32,6 +37,10 @@ export const SITE_IMAGE_PRESETS = {
 
 export type SiteImageKind = keyof typeof SITE_IMAGE_PRESETS;
 
+export function isAiryMarginImage(value: string): boolean {
+  return value.startsWith('airy-') && SITE_IMAGE_PRESETS.margin.some((preset) => preset.id === value);
+}
+
 export function isSiteImageSelection(kind: SiteImageKind, value: unknown): value is string {
   return value === DEFAULT_SITE_IMAGE
     || (kind === 'margin' && value === CLASSIC_MARGIN_IMAGE)
@@ -41,11 +50,14 @@ export function isSiteImageSelection(kind: SiteImageKind, value: unknown): value
 export function siteImageUrl(kind: SiteImageKind, value: string): string | undefined {
   if (value === DEFAULT_SITE_IMAGE || !isSiteImageSelection(kind, value)) return undefined;
   if (value === CLASSIC_MARGIN_IMAGE) return CLASSIC_PUBLIC_MARGIN_URL;
+  if (kind === 'margin' && value === 'cafe') return '/site-images/margin/cafe-v2.webp';
   return `/site-images/${kind}/${value}.webp`;
 }
 
 export function siteMarginPanelUrl(value: string, side: 'left' | 'right'): string {
   if (value === CLASSIC_MARGIN_IMAGE) return `/assets/donaido-donation-margin-${side}-v1.webp`;
+  if (isAiryMarginImage(value)) return `/site-images/margin/${value}.webp`;
+  if (value === 'cafe' && side === 'left') return '/site-images/margin/full/cafe-left-v2.webp';
   const preset = isSiteImageSelection('margin', value) ? value : DEFAULT_SITE_IMAGE;
   return `/site-images/margin/full/${preset}-${side}.webp`;
 }

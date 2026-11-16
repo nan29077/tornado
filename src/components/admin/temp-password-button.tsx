@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { KeyRound } from 'lucide-react';
+import { KeyRound } from '@/components/brand/icons';
 import { Button, cx } from '@/components/ui';
 import { CopyButton } from '@/components/public/copy-button';
 import { initialAdminState } from './state';

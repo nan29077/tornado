@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import {Gauge, ChevronLeft } from 'lucide-react';
+import {Gauge, ChevronLeft } from '@/components/brand/icons';
 import { Card, CardTitle, EmptyState, Notice, DataRow, SectionTitle, StatTile } from '@/components/ui';
 import { LimitsForm } from '@/components/my/limits-form';
 import { requireDonorContext, NO_DONOR_TITLE, NO_DONOR_DESC } from '@/components/my/donor';

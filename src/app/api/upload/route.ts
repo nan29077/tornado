@@ -1,4 +1,4 @@
-import { requireCreator } from '@/server/auth';
+import { getSessionUser, requireCreator } from '@/server/auth';
 import { isSameOrigin } from '@/server/request-guard';
 import { putObject, newObjectName } from '@/server/uploads';
 
@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
  * S3 등 오브젝트 스토리지는 추후 도입. 그때는 업로드/미디어 라우트만 교체하면 된다.
  *
  * 안전장치
- *  - 크리에이터 로그인 필수 + 동일 출처(CSRF) 검사
+ *  - 크리에이터 또는 최고관리자 로그인 필수 + 동일 출처(CSRF) 검사 (상품 이미지)
  *  - 형식 화이트리스트(jpg/png/webp/gif) — 확장자·MIME 이 아니라 파일 시그니처(매직바이트)로 판정
  *  - 용량 제한 5MB
  */
@@ -43,9 +43,11 @@ export async function POST(req: Request) {
     return Response.json({ ok: false, message: '허용되지 않은 요청입니다.' }, { status: 403 });
   }
 
+  // (2026-11-17) 최고관리자도 상품 이미지를 올린다.
   const creator = await requireCreator().catch(() => null);
-  if (!creator) {
-    return Response.json({ ok: false, message: '크리에이터 로그인이 필요합니다.' }, { status: 401 });
+  const admin = creator ? null : await getSessionUser().then((u) => (u?.role === 'ADMIN' ? u : null)).catch(() => null);
+  if (!creator && !admin) {
+    return Response.json({ ok: false, message: '크리에이터 또는 관리자 로그인이 필요합니다.' }, { status: 401 });
   }
 
   const form = await req.formData().catch(() => null);

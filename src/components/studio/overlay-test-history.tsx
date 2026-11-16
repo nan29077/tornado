@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { RotateCw } from 'lucide-react';
+import { RotateCw } from '@/components/brand/icons';
 import { Badge, Button, EmptyState, Table, Td, Th } from '@/components/ui';
 import type { Tone } from '@/lib/labels';
 

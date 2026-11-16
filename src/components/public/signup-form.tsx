@@ -2,18 +2,19 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { UserPlus } from 'lucide-react';
+import { UserPlus } from '@/components/brand/icons';
 import { Button, Field, Input, Notice, Checkbox } from '@/components/ui';
 import { signupDonor, type SignupFormState } from '@/app/actions/auth';
 import { GeneratedAvatar } from '@/components/profile/generated-avatar';
 
 const initial: SignupFormState = { ok: false };
 
-export function SignupForm() {
+export function SignupForm({ nextPath }: { nextPath?: string } = {}) {
   const [state, formAction, pending] = React.useActionState(signupDonor, initial);
 
   return (
     <form action={formAction} className="space-y-4">
+      {nextPath ? <input type="hidden" name="next" value={nextPath} /> : null}
       <div className="overflow-hidden rounded-2xl border border-brand-200 bg-brand-50/70 p-4">
         <div className="flex items-center justify-between gap-3">
           <div>

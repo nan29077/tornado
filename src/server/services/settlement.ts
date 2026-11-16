@@ -234,6 +234,8 @@ export interface LedgerInput {
   donationId?: string | null;
   refundId?: string | null;
   requestId?: string | null;
+  /** 도네이도 샵 주문 (2026-11-17) */
+  shopOrderId?: string | null;
   memo?: string;
   occurredAt?: Date;
 }
@@ -254,6 +256,7 @@ export async function appendLedger(entries: LedgerInput[], client: LedgerClient 
         donationId: e.donationId ?? null,
         refundId: e.refundId ?? null,
         requestId: e.requestId ?? null,
+        shopOrderId: e.shopOrderId ?? null,
         memo: e.memo ?? null,
         occurredAt: at,
         settlementKey: kstMonthKey(at),

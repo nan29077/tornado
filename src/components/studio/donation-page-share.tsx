@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import * as QRCode from 'qrcode';
-import { Check, Copy, Download, ExternalLink, QrCode, Share2 } from 'lucide-react';
+import { Check, Copy, Download, ExternalLink, QrCode, Share2 } from '@/components/brand/icons';
 
 export function DonationPageShare({ url, creatorName }: { url: string; creatorName: string }) {
   const [qrDataUrl, setQrDataUrl] = React.useState('');

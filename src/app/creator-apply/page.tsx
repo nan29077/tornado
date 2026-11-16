@@ -1,6 +1,6 @@
 import { isServiceInMockMode } from '@/server/service-mode';
 import type { Metadata } from 'next';
-import { MessageSquare, MonitorPlay, Wallet, ShieldCheck } from 'lucide-react';
+import { MessageSquare, MonitorPlay, Wallet, ShieldCheck } from '@/components/brand/icons';
 import { PublicShell } from '@/components/layout/public-shell';
 import { PageHeader } from '@/components/public/page-header';
 import { CreatorApplyForm } from '@/components/public/creator-apply-form';
@@ -51,8 +51,8 @@ export default async function CreatorApplyPage() {
             <p className="mt-1 font-mono text-[20px] font-extrabold tracking-[0.1em] text-ink-900">{existing.code}</p>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2">
-            <LinkButton href="/studio" variant="primary" size="md" className="w-full">
-              크리에이터 콘솔
+            <LinkButton href={user?.role === 'CREATOR' ? '/studio' : '/my/creator'} variant="primary" size="md" className="w-full">
+              {user?.role === 'CREATOR' ? '크리에이터 스튜디오' : '신청 상태 보기'}
             </LinkButton>
             <LinkButton href="/support" variant="secondary" size="md" className="w-full">
               고객센터 문의

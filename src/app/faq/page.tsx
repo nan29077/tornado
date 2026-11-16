@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown } from '@/components/brand/icons';
 import { PublicShell } from '@/components/layout/public-shell';
 import { PageHeader } from '@/components/public/page-header';
 import { Card, CardTitle, EmptyState, LinkButton, Badge } from '@/components/ui';

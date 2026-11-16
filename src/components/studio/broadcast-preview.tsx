@@ -20,7 +20,7 @@ import {
   Undo2,
   Wifi,
   X,
-} from 'lucide-react';
+} from '@/components/brand/icons';
 import { Badge, Button, Notice, cx } from '@/components/ui';
 import { Portal } from '@/components/ui/portal';
 import {

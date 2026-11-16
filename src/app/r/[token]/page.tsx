@@ -8,7 +8,7 @@ import {
   MessageSquare,
   Phone,
   Wallet,
-} from 'lucide-react';
+} from '@/components/brand/icons';
 import { Card, CardTitle, DataRow, Notice } from '@/components/ui';
 import { prisma } from '@/server/db';
 import { resolveSecureLink } from '@/server/services/secure-link';

@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { UserRound } from 'lucide-react';
+import { UserRound } from '@/components/brand/icons';
 import { CreatorDonateShell } from '@/components/public/creator-donate-shell';
 import { SectionTitle, Notice } from '@/components/ui';
 import { PhoneLinkForm } from '@/components/my/phone-link-form';

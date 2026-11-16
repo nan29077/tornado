@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import {
   MessageSquare, CreditCard, ShieldCheck, BellRing, Ban, Gauge,
   Undo2, ScrollText, CircleAlert, Landmark, Clock, Smartphone,
-} from 'lucide-react';
+} from '@/components/brand/icons';
 import { PublicShell } from '@/components/layout/public-shell';
 import { PageHeader } from '@/components/public/page-header';
 import { Card, CardTitle, SectionTitle, Notice, LinkButton, DataRow } from '@/components/ui';

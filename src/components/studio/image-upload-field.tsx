@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { ImagePlus, Link2, Loader2, X } from 'lucide-react';
+import { ImagePlus, Link2, Loader2, X } from '@/components/brand/icons';
 import { cx } from '@/components/ui';
 
 /**

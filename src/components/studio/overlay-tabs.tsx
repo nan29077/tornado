@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Gamepad2, Heart } from 'lucide-react';
+import { Gamepad2, Heart } from '@/components/brand/icons';
 import { cx } from '@/components/ui';
 
 /**

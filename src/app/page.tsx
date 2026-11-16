@@ -1,22 +1,36 @@
+import { Suspense } from 'react';
+import { cookies } from 'next/headers';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
-  MessageSquare, ShieldCheck, Radio, Wallet, Sparkles, ArrowRight,
+  MessageSquare, ShieldCheck, Radio, Wallet, ArrowRight,
   CreditCard, BellRing, ListChecks, PlayCircle, MonitorPlay, Volume2,
-} from 'lucide-react';
+} from '@/components/brand/icons';
 import { PublicShell } from '@/components/layout/public-shell';
 import { MascotAccent } from '@/components/brand/mascot-decorations';
-import { CreatorCodeForm } from '@/components/creator-code-form';
 import { HeroSlider } from '@/components/public/hero-slider';
 import { BannerStrip } from '@/components/public/banner-strip';
 import { Card, CardTitle, SectionTitle, LinkButton, Notice } from '@/components/ui';
 import { prisma } from '@/server/db';
 import { siteImageUrl } from '@/lib/site-images';
 import { getSiteImageSelection } from '@/server/services/site-images';
+import { isVideoHubEnabled } from '@/server/services/video-hub';
+import { HomeVideoPaneLoader } from '@/components/video-hub/home-video-loaders';
+import { HomeVideoPaneSkeleton } from '@/components/video-hub/home-video-section';
+import { MobileVideoPreview } from '@/components/video-hub/mobile-video-preview';
+import { getSessionUser } from '@/server/auth';
+import { HOME_TAB_COOKIE, resolveHomeTab } from '@/lib/home-tab';
+import { HomeTabs } from '@/components/home/home-tabs';
+import { FanHomeLoader, FanHomeSkeleton } from '@/components/home-fan/fan-home-loader';
 
 export const dynamic = 'force-dynamic';
 
-export default async function HomePage() {
+export default async function HomePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  // [크리에이터 전용] / [구독자 전용] 탭 (2026-11-17). 규칙은 src/lib/home-tab.ts
+  //   주소 ?tab= → 직접 고른 탭(쿠키, 같은 사람일 때만) → 역할 기본값(비로그인·크리에이터 = 크리에이터 전용, 일반회원·관리자 = 구독자 전용)
+  const [sp, jar, viewer] = await Promise.all([searchParams, cookies(), getSessionUser().catch(() => null)]);
+  const tab = resolveHomeTab({ query: sp.tab, cookie: jar.get(HOME_TAB_COOKIE)?.value ?? null, userId: viewer?.id ?? null, role: viewer?.role ?? null });
+
   // 공개 메인은 DB가 재기동되는 짧은 순간에도 전체 화면이 무너지지 않게 한다.
   // FAQ만 비워서 렌더링하고, 서버 상태는 /api/health에서 별도로 확인한다.
   const [banner, faqs] = await Promise.all([getSiteImageSelection('banner'), prisma.contentPost.findMany({
@@ -25,32 +39,42 @@ export default async function HomePage() {
     take: 5,
   }).catch(() => [])]);
 
+  // 영상 허브 (VIDEO_HUB_ENABLED=false 면 영상 영역·섹션 없이 예전 메인 그대로)
+  const videoHub = isVideoHubEnabled();
+
   return (
-    <PublicShell aside={<HomeAside />}>
+    <PublicShell
+      home
+      aside={<HomeAside />}
+      leftPane={
+        videoHub ? (
+          <Suspense fallback={<HomeVideoPaneSkeleton />}>
+            <HomeVideoPaneLoader />
+          </Suspense>
+        ) : undefined
+      }
+      mobileVideoPreview={videoHub ? (
+        <MobileVideoPreview>
+          <Suspense fallback={<HomeVideoPaneSkeleton />}>
+            <HomeVideoPaneLoader inlinePlayback />
+          </Suspense>
+        </MobileVideoPreview>
+      ) : undefined}
+    >
       <HeroSlider bannerImage={siteImageUrl('banner', banner)} />
 
+      <HomeTabs active={tab} viewerId={viewer?.id ?? null} />
+
+      {tab === 'fan' ? (
+        <Suspense fallback={<FanHomeSkeleton />}>
+          <FanHomeLoader viewerId={viewer?.id ?? null} />
+        </Suspense>
+      ) : (
+      <div data-home-tab="creator">
       {/* 관리자 등록 배너 (HOME_TOP) */}
       <BannerStrip position="HOME_TOP" className="mt-4" />
 
-      {/* 3. 크리에이터 코드 입력 */}
-      <section className="mt-4">
-        <Card className="border border-brand-100">
-          <div className="mb-3 flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-50 text-brand-700">
-              <Sparkles size={17} strokeWidth={1.7} />
-            </span>
-            <div>
-              <CardTitle>크리에이터 찾기</CardTitle>
-              <p className="text-[12px] text-ink-400">코드 · 유튜브 채널명 · 닉네임으로 검색하세요.</p>
-            </div>
-          </div>
-          <CreatorCodeForm />
-          <p className="mt-3 text-[12px] leading-relaxed text-ink-400">
-            승인된 크리에이터만 검색됩니다. 크리에이터 코드뿐 아니라 유튜브 채널명이나 닉네임으로도 후원 페이지에
-            접근할 수 있습니다.
-          </p>
-        </Card>
-      </section>
+      {/* (2026-11-17) 3. 크리에이터 찾기는 [구독자 전용] 탭 맨 위로 옮겼다 */}
 
       {/* 4. 문자 한 통으로 후원하는 방법 */}
       <section className="mt-8">
@@ -271,6 +295,8 @@ export default async function HomePage() {
           </LinkButton>
         </Card>
       </section>
+      </div>
+      )}
     </PublicShell>
   );
 }

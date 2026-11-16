@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { CheckCircle2, Send } from 'lucide-react';
+import { CheckCircle2, Send } from '@/components/brand/icons';
 import { Button, Field, Input, Notice, Select, Textarea, Card, CardTitle } from '@/components/ui';
 import { SUPPORT_CATEGORIES } from '@/components/public/support-options';
 import { submitSupportRequest, type SupportFormState } from '@/app/actions/support';

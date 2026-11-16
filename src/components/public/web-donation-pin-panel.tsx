@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Check, Clock, MessageSquare, Pencil, Send, ShieldCheck, Smartphone } from 'lucide-react';
+import { Check, Clock, MessageSquare, Pencil, Send, ShieldCheck, Smartphone } from '@/components/brand/icons';
 import { cx, Notice } from '@/components/ui';
 import { formatWon } from '@/lib/money';
 import {

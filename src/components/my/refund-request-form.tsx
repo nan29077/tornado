@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Undo2 } from 'lucide-react';
+import { Undo2 } from '@/components/brand/icons';
 import { Button, Textarea, Notice } from '@/components/ui';
 import { requestDonationRefund, type DonorActionState } from '@/app/actions/donor';
 

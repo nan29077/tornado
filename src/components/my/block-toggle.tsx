@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Ban, Check } from 'lucide-react';
+import { Ban, Check } from '@/components/brand/icons';
 import { Button, Notice } from '@/components/ui';
 import { toggleCreatorBlock, type DonorActionState } from '@/app/actions/donor';
 

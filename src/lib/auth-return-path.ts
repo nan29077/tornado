@@ -12,7 +12,7 @@ export function authReturnPath(value: unknown, fallback = '/my'): string {
      *  - 마이페이지 계열.
      * 그 밖의 경로는 fallback 으로 떨어뜨린다(오픈 리다이렉트 방지).
      */
-    const CREATOR_SUB = 'messages|notifications|support|how-it-works|login|account';
+    const CREATOR_SUB = 'messages|notifications|support|how-it-works|login|signup|account|cart|orders|shop/[A-Z0-9]{10,40}';
     if (!new RegExp(`^/(?:c/TOR-[A-Z0-9]{2,10}(?:/(?:${CREATOR_SUB}))?/?|my(?:/[^?#]*)?)$`).test(decoded)) {
       return fallback;
     }

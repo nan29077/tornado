@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Smartphone, ShieldCheck, RotateCcw } from 'lucide-react';
+import { Smartphone, ShieldCheck, RotateCcw } from '@/components/brand/icons';
 import { Button, Card, CardTitle, Field, Input, Notice, Badge } from '@/components/ui';
 import {
   requestPhoneVerification,

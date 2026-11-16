@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { AlertTriangle, Landmark, Smartphone } from 'lucide-react';
+import { AlertTriangle, Landmark, Smartphone } from '@/components/brand/icons';
 import { Button, Card, CardTitle, Field, Input, Notice, Select } from '@/components/ui';
 
 /**

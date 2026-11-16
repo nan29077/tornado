@@ -5,7 +5,7 @@ import {
   Badge, Card, CardTitle, DataRow, EmptyState, Notice, SectionTitle, StatTile, Table, Td, Th,
 } from '@/components/ui';
 import { ActionButton, ActionForm, SelectActionForm } from '@/components/admin/action-form';
-import { updateCreatorStatus, updateCreatorPaymentMode, reissueCreatorCode, updateCreatorAmountBounds, setSettlementAccountVerified } from '@/app/actions/admin/accounts';
+import { requestCreatorRevision, updateCreatorStatus, updateCreatorPaymentMode, reissueCreatorCode, updateCreatorAmountBounds, setSettlementAccountVerified } from '@/app/actions/admin/accounts';
 import { reissueCreatorMoNumberAction } from '@/app/actions/admin/transactions';
 import { formatMoNumber } from '@/server/emma';
 import { prisma } from '@/server/db';
@@ -19,10 +19,12 @@ import {
   channelPlatformLabel, policyScopeLabel, youtubeConnectionStatusLabel,
 } from '@/lib/labels';
 import { AdminField, AdminInput, AdminSelect, AdminTextarea } from '@/components/admin/controls';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink } from '@/components/brand/icons';
 import { bankLabel, shortId } from '@/components/admin/mask';
 import { hasDirectTriggerWrittenApproval } from '@/server/services/financial-approval';
 import { requireAdminPage } from '@/server/admin-guard';
+import { formatFollowerCount, platformCountLabel, platformLabel } from '@/lib/creator-channels';
+import { categoryLabel } from '@/lib/video-hub';
 
 /** 소수 요율(0.018)을 사람이 읽는 퍼센트(1.8%)로 바꾼다. */
 function percentText(rate: unknown): string {
@@ -48,7 +50,9 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
       channelUrl: true, channelPlatform: true, rejectReason: true,
       donationAmount: true, minAmount: true, maxAmount: true, paymentMode: true, businessNo: true,
       approvedAt: true, suspendedAt: true, createdAt: true,
-      user: { select: { email: true, name: true, phoneMasked: true, status: true } },
+      appliedVia: true, contentCategory: true, submittedAt: true, reviewNote: true, reviewRequestedAt: true,
+      channels: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }], select: { id: true, platform: true, url: true, title: true, followerCount: true, isPrimary: true } },
+      user: { select: { email: true, name: true, phoneMasked: true, status: true, role: true } },
       codes: { orderBy: { issuedAt: 'desc' }, take: 10, select: { id: true, code: true, active: true, issuedAt: true, revokedAt: true } },
       moRoutes: {
         orderBy: { assignedAt: 'desc' },
@@ -124,6 +128,19 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
                 label="심사 상태"
                 value={<Badge tone={creatorStatusLabel[creator.status].tone}>{creatorStatusLabel[creator.status].text}</Badge>}
               />
+              {creator.status === 'PENDING' && creator.reviewNote ? (
+                <DataRow
+                  label="보완 요청"
+                  value={<span className="block break-words whitespace-pre-wrap text-warning-600">{creator.reviewNote} ({formatKst(creator.reviewRequestedAt)})</span>}
+                />
+              ) : null}
+              <DataRow
+                label="신청 경로"
+                value={creator.appliedVia === 'CONVERT' ? '일반회원 전환 신청' : creator.appliedVia === 'SIGNUP' ? '신규 크리에이터 가입' : '기존 신청'}
+              />
+              <DataRow label="계정 역할" value={creator.user.role === 'CREATOR' ? '크리에이터' : creator.user.role === 'DONOR' ? '일반회원 (승인 시 크리에이터로 전환)' : creator.user.role} />
+              <DataRow label="활동 카테고리" value={creator.contentCategory ? categoryLabel(creator.contentCategory) : '-'} />
+              <DataRow label="최근 제출" value={formatKst(creator.submittedAt)} />
               <DataRow label="담당자" value={`${creator.user.name ?? '-'} / ${creator.user.email ?? '-'}`} />
               <DataRow label="연락처" value={creator.user.phoneMasked ?? '-'} />
               {/*
@@ -165,6 +182,31 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
                   </Link>
                 }
               />
+              <DataRow
+                label={`등록 채널 (${creator.channels.length})`}
+                value={
+                  creator.channels.length === 0 ? (
+                    '없음 (기존 단일 채널 정보만 있음)'
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {creator.channels.map((c) => (
+                        <li key={c.id} className="text-[12.5px]">
+                          <span className="font-bold">{platformLabel(c.platform)}</span>
+                          {c.isPrimary ? <Badge tone="brand" className="ml-1">대표</Badge> : null}
+                          {' · '}
+                          {platformCountLabel(c.platform)} {formatFollowerCount(c.followerCount)}
+                          <br />
+                          <a href={c.url} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex items-center gap-1 break-all font-semibold text-brand-700 underline">
+                            {c.title ? `${c.title} — ` : ''}
+                            {c.url}
+                            <ExternalLink size={12} strokeWidth={1.8} className="shrink-0" />
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                }
+              />
               {/* 개인사업자에게 사업자등록번호는 사실상 개인 식별자다. 마스킹해 표시한다. */}
               <DataRow label="사업자번호" value={creator.businessNo ? shortId(creator.businessNo) : '미등록'} />
               <DataRow label="1건 후원금" value={formatWon(creator.donationAmount)} />
@@ -197,6 +239,28 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
                 </div>
               </ActionForm>
             </div>
+            {creator.status === 'PENDING' ? (
+              <div className="mt-3 rounded-xl border border-warning-500/40 bg-warning-50 px-3 py-3">
+                <p className="mb-2 text-[12.5px] font-bold text-ink-900">보완 요청</p>
+                <ActionForm
+                  action={requestCreatorRevision}
+                  submitLabel="보완 요청 보내기"
+                  variant="secondary"
+                  confirm="신청자에게 보완 요청을 보냅니다. 심사 상태는 '대기'로 유지됩니다."
+                >
+                  <input type="hidden" name="creatorId" value={creator.id} />
+                  <AdminField label="보완할 내용 (500자 이내)" hint="신청자 알림과 마이페이지에 그대로 보입니다. 고쳐서 다시 제출하면 지워집니다.">
+                    <AdminTextarea
+                      name="note"
+                      rows={3}
+                      maxLength={500}
+                      defaultValue={creator.reviewNote ?? ''}
+                      placeholder="예: 틱톡 채널 주소가 열리지 않습니다. 프로필 주소(https://www.tiktok.com/@아이디)로 고쳐 주세요."
+                    />
+                  </AdminField>
+                </ActionForm>
+              </div>
+            ) : null}
             {/*
               반려·정지에는 사유가 필수다. 사유는 크리에이터 알림 본문과 상태 안내 화면에
               그대로 나가므로, 선택 상자만 있던 예전 폼(SelectActionForm)으로는 만들 수 없었다.

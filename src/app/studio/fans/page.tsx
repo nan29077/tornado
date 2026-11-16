@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Crown, Users, HandCoins, UserPlus, Search, Ban } from 'lucide-react';
+import { Crown, Users, HandCoins, UserPlus, Search, Ban } from '@/components/brand/icons';
 import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle, EmptyState, Notice, StatTile, Table, Td, Th, Input, Select } from '@/components/ui';
 import { Pager } from '@/components/admin/controls';

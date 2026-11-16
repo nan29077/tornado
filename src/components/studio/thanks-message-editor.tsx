@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { MousePointerClick } from 'lucide-react';
+import { MousePointerClick } from '@/components/brand/icons';
 import { Badge, Field, Textarea, cx } from '@/components/ui';
 import { SMS_BYTE_LIMIT, smsByteLength } from '@/lib/sms';
 import { insertToken } from '@/lib/token-insert';

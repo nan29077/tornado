@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { CircleCheck, CircleX, Clock, KeyRound } from 'lucide-react';
+import { CircleCheck, CircleX, Clock, KeyRound } from '@/components/brand/icons';
 import { Button, Card, DataRow, Field, Input, Notice } from '@/components/ui';
 import { submitMockPinAction, type MockPinResult } from '@/app/actions/pin';
 

@@ -1,4 +1,4 @@
-import { ChevronDown, ExternalLink } from 'lucide-react';
+import { ChevronDown, ExternalLink } from '@/components/brand/icons';
 import { Badge, Card, CardTitle, DataRow, Field, Input, LinkButton, Notice, SectionTitle, Textarea } from '@/components/ui';
 import { headers } from 'next/headers';
 import { PageHeader } from '@/components/layout/console-shell';

@@ -1,4 +1,4 @@
-import { ShieldCheck, ShieldAlert, TriangleAlert, Info } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, TriangleAlert, Info } from '@/components/brand/icons';
 import { Badge, Card, CardTitle, Notice } from '@/components/ui';
 import { env, assertProductionSafety, bootWarnings } from '@/lib/env';
 

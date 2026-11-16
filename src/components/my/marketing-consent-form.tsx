@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { BellRing, BellOff } from 'lucide-react';
+import { BellRing, BellOff } from '@/components/brand/icons';
 import { Button, Card, CardTitle, Badge, Notice } from '@/components/ui';
 import { setMarketingConsent, type DonorActionState } from '@/app/actions/donor';
 

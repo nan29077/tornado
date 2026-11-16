@@ -1,7 +1,7 @@
 import { safeInternalPath } from '@/lib/auth-return-path';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { LogIn } from 'lucide-react';
+import { LogIn } from '@/components/brand/icons';
 import { PublicShell } from '@/components/layout/public-shell';
 import { PageHeader } from '@/components/public/page-header';
 import { Button, Card, CardTitle, Field, Input, Notice, LinkButton } from '@/components/ui';

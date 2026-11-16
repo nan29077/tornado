@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { CircleCheck, CircleX, CreditCard, Landmark, MessageSquare, RefreshCw, ShieldCheck } from 'lucide-react';
+import { CircleCheck, CircleX, CreditCard, Landmark, MessageSquare, RefreshCw, ShieldCheck } from '@/components/brand/icons';
 import { Card, CardTitle, DataRow, LinkButton, Notice } from '@/components/ui';
 import { prisma } from '@/server/db';
 import { tokenHash } from '@/lib/crypto';

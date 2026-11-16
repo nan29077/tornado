@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { MailX, UserPlus } from 'lucide-react';
+import { MailX, UserPlus } from '@/components/brand/icons';
 import { Button, Notice } from '@/components/ui';
 import { CopyButton } from '@/components/public/copy-button';
 import { AdminInput, AdminSelect } from './controls';

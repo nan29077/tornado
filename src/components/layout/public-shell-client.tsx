@@ -7,8 +7,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Bell, CircleHelp, CircleUserRound, HeartHandshake, House, LayoutDashboard,
-  LifeBuoy, LogIn, LogOut, Map, Menu, Sparkles, X,
-} from 'lucide-react';
+  Clapperboard, LifeBuoy, LogIn, LogOut, Map, Menu, UserPlus, X,
+} from '@/components/brand/icons';
 import { Logo, TornadoMark } from '@/components/brand/logo';
 import { PublicMarginMascots } from '@/components/brand/mascot-decorations';
 import { CreatorDonateBackdrop } from '@/components/public/creator-donate-backdrop';
@@ -20,9 +20,9 @@ import { cx } from '@/components/ui';
 
 /**
  * 공개 영역 레이아웃 (클라이언트).
- * - PC: 중앙 콘텐츠는 앱 폭 유지, 우측 세로 메뉴는 모바일 하단 내비와 동일한 5개 구성
+ * - PC: 중앙 콘텐츠는 앱 폭 유지, 우측 세로 메뉴는 모바일 하단 내비와 동일한 구성
  *       + 하단에 프로필/로그아웃(로그인) 영역
- * - 모바일: 하단 내비게이션 5개 (홈 / 이용방법 / 크리에이터 / FAQ / 마이페이지)
+ * - 모바일: 하단 내비게이션
  * - 마이페이지는 로그인 역할에 따라 대시보드(/admin, /studio) 또는 마이페이지(/my)로 이동
  */
 
@@ -52,20 +52,24 @@ interface NavItem {
   my?: boolean;
   /** 페이지 이동 대신 후원확인 바텀시트를 연다 */
   sheet?: boolean;
+  /** false 면 모바일 하단 탭바에서 뺀다 (우측 메뉴·PC 레일에는 그대로 둔다) */
+  bottom?: boolean;
 }
 
-function buildNav(myHref: string): NavItem[] {
+function buildNav(myHref: string, videoHubEnabled: boolean): NavItem[] {
   return [
     { href: '/', label: '홈', icon: House },
+    ...(videoHubEnabled ? [{ href: '/videos', label: '방송국', icon: Clapperboard }] : []),
     { href: '/how-it-works', label: '이용방법', icon: Map },
     { href: '#lookup', label: '후원확인', icon: HeartHandshake, sheet: true },
-    { href: '/faq', label: 'FAQ', icon: CircleHelp },
+    // (2026-11-17) 모바일 하단 탭바에서는 뺀다. 우측 메뉴(드로어)·PC 레일에만 보인다.
+    { href: '/faq', label: 'FAQ', icon: CircleHelp, bottom: false },
     { href: myHref, label: '마이페이지', icon: CircleUserRound, my: true },
   ];
 }
 
+// (2026-11-17) 크리에이터 가입은 메뉴에서 뺐다. 회원가입 화면의 [크리에이터] 탭과 마이페이지 전환 신청으로 들어간다.
 const DRAWER_EXTRA = [
-  { href: '/creator-apply', label: '크리에이터 가입', icon: Sparkles },
   { href: '/notice', label: '공지', icon: Bell },
   { href: '/support', label: '고객센터', icon: LifeBuoy },
 ];
@@ -73,12 +77,16 @@ const DRAWER_EXTRA = [
 function isActive(pathname: string, href: string, my?: boolean) {
   if (my) return MY_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   if (href === '/') return pathname === '/';
+  if (href === '/videos' && pathname.startsWith('/watch/')) return true;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function PublicShellClient({
   children,
   aside,
+  home = false,
+  leftPane,
+  videoHubEnabled = false,
   viewer,
   mockMode = false,
   business,
@@ -86,6 +94,10 @@ export function PublicShellClient({
 }: {
   children: React.ReactNode;
   aside?: React.ReactNode;
+  home?: boolean;
+  /** PC(xl 이상) 왼쪽 여백의 영상 미리보기. */
+  leftPane?: React.ReactNode;
+  videoHubEnabled?: boolean;
   viewer: ShellViewer | null;
   /** 결제·문자 발송이 모의(mock) 상태일 때만 하단에 안내를 보여 준다. */
   mockMode?: boolean;
@@ -97,7 +109,8 @@ export function PublicShellClient({
   const [open, setOpen] = React.useState(false);
   const [lookupOpen, setLookupOpen] = React.useState(false);
   const myHref = viewer?.myHref ?? '/my';
-  const nav = buildNav(myHref);
+  const nav = buildNav(myHref, videoHubEnabled);
+  const bottomNav = nav.filter((t) => t.bottom !== false);
 
   const openLookup = React.useCallback(() => {
     setOpen(false);
@@ -107,11 +120,18 @@ export function PublicShellClient({
   return (
     <div className="public-canvas min-h-dvh pb-20 lg:pb-0">
       <CreatorDonateBackdrop preset={marginPreset} publicPage />
-      {marginPreset === DEFAULT_SITE_IMAGE || marginPreset === CLASSIC_MARGIN_IMAGE
-        ? <PublicMarginMascots home={pathname === '/'} />
-        : null}
-      <div className="relative z-[2] mx-auto flex w-full max-w-[744px] items-start justify-center">
-        <div className="public-app-surface min-h-dvh w-full min-w-0 max-w-[640px] shadow-[0_0_60px_rgba(74,49,25,0.12)]">
+      {marginPreset === DEFAULT_SITE_IMAGE || marginPreset === CLASSIC_MARGIN_IMAGE ? (
+        leftPane ? <div className="xl:hidden"><PublicMarginMascots home={home} /></div> : <PublicMarginMascots home={home} />
+      ) : null}
+      <div className="relative z-[2] mx-auto flex w-full max-w-[var(--public-layout-width)] items-start justify-center">
+        {leftPane ? (
+          <div className="public-home-video-rail pointer-events-none absolute bottom-0 right-full top-0 hidden xl:block">
+            <div className="sticky top-6 flex h-[calc(100dvh-3rem)] items-center">
+              <div className="public-home-video-dock pointer-events-auto max-h-full w-full overflow-y-auto overscroll-contain p-1">{leftPane}</div>
+            </div>
+          </div>
+        ) : null}
+        <div className="public-app-surface min-h-dvh w-full min-w-0 max-w-[var(--public-app-width)] shadow-[0_0_60px_rgba(74,49,25,0.12)]">
       <header className="public-header sticky top-0 z-40 border-b backdrop-blur-xl">
         <div className="flex h-[68px] w-full items-center justify-between px-4 sm:px-6">
           <Link href="/" aria-label="도네이도 홈">
@@ -181,14 +201,24 @@ export function PublicShellClient({
                 </button>
               </form>
             ) : (
-              <Link
-                href="/login"
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-2 rounded-lg border-t border-ink-100 px-2 py-3 text-[15px] font-semibold text-brand-700"
-              >
-                <LogIn size={16} strokeWidth={1.7} />
-                로그인
-              </Link>
+              <div className="border-t border-ink-100 pt-1">
+                <Link
+                  href="/login"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-2 rounded-lg px-2 py-3 text-[15px] font-semibold text-brand-700"
+                >
+                  <LogIn size={16} strokeWidth={1.7} />
+                  로그인
+                </Link>
+                <Link
+                  href="/signup"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-2 rounded-lg px-2 py-3 text-[15px] font-semibold text-ink-700"
+                >
+                  <UserPlus size={16} strokeWidth={1.7} />
+                  회원가입
+                </Link>
+              </div>
             )}
           </div>
         ) : null}
@@ -295,19 +325,33 @@ export function PublicShellClient({
                 <span>로그인</span>
               </Link>
             )}
+            {!viewer ? (
+              <Link
+                href="/signup"
+                className={cx(
+                  'flex w-full flex-col items-center gap-0.5 rounded-[14px] py-2 text-[9.5px] font-bold transition-all',
+                  isActive(pathname, '/signup')
+                    ? 'bg-brand-50 text-brand-700'
+                    : 'text-ink-400 hover:bg-ink-50 hover:text-ink-900',
+                )}
+              >
+                <UserPlus size={18} strokeWidth={1.65} />
+                <span>회원가입</span>
+              </Link>
+            ) : null}
 
             <p className="mt-2 text-[8px] font-extrabold tracking-[0.16em] text-ink-300">DONAIDO</p>
           </nav>
         </aside>
       </div>
 
-      <nav className="public-bottom-nav fixed inset-x-0 bottom-0 z-40 border-t pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-        <div className="mx-auto grid max-w-[640px] grid-cols-5">
-          {nav.map((t) => {
+      <nav aria-label="하단 메뉴" className="public-bottom-nav fixed inset-x-0 bottom-0 z-40 border-t pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
+        <div className={cx('mx-auto grid max-w-[640px]', bottomNav.length >= 5 ? 'grid-cols-5' : 'grid-cols-4')}>
+          {bottomNav.map((t) => {
             const Icon = t.icon;
             const active = isActive(pathname, t.href, t.my);
             const cls = cx(
-              'flex min-h-16 flex-col items-center justify-center gap-1 py-2 text-[11px] font-semibold',
+              'flex min-h-16 flex-col items-center justify-center gap-1 whitespace-nowrap py-2 text-[10px] font-semibold min-[375px]:text-[11px]',
               active ? 'text-brand-700' : 'text-ink-400',
             );
             const inner = (
@@ -332,7 +376,7 @@ export function PublicShellClient({
                 {inner}
               </button>
             ) : (
-              <Link key={t.href + t.label} href={t.href} className={cls}>
+              <Link key={t.href + t.label} href={t.href} aria-current={active ? 'page' : undefined} className={cls}>
                 {inner}
               </Link>
             );

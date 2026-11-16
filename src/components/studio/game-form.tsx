@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
   Zap,
-} from 'lucide-react';
+} from '@/components/brand/icons';
 import { Button, Card, Field, Input, Notice, Select, Textarea, cx } from '@/components/ui';
 import { ConfirmDialog } from '@/components/studio/confirm-dialog';
 import {

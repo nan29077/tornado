@@ -13,6 +13,8 @@ process.env.ALLOW_INMEMORY_FALLBACK = 'true';
 // 테스트에서는 Redis 대신 인메모리 스토어를 사용해 상태를 격리한다.
 process.env.REDIS_URL = '';
 process.env.MO_ALLOWED_IPS = '';
+// 개발용 .env 의 테스트 더미 데이터(DEMO_DATA)가 테스트에 섞이지 않게 끈다. 필요한 테스트만 직접 켠다.
+process.env.DEMO_DATA = '';
 
 /**
  * EMMA(인포뱅크 에이전트) 연동 테스트 설정.

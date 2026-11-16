@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { ShieldOff } from 'lucide-react';
+import { ShieldOff } from '@/components/brand/icons';
 import { Button, Notice, Checkbox } from '@/components/ui';
 import { revokeAutoWithdrawal, type DonorActionState } from '@/app/actions/donor';
 

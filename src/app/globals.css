@@ -134,6 +134,39 @@ a {
   margin: 0 auto;
 }
 
+.public-page {
+  --public-app-width: 640px;
+  --public-layout-width: calc(var(--public-app-width) + 104px);
+}
+
+@media (min-width: 1024px) {
+  .public-page[data-public-home] {
+    /* 홈 PC 너비를 되돌리려면 이 값만 640px로 변경한다. */
+    --public-app-width: 664px;
+  }
+}
+
+.public-home-video-rail {
+  width: min(340px, calc((100vw - var(--public-layout-width)) / 2 - 36px));
+  margin-right: 20px;
+}
+
+/* 라운드 라인 아이콘. 작은 컨트롤과 상태 아이콘은 기존 의미 색상을 사용한다. */
+svg.lucide {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+svg[class*="lucide-donaido-"] {
+  --donaido-icon-gold: #efa724;
+  stroke: #211e30;
+}
+
+:where(.text-white, .text-white\/85, .text-white\/90, .bg-ink-900) svg[class*="lucide-donaido-"],
+svg[class*="lucide-donaido-"].text-white {
+  stroke: #fffaf1;
+}
+
 .public-canvas {
   position: relative;
   isolation: isolate;
@@ -1198,3 +1231,11 @@ a {
   50%      { opacity: 0.45; }
 }
 .animate-urgent { animation: donaido-urgent 900ms ease-in-out infinite; }
+
+/* 메인 [구독자 전용] 탭 — 상품 준비 중 스티커 (2026-11-17) */
+@keyframes donaido-wiggle {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  25% { transform: rotate(-5deg) translateY(-2px); }
+  50% { transform: rotate(0deg) translateY(-4px); }
+  75% { transform: rotate(5deg) translateY(-2px); }
+}

@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, CircleCheck } from 'lucide-react';
+import { ArrowRight, CircleCheck } from '@/components/brand/icons';
 
 /**
  * 계좌(빌키) 등록 완료 후 크리에이터 후원 페이지(/c/[code])로 자동 이동한다.

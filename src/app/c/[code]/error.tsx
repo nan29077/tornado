@@ -1,6 +1,6 @@
 'use client';
 
-import { CircleAlert } from 'lucide-react';
+import { CircleAlert } from '@/components/brand/icons';
 
 /**
  * 크리에이터 후원 페이지 세그먼트 에러 경계.

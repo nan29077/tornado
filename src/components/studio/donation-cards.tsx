@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Clock, MessageSquareText, Monitor, Smartphone, Undo2 } from 'lucide-react';
+import { Clock, MessageSquareText, Monitor, Smartphone, Undo2 } from '@/components/brand/icons';
 import { Badge, cx } from '@/components/ui';
 import { formatWon } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';

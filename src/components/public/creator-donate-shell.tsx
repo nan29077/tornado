@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Heart, LifeBuoy, Radio, MessageCircleHeart, Bell, LogIn, LogOut, BookOpen } from 'lucide-react';
+import { Heart, LifeBuoy, Radio, MessageCircleHeart, Bell, LogIn, LogOut, BookOpen, ShoppingBag } from '@/components/brand/icons';
 import { getSessionUser } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { env } from '@/lib/env';
@@ -8,6 +8,7 @@ import { ProfileAvatar } from '@/components/profile/generated-avatar';
 import { Logo } from '@/components/brand/logo';
 import { CreatorDonateBackdrop } from './creator-donate-backdrop';
 import { getSiteImageSelection } from '@/server/services/site-images';
+import { isSiteImageSelection } from '@/lib/site-images';
 import { attributeFanByCreatorCode } from '@/server/services/creator-fans';
 import { SOCIAL_PROVIDERS, socialProviderStatus, SOCIAL_LABEL } from '@/server/adapters/social';
 
@@ -36,6 +37,8 @@ export interface CreatorShellProfile {
   description: string | null;
   /** 방송 중이면 라이브 주소. 아니면 null */
   liveUrl: string | null;
+  /** 도네이도 샵 여백 이미지 프리셋 (없으면 사이트 기본 여백 — 지금과 동일) */
+  marginPreset?: string | null;
 }
 
 export type CreatorShellMenu =
@@ -44,7 +47,9 @@ export type CreatorShellMenu =
   | 'notifications'
   | 'support'
   | 'how-it-works'
-  | 'login';
+  | 'login'
+  | 'cart'
+  | 'orders';
 
 /**
  * 크리에이터 아바타.
@@ -159,6 +164,7 @@ export async function CreatorDonateShell({
   if (viewer) await attributeFanByCreatorCode(viewer.id, creator.code);
   const loginPath = `${base}/login`;
   const unread = viewer ? await unreadNotificationCount(viewer.id) : 0;
+  const cartCount = viewer ? await prisma.cartItem.count({ where: { userId: viewer.id } }).catch(() => 0) : 0;
 
   /** 메뉴는 전부 후원 페이지 안쪽 경로다. 밖으로 나가는 항목을 여기에 넣지 않는다. */
   const nav: { key: CreatorShellMenu; href: string; label: string; icon: typeof Heart }[] = [
@@ -192,7 +198,7 @@ export async function CreatorDonateShell({
             'radial-gradient(700px 420px at 82% 12%, rgba(251,185,20,0.16) 0%, rgba(251,185,20,0) 70%), radial-gradient(620px 420px at 12% 88%, rgba(23,22,26,0.07) 0%, rgba(23,22,26,0) 70%)',
         }}
       />
-      <CreatorDonateBackdrop preset={margin} />
+      <CreatorDonateBackdrop preset={creator.marginPreset && isSiteImageSelection('margin', creator.marginPreset) ? creator.marginPreset : margin} />
 
       <div className="relative mx-auto min-h-dvh lg:grid lg:w-fit lg:grid-cols-[700px_104px] lg:items-start lg:gap-4 lg:py-6 xl:gap-5">
         <div className="min-h-dvh bg-warm-50 lg:w-[700px] lg:rounded-[2rem] lg:border lg:border-white/80 lg:shadow-panel">
@@ -225,6 +231,20 @@ export async function CreatorDonateShell({
               </span>
 
               <div className="flex shrink-0 items-center gap-2">
+                {/* 도네이도 샵 장바구니 (샵 안쪽 경로) */}
+                <Link
+                  href={viewer ? `${base}/cart` : `${loginPath}?next=${encodeURIComponent(`${base}/cart`)}`}
+                  aria-label="장바구니"
+                  aria-current={activeMenu === 'cart' ? 'page' : undefined}
+                  className="relative grid h-10 w-10 place-items-center rounded-full border border-warm-300 bg-white text-ink-800 transition-colors hover:bg-warm-100"
+                >
+                  <ShoppingBag size={16} strokeWidth={1.8} />
+                  {cartCount > 0 ? (
+                    <span className="absolute -top-1.5 -right-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-ink-900 px-1 text-[10px] font-black text-white tabular-nums">
+                      {cartCount > 99 ? '99+' : cartCount}
+                    </span>
+                  ) : null}
+                </Link>
                 {/* 우측 상단: 알림 (마이페이지 자리를 대신한다) */}
                 <Link
                   href={viewer ? `${base}/notifications` : `${loginPath}?next=${encodeURIComponent(`${base}/notifications`)}`}
@@ -258,22 +278,9 @@ export async function CreatorDonateShell({
               </div>
             </div>
 
-            <nav aria-label="후원 페이지 메뉴" className="grid grid-cols-4 gap-1 px-3 pb-2 lg:hidden">
-              {nav.map((n) => (
-                <Link
-                  key={n.key}
-                  href={n.href}
-                  aria-current={activeMenu === n.key ? 'page' : undefined}
-                  className={`flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-bold ${activeMenu === n.key ? 'bg-brand-100 text-brand-900' : 'text-ink-600 hover:bg-warm-100'}`}
-                >
-                  <n.icon size={16} strokeWidth={1.7} />
-                  {n.label}
-                </Link>
-              ))}
-            </nav>
           </header>
 
-          <main className="mx-auto max-w-[560px] px-4 pb-32 sm:pb-14 lg:max-w-none lg:px-5 lg:pb-12">
+          <main className="mx-auto max-w-[560px] px-4 pb-[calc(10.5rem+env(safe-area-inset-bottom))] sm:pb-[calc(6rem+env(safe-area-inset-bottom))] lg:max-w-none lg:px-5 lg:pb-12">
             {children}
 
             {/* 크리에이터 정보 + 서비스 표기 푸터 */}
@@ -419,6 +426,40 @@ export async function CreatorDonateShell({
       </div>
 
       {bottomBar}
+
+      {/*
+        모바일 하단 고정 메뉴 (2026-11-17: 상단 → 하단 이동).
+        엄지가 닿는 곳에 두고, 스크롤해도 항상 보이게 한다. PC(lg 이상)는 우측 레일을 쓴다.
+        페이지가 넘기는 하단 바(문자 후원 버튼 등)는 이 메뉴 바로 위에 붙는다(--shop-tabbar-h).
+      */}
+      <nav
+        aria-label="후원 페이지 메뉴"
+        className="fixed inset-x-0 bottom-0 z-50 border-t border-warm-300/70 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_20px_rgba(91,57,18,0.08)] backdrop-blur-xl lg:hidden"
+      >
+        <div className="mx-auto grid h-16 max-w-[560px] grid-cols-4 gap-1 px-2">
+          {nav.map((n) => {
+            const active = activeMenu === n.key;
+            return (
+              <Link
+                key={n.key}
+                href={n.href}
+                aria-current={active ? 'page' : undefined}
+                className={`relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-bold transition-colors ${active ? 'text-brand-900' : 'text-ink-500 hover:text-ink-900'}`}
+              >
+                <span className={`grid h-8 w-12 place-items-center rounded-full ${active ? 'bg-brand-100' : ''}`}>
+                  <n.icon size={18} strokeWidth={active ? 2 : 1.7} />
+                </span>
+                {n.label}
+                {n.key === 'notifications' && viewer && unread > 0 ? (
+                  <span className="absolute top-1 left-1/2 ml-2 grid h-4 min-w-4 place-items-center rounded-full bg-[#e5342f] px-1 text-[9.5px] font-black text-white tabular-nums">
+                    {unread > 99 ? '99+' : unread}
+                  </span>
+                ) : null}
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 }

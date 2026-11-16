@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from '@/components/brand/icons';
 import { Button, LinkButton, Notice } from '@/components/ui';
 import { acceptAdminInviteAction, type AcceptInviteState } from '@/app/actions/admin-invite';
 

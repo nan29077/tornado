@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Save } from 'lucide-react';
+import { Save } from '@/components/brand/icons';
 import { Button, Field, Input, Notice } from '@/components/ui';
 import { updateDonorLimits, type DonorActionState } from '@/app/actions/donor';
 

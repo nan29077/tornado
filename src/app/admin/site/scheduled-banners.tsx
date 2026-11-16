@@ -6,7 +6,8 @@ import { prisma } from '@/server/db';
 import { formatNumber } from '@/lib/money';
 import { formatKst, kstDateKey } from '@/lib/datetime';
 
-const POSITIONS = ['HOME_TOP', 'HOME_MIDDLE', 'SUPPORT_TOP', 'CONSOLE_TOP'];
+// FAN_TOP · FAN_MIDDLE: 메인 [구독자 전용] 탭 상단·중간 (2026-11-17)
+const POSITIONS = ['HOME_TOP', 'HOME_MIDDLE', 'FAN_TOP', 'FAN_MIDDLE', 'SUPPORT_TOP', 'CONSOLE_TOP'];
 
 function dateValue(d: Date | null): string {
   return d ? kstDateKey(d) : '';

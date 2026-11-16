@@ -1,4 +1,4 @@
-import { BookOpen, MessageSquare, CreditCard, ShieldCheck, Smartphone, CircleAlert } from 'lucide-react';
+import { BookOpen, MessageSquare, CreditCard, ShieldCheck, Smartphone, CircleAlert } from '@/components/brand/icons';
 import { CreatorDonateShell } from '@/components/public/creator-donate-shell';
 import { Notice } from '@/components/ui';
 import { loadCreatorDonateProfile } from '@/server/services/creator-donate-profile';

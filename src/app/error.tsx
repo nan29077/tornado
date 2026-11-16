@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { CircleAlert } from 'lucide-react';
+import { CircleAlert } from '@/components/brand/icons';
 
 /**
  * 화면 오류 안내.

@@ -1,9 +1,11 @@
 'use client';
 
 import * as React from 'react';
-import { CheckCircle2, Send, Hash } from 'lucide-react';
+import { CheckCircle2, Send, Hash } from '@/components/brand/icons';
 import { Button, Card, CardTitle, Checkbox, Field, Input, LinkButton, Notice, Select, Textarea, Badge } from '@/components/ui';
 import { applyCreator, type CreatorApplyState } from '@/app/actions/creator-apply';
+import { ChannelRowsEditor } from './channel-rows-editor';
+import { VIDEO_CATEGORIES } from '@/lib/video-hub';
 
 const initial: CreatorApplyState = { ok: false };
 
@@ -14,18 +16,7 @@ const STATUS_TEXT: Record<string, string> = {
   SUSPENDED: '이용이 정지된 크리에이터 계정입니다. 고객센터로 문의해 주세요.',
 };
 
-const CHANNEL_PLATFORMS = [
-  { value: 'YOUTUBE',   label: 'YouTube',       placeholder: 'https://www.youtube.com/@channel' },
-  { value: 'INSTAGRAM', label: 'Instagram',      placeholder: 'https://www.instagram.com/username' },
-  { value: 'FACEBOOK',  label: 'Facebook',       placeholder: 'https://www.facebook.com/pagename' },
-  { value: 'TIKTOK',    label: 'TikTok',         placeholder: 'https://www.tiktok.com/@username' },
-  { value: 'CHZZK',     label: '치지직',          placeholder: 'https://chzzk.naver.com/channel-id' },
-  { value: 'SOOP',      label: '숲 (구 아프리카TV)', placeholder: 'https://www.sooplive.co.kr/username' },
-  { value: 'TWITCH',    label: 'Twitch',         placeholder: 'https://www.twitch.tv/username' },
-  { value: 'OTHER',     label: '기타',            placeholder: 'https://' },
-] as const;
 
-type ChannelPlatformValue = (typeof CHANNEL_PLATFORMS)[number]['value'];
 
 export function CreatorApplyForm({
   loggedIn,
@@ -39,7 +30,6 @@ export function CreatorApplyForm({
 }) {
   const [state, formAction, pending] = React.useActionState(applyCreator, initial);
   const [isBusiness, setIsBusiness] = React.useState(false);
-  const [channelPlatform, setChannelPlatform] = React.useState<ChannelPlatformValue | ''>('');
 
   // ------------------------------------------------------------ 신청 완료 화면
   if (state.ok && state.code) {
@@ -74,52 +64,31 @@ export function CreatorApplyForm({
           <Input name="displayName" required maxLength={30} defaultValue={state.values?.displayName} placeholder="바람소리" />
         </Field>
 
-        <Field label="채널 플랫폼" hint="운영 중인 채널의 플랫폼을 선택해 주세요.">
-          <Select
-            name="channelPlatformSelect"
-            value={channelPlatform}
-            onChange={(e) => setChannelPlatform(e.target.value as ChannelPlatformValue | '')}
-          >
+        <Field label="활동 카테고리" hint="영상 허브와 도네이도 샵에서 분류에 쓰입니다.">
+          <Select name="contentCategory" defaultValue={state.values?.contentCategory ?? ''}>
             <option value="">선택 안 함</option>
-            {CHANNEL_PLATFORMS.map((p) => (
-              <option key={p.value} value={p.value}>{p.label}</option>
+            {VIDEO_CATEGORIES.filter((c) => c.slug !== 'all' && c.slug !== 'donaido').map((c) => (
+              <option key={c.slug} value={c.slug}>
+                {c.label}
+              </option>
             ))}
           </Select>
-          <input type="hidden" name="channelPlatform" value={channelPlatform} />
         </Field>
-
-        {channelPlatform ? (
-          <>
-            <Field label="채널명" hint="채널 이름을 입력해 주세요.">
-              <Input
-                name="channelName"
-                maxLength={60}
-                defaultValue={state.values?.channelName}
-                placeholder={`${CHANNEL_PLATFORMS.find((p) => p.value === channelPlatform)?.label ?? ''} 채널 이름`}
-              />
-            </Field>
-
-            <Field label="채널 주소" hint="https:// 로 시작하는 전체 주소를 입력해 주세요.">
-              <Input
-                name="channelUrl"
-                type="url"
-                maxLength={300}
-                defaultValue={state.values?.channelUrl}
-                inputMode="url"
-                placeholder={CHANNEL_PLATFORMS.find((p) => p.value === channelPlatform)?.placeholder ?? 'https://'}
-              />
-            </Field>
-          </>
-        ) : (
-          <>
-            <input type="hidden" name="channelName" value="" />
-            <input type="hidden" name="channelUrl" value="" />
-          </>
-        )}
 
         <Field label="소개" hint="후원 페이지에 표시할 짧은 소개입니다. (300자 이내)">
           <Textarea name="description" rows={4} maxLength={300} defaultValue={state.values?.description} placeholder="문자 한 통으로 응원을 보내주세요." />
         </Field>
+      </Card>
+
+      <Card className="space-y-3">
+        <div>
+          <CardTitle>운영 채널</CardTitle>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-ink-500">
+            운영 중인 채널을 모두 등록해 주세요. 플랫폼, 채널 주소, 구독자·팔로워 수는 심사에 쓰이고, 승인 후 도네이도 샵 영상에도
+            연결됩니다. 대표 채널 1개를 지정해 주세요.
+          </p>
+        </div>
+        <ChannelRowsEditor />
       </Card>
 
       <Card className="space-y-4">
@@ -176,7 +145,7 @@ export function CreatorApplyForm({
           <div>
             <CardTitle>로그인 계정 만들기</CardTitle>
             <p className="mt-1 text-[12.5px] leading-relaxed text-ink-500">
-              입력한 연락 이메일로 크리에이터 계정이 생성되고, 신청 후 자동으로 로그인됩니다.
+              입력한 연락 이메일로 도네이도 회원 계정이 만들어지고 자동으로 로그인됩니다. 승인되면 크리에이터 계정으로 바뀝니다.
             </p>
           </div>
           <Field label="비밀번호" required hint="8자 이상 입력해 주세요.">
@@ -259,7 +228,8 @@ function ApplyDone({ code, displayName, mockMode }: { code: string; displayName?
           <li>
             <span className="font-bold text-ink-900">3. 방송 연동 설정</span>
             <br />
-            승인 후 크리에이터 콘솔에서 유튜브 연동, 오버레이, 음성 안내, 정산 계좌를 설정합니다.
+            승인되면 같은 계정이 크리에이터 계정으로 바뀌고, 크리에이터 스튜디오에서 도네이도 샵·유튜브 연동·오버레이·정산을
+            설정합니다. 심사 중에도 일반회원 기능(마이페이지·후원)은 그대로 쓸 수 있습니다.
           </li>
         </ol>
       </Card>
@@ -272,8 +242,8 @@ function ApplyDone({ code, displayName, mockMode }: { code: string; displayName?
       ) : null}
 
       <div className="grid grid-cols-2 gap-2">
-        <LinkButton href="/studio" variant="primary" size="md" className="w-full">
-          크리에이터 콘솔
+        <LinkButton href="/my/creator" variant="primary" size="md" className="w-full">
+          신청 상태 보기
         </LinkButton>
         <LinkButton href="/support" variant="secondary" size="md" className="w-full">
           고객센터 문의

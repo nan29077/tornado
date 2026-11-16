@@ -1,4 +1,4 @@
-import { MessageCircleHeart } from 'lucide-react';
+import { MessageCircleHeart } from '@/components/brand/icons';
 import { formatKst } from '@/lib/datetime';
 
 export function DonationReply({ body, updatedAt, name }: { body: string; updatedAt: Date; name: string }) {

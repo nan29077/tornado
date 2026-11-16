@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight } from '@/components/brand/icons';
 import { cx } from '@/components/ui';
 import { DEFAULT_HOME_BANNER } from '@/lib/site-images';
 

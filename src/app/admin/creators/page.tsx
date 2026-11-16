@@ -32,9 +32,11 @@ const creatorSelect = {
   donationAmount: true,
   approvedAt: true,
   createdAt: true,
+  appliedVia: true,
+  reviewNote: true,
   user: { select: { email: true, name: true, phoneMasked: true } },
   moRoutes: { where: { status: 'ASSIGNED' as const }, select: { phoneNumber: true, keyword: true } },
-  _count: { select: { donations: true } },
+  _count: { select: { donations: true, channels: true } },
 } satisfies Prisma.CreatorProfileSelect;
 
 function CreatorRows({
@@ -49,9 +51,11 @@ function CreatorRows({
     donationAmount: bigint;
     approvedAt: Date | null;
     createdAt: Date;
+    appliedVia: string | null;
+    reviewNote: string | null;
     user: { email: string | null; name: string | null; phoneMasked: string | null };
     moRoutes: Array<{ phoneNumber: string; keyword: string | null }>;
-    _count: { donations: number };
+    _count: { donations: number; channels: number };
   }>;
 }) {
   return (
@@ -103,7 +107,9 @@ function CreatorRows({
           <Td className="text-right tabular-nums">{formatNumber(c._count.donations)}</Td>
           <Td>
             <Badge tone={creatorStatusLabel[c.status].tone}>{creatorStatusLabel[c.status].text}</Badge>
+            {c.status === 'PENDING' && c.reviewNote ? <Badge tone="warning" className="ml-1">보완요청</Badge> : null}
             <span className="mt-0.5 block text-[11px] text-ink-400">
+              {c.appliedVia === 'CONVERT' ? '회원 전환 · ' : c.appliedVia === 'SIGNUP' ? '신규 가입 · ' : ''}채널 {c._count.channels}개 ·{' '}
               신청 {formatKst(c.createdAt, false)}
               {c.approvedAt ? ` · 승인 ${formatKst(c.approvedAt, false)}` : ''}
             </span>

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { AlertTriangle, KeyRound, MessageSquare, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, KeyRound, MessageSquare, ShieldCheck } from '@/components/brand/icons';
 import { Card, CardTitle, Notice } from '@/components/ui';
 import { Logo } from '@/components/brand/logo';
 import { isMockYouTubeAllowed } from '@/server/mock-guard';

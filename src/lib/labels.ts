@@ -149,6 +149,9 @@ export const ledgerEntryLabel: Record<LedgerEntryType, string> = {
   ADJUSTMENT: '조정',
   PAYOUT: '정산 지급',
   PAYOUT_WITHHOLDING: '원천징수',
+  REFERRAL_COMMISSION: '샵 레퍼럴 수익',
+  SALES_PROCEEDS: '샵 판매 대금',
+  BROKER_FEE: '샵 중개 수수료',
 };
 
 export const riskLevelLabel: Record<RiskLevel, { text: string; tone: Tone }> = {

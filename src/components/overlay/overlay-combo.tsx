@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Flame } from 'lucide-react';
+import { Flame } from '@/components/brand/icons';
 import { COMBO_WINDOW_MS, COMBO_SUMMARY_MS, comboMultiplier } from '@/lib/overlay-effect-level';
 
 /**

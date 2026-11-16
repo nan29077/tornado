@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { X, Search, ShieldCheck, Info, ChevronRight, HeartHandshake } from 'lucide-react';
+import { X, Search, ShieldCheck, Info, ChevronRight, HeartHandshake } from '@/components/brand/icons';
 import { Badge, Button, Field, Input, Notice, cx } from '@/components/ui';
 import {
   requestLookupCode,

@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { ChevronRight, ShieldCheck } from 'lucide-react';
+import { ChevronRight, ShieldCheck } from '@/components/brand/icons';
 import { Button, Card, Checkbox, Input, Notice, cx } from '@/components/ui';
 import { startRegistrationAction } from '@/app/actions/registration';
 import { broadcastDonorName, checkDonorName, DONOR_NAME_MAX } from '@/lib/donor-name';

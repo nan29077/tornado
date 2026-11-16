@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Check, Loader2 } from 'lucide-react';
+import { Check, Loader2 } from '@/components/brand/icons';
 import { Button, Card, Input, Notice } from '@/components/ui';
 import { MAX_NICKNAME_LEN } from '@/lib/game-catalog';
 

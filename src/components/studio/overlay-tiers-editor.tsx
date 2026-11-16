@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Loader, MonitorPlay, Play, PlugZap, Plus, Trash2, Volume2, Wifi, X } from 'lucide-react';
+import { Loader, MonitorPlay, Play, PlugZap, Plus, Trash2, Volume2, Wifi, X } from '@/components/brand/icons';
 import { Badge, Button, Checkbox, Field, Input, Notice, Select, cx } from '@/components/ui';
 import { SaveButtonLabel, SaveToast, useSaveFeedback } from '@/components/studio/save-feedback';
 import { previewOverlayTierAction, saveOverlayTiersAction } from '@/app/actions/studio';

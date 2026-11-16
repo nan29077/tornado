@@ -206,6 +206,12 @@ enum LedgerEntryType {
   ADJUSTMENT
   PAYOUT
   PAYOUT_WITHHOLDING
+  /// 도네이도 샵: 관리자 상품 레퍼럴 수익(구매 확정 시 +, 확정 후 환불 시 -)
+  REFERRAL_COMMISSION
+  /// 도네이도 샵: 크리에이터 직접 판매 대금(구매 확정 시 +, 확정 후 환불 시 -)
+  SALES_PROCEEDS
+  /// 도네이도 샵: 직접 판매 중개 수수료(-)
+  BROKER_FEE
 
   @@map("ledger_entry_type")
 }
@@ -347,6 +353,13 @@ model User {
   signupCreator    CreatorProfile? @relation("CreatorSignupFans", fields: [signupCreatorId], references: [id], onDelete: SetNull)
   fanAccounts      CreatorFanAccount[]
   adminInvitesSent AdminInvite[]      @relation("AdminInviteInvitedBy")
+  // 도네이도 샵 (2026-11-17)
+  follows          MemberFollow[]
+  addresses        MemberAddress[]
+  cartItems        CartItem[]
+  wishes           ProductWish[]
+  shopOrders       ShopOrder[]
+  shopPayments     ShopPayment[]
 
   @@index([role, status])
   @@index([signupCreatorId])
@@ -667,6 +680,31 @@ model CreatorProfile {
   overlayComboBoost   Boolean       @default(true) @map("overlay_combo_boost")
   /// 가벼운 효과 모드. 저사양 방송 PC 에서 파티클·화면 전체 연출을 줄인다.
   overlayLightEffects Boolean       @default(false) @map("overlay_light_effects")
+  // ---- 크리에이터 신청·전환 (2026-11-17) ----
+  /// 신청 경로. SIGNUP(처음부터 크리에이터로 가입) | CONVERT(일반회원이 전환 신청). 기존 행은 null
+  appliedVia          String?       @map("applied_via")
+  /// 활동 카테고리 (영상 허브 카테고리 slug)
+  contentCategory     String?       @map("content_category")
+  /// 최근 신청(또는 보완 후 재제출) 시각
+  submittedAt         DateTime?     @map("submitted_at") @db.Timestamptz(3)
+  /// 최고관리자 보완요청 사유. 값이 있으면 "보완요청" 상태로 보인다(심사 상태는 PENDING 유지)
+  reviewNote          String?       @map("review_note")
+  reviewRequestedAt   DateTime?     @map("review_requested_at") @db.Timestamptz(3)
+  // ---- 도네이도 샵 설정 (2026-11-17) ----
+  /// 샵 첫 화면 탭. VIDEO | SHOP | DONATE
+  shopDefaultTab      String        @default("VIDEO") @map("shop_default_tab")
+  /// 샵 여백 이미지 프리셋. null 이면 사이트 기본 여백(지금과 동일)
+  shopMarginPreset    String?       @map("shop_margin_preset")
+  /// 영상 후원 사용 여부 / 최소 금액 / 추천 금액(쉼표 구분)
+  shopVideoDonation   Boolean       @default(true) @map("shop_video_donation")
+  shopDonationMin     BigInt        @default(1000) @map("shop_donation_min")
+  shopDonationPresets String?       @map("shop_donation_presets")
+  /// 직접 판매 판매자 정보 (통신판매중개 고지용). 직접 상품 등록 전에 필수
+  sellerBizName       String?       @map("seller_biz_name")
+  sellerBizNo         String?       @map("seller_biz_no")
+  sellerMailOrderNo   String?       @map("seller_mail_order_no")
+  sellerCsPhone       String?       @map("seller_cs_phone")
+  sellerReturnAddress String?       @map("seller_return_address")
   approvedAt          DateTime?     @map("approved_at") @db.Timestamptz(3)
   suspendedAt         DateTime?     @map("suspended_at") @db.Timestamptz(3)
   createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -697,6 +735,15 @@ model CreatorProfile {
   bannedWords        BannedWord[]
   moMessages         MoInboundMessage[]
   games              Game[]
+  // 도네이도 샵 (2026-11-17)
+  channels           CreatorChannel[]
+  followers          MemberFollow[]
+  shopVideos         ShopVideo[]
+  ownProducts        Product[]                  @relation("CreatorOwnProducts")
+  displayedProducts  CreatorProduct[]
+  commission         CreatorCommission?
+  productCommissions CreatorProductCommission[]
+  referralCommissions ReferralCommission[]
 
   @@index([status])
   // 세무관리 화면은 과세유형으로 걸러 본다(비사업자 = 원천징수 대상).
@@ -1479,6 +1526,8 @@ model SettlementLedger {
   donationId    String?         @map("donation_id")
   refundId      String?         @map("refund_id")
   requestId     String?         @map("request_id")
+  /// 도네이도 샵 주문 (레퍼럴·직접 판매 분개의 출처). 2026-11-17 추가
+  shopOrderId   String?         @map("shop_order_id")
   memo          String?
   occurredAt    DateTime        @map("occurred_at") @db.Timestamptz(3)
   settlementKey String          @map("settlement_key")
@@ -1947,4 +1996,454 @@ model GameWinner {
   @@index([roundId])
   @@index([creatorId, createdAt])
   @@map("game_winner")
+}
+
+// ===========================================================================
+// 도네이도 샵 · 회원 · 상품/주문 (2026-11-17)
+//
+// - 판매 당사자: 관리자 상품(Product.ownerType=ADMIN) = 도네이도, 크리에이터 직접 상품(CREATOR) = 크리에이터
+//   (도네이도는 통신판매중개자). 크리에이터는 관리자 상품을 자기 샵에 전시하고 레퍼럴 수익을 받는다.
+// - 금액은 원 단위 BigInt, 요율은 Decimal(10,6) (0.050000 = 5%).
+// - 주문 항목에는 주문 시점의 가격·수익률·판매자·공급처를 스냅샷으로 남긴다.
+//   (요율을 나중에 바꿔도 지난 주문의 정산액이 바뀌지 않게 — 셀러브릭스 2026-07 사고 교훈)
+// - 배송지 연락처·주소는 암호화 + 마스킹 분리 저장 (복호화는 배송 처리 화면에서만)
+// ===========================================================================
+
+/// 크리에이터 채널 (신청서의 채널 정보 + 도네이도 샵 영상 노출 계정)
+model CreatorChannel {
+  id            String    @id
+  creatorId     String    @map("creator_id")
+  /// YOUTUBE | INSTAGRAM | FACEBOOK | TIKTOK | CHZZK | SOOP | TWITCH | OTHER
+  platform      String
+  url           String
+  /// 중복 신청 차단용 정규화 주소 (소문자, 프로토콜·www·끝 슬래시 제거)
+  urlKey        String    @map("url_key")
+  title         String?
+  followerCount Int?      @map("follower_count")
+  isPrimary     Boolean   @default(false) @map("is_primary")
+  /// 도네이도 샵 영상 탭에 이 채널 영상을 보여 줄지
+  showOnShop    Boolean   @default(true) @map("show_on_shop")
+  /// 유튜브 채널 ID(UC…). 자동 영상 수집에 쓴다
+  externalId    String?   @map("external_id")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@unique([urlKey])
+  @@index([creatorId])
+  @@map("creator_channel")
+}
+
+/// 도네이도 내 구독 (팬 귀속과 별개 — 여러 크리에이터를 구독할 수 있다)
+model MemberFollow {
+  id        String   @id
+  userId    String   @map("user_id")
+  creatorId String   @map("creator_id")
+  notify    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, creatorId])
+  @@index([creatorId])
+  @@map("member_follow")
+}
+
+/// 도네이도 샵 영상 (틱톡·인스타·페북 등 주소 붙여넣기 영상 + 유튜브 영상 숨김/고정 설정)
+model ShopVideo {
+  id         String   @id
+  creatorId  String   @map("creator_id")
+  platform   String
+  /// 플랫폼 영상 ID 또는 정규화 주소
+  externalId String   @map("external_id")
+  url        String
+  title      String?
+  thumbnail  String?
+  /// MANUAL(직접 등록) | AUTO(유튜브 자동 수집 영상에 대한 설정 행)
+  source     String   @default("MANUAL")
+  hidden     Boolean  @default(false)
+  pinned     Boolean  @default(false)
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@unique([creatorId, platform, externalId])
+  @@map("shop_video")
+}
+
+/// 공급처 (관리자 상품의 실제 출고처. 1차는 로그인 없이 발주서 엑셀로 전달)
+model Supplier {
+  id          String   @id
+  name        String
+  contactName String?  @map("contact_name")
+  phone       String?
+  email       String?
+  memo        String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  products       Product[]
+  purchaseOrders PurchaseOrder[]
+
+  @@map("supplier")
+}
+
+model Product {
+  id               String    @id
+  /// ADMIN(관리자 상품, 판매 당사자 도네이도) | CREATOR(크리에이터 직접 상품, 도네이도는 중개)
+  ownerType        String    @map("owner_type")
+  /// ownerType=CREATOR 일 때 판매자 크리에이터
+  creatorId        String?   @map("creator_id")
+  supplierId       String?   @map("supplier_id")
+  name             String
+  category         String?
+  summary          String?
+  description      String?
+  thumbnailUrl     String?   @map("thumbnail_url")
+  /// 정가(할인 전). 없으면 판매가만 표시
+  listPrice        BigInt?   @map("list_price")
+  /// 판매가 (옵션 추가금 제외)
+  price            BigInt
+  /// 공급가 (발주서 금액)
+  supplyPrice      BigInt?   @map("supply_price")
+  shippingFee      BigInt    @default(0) @map("shipping_fee")
+  /// 이 금액 이상 주문 시 배송비 무료 (null = 조건 없음)
+  freeShippingOver BigInt?   @map("free_shipping_over")
+  /// 레퍼럴 수익률 기본값 (관리자 상품)
+  referralRate     Decimal   @default(0) @map("referral_rate") @db.Decimal(10, 6)
+  /// DRAFT | ON_SALE | SOLD_OUT | HIDDEN
+  status           String    @default("DRAFT")
+  /// 크리에이터 직접 상품 검수. PENDING | APPROVED | REJECTED (관리자 상품은 APPROVED)
+  reviewStatus     String    @default("APPROVED") @map("review_status")
+  rejectReason     String?   @map("reject_reason")
+  /// 상품정보제공고시 [{"label":"제조국","value":"대한민국"}, …]
+  notice           Json?
+  shipFrom         String?   @map("ship_from")
+  returnAddress    String?   @map("return_address")
+  soldCount        Int       @default(0) @map("sold_count")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  creator      CreatorProfile?            @relation("CreatorOwnProducts", fields: [creatorId], references: [id])
+  supplier     Supplier?                  @relation(fields: [supplierId], references: [id])
+  variants     ProductVariant[]
+  images       ProductImage[]
+  displays     CreatorProduct[]
+  commissions  CreatorProductCommission[]
+  wishes       ProductWish[]
+  cartItems    CartItem[]
+
+  @@index([ownerType, status])
+  @@index([creatorId])
+  @@map("product")
+}
+
+/// 옵션(SKU). 옵션 없는 상품도 "기본" 옵션 1개를 가진다. 재고는 옵션 단위
+model ProductVariant {
+  id         String   @id
+  productId  String   @map("product_id")
+  name       String
+  sku        String?
+  /// 옵션 추가금 (판매가에 더한다)
+  extraPrice BigInt   @default(0) @map("extra_price")
+  stock      Int      @default(0)
+  active     Boolean  @default(true)
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  product   Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  cartItems CartItem[]
+
+  @@index([productId])
+  @@map("product_variant")
+}
+
+model ProductImage {
+  id        String @id
+  productId String @map("product_id")
+  url       String
+  sortOrder Int    @default(0) @map("sort_order")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_image")
+}
+
+/// 크리에이터 샵 전시 (관리자 상품 선택 + 승인된 직접 상품)
+model CreatorProduct {
+  id        String   @id
+  creatorId String   @map("creator_id")
+  productId String   @map("product_id")
+  sortOrder Int      @default(0) @map("sort_order")
+  active    Boolean  @default(true)
+  /// 최고관리자가 이 샵에서만 판매를 막았는가
+  blocked   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([creatorId, productId])
+  @@map("creator_product")
+}
+
+/// 크리에이터별 레퍼럴 수익률 (모든 관리자 상품에 적용, 상품 기본값보다 우선)
+model CreatorCommission {
+  id        String   @id
+  creatorId String   @unique @map("creator_id")
+  rate      Decimal  @db.Decimal(10, 6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@map("creator_commission")
+}
+
+/// 크리에이터×상품 개별 레퍼럴 수익률 (가장 우선)
+model CreatorProductCommission {
+  id        String   @id
+  creatorId String   @map("creator_id")
+  productId String   @map("product_id")
+  rate      Decimal  @db.Decimal(10, 6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([creatorId, productId])
+  @@map("creator_product_commission")
+}
+
+model ProductWish {
+  id        String   @id
+  userId    String   @map("user_id")
+  productId String   @map("product_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@map("product_wish")
+}
+
+/// 배송지 (연락처·주소는 암호화 + 마스킹)
+model MemberAddress {
+  id              String   @id
+  userId          String   @map("user_id")
+  label           String?
+  recipientMasked String   @map("recipient_masked")
+  recipientEnc    String   @map("recipient_enc")
+  phoneMasked     String   @map("phone_masked")
+  phoneEnc        String   @map("phone_enc")
+  zipcode         String
+  addressMasked   String   @map("address_masked")
+  addressEnc      String   @map("address_enc")
+  isDefault       Boolean  @default(false) @map("is_default")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("member_address")
+}
+
+/// 장바구니. shopCreatorId = 어느 크리에이터 샵에서 담았는가(레퍼럴 귀속)
+model CartItem {
+  id            String   @id
+  userId        String   @map("user_id")
+  shopCreatorId String   @map("shop_creator_id")
+  productId     String   @map("product_id")
+  variantId     String   @map("variant_id")
+  quantity      Int      @default(1)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, shopCreatorId, variantId])
+  @@map("cart_item")
+}
+
+/// 결제 1건 (주문 묶음 또는 영상 후원). paymentNo 를 결제사 멱등키로 쓴다
+model ShopPayment {
+  id          String    @id
+  paymentNo   String    @unique @map("payment_no")
+  userId      String    @map("user_id")
+  /// ORDER | VIDEO_DONATION
+  kind        String
+  amount      BigInt
+  /// READY | PAID | FAILED | CANCELLED | PARTIAL_CANCELLED
+  status      String    @default("READY")
+  provider    String
+  providerTx  String?   @map("provider_tx")
+  failReason  String?   @map("fail_reason")
+  cancelledAmount BigInt @default(0) @map("cancelled_amount")
+  paidAt      DateTime? @map("paid_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user   User        @relation(fields: [userId], references: [id])
+  orders ShopOrder[]
+
+  @@index([userId, createdAt])
+  @@map("shop_payment")
+}
+
+/// 판매자별 주문 (결제 1건 = 판매자 수만큼 주문)
+model ShopOrder {
+  id              String    @id
+  orderNo         String    @unique @map("order_no")
+  paymentId       String    @map("payment_id")
+  userId          String    @map("user_id")
+  /// DONAIDO(관리자 상품) | CREATOR(직접 상품)
+  sellerType      String    @map("seller_type")
+  sellerCreatorId String?   @map("seller_creator_id")
+  /// PENDING_PAYMENT | PAID | PREPARING | SHIPPED | DELIVERED | CONFIRMED | CANCELLED | RETURNED
+  status          String    @default("PENDING_PAYMENT")
+  itemsAmount     BigInt    @map("items_amount")
+  shippingFee     BigInt    @map("shipping_fee")
+  totalAmount     BigInt    @map("total_amount")
+  refundedAmount  BigInt    @default(0) @map("refunded_amount")
+  recipientMasked String    @map("recipient_masked")
+  recipientEnc    String    @map("recipient_enc")
+  phoneMasked     String    @map("phone_masked")
+  phoneEnc        String    @map("phone_enc")
+  zipcode         String
+  addressMasked   String    @map("address_masked")
+  addressEnc      String    @map("address_enc")
+  memo            String?
+  courier         String?
+  trackingNo      String?   @map("tracking_no")
+  paidAt          DateTime? @map("paid_at") @db.Timestamptz(3)
+  shippedAt       DateTime? @map("shipped_at") @db.Timestamptz(3)
+  deliveredAt     DateTime? @map("delivered_at") @db.Timestamptz(3)
+  confirmedAt     DateTime? @map("confirmed_at") @db.Timestamptz(3)
+  cancelledAt     DateTime? @map("cancelled_at") @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  payment ShopPayment     @relation(fields: [paymentId], references: [id])
+  user    User            @relation(fields: [userId], references: [id])
+  items   ShopOrderItem[]
+  claims  OrderClaim[]
+
+  @@index([userId, createdAt])
+  @@index([sellerType, status])
+  @@index([sellerCreatorId, status])
+  @@map("shop_order")
+}
+
+/// 주문 항목 (주문 시점 스냅샷)
+model ShopOrderItem {
+  id             String   @id
+  orderId        String   @map("order_id")
+  productId      String   @map("product_id")
+  variantId      String   @map("variant_id")
+  productName    String   @map("product_name")
+  variantName    String   @map("variant_name")
+  unitPrice      BigInt   @map("unit_price")
+  quantity       Int
+  amount         BigInt
+  /// 어느 크리에이터 샵에서 팔렸는가 (레퍼럴 수취인)
+  shopCreatorId  String   @map("shop_creator_id")
+  supplierId     String?  @map("supplier_id")
+  supplyPrice    BigInt?  @map("supply_price")
+  referralRate   Decimal  @default(0) @map("referral_rate") @db.Decimal(10, 6)
+  referralAmount BigInt   @default(0) @map("referral_amount")
+  brokerFeeRate  Decimal  @default(0) @map("broker_fee_rate") @db.Decimal(10, 6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  order             ShopOrder          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  purchaseOrderItem PurchaseOrderItem?
+  referral          ReferralCommission?
+
+  @@index([orderId])
+  @@index([shopCreatorId])
+  @@map("shop_order_item")
+}
+
+/// 발주서 (공급처별 묶음)
+model PurchaseOrder {
+  id         String    @id
+  poNo       String    @unique @map("po_no")
+  supplierId String    @map("supplier_id")
+  /// DRAFT | SENT | SHIPPED | DONE | CANCELLED
+  status     String    @default("DRAFT")
+  memo       String?
+  sentAt     DateTime? @map("sent_at") @db.Timestamptz(3)
+  createdBy  String?   @map("created_by")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  supplier Supplier            @relation(fields: [supplierId], references: [id])
+  items    PurchaseOrderItem[]
+
+  @@index([supplierId, status])
+  @@map("purchase_order")
+}
+
+model PurchaseOrderItem {
+  id              String @id
+  purchaseOrderId String @map("purchase_order_id")
+  orderItemId     String @unique @map("order_item_id")
+  quantity        Int
+  supplyPrice     BigInt? @map("supply_price")
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  orderItem     ShopOrderItem @relation(fields: [orderItemId], references: [id])
+
+  @@map("purchase_order_item")
+}
+
+/// 취소·반품·교환 신청
+model OrderClaim {
+  id           String    @id
+  orderId      String    @map("order_id")
+  /// CANCEL | RETURN | EXCHANGE
+  type         String
+  reason       String
+  /// REQUESTED | APPROVED | REJECTED | COMPLETED
+  status       String    @default("REQUESTED")
+  requestedBy  String    @map("requested_by")
+  processedBy  String?   @map("processed_by")
+  processedAt  DateTime? @map("processed_at") @db.Timestamptz(3)
+  rejectReason String?   @map("reject_reason")
+  refundAmount BigInt?   @map("refund_amount")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  order ShopOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([status, createdAt])
+  @@map("order_claim")
+}
+
+/// 레퍼럴 수익 (관리자 상품 판매 시 샵 크리에이터 몫). 구매 확정 시 정산 원장에 적립
+model ReferralCommission {
+  id          String    @id
+  orderItemId String    @unique @map("order_item_id")
+  creatorId   String    @map("creator_id")
+  amount      BigInt
+  /// PENDING | CONFIRMED | CANCELLED
+  status      String    @default("PENDING")
+  confirmedAt DateTime? @map("confirmed_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  orderItem ShopOrderItem  @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  creator   CreatorProfile @relation(fields: [creatorId], references: [id])
+
+  @@index([creatorId, status])
+  @@map("referral_commission")
 }

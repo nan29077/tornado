@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check } from '@/components/brand/icons';
 import { Button } from '@/components/ui';
 
 /** 후원 번호 / 예시 문구 복사 버튼. 클립보드 미지원 환경에서는 안내 문구를 표시한다. */

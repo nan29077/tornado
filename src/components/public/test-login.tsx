@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { ShieldCheck, UserCog, Radio, Heart } from 'lucide-react';
+import { ShieldCheck, UserCog, Radio, Heart } from '@/components/brand/icons';
 import { Card, CardTitle, Notice, cx } from '@/components/ui';
 import { testLogin, type TestLoginState } from '@/app/actions/auth';
 

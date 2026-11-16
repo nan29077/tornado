@@ -351,7 +351,7 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
     const data =
       status === 'APPROVED'
         ? // 승인으로 돌아가면 옛 반려 사유는 지운다. 남겨 두면 승인된 채널에 반려 안내가 뜬다.
-          { status, approvedAt: before.approvedAt ?? now, suspendedAt: null, rejectReason: null }
+          { status, approvedAt: before.approvedAt ?? now, suspendedAt: null, rejectReason: null, reviewNote: null, reviewRequestedAt: null }
         : status === 'SUSPENDED'
           ? { status, suspendedAt: now, rejectReason: reasonInput }
           : { status, rejectReason: reasonInput ?? null };
@@ -374,6 +374,18 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
     });
     if (moved.count === 0) {
       throw new Error('다른 관리자가 방금 이 크리에이터의 상태를 바꿨습니다. 새로고침 후 다시 확인해 주세요.');
+    }
+
+    /**
+     * (2026-11-17) 승인 = 일반회원 → 크리에이터 전환.
+     * 신청 단계에서는 계정을 일반회원(DONOR)으로 두므로, 승인할 때 역할을 바꾼다.
+     * 관리자 계정은 건드리지 않는다(신청 단계에서 이미 차단).
+     */
+    let ownerRole: string | null = null;
+    if (status === 'APPROVED') {
+      await prisma.user.updateMany({ where: { id: before.userId, role: 'DONOR' }, data: { role: 'CREATOR' } });
+    } else {
+      ownerRole = (await prisma.user.findUnique({ where: { id: before.userId }, select: { role: true } }))?.role ?? null;
     }
 
     /**
@@ -454,7 +466,8 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
           : `${before.displayName}님의 심사 상태가 '${creatorStatusLabel[status].text}' 로 변경되었습니다.${
               reasonInput ? ` 사유: ${reasonInput}` : ''
             }`,
-      linkUrl: '/studio',
+      // 아직 일반회원(전환 신청 중)이면 스튜디오가 아니라 마이페이지의 신청 화면으로 보낸다
+      linkUrl: status === 'APPROVED' || ownerRole === 'CREATOR' ? '/studio' : '/my/creator',
     });
     await writeAudit({
       adminUserId: admin.id,
@@ -474,6 +487,50 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
     return status === 'APPROVED'
       ? `${before.displayName} 님을 승인했습니다.${numberNotice}`
       : `${before.displayName} 님의 심사 상태를 변경했습니다.${numberNotice}`;
+  });
+}
+
+/**
+ * 보완요청 (2026-11-17).
+ * 심사 상태는 PENDING 그대로 두고 사유만 남긴다. 신청자는 마이페이지에서 고쳐 다시 제출한다.
+ */
+export async function requestCreatorRevision(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
+  return run(async (admin) => {
+    assertOperationAdmin(admin, '크리에이터 보완요청');
+    const creatorId = requiredId(fd, 'creatorId', '크리에이터');
+    const note = optText(fd, 'note');
+    if (!note) throw new Error('보완할 내용을 입력해 주세요. 신청자에게 그대로 전달됩니다.');
+    if (note.length > 500) throw new Error('보완요청은 500자 이내로 입력해 주세요.');
+    const before = await prisma.creatorProfile.findUnique({
+      where: { id: creatorId },
+      select: { id: true, userId: true, displayName: true, status: true, reviewNote: true },
+    });
+    if (!before) throw new Error('크리에이터를 찾을 수 없습니다.');
+    if (before.status !== 'PENDING') throw new Error('심사 대기 중인 신청에만 보완요청을 보낼 수 있습니다.');
+    const now = new Date();
+    const moved = await prisma.creatorProfile.updateMany({
+      where: { id: creatorId, status: 'PENDING' },
+      data: { reviewNote: note, reviewRequestedAt: now },
+    });
+    if (moved.count === 0) throw new Error('다른 관리자가 방금 상태를 바꿨습니다. 새로고침 후 확인해 주세요.');
+    const role = (await prisma.user.findUnique({ where: { id: before.userId }, select: { role: true } }))?.role;
+    await notifyUser({
+      userId: before.userId,
+      title: '크리에이터 신청에 보완이 필요합니다',
+      body: `보완 요청: ${note}`,
+      linkUrl: role === 'CREATOR' ? '/studio' : '/my/creator',
+    });
+    await writeAudit({
+      adminUserId: admin.id,
+      action: 'CREATOR_REVISION_REQUEST',
+      targetType: 'CreatorProfile',
+      targetId: creatorId,
+      before: { reviewNote: before.reviewNote },
+      after: { reviewNote: note },
+    });
+    revalidatePath('/admin/creators');
+    revalidatePath(`/admin/creators/${creatorId}`);
+    return `${before.displayName} 님에게 보완요청을 보냈습니다.`;
   });
 }
 

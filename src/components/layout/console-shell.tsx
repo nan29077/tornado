@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Activity, BadgeCheck, BookOpenText, CalendarDays, ClipboardList, CreditCard, FlaskConical,
-  FilePen, Flag, Gamepad2, Gauge, HeartHandshake, Home, Images, KeyRound, LayoutDashboard, LogOut,
+  BarChart3, FilePen, Gamepad2, Gauge, HeartHandshake, Home, Images, KeyRound, LayoutDashboard, LogOut,
   Menu, MessageCircleQuestion, MessageSquareText, PanelsTopLeft, Percent, Sparkles, PhoneCall,
   ReceiptText, ScrollText, Send, ServerCog, ShieldAlert, ShieldBan,
-  SlidersHorizontal, Undo2, UserCog, CircleUserRound, UserRoundCog,
+  Settings, Undo2, UserCog, CircleUserRound, UserRoundCog,
   UsersRound, Video, Volume2, WalletCards, X,
-} from 'lucide-react';
+  Store, Package, Truck,
+} from '@/components/brand/icons';
 import { Logo } from '@/components/brand/logo';
 import { ConsoleCornerMascot, MascotAccent } from '@/components/brand/mascot-decorations';
 import { NotificationBell } from '@/components/notifications/notification-bell';
@@ -50,7 +51,8 @@ export type ConsoleIconName =
   | 'dashboard' | 'donations' | 'donors' | 'effects' | 'fees' | 'game' | 'holidays' | 'inquiries' | 'messages'
   | 'moderation' | 'numbers' | 'overlay' | 'payments' | 'policies' | 'profile'
   | 'refunds' | 'reports' | 'risk' | 'settlement' | 'simulator'
-  | 'system' | 'tax' | 'templates' | 'terms' | 'tts' | 'users' | 'youtube' | 'settings' | 'send';
+  | 'system' | 'tax' | 'templates' | 'terms' | 'tts' | 'users' | 'youtube' | 'settings' | 'send'
+  | 'shop' | 'products' | 'orders' | 'truck';
 
 const CONSOLE_ICONS = {
   activity: Activity,
@@ -76,7 +78,7 @@ const CONSOLE_ICONS = {
   policies: Gauge,
   profile: UserRoundCog,
   refunds: Undo2,
-  reports: Flag,
+  reports: BarChart3,
   risk: ShieldAlert,
   settlement: WalletCards,
   simulator: FlaskConical,
@@ -87,8 +89,12 @@ const CONSOLE_ICONS = {
   tts: Volume2,
   users: UsersRound,
   youtube: Video,
-  settings: SlidersHorizontal,
+  settings: Settings,
   send: Send,
+  shop: Store,
+  products: Package,
+  orders: ReceiptText,
+  truck: Truck,
 } satisfies Record<ConsoleIconName, typeof Home>;
 
 export function ConsoleShell({

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import Link from 'next/link';
-import { Activity, CircleAlert, Flag, Wallet } from 'lucide-react';
+import { Activity, CircleAlert, Flag, Wallet } from '@/components/brand/icons';
 import { PageHeader } from '@/components/layout/console-shell';
 import { Card, CardTitle, SectionTitle, StatTile, Table, Th, Td, Badge, EmptyState, LinkButton } from '@/components/ui';
 import { SafetyBanner } from '@/components/admin/safety-banner';

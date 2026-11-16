@@ -8,8 +8,8 @@ export const loadCreatorDonateProfile = cache(async (rawCode: string) => {
   if (!/^TOR-[A-Z0-9]{2,10}$/.test(code)) notFound();
   const creator = await prisma.creatorProfile.findFirst({
     where: { code, status: 'APPROVED', user: { status: 'ACTIVE' } },
-    select: { id: true, code: true, displayName: true, channelName: true, avatarUrl: true, description: true, liveOn: true, liveUrl: true, user: { select: { avatarIndex: true } } },
+    select: { id: true, code: true, displayName: true, channelName: true, avatarUrl: true, description: true, liveOn: true, liveUrl: true, shopMarginPreset: true, user: { select: { avatarIndex: true } } },
   });
   if (!creator) notFound();
-  return { ...creator, avatarIndex: creator.user.avatarIndex, liveUrl: creator.liveOn ? creator.liveUrl : null };
+  return { ...creator, avatarIndex: creator.user.avatarIndex, liveUrl: creator.liveOn ? creator.liveUrl : null, marginPreset: creator.shopMarginPreset };
 });

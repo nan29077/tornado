@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { CalendarClock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarClock, ChevronLeft, ChevronRight } from '@/components/brand/icons';
 import { Badge, Card, CardTitle, DataRow, EmptyState, Field, Input, Notice, SectionTitle, Select, StatTile, Table, Td, Textarea, Th, cx } from '@/components/ui';
 import { PageHeader } from '@/components/layout/console-shell';
 import { ActionForm } from '@/components/studio/action-form';

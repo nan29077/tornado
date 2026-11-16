@@ -34,13 +34,11 @@
   }
 
   /*
-    공개 화면: 본문(640px) 자리만 비우고, 우측 메뉴(96px) 컬럼 뒤까지 오른쪽 장면이 이어지게 한다.
-    셸은 본문 640px + 메뉴 96px = 736px 를 가운데 정렬하므로 본문 왼쪽 끝은 50% - 368px 이다.
-    메뉴 카드만 장면 위에 떠 있고, 메뉴 컬럼 자체에는 베이지 바탕이 비치지 않는다.
+    공개 화면의 본문 폭은 셸과 맞추고, 오른쪽 장면은 메뉴(96px) 뒤까지 이어지게 한다.
   */
   .publicPage {
-    --site-content-width: 736px;
-    grid-template-columns: minmax(0, calc(50% - 368px)) 640px minmax(0, 1fr);
+    --scene-app-width: var(--public-app-width, 640px);
+    grid-template-columns: minmax(0, calc((100% - var(--scene-app-width) - 96px) / 2)) var(--scene-app-width) minmax(0, 1fr);
   }
 
   .scene .panel {
@@ -58,6 +56,27 @@
 
   .classic.publicPage {
     background: var(--site-margin-image) center / cover no-repeat;
+  }
+
+  /*
+    여유로운 배경: 그림을 세로 높이에 맞춰(auto 100%) 바깥 가장자리에 붙인다.
+    위아래가 잘리지 않고, 가운데(본문 뒤) 쪽만 가려진다. 남는 폭은 바탕색으로 잇는다.
+  */
+  .scene.airy {
+    background: var(--site-margin-base, #fdf2e1);
+  }
+
+  .scene.airy .panel {
+    background: var(--site-margin-image) no-repeat var(--site-margin-base, #fdf2e1);
+    background-size: auto 100%;
+  }
+
+  .scene.airy .left {
+    background-position: left center;
+  }
+
+  .scene.airy .right {
+    background-position: right center;
   }
 
   .scene.classic .panel {
@@ -91,6 +110,14 @@
 
   .scene .panel {
     background-position-x: var(--site-margin-narrow-focus);
+  }
+
+  .scene.airy .left {
+    background-position: left center;
+  }
+
+  .scene.airy .right {
+    background-position: right center;
   }
 }
 

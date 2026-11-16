@@ -8,7 +8,7 @@ import { saveSiteImage } from '@/app/actions/admin/site-images';
 import { requireAdminPage } from '@/server/admin-guard';
 import { getSiteImageSelection } from '@/server/services/site-images';
 import {
-  CLASSIC_MARGIN_IMAGE, DEFAULT_HOME_BANNER, DEFAULT_SITE_IMAGE, SITE_IMAGE_PRESETS, siteImageUrl, type SiteImageKind,
+  CLASSIC_MARGIN_IMAGE, DEFAULT_HOME_BANNER, DEFAULT_SITE_IMAGE, SITE_IMAGE_PRESETS, isAiryMarginImage, siteImageUrl, type SiteImageKind,
 } from '@/lib/site-images';
 import { ScheduledBanners } from './scheduled-banners';
 
@@ -48,7 +48,8 @@ function SiteImageGallery({ kind, selected }: { kind: SiteImageKind; selected: s
   const title = isMargin ? '여백 이미지 관리' : '배너 이미지 관리';
   const presets = SITE_IMAGE_PRESETS[kind];
   const groups = [
-    { title: isMargin ? '움직이는 도네이도' : '도네이도 캐릭터', presets: presets.filter(({ id }) => !id.startsWith('photo-')) },
+    ...(isMargin ? [{ title: '여유로운 배경 · 새로운 5가지 컨셉', presets: presets.filter(({ id }) => isAiryMarginImage(id)) }] : []),
+    { title: isMargin ? '움직이는 도네이도' : '도네이도 캐릭터', presets: presets.filter(({ id }) => !id.startsWith('photo-') && !isAiryMarginImage(id)) },
     { title: '실사풍 인물과 도네이도', presets: presets.filter(({ id }) => id.startsWith('photo-')) },
   ];
 

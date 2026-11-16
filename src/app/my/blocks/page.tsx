@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft } from '@/components/brand/icons';
 import { Card, CardTitle, Badge, EmptyState, Notice, LinkButton } from '@/components/ui';
 import { BlockToggle } from '@/components/my/block-toggle';
 import { requireDonorContext, NO_DONOR_TITLE, NO_DONOR_DESC } from '@/components/my/donor';

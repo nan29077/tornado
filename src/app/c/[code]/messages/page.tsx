@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { MessageCircleHeart } from 'lucide-react';
+import { MessageCircleHeart } from '@/components/brand/icons';
 import { CreatorDonateShell } from '@/components/public/creator-donate-shell';
 import { DonationReply } from '@/components/public/donation-reply';
 import { Badge, LinkButton } from '@/components/ui';

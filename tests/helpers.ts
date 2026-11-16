@@ -25,6 +25,11 @@ export async function resetDb() {
      * (발송 문구는 전역 상태라 한 번 새면 관련 없는 테스트가 이유 없이 깨진다)
      */
     'mt_message_template',
+    // 도네이도 샵 · 상품/주문 (2026-11-17)
+    'referral_commission', 'purchase_order_item', 'purchase_order', 'order_claim', 'shop_order_item', 'shop_order',
+    'shop_payment', 'cart_item', 'member_address', 'product_wish', 'creator_product', 'creator_commission',
+    'creator_product_commission', 'product_image', 'product_variant', 'product', 'supplier',
+    'creator_channel', 'member_follow', 'shop_video',
   ];
   // 정산 원장은 append-only 트리거로 DELETE 가 막혀 있으므로 트리거를 잠시 끈다.
   await prisma.$executeRawUnsafe('ALTER TABLE settlement_ledger DISABLE TRIGGER settlement_ledger_append_only');

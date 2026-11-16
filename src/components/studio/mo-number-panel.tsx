@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Phone, Copy, Check, Hash } from 'lucide-react';
+import { Phone, Copy, Check, Hash } from '@/components/brand/icons';
 import { Badge, Card, cx } from '@/components/ui';
 
 export interface MoNumberView {

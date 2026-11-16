@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Image from 'next/image';
-import { AudioLines, Ban, ChevronDown, Coins, Globe, Heart, KeyRound, PartyPopper, Play, Server, Shapes, Sparkles, Star, Volume2 } from 'lucide-react';
+import { AudioLines, Ban, ChevronDown, Coins, Globe, Heart, KeyRound, PartyPopper, Play, Server, Shapes, Sparkles, Star, Volume2 } from '@/components/brand/icons';
 import { Button, Checkbox, Field, Input, Notice, SectionTitle, Select, cx } from '@/components/ui';
 import { playEffectSound } from '@/components/overlay/overlay-sound';
 import { useTypewriter } from '@/components/overlay/overlay-effects';

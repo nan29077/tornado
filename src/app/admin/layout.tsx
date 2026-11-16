@@ -122,6 +122,16 @@ function buildGroups(c: Awaited<ReturnType<typeof loadPendingCounts>>): NavGroup
       ],
     },
     {
+      title: '도네이도 샵',
+      items: [
+        { href: '/admin/shop/products', label: '상품 관리', icon: 'products' },
+        { href: '/admin/shop/orders', label: '주문 관리', icon: 'orders' },
+        { href: '/admin/shop/purchase-orders', label: '발주·배송', icon: 'truck' },
+        { href: '/admin/shop/claims', label: '취소·반품', icon: 'refunds' },
+        { href: '/admin/shop/settings', label: '공급처·수익률·설정', icon: 'shop' },
+      ],
+    },
+    {
       title: '콘텐츠·고객지원',
       items: [
         { href: '/admin/site', label: '사이트 관리', icon: 'banners' },
