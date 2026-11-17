@@ -224,7 +224,7 @@ async function loadLive(demo: boolean, channels: FanChannel[]): Promise<FanLiveI
   return items.sort((a, b) => (b.viewers ?? -1) - (a.viewers ?? -1));
 }
 
-async function loadProducts(demo: boolean): Promise<FanProduct[]> {
+async function loadProducts(demo: boolean, take = 12): Promise<FanProduct[]> {
   const rows = await prisma.product.findMany({
     where: {
       ...SELLABLE_PRODUCT,
@@ -232,7 +232,7 @@ async function loadProducts(demo: boolean): Promise<FanProduct[]> {
       displays: { some: { active: true, blocked: false, creator: { status: 'APPROVED', user: { status: 'ACTIVE' } } } },
     },
     orderBy: [{ soldCount: 'desc' }, { createdAt: 'desc' }],
-    take: 12,
+    take,
     select: {
       id: true, name: true, thumbnailUrl: true, price: true, listPrice: true, soldCount: true, category: true, ownerType: true, creatorId: true,
       displays: {
@@ -300,14 +300,18 @@ async function loadMine(userId: string): Promise<FanMine> {
   };
 }
 
-export async function getFanHomeData(viewer: { id: string } | null): Promise<FanHomeData> {
+/**
+ * @param opts.full 섹션 [더보기] 전체 보기 화면용 — 상품·주목 목록을 메인보다 넉넉하게 불러온다.
+ */
+export async function getFanHomeData(viewer: { id: string } | null, opts: { full?: boolean } = {}): Promise<FanHomeData> {
+  const full = Boolean(opts.full);
   const demo = isDemoDataEnabled();
   await ensureDemoData();
 
   const [feedRes, creators, products, mine, notices] = await Promise.all([
     safe('영상 피드', getVideoFeed(), { items: [] as VideoItem[], curated: true, channelCount: 0, now: Date.now() }),
     safe('크리에이터', loadCreators(demo), [] as FanCreator[]),
-    safe('상품', loadProducts(demo), [] as FanProduct[]),
+    safe('상품', loadProducts(demo, full ? 120 : 12), [] as FanProduct[]),
     viewer ? safe('내 정보', loadMine(viewer.id), null) : Promise.resolve(null),
     safe(
       '공지',
@@ -329,11 +333,11 @@ export async function getFanHomeData(viewer: { id: string } | null): Promise<Fan
   const trendingCreators = [...creators]
     .filter((c) => c.weeklyDonations > 0)
     .sort((a, b) => b.weeklyDonations - a.weeklyDonations)
-    .slice(0, 5);
+    .slice(0, full ? 30 : 5);
   const trendingChannels = [...channels]
     .filter((c) => c.uploads7d > 0)
     .sort((a, b) => b.uploads7d - a.uploads7d || b.totalViews - a.totalViews)
-    .slice(0, 5);
+    .slice(0, full ? 30 : 5);
 
   return {
     demo,

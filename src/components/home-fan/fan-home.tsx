@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import {
-  ArrowRight, Bell, CreditCard, HeartHandshake, MessageSquare, ShieldCheck, Sparkles,
+  ArrowRight, Bell, ChevronRight, CreditCard, HeartHandshake, MessageSquare, ShieldCheck, Sparkles,
 } from '@/components/brand/icons';
 import { CreatorCodeForm } from '@/components/creator-code-form';
 import { BannerStrip } from '@/components/public/banner-strip';
 import { ProfileAvatar } from '@/components/profile/generated-avatar';
 import { VideoCard } from '@/components/video-hub/video-card';
 import { Card, CardTitle, SectionTitle } from '@/components/ui';
+import { AutoRail } from './auto-rail';
 import { CONTENT_CATEGORY_SLUGS, categoryLabel, sortVideos, videosHref } from '@/lib/video-hub';
 import { formatKst } from '@/lib/datetime';
 import type { FanHomeData } from '@/server/services/home-fan';
@@ -24,11 +25,30 @@ import {
  * 데이터가 없는 섹션은 숨긴다(상품만 "준비 중" 스티커).
  */
 /** KST 기준 MM.DD */
-function HeadRow({ id, title, href, link }: { id?: string; title: string; href: string; link: string }) {
+/** 섹션 오른쪽 위 [더보기 >] 버튼 (모든 섹션 같은 모양) */
+export function MoreButton({ href, label = '더보기', title }: { href: string; label?: string; title: string }) {
   return (
-    <div className="mb-3 flex items-end justify-between gap-2">
-      <h2 id={id} className="text-[18px] font-black tracking-[-0.025em] text-ink-900 sm:text-[19px]">{title}</h2>
-      <Link href={href} className="shrink-0 text-[13px] font-semibold text-brand-700">{link}</Link>
+    <Link
+      href={href}
+      prefetch={false}
+      aria-label={`${title} ${label}`}
+      className="inline-flex h-8 shrink-0 items-center gap-0.5 rounded-full border border-ink-200 bg-white pl-3 pr-2 text-[12.5px] font-bold text-ink-700 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-800 focus-visible:outline-2 focus-visible:outline-brand-500"
+    >
+      {label}
+      <ChevronRight size={14} strokeWidth={2} aria-hidden />
+    </Link>
+  );
+}
+
+/** 섹션 제목 + (설명) + 더보기 버튼을 한 줄에 */
+function HeadRow({ id, title, description, href, link }: { id?: string; title: string; description?: string; href?: string; link?: string }) {
+  return (
+    <div className="mb-3 flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <h2 id={id} className="text-[18px] font-black tracking-[-0.025em] text-ink-900 sm:text-[19px]">{title}</h2>
+        {description ? <p className="mt-1 text-[13px] leading-relaxed text-ink-500">{description}</p> : null}
+      </div>
+      {href ? <MoreButton href={href} label={link} title={title} /> : null}
     </div>
   );
 }
@@ -76,23 +96,17 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
       {/* 2. 지금 라이브 */}
       {data.live.length > 0 ? (
         <section className="mt-8" aria-labelledby="fan-live">
-          <div className="mb-3 flex items-end justify-between gap-2">
-            <h2 id="fan-live" className="text-[18px] font-black tracking-[-0.025em] text-ink-900 sm:text-[19px]">지금 라이브</h2>
-            <Link href={videosHref({ t: 'live' })} className="text-[13px] font-semibold text-brand-700">전체 보기</Link>
-          </div>
-          <Rail>
+          <HeadRow id="fan-live" title="지금 라이브" href="/explore/live" />
+          <AutoRail>
             {data.live.slice(0, 12).map((l) => <FanLiveCard key={l.key} item={l} />)}
-          </Rail>
+          </AutoRail>
         </section>
       ) : null}
 
       {/* 3. 방송국 */}
       {videos.length > 0 ? (
         <section className="mt-8" aria-labelledby="fan-broadcast">
-          <div className="mb-2 flex items-end justify-between gap-2">
-            <h2 id="fan-broadcast" className="text-[18px] font-black tracking-[-0.025em] text-ink-900 sm:text-[19px]">방송국</h2>
-            <Link href="/videos" className="text-[13px] font-semibold text-brand-700">방송국 전체보기</Link>
-          </div>
+          <HeadRow id="fan-broadcast" title="방송국" href="/videos" />
           <Rail className="mb-2">
             {[{ slug: 'all', label: '전체' }, ...quickCats.slice(0, 8).map((s) => ({ slug: s, label: categoryLabel(s) }))].map((c) => (
               <Link
@@ -109,8 +123,11 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
           </div>
           {shorts.length > 0 ? (
             <div className="mt-4">
-              <p className="mb-2 text-[14px] font-extrabold text-ink-900">쇼츠</p>
-              <Rail>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-[14px] font-extrabold text-ink-900">쇼츠</p>
+                <MoreButton href={videosHref({ t: 'shorts' })} title="쇼츠" />
+              </div>
+              <AutoRail speed={20}>
                 {shorts.slice(0, 10).map((s) => (
                   <Link key={s.id} href={`/watch/${encodeURIComponent(s.id)}`} prefetch={false} className="relative w-[118px] shrink-0 snap-start">
                     <div className="relative aspect-[9/16] overflow-hidden rounded-xl bg-ink-100">
@@ -123,7 +140,7 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
                     {s.views != null ? <p className="text-[11px] text-ink-400">조회수 {compactKo(s.views)}회</p> : null}
                   </Link>
                 ))}
-              </Rail>
+              </AutoRail>
             </div>
           ) : null}
           {data.curated ? <p className="mt-2 text-[11.5px] text-ink-400">채널 소식을 불러오는 중이라 선별 영상을 먼저 보여 드려요.</p> : null}
@@ -133,10 +150,10 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
       {/* 4. 도네이도 크리에이터 (가입 · 후원 가능) */}
       {creatorsPopular.length > 0 ? (
         <section className="mt-8">
-          <SectionTitle title="도네이도 크리에이터" description="도네이도에 가입한 크리에이터예요. 문자 한 통으로 바로 후원할 수 있어요." />
-          <Rail>
+          <HeadRow title="도네이도 크리에이터" description="도네이도에 가입한 크리에이터예요. 문자 한 통으로 바로 후원할 수 있어요." href="/explore/creators" />
+          <AutoRail>
             {creatorsPopular.map((c) => <FanCreatorCard key={c.id} creator={c} />)}
-          </Rail>
+          </AutoRail>
           {newCreators.length > 0 ? (
             <div className="mt-3 flex items-center gap-2 overflow-x-auto [scrollbar-width:none]">
               <span className="shrink-0 rounded-md bg-brand-50 px-2 py-1 text-[11.5px] font-extrabold text-brand-800">새로 합류</span>
@@ -154,20 +171,24 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
       {/* 5. 방송국 인기 채널 (미가입 · 후원 없음) */}
       {data.channels.length > 0 ? (
         <section className="mt-8">
-          <SectionTitle title="방송국 인기 채널" description="아직 도네이도에 가입하지 않은 채널이에요. 영상만 볼 수 있어요." />
-          <Rail>
+          <HeadRow title="방송국 인기 채널" description="아직 도네이도에 가입하지 않은 채널이에요. 영상만 볼 수 있어요." href="/explore/channels" />
+          <AutoRail>
             {data.channels.slice(0, 12).map((c) => <FanChannelCard key={c.channelId} channel={c} />)}
-          </Rail>
+          </AutoRail>
         </section>
       ) : null}
 
       {/* 6. 크리에이터 샵 인기 상품 */}
       <section className="mt-8">
-        <SectionTitle title="크리에이터 샵 인기 상품" description="크리에이터가 직접 고른 상품을 샵에서 만나 보세요." />
+        <HeadRow
+          title="크리에이터 샵 인기 상품"
+          description="크리에이터가 직접 고른 상품을 샵에서 만나 보세요."
+          href={data.products.length > 0 ? '/explore/products' : undefined}
+        />
         {data.products.length > 0 ? (
-          <Rail>
+          <AutoRail>
             {data.products.map((p) => <FanProductCard key={p.id} product={p} />)}
-          </Rail>
+          </AutoRail>
         ) : (
           <Card>
             <ComingSoonSticker />
@@ -220,11 +241,11 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
       {/* 8. 이번 주 주목받은 크리에이터 */}
       {data.trending.creators.length > 0 || data.trending.channels.length > 0 ? (
         <section className="mt-8">
-          <SectionTitle title="이번 주 주목받은 크리에이터" description="후원이 많이 모인 크리에이터와 업로드가 활발한 채널이에요." />
+          <HeadRow title="이번 주 주목받은 크리에이터" description="후원이 많이 모인 크리에이터와 업로드가 활발한 채널이에요." href="/explore/trending" />
           {data.trending.creators.length > 0 ? (
-            <Rail>
+            <AutoRail>
               {data.trending.creators.map((c, i) => <FanCreatorCard key={c.id} creator={c} rank={i + 1} />)}
-            </Rail>
+            </AutoRail>
           ) : null}
           {data.trending.channels.length > 0 ? (
             <Card padded={false} className="mt-3 divide-y divide-ink-100">
@@ -250,7 +271,7 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
 
       {/* 9. 카테고리 바로가기 */}
       <section className="mt-8">
-        <HeadRow title="카테고리" href="/videos" link="전체 카테고리" />
+        <HeadRow title="카테고리" href="/videos" />
         <div className="grid grid-cols-4 gap-2">
           {quickCats.slice(0, 7).map((s) => (
             <Link key={s} href={videosHref({ c: s })} className="flex min-h-14 items-center justify-center rounded-xl border border-warm-200 bg-white px-1 text-center text-[12.5px] font-bold text-ink-700 hover:border-brand-300 hover:bg-brand-50">
@@ -291,7 +312,7 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
       {/* 11. 공지 */}
       {data.notices.length > 0 ? (
         <section className="mt-8">
-          <HeadRow title="공지·이벤트" href="/notice" link="전체 보기" />
+          <HeadRow title="공지·이벤트" href="/notice" />
           <Card padded={false} className="divide-y divide-ink-100">
             {data.notices.map((n) => (
               <Link key={n.id} href="/notice" className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-ink-50">
