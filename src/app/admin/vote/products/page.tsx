@@ -49,6 +49,7 @@ export default async function AdminVoteProductsPage() {
           <Card key={p.id}>
             <CardTitle>
               {p.name} {p.active ? <Badge tone="success">판매 중</Badge> : <Badge>판매 중지</Badge>}{' '}
+              {p.id.startsWith('demo-') ? <Badge tone="warning">테스트용 더미</Badge> : null}{' '}
               <span className="text-[12px] font-normal text-ink-400">{won(p.price)} · 1개당 {(Number(p.price) / Math.max(1, p.tickets + p.bonus)).toFixed(1)}원</span>
             </CardTitle>
             <ActionForm action={saveTicketProductAction} submitLabel="저장" variant="secondary" className="mt-2"><Fields p={p} /></ActionForm>

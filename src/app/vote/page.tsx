@@ -12,6 +12,7 @@ import { prisma } from '@/server/db';
 import { getRanking, RANKING_TABS, resolveRankingTab } from '@/server/services/vote/ranking';
 import { openRounds } from '@/server/services/vote/rounds';
 import { getVoteViewer, voteContextOf } from '@/server/services/vote/view';
+import { ensureDemoData } from '@/server/services/demo-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,7 @@ export const metadata: Metadata = {
 type SP = Promise<{ p?: string; q?: string; vote?: string }>;
 
 export default async function VotePage({ searchParams }: { searchParams: SP }) {
+  await ensureDemoData();
   const sp = await searchParams;
   const tab = resolveRankingTab(sp.p);
   const q = (sp.q ?? '').trim().slice(0, 40);

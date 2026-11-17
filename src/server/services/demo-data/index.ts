@@ -26,12 +26,21 @@ export function isDemoDataEnabled(): boolean {
 }
 
 let job: Promise<void> | null = null;
+/** 마지막으로 더미를 넣은 날(KST). 날이 바뀌면 오늘 · 이번 주 투표 집계를 새로 채우려고 다시 넣는다. */
+let jobDay = '';
 
-/** 프로세스당 한 번만 넣거나 지운다. 실패해도 화면은 계속 그린다(더미만 빠진다). */
+function kstDay(): string {
+  return new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
+}
+
+/** 프로세스당 하루 한 번 넣거나 지운다. 실패해도 화면은 계속 그린다(더미만 빠진다). */
 export function ensureDemoData(): Promise<void> {
   const mode = demoDataMode();
   if (mode === 'off') return Promise.resolve();
+  const today = kstDay();
+  if (job && mode === 'on' && jobDay !== today) job = null;
   if (!job) {
+    jobDay = today;
     job = (async () => {
       try {
         if (mode === 'on') {

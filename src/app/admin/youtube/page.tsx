@@ -164,6 +164,62 @@ export default async function AdminYouTubePage() {
         {connections.length === 0 ? (
           <EmptyState title="연결된 유튜브 채널이 없습니다" description="크리에이터 스튜디오에서 채널을 연결하면 이곳에 표시됩니다." />
         ) : (
+          <>
+          <ul className="grid gap-2.5 md:hidden" aria-label="채널 연결 목록">
+            {connections.map((c) => {
+              const expired = c.expiresAt < new Date();
+              const failures = failureByCreator.get(c.creatorId) ?? 0;
+              return (
+                <li key={c.id} className="rounded-[18px] border border-ink-100 bg-white p-4 shadow-[0_8px_24px_rgba(23,22,26,0.05)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <Link href={`/admin/creators/${c.creator.id}`} className="block truncate text-[15px] font-extrabold text-brand-700">
+                        {c.creator.displayName}
+                      </Link>
+                      <p className="mt-0.5 truncate text-[12px] text-ink-500">
+                        {c.channelTitle ?? '채널명 없음'} · <span className="font-mono">{c.creator.code}</span>
+                      </p>
+                    </div>
+                    <Badge tone={connStatusTone[c.status]}>{connStatusText[c.status]}</Badge>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 rounded-xl bg-ink-50 px-3 py-2.5 text-[12px]">
+                    <div className="min-w-0">
+                      <dt className="text-ink-400">토큰 만료</dt>
+                      <dd className="mt-0.5 font-semibold tabular-nums text-ink-800">{formatKst(c.expiresAt, false)}</dd>
+                      {expired && c.status === 'CONNECTED' ? <dd className="text-[11px] text-warning-600">만료됨 · 재인증 필요</dd> : null}
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-ink-400">마지막 점검</dt>
+                      <dd className="mt-0.5 font-semibold tabular-nums text-ink-800">{formatKst(c.lastCheckedAt, false)}</dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-ink-400">채널 ID</dt>
+                      <dd className="mt-0.5 truncate font-mono text-ink-700">{shortId(c.channelId, 10, 4)}</dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-ink-400">최근 실패</dt>
+                      <dd className={`mt-0.5 font-semibold tabular-nums ${failures > 0 ? 'text-danger-600' : 'text-ink-800'}`}>{formatNumber(failures)}건</dd>
+                    </div>
+                  </dl>
+                  {c.lastError ? <p className="mt-2 break-words text-[12px] leading-relaxed text-danger-600">마지막 오류: {c.lastError}</p> : null}
+                  <div className="mt-3 flex justify-end">
+                    {c.status === 'REVOKED' ? (
+                      <span className="text-[12px] text-ink-400">해제됨</span>
+                    ) : (
+                      <ActionButton
+                        action={disconnectYouTube}
+                        values={{ creatorId: c.creatorId }}
+                        label="연결 강제 해제"
+                        variant="danger"
+                        confirm="연결을 해제하고 저장된 토큰을 폐기합니다. 크리에이터가 다시 연결해야 합니다."
+                      />
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="hidden md:block">
           <Table className="min-w-[1100px]">
             <thead>
               <tr>
@@ -225,15 +281,34 @@ export default async function AdminYouTubePage() {
               })}
             </tbody>
           </Table>
+          </div>
+          </>
         )}
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <section>
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section className="min-w-0">
           <SectionTitle title="최근 전송 실패" description="최근 실패 20건" />
           {recentFailures.length === 0 ? (
             <EmptyState title="최근 전송 실패가 없습니다" />
           ) : (
+            <>
+            <ul className="grid gap-2 md:hidden" aria-label="최근 전송 실패">
+              {recentFailures.slice(0, 20).map((f) => (
+                <li key={f.id} className="rounded-2xl border border-ink-100 bg-white px-3.5 py-3">
+                  <div className="flex items-center justify-between gap-2 text-[12px]">
+                    <span className="truncate font-bold text-ink-900">{f.donation.creator.displayName}</span>
+                    <span className="shrink-0 tabular-nums text-ink-400">{formatKst(f.createdAt, false)}</span>
+                  </div>
+                  <p className="mt-1 break-all font-mono text-[11px] text-ink-500">{f.donation.transactionNo} · 시도 {formatNumber(f.attempts)}회</p>
+                  <p className="mt-1.5 break-words text-[12px] leading-relaxed">
+                    <span className="font-semibold text-danger-600">{f.errorCode ?? '-'}</span>
+                    {f.errorMessage ? <span className="ml-1 text-ink-500">{f.errorMessage}</span> : null}
+                  </p>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden md:block">
             <Table className="min-w-0">
               <thead>
                 <tr>
@@ -259,14 +334,34 @@ export default async function AdminYouTubePage() {
                 ))}
               </tbody>
             </Table>
+            </div>
+            </>
           )}
         </section>
 
-        <section>
+        <section className="min-w-0">
           <SectionTitle title="최근 감지된 방송" description="라이브 채팅 대상이 되는 방송 목록" />
           {broadcasts.length === 0 ? (
             <EmptyState title="감지된 방송이 없습니다" />
           ) : (
+            <>
+            <ul className="grid gap-2 md:hidden" aria-label="최근 감지된 방송">
+              {broadcasts.map((b) => (
+                <li key={b.id} className="rounded-2xl border border-ink-100 bg-white px-3.5 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <Link href={`/admin/creators/${b.creator.id}`} className="truncate text-[13px] font-bold text-brand-700">
+                      {b.creator.displayName}
+                    </Link>
+                    <Badge tone={b.chatEnabled ? 'success' : 'neutral'}>{b.chatEnabled ? '채팅 사용' : '채팅 비활성'}</Badge>
+                  </div>
+                  <p className="mt-1 break-words text-[13px] font-semibold text-ink-800">{b.title ?? '제목 없음'}</p>
+                  <p className="mt-1 text-[11.5px] tabular-nums text-ink-400">
+                    {formatKst(b.detectedAt, false)} 감지{b.lifeCycle ? ` · ${b.lifeCycle}` : ''}
+                  </p>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden md:block">
             <Table className="min-w-0">
               <thead>
                 <tr>
@@ -295,6 +390,8 @@ export default async function AdminYouTubePage() {
                 ))}
               </tbody>
             </Table>
+            </div>
+            </>
           )}
         </section>
       </div>
@@ -314,9 +411,9 @@ export default async function AdminYouTubePage() {
 /** 연동 설정 한 줄 (키 원문은 절대 표시하지 않고 등록 여부만 보여준다) */
 function ConfigRow({ label, value, ok }: { label: string; value: string; ok: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-ink-100 py-2 last:border-b-0">
-      <span className="text-[12.5px] font-semibold text-ink-500">{label}</span>
-      <span className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-ink-100 py-2 last:border-b-0">
+      <span className="min-w-0 text-[12.5px] font-semibold text-ink-500">{label}</span>
+      <span className="flex shrink-0 items-center gap-2">
         <span className="font-mono text-[12.5px] text-ink-900">{value}</span>
         <Badge tone={ok ? 'success' : 'warning'}>{ok ? '정상' : '설정 필요'}</Badge>
       </span>

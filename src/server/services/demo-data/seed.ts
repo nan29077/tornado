@@ -16,6 +16,7 @@ import {
   demoProductId,
 } from './catalog';
 import { periodKey } from '../../../lib/vote-period';
+import { DEFAULT_TICKET_PRODUCTS } from '../vote/purchase';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const userId = (n: number) => `${DEMO_ID_PREFIX}user-${pad(n)}`;
@@ -224,6 +225,20 @@ async function seedDemoEngagement(db: PrismaClient, now: Date) {
       }
     }
   }
+  // 투표권 상품 더미 — 관리자가 만든 상품이 하나도 없을 때만 넣는다(실제 상품과 섞이지 않게).
+  const realProducts = await db.voteTicketProduct.count({ where: { NOT: { id: { startsWith: DEMO_ID_PREFIX } } } });
+  if (realProducts === 0) {
+    for (let i = 0; i < DEFAULT_TICKET_PRODUCTS.length; i++) {
+      const p = DEFAULT_TICKET_PRODUCTS[i];
+      const id = `${DEMO_ID_PREFIX}ticket-${pad(i + 1)}`;
+      await db.voteTicketProduct.upsert({
+        where: { id },
+        create: { id, name: p.name, price: p.price, tickets: p.tickets, bonus: p.bonus, badge: p.badge, sortOrder: i, active: true },
+        update: {},
+      });
+    }
+  }
+
   const pastRoundId = `${DEMO_ID_PREFIX}round-champion-past`;
   if (!(await db.voteRound.findUnique({ where: { id: pastRoundId }, select: { id: true } }))) {
     const picks = DEMO_CREATORS.slice(2, 8);
@@ -291,6 +306,8 @@ export async function cleanDemoData(db: PrismaClient): Promise<DemoCleanResult> 
   await db.talkSlotRule.deleteMany({ where: { creatorId: startsWith } });
   await db.talkMessage.deleteMany({ where: { id: startsWith } });
   await db.talkRoom.deleteMany({ where: { id: startsWith } });
+  // 투표권 상품 더미: 주문 기록은 상품명 스냅샷이라 상품을 지워도 남는다(product_id 는 FK 가 아니다).
+  await db.voteTicketProduct.deleteMany({ where: { id: startsWith } });
   await db.creatorProduct.deleteMany({ where: { OR: [{ id: startsWith }, { productId: startsWith }, { creatorId: startsWith }] } });
   const products = await db.product.deleteMany({ where: { id: startsWith } });
 

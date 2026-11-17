@@ -134,7 +134,7 @@ export const DEFAULT_TALK_CONFIG: TalkConfig = {
   subRefundDays: 7,
   fanReplyDailyLimit: 30,
   fanReplyMaxLength: 300,
-  sessionEnabled: false,
+  sessionEnabled: true,
   sessionPriceMode: 'FIXED',
   sessionPrice: 30_000,
   sessionPriceMin: 10_000,

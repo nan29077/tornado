@@ -5,6 +5,7 @@ import { Countdown } from '@/components/vote/live-bits';
 import { VoteHomeTabs } from '@/components/vote/home-tabs';
 import { getRanking, type RankingTab } from '@/server/services/vote/ranking';
 import { getVoteViewer, voteContextOf } from '@/server/services/vote/view';
+import { ensureDemoData } from '@/server/services/demo-data';
 
 /**
  * 메인 [구독자 전용] — 크리에이터 투표 랭킹 섹션 (2026-11-17)
@@ -12,6 +13,7 @@ import { getVoteViewer, voteContextOf } from '@/server/services/vote/view';
  * 투표 기능이 꺼져 있거나 랭킹 비공개면 섹션을 숨긴다.
  */
 export async function VoteRankingSection({ viewerId }: { viewerId: string | null }) {
+  await ensureDemoData();
   const viewer = await getVoteViewer(viewerId).catch(() => null);
   if (!viewer || !viewer.enabled || !viewer.rankingPublic) return null;
   const tabs: Array<{ key: RankingTab; label: string }> = [

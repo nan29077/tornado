@@ -341,7 +341,9 @@ describe('1:1 예약 채팅', () => {
     await replaceSlotRules(fx.creatorId, rules);
   }
 
-  it('전역 스위치가 꺼져 있으면 신청할 수 없다', async () => {
+  it('기본값은 켜짐이고, 전역 스위치를 끄면 신청할 수 없다', async () => {
+    expect(DEFAULT_TALK_CONFIG.sessionEnabled).toBe(true);
+    await saveTalkConfig({ ...DEFAULT_TALK_CONFIG, sessionEnabled: false });
     await setupRoom();
     const u = await member();
     const { slots } = await getSlots(fx.creatorId);

@@ -10,12 +10,14 @@ import { getBalance } from '@/server/services/vote/wallet';
 import { listTicketProducts } from '@/server/services/vote/purchase';
 import { MOCK_MISSIONS, OFFERWALL_PROVIDERS, completedMockMissionsToday, getOfferwallSettings, mockOfferwallAllowed } from '@/server/services/vote/offerwall';
 import { isShopPaymentMock } from '@/server/adapters/shop-payment';
+import { ensureDemoData } from '@/server/services/demo-data';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: '투표권 충전소 | 도네이도', robots: { index: false, follow: false } };
 
 export default async function VoteChargePage({ searchParams }: { searchParams: Promise<{ t?: string }> }) {
+  await ensureDemoData();
   const sp = await searchParams;
   const user = await getSessionUser().catch(() => null);
   const [cfg, settings, products] = await Promise.all([getVoteConfig(), getOfferwallSettings(), listTicketProducts()]);

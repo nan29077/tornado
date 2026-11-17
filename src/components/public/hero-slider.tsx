@@ -26,10 +26,15 @@ function HeroVideo({ video, poster, title, active, onPlayingChange }: {
   const frameClass = 'block aspect-video w-full overflow-hidden rounded-[inherit] bg-ink-900';
 
   // 다른 배너로 넘어가면 재생을 멈춘다 (화면에 안 보이는 배너에서 소리가 나지 않게)
+  // 임베드 해제는 렌더 중 상태 조정으로 처리한다(effect 안 setState 는 연쇄 렌더를 만든다).
+  const [wasActive, setWasActive] = useState(active);
+  if (wasActive !== active) {
+    setWasActive(active);
+    if (!active) setLoadEmbed(false);
+  }
   useEffect(() => {
     if (active) return;
     videoRef.current?.pause();
-    setLoadEmbed(false);
   }, [active]);
 
   if (video.kind === 'file') {

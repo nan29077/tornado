@@ -7,12 +7,14 @@ import { ProfileAvatar } from '@/components/profile/generated-avatar';
 import { EmptyRanking } from '@/components/vote/ranking-board';
 import { periodLabel } from '@/lib/vote-period';
 import { ensureRecentFinalized, getHallOfFame } from '@/server/services/vote/ranking';
+import { ensureDemoData } from '@/server/services/demo-data';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: '명예의 전당 | 도네이도 투표' };
 
 export default async function HallOfFamePage() {
+  await ensureDemoData();
   await ensureRecentFinalized();
   const { months, champions } = await getHallOfFame();
   return (

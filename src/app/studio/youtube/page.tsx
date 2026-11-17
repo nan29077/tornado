@@ -271,6 +271,28 @@ export default async function StudioYouTubePage({
           {deliveries.length === 0 ? (
             <EmptyState title="전송 내역이 없습니다" description="결제가 완료된 후원이 발생하면 여기에 기록됩니다." />
           ) : (
+            <>
+            <ul className="grid gap-2 md:hidden" aria-label="최근 전송 결과">
+              {deliveries.map((d) => {
+                const tone = deliveryStatusLabel[d.status];
+                return (
+                  <li key={d.id} className="rounded-2xl border border-ink-100 bg-white px-3.5 py-3 shadow-[0_6px_18px_rgba(23,22,26,0.04)]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-[13.5px] font-bold text-ink-900">{d.donation.displayName}</span>
+                      <Badge tone={tone.tone}>{tone.text}</Badge>
+                    </div>
+                    <p className="mt-1 break-all font-mono text-[11px] text-ink-400">{d.donation.transactionNo}</p>
+                    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-[12px] text-ink-500">
+                      <span className="tabular-nums">{formatKst(d.sentAt ?? d.createdAt, false)}</span>
+                      <span>
+                        시도 {d.attempts}회{d.errorCode ? ` · ${youtubeDeliveryReasonLabel(d.errorCode)}` : ''}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="hidden md:block">
             <Table className="min-w-full">
               <thead>
                 <tr>
@@ -300,6 +322,8 @@ export default async function StudioYouTubePage({
                 })}
               </tbody>
             </Table>
+            </div>
+            </>
           )}
         </section>
       </div>

@@ -138,6 +138,78 @@ function needsBuild() {
   return newest > builtAt;
 }
 
+/**
+ * 수정즉시반영(dev) 모드에서 서버를 켜 둔 채 새 마이그레이션이 들어오면(코드를 받아 오거나 새 기능이 추가되면)
+ * 그 자리에서 적용하고 Prisma 클라이언트도 다시 만든다. (2026-11-17)
+ * 예전에는 서버를 다시 켜기 전까지 새 표가 없어 새 메뉴가 전부 오류로 보였다.
+ */
+function migrationNames() {
+  const dir = path.resolve(process.cwd(), 'prisma', 'migrations');
+  try {
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && fs.existsSync(path.join(dir, e.name, 'migration.sql')))
+      .map((e) => e.name)
+      .sort()
+      .join('|');
+  } catch {
+    return '';
+  }
+}
+
+function schemaStamp() {
+  try {
+    return String(fs.statSync(path.resolve(process.cwd(), 'prisma', 'schema.prisma')).mtimeMs);
+  } catch {
+    return '';
+  }
+}
+
+function watchMigrations(previewEnv) {
+  const prismaCli = localScript('prisma/build/index.js', 'prisma/build/index.js');
+  let lastMigrations = migrationNames();
+  let lastSchema = schemaStamp();
+  let busy = false;
+  const timer = setInterval(async () => {
+    if (busy || shuttingDown) return;
+    const m = migrationNames();
+    const s = schemaStamp();
+    if (m === lastMigrations && s === lastSchema) return;
+    busy = true;
+    try {
+      // 파일이 복사되는 도중일 수 있어 잠깐 기다린 뒤 다시 확인한다.
+      await new Promise((r) => setTimeout(r, 3000));
+      const m2 = migrationNames();
+      const s2 = schemaStamp();
+      if (s2 !== lastSchema) {
+        log('[자동 반영] 스키마가 바뀌어 Prisma 클라이언트를 다시 만듭니다.');
+        await run(process.execPath, [prismaCli, 'generate'], previewEnv).catch((e) =>
+          console.error(`[자동 반영] Prisma 클라이언트 생성 실패: ${e.message} (창을 닫고 다시 실행해 주세요)`),
+        );
+        try {
+          fs.copyFileSync(
+            path.resolve(process.cwd(), 'prisma', 'schema.prisma'),
+            path.resolve(process.cwd(), 'src', 'generated', '.schema-stamp'),
+          );
+        } catch {
+          /* 표시 파일은 없어도 된다 */
+        }
+      }
+      if (m2 !== lastMigrations) {
+        log('[자동 반영] 새 데이터베이스 마이그레이션을 적용합니다.');
+        await run(process.execPath, [prismaCli, 'migrate', 'deploy'], previewEnv).catch((e) =>
+          console.error(`[자동 반영] 마이그레이션 적용 실패: ${e.message} (창을 닫고 다시 실행해 주세요)`),
+        );
+      }
+      lastMigrations = m2;
+      lastSchema = s2;
+    } finally {
+      busy = false;
+    }
+  }, 5000);
+  timer.unref?.();
+}
+
 async function shutdown(code = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -261,6 +333,7 @@ async function main() {
       stdio: 'inherit',
       env: { ...process.env, ...previewEnv, NODE_ENV: 'development' },
     });
+    watchMigrations(previewEnv);
   } else {
     if (needsBuild()) {
       log('[3/4] 화면 빌드 (처음에는 1~3분 걸립니다)');

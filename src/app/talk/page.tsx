@@ -11,6 +11,7 @@ import { prisma } from '@/server/db';
 import { getTalkConfig } from '@/server/services/engagement/config';
 import { listMyTalkRooms } from '@/server/services/talk/talk';
 import { SESSION_STATUS_LABEL, formatKstShort, sweepSessions } from '@/server/services/talk/sessions';
+import { ensureDemoData } from '@/server/services/demo-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +34,7 @@ function timeAgo(d: Date | null, now: number): string {
  *  - 아래에는 소통방을 연 크리에이터를 추천한다.
  */
 export default async function TalkHubPage({ searchParams }: { searchParams: Promise<{ t?: string }> }) {
+  await ensureDemoData();
   const sp = await searchParams;
   const user = await getSessionUser().catch(() => null);
   const talk = await getTalkConfig();
