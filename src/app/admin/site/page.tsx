@@ -1,4 +1,5 @@
 import Image from 'next/image';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/layout/console-shell';
 import { ActionForm } from '@/components/admin/action-form';
@@ -24,6 +25,9 @@ export default async function AdminSitePage() {
     <>
       <PageHeader title="사이트 관리" description="공개 화면의 여백, 기본 배너, 기간 지정 배너를 관리합니다." />
       <nav aria-label="사이트 관리 항목" className="mb-5 flex flex-wrap gap-2">
+        <Link href="/admin/banners" className="rounded-full border border-ink-100 bg-white px-4 py-2 text-sm font-bold text-ink-700 hover:border-brand-400">
+          홈 상단 배너 관리
+        </Link>
         {[
           ['#margin', '여백 이미지 관리'],
           ['#banner', '배너 이미지 관리'],
@@ -86,7 +90,7 @@ function SiteImageGallery({ kind, selected }: { kind: SiteImageKind; selected: s
         title={title}
         description={isMargin
           ? '공개 페이지와 후원 페이지의 PC 좌우 여백에 적용합니다.'
-          : '홈 첫 배너와 공용 기본 배너를 사용하는 크리에이터 후원 페이지에 적용합니다.'}
+          : '크리에이터 전용 탭 첫 배너의 기본 이미지와 공용 기본 배너를 사용하는 크리에이터 후원 페이지에 적용합니다.'}
       />
       <Card>
         <ActionForm action={saveSiteImage} submitLabel={isMargin ? '여백 이미지 적용' : '배너 이미지 적용'}>

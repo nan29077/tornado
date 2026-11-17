@@ -89,7 +89,13 @@ export function CreatorCodeForm({ autoFocus = false }: { autoFocus?: boolean }) 
                 type="button"
                 role="option"
                 aria-selected="false"
-                onClick={() => router.push(`/c/${m.code}`)}
+                onClick={() => {
+                  // 도네이도 샵은 새 창으로 연다 (2026-11-17). 팝업이 막히면 같은 창으로 이동한다.
+                  // ('noopener' 를 주면 window.open 이 항상 null 을 돌려줘 차단 여부를 알 수 없다 → opener 만 끊는다)
+                  const win = window.open(`/c/${encodeURIComponent(m.code)}`, '_blank');
+                  if (win) win.opener = null;
+                  else router.push(`/c/${m.code}`);
+                }}
                 className="group flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-all hover:bg-brand-50 focus:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-300"
               >
                 <ProfileAvatar

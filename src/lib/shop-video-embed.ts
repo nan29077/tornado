@@ -60,4 +60,9 @@ export function embedUrlFor(platform: string, externalId: string, url: string, a
   }
 }
 
+export function liveThumbnailUrl(url: string | null): string | null {
+  const video = url ? parseVideoUrl(url) : null;
+  return video?.platform === 'YOUTUBE' ? `https://i.ytimg.com/vi/${video.externalId}/mqdefault.jpg` : null;
+}
+
 export const SHOP_VIDEO_PLATFORM_LABEL: Record<string, string> = { YOUTUBE: 'YouTube', TIKTOK: 'TikTok', INSTAGRAM: 'Instagram', FACEBOOK: 'Facebook' };

@@ -16,6 +16,7 @@ import type { FanChannel, FanCreator, FanLiveItem } from '@/server/services/home
 import { FanChannelCard, FanCreatorCard, FanLiveCard, compactKo } from '@/components/home-fan/parts';
 import { BrowseAll } from '@/components/home-fan/browse-all';
 import { ComingSoonSticker } from '@/components/home-fan/coming-soon-sticker';
+import { liveThumbnailUrl } from '@/lib/shop-video-embed';
 
 /**
  * 메인 [크리에이터 전용] / [구독자 전용] 탭 (2026-11-17)
@@ -130,8 +131,17 @@ describe('화면 — 미가입 채널에는 후원 연결이 없다', () => {
   it('미가입 채널 라이브 카드: 시청자 수는 보이고 "후원 가능"은 없다', () => {
     const html = renderToStaticMarkup(<FanLiveCard item={channelLive} />);
     expect(html).toContain('21,640명 시청 중');
+    expect(html).toContain('/assets/donaido-live-card-v2.webp');
+    expect(html).toContain('라이브 중');
     expect(html).toContain('미가입');
     expect(html).not.toContain('후원');
+  });
+
+  it('영상 ID가 있는 라이브는 방송 썸네일을 쓰고, 채널 주소만 있으면 기본 이미지를 표시한다', () => {
+    const thumbnail = liveThumbnailUrl('https://www.youtube.com/live/aaaaaaaaaaa');
+    const html = renderToStaticMarkup(<FanLiveCard item={{ ...channelLive, thumbnail }} />);
+    expect(html).toContain('src="https://i.ytimg.com/vi/aaaaaaaaaaa/mqdefault.jpg"');
+    expect(liveThumbnailUrl('https://www.youtube.com/@donaido/live')).toBeNull();
   });
 
   it('가입 크리에이터 카드: 후원하기 · 샵 보기 버튼', () => {

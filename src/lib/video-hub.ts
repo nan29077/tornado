@@ -7,7 +7,8 @@
  * 데이터를 모으는 쪽은 src/server/services/video-hub.ts 다.
  */
 
-export type VideoSource = 'youtube' | 'sample';
+/** youtube: 유튜브 공개 피드 / sample: 샘플 / external: 가입 크리에이터가 샵에 직접 등록한 틱톡·인스타·페이스북 등 영상 */
+export type VideoSource = 'youtube' | 'sample' | 'external';
 
 export interface VideoItem {
   /** 유튜브 videoId(11자). 샘플은 'sample-' 접두사 */
@@ -27,6 +28,12 @@ export interface VideoItem {
   category: VideoCategorySlug;
   /** 쇼츠 여부 (피드 링크가 /shorts/ 인 경우) */
   isShort: boolean;
+  /** 영상이 올라온 플랫폼. 없으면 youtube 로 본다 (videoPlatformOf) */
+  platform?: VideoPlatformSlug;
+  /** 미가입 채널 프로필을 눌렀을 때 갈 플랫폼 채널 주소 (유튜브는 channelId 로 만든다) */
+  channelUrl?: string | null;
+  /** 유튜브가 아닌 영상의 원본 주소. 카드를 누르면 새 창으로 연다 */
+  externalUrl?: string | null;
   /** 도네이도에 가입·승인된 크리에이터면 후원 페이지로 연결한다. 미가입이면 null */
   creator: {
     code: string;
@@ -104,6 +111,72 @@ export const VIDEO_CATEGORIES = [
 ] as const;
 
 export type VideoCategorySlug = (typeof VIDEO_CATEGORIES)[number]['slug'];
+
+/**
+ * 플랫폼 카테고리 (2026-11-17). 방송국·메인 구독자 전용·크리에이터 영상 패널에 함께 쓴다.
+ * channels: 이 플랫폼으로 묶는 원본 플랫폼 값(CreatorChannel / ShopVideo / livePlatform 등).
+ * 목록에 없는 값(트위치·기타 등)은 모두 'other' 로 묶는다.
+ */
+export const VIDEO_PLATFORMS = [
+  { slug: 'youtube', label: '유튜브', color: '#FF0000', channels: ['YOUTUBE'] },
+  { slug: 'tiktok', label: '틱톡', color: '#17161A', channels: ['TIKTOK'] },
+  { slug: 'instagram', label: '인스타그램', color: '#C13584', channels: ['INSTAGRAM'] },
+  { slug: 'facebook', label: '페이스북', color: '#1877F2', channels: ['FACEBOOK'] },
+  { slug: 'chzzk', label: '치지직', color: '#00C73C', channels: ['CHZZK'] },
+  { slug: 'soop', label: '숲(SOOP)', color: '#0545B1', channels: ['SOOP', 'AFREECA'] },
+  { slug: 'other', label: '기타', color: '#9A9AA3', channels: [] as string[] },
+] as const;
+
+export type VideoPlatformSlug = (typeof VIDEO_PLATFORMS)[number]['slug'];
+
+export function isVideoPlatform(value: unknown): value is VideoPlatformSlug {
+  return typeof value === 'string' && VIDEO_PLATFORMS.some((p) => p.slug === value);
+}
+
+/** 원본 플랫폼 값(YOUTUBE·TIKTOK·CHZZK…)을 플랫폼 카테고리로. 모르는 값은 기타 */
+export function platformSlugOf(raw: string | null | undefined): VideoPlatformSlug {
+  const v = (raw ?? '').trim().toUpperCase();
+  if (!v) return 'youtube';
+  return VIDEO_PLATFORMS.find((p) => (p.channels as readonly string[]).includes(v))?.slug ?? 'other';
+}
+
+export function videoPlatformOf(item: Pick<VideoItem, 'platform'>): VideoPlatformSlug {
+  return item.platform ?? 'youtube';
+}
+
+export function videoPlatformLabel(slug: string): string {
+  return VIDEO_PLATFORMS.find((p) => p.slug === slug)?.label ?? '기타';
+}
+
+/**
+ * 영상(썸네일·제목)을 눌렀을 때 갈 곳.
+ *  - 유튜브·샘플: 도네이도 시청 화면 /watch (같은 창)
+ *  - 가입 크리에이터의 틱톡·인스타 등 영상: 그 크리에이터 도네이도 샵 영상 탭 (새 창, 공식 임베드로 재생·후원)
+ */
+export function videoOpenTarget(item: VideoItem): { href: string; newWindow: boolean } {
+  if (item.source === 'external') {
+    if (item.creator) return { href: `/c/${encodeURIComponent(item.creator.code)}?tab=video`, newWindow: true };
+    if (item.externalUrl) return { href: item.externalUrl, newWindow: true };
+  }
+  return { href: `/watch/${encodeURIComponent(item.id)}`, newWindow: false };
+}
+
+/**
+ * 영상 카드 하단 프로필을 눌렀을 때 갈 곳.
+ *  - 도네이도 가입 크리에이터: 그 크리에이터의 도네이도 샵 (새 창)
+ *  - 미가입(스크래핑) 채널: 원래 플랫폼의 채널 (새 창). 채널 주소를 모르면 영상 원본으로
+ *  - 둘 다 없으면 null (링크 없음)
+ */
+export function videoProfileTarget(item: VideoItem): { href: string; kind: 'shop' | 'platform'; label: string } | null {
+  if (item.creator) return { href: `/c/${encodeURIComponent(item.creator.code)}`, kind: 'shop', label: '도네이도 샵' };
+  const platform = videoPlatformOf(item);
+  const label = `${videoPlatformLabel(platform)} 채널`;
+  if (item.channelUrl && /^https?:\/\//i.test(item.channelUrl)) return { href: item.channelUrl, kind: 'platform', label };
+  if (platform === 'youtube' && isYouTubeChannelId(item.channelId)) return { href: youtubeChannelUrl(item.channelId), kind: 'platform', label };
+  if (item.externalUrl && /^https?:\/\//i.test(item.externalUrl)) return { href: item.externalUrl, kind: 'platform', label };
+  if (platform === 'youtube' && isYouTubeVideoId(item.id)) return { href: youtubeWatchUrl(item.id), kind: 'platform', label };
+  return null;
+}
 
 /** 실제 영상에 붙일 수 있는 카테고리 (모아보기용 all·donaido 제외) */
 export const CONTENT_CATEGORY_SLUGS = VIDEO_CATEGORIES.map((c) => c.slug).filter(
@@ -217,9 +290,10 @@ export interface LiveCreator {
   category: VideoCategorySlug | null;
 }
 
-export function videosHref(params: { c?: string | null; q?: string | null; limit?: number | null; sort?: VideoOrder; t?: VideoType | null } = {}): string {
+export function videosHref(params: { c?: string | null; p?: string | null; q?: string | null; limit?: number | null; sort?: VideoOrder; t?: VideoType | null } = {}): string {
   const sp = new URLSearchParams();
   if (params.t && params.t !== 'all') sp.set('t', params.t);
+  if (params.p && params.p !== 'all') sp.set('p', params.p);
   if (params.c && params.c !== 'all') sp.set('c', params.c);
   if (params.q) sp.set('q', params.q);
   if (params.limit) sp.set('limit', String(params.limit));

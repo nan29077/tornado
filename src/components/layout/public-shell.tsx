@@ -21,7 +21,10 @@ export async function PublicShell({
   home = false,
   leftPane,
   mobileVideoPreview,
+  headerExtra,
 }: {
+  /** 상단 헤더 가운데(로고와 메뉴 사이)에 띄울 영역. 메인 [구독자 전용] 탭의 시청 현황 등 */
+  headerExtra?: React.ReactNode;
   children: React.ReactNode;
   aside?: React.ReactNode;
   home?: boolean;
@@ -81,7 +84,7 @@ export async function PublicShell({
 
   return (
     <div className="public-page" data-public-home={home || undefined}>
-      <PublicShellClient aside={aside} home={home} leftPane={leftPane} videoHubEnabled={isVideoHubEnabled()} viewer={viewer} mockMode={isServiceInMockMode()} business={env.business} marginPreset={margin}>
+      <PublicShellClient aside={aside} home={home} headerExtra={headerExtra} leftPane={leftPane} videoHubEnabled={isVideoHubEnabled()} viewer={viewer} mockMode={isServiceInMockMode()} business={env.business} marginPreset={margin}>
         {children}
       </PublicShellClient>
       <SupportWidget faqs={faqs} loggedIn={Boolean(user)} hasThread={hasThread} mobileVideoPreview={mobileVideoPreview} />

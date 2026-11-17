@@ -1,6 +1,7 @@
 import Link from 'next/link';
-import { ChevronRight, HeartHandshake, PlayCircle, Radio, ShoppingBag, Store, Users } from '@/components/brand/icons';
+import { ChevronRight, HeartHandshake, Radio, ShoppingBag, Store, Users } from '@/components/brand/icons';
 import { GeneratedAvatar, ProfileAvatar } from '@/components/profile/generated-avatar';
+import { LiveBadge, LiveCardFrame } from '@/components/public/live-card-frame';
 import { cx } from '@/components/ui';
 import { categoryLabel, youtubeChannelUrl } from '@/lib/video-hub';
 import type { FanChannel, FanCreator, FanLiveItem, FanProduct } from '@/server/services/home-fan';
@@ -21,6 +22,11 @@ export function compactKo(n: number): string {
 
 export function won(n: number): string {
   return `${n.toLocaleString('ko-KR')}원`;
+}
+
+/** 도네이도 샵(/c/…)으로 가는 링크는 새 창으로 연다 (2026-11-17) */
+export function newWindowIfShop(href: string): { target?: '_blank'; rel?: string } {
+  return href.startsWith('/c/') ? { target: '_blank', rel: 'noopener' } : {};
 }
 
 /** 가로 스크롤 선반 */
@@ -48,15 +54,6 @@ export function UnregisteredBadge() {
   return <span className="shrink-0 rounded-md bg-ink-100 px-1.5 py-0.5 text-[10.5px] font-bold text-ink-500">미가입</span>;
 }
 
-export function LiveBadge() {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-danger-600 px-1.5 py-0.5 text-[10.5px] font-black text-white">
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" aria-hidden />
-      LIVE
-    </span>
-  );
-}
-
 /** 지금 라이브 카드 (가입 크리에이터 → 샵 시청·후원 / 미가입 채널 → 시청 화면) */
 export function FanLiveCard({ item, wide = false }: { item: FanLiveItem; wide?: boolean }) {
   return (
@@ -64,32 +61,11 @@ export function FanLiveCard({ item, wide = false }: { item: FanLiveItem; wide?: 
       <Link
         href={item.href}
         prefetch={false}
+        {...newWindowIfShop(item.href)}
         aria-label={`${item.name} 라이브 보기`}
         className="absolute inset-0 z-[1] rounded-2xl focus-visible:outline-2 focus-visible:outline-brand-500"
       />
-      <div className="relative grid aspect-video place-items-center overflow-hidden rounded-xl bg-[radial-gradient(circle_at_30%_20%,#fff3cf_0%,#ffd77a_45%,#f2a541_100%)]">
-        {item.thumbnail ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.thumbnail} alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover" />
-        ) : item.creator ? (
-          <ProfileAvatar seed={item.creator.code} avatarIndex={item.creator.avatarIndex} name={item.name} imageUrl={item.creator.avatarUrl} className="h-14 w-14 ring-4 ring-white/80" />
-        ) : (
-          <PlayCircle size={30} strokeWidth={1.5} className="text-brand-800" />
-        )}
-        <span className="absolute left-1.5 top-1.5"><LiveBadge /></span>
-        {item.viewers != null ? (
-          <span className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded-md bg-ink-900/80 px-1.5 py-0.5 text-[10.5px] font-bold text-white">
-            <Users size={11} strokeWidth={2} aria-hidden />
-            {item.viewers.toLocaleString('ko-KR')}명 시청 중
-          </span>
-        ) : null}
-        {item.donatable ? (
-          <span className="absolute bottom-1.5 right-1.5 inline-flex items-center gap-1 rounded-md bg-brand-400 px-1.5 py-0.5 text-[10.5px] font-extrabold text-ink-900">
-            <HeartHandshake size={11} strokeWidth={2} aria-hidden />
-            후원 가능
-          </span>
-        ) : null}
-      </div>
+      <LiveCardFrame thumbnail={item.thumbnail} />
       <p className="mt-2 line-clamp-1 px-0.5 text-[13px] font-bold text-ink-900">{item.title}</p>
       <div className="mt-0.5 flex min-w-0 items-center gap-1.5 px-0.5">
         <Radio size={13} className="shrink-0 text-danger-600" aria-hidden />
@@ -97,6 +73,22 @@ export function FanLiveCard({ item, wide = false }: { item: FanLiveItem; wide?: 
         {!item.donatable ? <UnregisteredBadge /> : null}
       </div>
       {item.category ? <p className="mt-0.5 truncate px-0.5 text-[11.5px] text-ink-400">{categoryLabel(item.category)}</p> : null}
+      {item.viewers != null || item.donatable ? (
+        <div className="mt-1 flex flex-wrap items-center gap-1 px-0.5">
+          {item.viewers != null ? (
+            <span className="inline-flex items-center gap-1 rounded-md bg-ink-100 px-1.5 py-0.5 text-[10.5px] font-bold text-ink-700">
+              <Users size={11} strokeWidth={2} aria-hidden />
+              {item.viewers.toLocaleString('ko-KR')}명 시청 중
+            </span>
+          ) : null}
+          {item.donatable ? (
+            <span className="inline-flex items-center gap-1 rounded-md bg-brand-100 px-1.5 py-0.5 text-[10.5px] font-extrabold text-brand-800">
+              <HeartHandshake size={11} strokeWidth={2} aria-hidden />
+              후원 가능
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -118,11 +110,11 @@ export function FanCreatorCard({ creator, rank }: { creator: FanCreator; rank?: 
         {[creator.category ? categoryLabel(creator.category) : null, `구독자 ${compactKo(creator.subscribers)}명`].filter(Boolean).join(' · ')}
       </p>
       <div className="mt-2.5 grid grid-cols-2 gap-1.5">
-        <Link href={`${shop}?tab=donate`} prefetch={false} className="inline-flex min-h-9 items-center justify-center gap-1 rounded-lg bg-brand-400 text-[12px] font-extrabold text-ink-900 hover:bg-brand-300">
+        <Link href={`${shop}?tab=donate`} prefetch={false} target="_blank" rel="noopener" className="inline-flex min-h-9 items-center justify-center gap-1 rounded-lg bg-brand-400 text-[12px] font-extrabold text-ink-900 hover:bg-brand-300">
           <HeartHandshake size={13} strokeWidth={2} aria-hidden />
           후원하기
         </Link>
-        <Link href={`${shop}?tab=shop`} prefetch={false} className="inline-flex min-h-9 items-center justify-center gap-1 rounded-lg border border-ink-200 bg-white text-[12px] font-bold text-ink-700 hover:bg-ink-50">
+        <Link href={`${shop}?tab=shop`} prefetch={false} target="_blank" rel="noopener" className="inline-flex min-h-9 items-center justify-center gap-1 rounded-lg border border-ink-200 bg-white text-[12px] font-bold text-ink-700 hover:bg-ink-50">
           <Store size={13} strokeWidth={1.8} aria-hidden />
           샵 보기
         </Link>
@@ -161,7 +153,7 @@ export function FanChannelCard({ channel }: { channel: FanChannel }) {
         rel="noopener noreferrer"
         className="relative z-[2] mt-1.5 inline-flex items-center gap-0.5 px-0.5 text-[11.5px] font-bold text-ink-500 hover:text-brand-800"
       >
-        YouTube 채널
+        유튜브 채널
         <ChevronRight size={12} aria-hidden />
       </a>
     </article>

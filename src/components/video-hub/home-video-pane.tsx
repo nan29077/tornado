@@ -4,7 +4,8 @@ import * as React from 'react';
 import Link from 'next/link';
 import { ArrowRight, ChevronLeft, ChevronRight, Clapperboard, ExternalLink, X } from '@/components/brand/icons';
 import { cx } from '@/components/ui';
-import { VIDEO_ORDERS, categoryLabel, sortVideos, videosHref, youtubeWatchUrl, type VideoCategorySlug, type VideoItem, type VideoOrder } from '@/lib/video-hub';
+import { VIDEO_CATEGORIES, VIDEO_ORDERS, sortVideos, videoPlatformOf, videosHref, youtubeWatchUrl, type VideoCategorySlug, type VideoItem, type VideoOrder, type VideoPlatformSlug } from '@/lib/video-hub';
+import { HubChipGrid, HubChipLink, PlatformSelect, type HubChip } from './hub-chip-grid';
 import { VideoCard, VideoProfile } from './video-card';
 import { VideoPlayer } from './video-player';
 
@@ -22,16 +23,30 @@ export function HomeVideoPane({
   inlinePlayback?: boolean;
   /** 지금 방송 중인 도네이도 크리에이터 수 */
   liveCount?: number;
-  /** 영상이 있는 카테고리 (방송국 바로가기 칩) */
+  /** (이전 버전 호환용) 영상이 있는 카테고리. 2026-11-17 부터 방송국 카테고리를 모두 보여 준다 */
   categories?: VideoCategorySlug[];
   hasShorts?: boolean;
 }) {
   const [order, setOrder] = React.useState<VideoOrder>('latest');
+  // 1차 분류: 플랫폼 (셀렉트) — 패널 영상도 그 플랫폼으로 거른다
+  const [platform, setPlatform] = React.useState<VideoPlatformSlug | 'all'>('all');
+  void categories;
+  const platformCounts = React.useMemo(() => {
+    const count: Partial<Record<VideoPlatformSlug, number>> = {};
+    for (const v of items) count[videoPlatformOf(v)] = (count[videoPlatformOf(v)] ?? 0) + 1;
+    return count;
+  }, [items]);
+  const pool = React.useMemo(() => (platform === 'all' ? items : items.filter((v) => videoPlatformOf(v) === platform)), [items, platform]);
+  // 2차 분류: 방송국 주제 카테고리 전체 (후원 가능 포함), 고른 플랫폼을 유지해 방송국으로 이동
+  const topicChips = React.useMemo<HubChip[]>(
+    () => VIDEO_CATEGORIES.filter((c) => c.slug !== 'all').map((c): HubChip => ({ key: `c:${c.slug}`, href: videosHref({ c: c.slug, p: platform }), label: c.label, tone: c.slug === 'donaido' ? 'brand' : 'normal' })),
+    [platform],
+  );
   const [position, setPosition] = React.useState(0);
   const [playing, setPlaying] = React.useState<VideoItem | null>(null);
   const rail = React.useRef<HTMLDivElement>(null);
   const id = React.useId();
-  const shown = React.useMemo(() => sortVideos(items, order).slice(0, 8), [items, order]);
+  const shown = React.useMemo(() => sortVideos(pool, order).slice(0, 8), [pool, order]);
 
   function choose(next: VideoOrder) {
     setOrder(next);
@@ -53,26 +68,20 @@ export function HomeVideoPane({
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-400 text-ink-900 shadow-[0_4px_9px_rgba(191,125,0,0.20)]"><Clapperboard size={17} strokeWidth={1.8} aria-hidden /></span>
           <h2 className="text-[15px] font-black leading-tight tracking-tight text-ink-900">크리에이터 영상</h2>
         </div>
-        <Link href={videosHref({ sort: order })} className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full border border-brand-200 bg-white px-2.5 text-[11px] font-extrabold text-brand-800 transition-colors hover:bg-brand-50">
+        <Link href={videosHref({ sort: order, p: platform })} className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full border border-brand-200 bg-white px-2.5 text-[11px] font-extrabold text-brand-800 transition-colors hover:bg-brand-50">
           더 보기 <ArrowRight size={13} />
         </Link>
       </div>
-      <nav aria-label="방송국 바로가기" className="-mx-0.5 mt-2.5 flex gap-1.5 overflow-x-auto px-0.5 pb-0.5 [scrollbar-width:none]">
-        <Link href={videosHref({ t: 'live' })} className={cx('inline-flex min-h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-[11.5px] font-extrabold', liveCount > 0 ? 'bg-danger-600 text-white' : 'border border-ink-100 bg-white text-ink-600')}>
-          <span className={cx('h-1.5 w-1.5 rounded-full', liveCount > 0 ? 'animate-pulse bg-white' : 'bg-ink-300')} aria-hidden />
-          라이브{liveCount > 0 ? ` ${liveCount}` : ''}
-        </Link>
-        {hasShorts ? (
-          <Link href={videosHref({ t: 'shorts' })} className="inline-flex min-h-8 shrink-0 items-center rounded-full bg-ink-900 px-2.5 text-[11.5px] font-extrabold text-white">
-            쇼츠
-          </Link>
-        ) : null}
-        {categories.map((slug) => (
-          <Link key={slug} href={videosHref({ c: slug })} className="inline-flex min-h-8 shrink-0 items-center rounded-full border border-brand-100 bg-white px-2.5 text-[11.5px] font-bold text-ink-700 hover:bg-brand-50">
-            {categoryLabel(slug)}
-          </Link>
-        ))}
-      </nav>
+      <div className="mt-2.5 space-y-2">
+        {/* 1차: 플랫폼 셀렉트 + 라이브 · 쇼츠 */}
+        <div className="flex items-center gap-1.5">
+          <PlatformSelect value={platform} counts={platformCounts} onChange={(next) => { setPlatform(next); setPlaying(null); setPosition(0); rail.current?.scrollTo({ left: 0 }); }} className="min-w-0 flex-1" />
+          <HubChipLink chip={{ key: 'live', href: videosHref({ t: 'live', p: platform }), label: liveCount > 0 ? `라이브 ${liveCount}` : '라이브', tone: liveCount > 0 ? 'live-on' : 'live' }} />
+          {hasShorts ? <HubChipLink chip={{ key: 'shorts', href: videosHref({ t: 'shorts', p: platform }), label: '쇼츠', tone: 'dark' }} /> : null}
+        </div>
+        {/* 2차: 주제 카테고리 한 줄 (옆으로 넘김) */}
+        <HubChipGrid chips={topicChips} label="방송국 카테고리" />
+      </div>
       <div className="mb-2.5 mt-3 grid grid-cols-3 gap-1 rounded-xl border border-brand-100 bg-brand-50 p-1" role="tablist" aria-label="영상 정렬">
         {VIDEO_ORDERS.map((tab, index) => (
           <button key={tab.value} id={`${id}-${tab.value}`} type="button" role="tab" aria-selected={order === tab.value}
@@ -121,7 +130,7 @@ export function HomeVideoPane({
             </div>
           ))}
         </div>
-        {!shown.length ? <p className="py-8 text-center text-sm text-ink-500">아직 영상이 없어요.</p> : null}
+        {!shown.length ? <p className="py-8 text-center text-sm text-ink-500">{platform === 'all' ? '아직 영상이 없어요.' : '이 플랫폼 영상은 아직 준비 중이에요.'}</p> : null}
       </div>
       {!playing && shown.length > 1 ? <div className="mt-1.5 flex items-center justify-between border-t border-warm-100 pt-2">
         <span className="text-[11px] font-medium text-ink-500">옆으로 넘겨 보기</span>

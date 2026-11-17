@@ -96,6 +96,7 @@ export function ImageUploadField({
       ) : (
         <input
           value={value}
+          aria-label={label}
           onChange={(e) => setValue(e.target.value)}
           placeholder="https:// 또는 /uploads/... 경로"
           className="h-11 w-full rounded-xl border border-ink-200 px-3.5 text-[14px] outline-none transition-colors focus:border-brand-400"

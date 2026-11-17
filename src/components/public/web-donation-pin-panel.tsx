@@ -188,7 +188,7 @@ export function WebDonationPinPanel({
         <div>
           <button type="button" onClick={() => setStarted(true)} className={ctaClass}>
             <SmsDonation size={18} strokeWidth={1.7} />
-            문자후원하기
+            간편계좌이체로 후원하기
           </button>
           <p className="mt-2.5 text-center text-[11.5px] leading-relaxed text-ink-400">
             금액과 응원 메시지를 고르면 결제 PIN 입력 링크를 문자로 보내드립니다. PIN 을 입력하면 후원이 완료되고,
@@ -475,7 +475,7 @@ export function WebDonationPinPanel({
 
       <p className="mt-4 flex items-center justify-center gap-1.5 border-t border-ink-100 pt-3 text-[11.5px] text-ink-400">
         <Smartphone size={13} strokeWidth={1.8} />
-        휴대전화에서는 문자후원하기 버튼 한 번으로 더 간단하게 후원할 수 있습니다.
+        휴대전화에서는 위 [문자후원]을 고르면 문자 한 통으로 더 간단하게 후원할 수 있습니다.
       </p>
     </div>
   );

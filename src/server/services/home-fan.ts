@@ -10,6 +10,7 @@
  */
 import { prisma } from '@/server/db';
 import { logger } from '@/lib/logger';
+import { liveThumbnailUrl } from '@/lib/shop-video-embed';
 import { getLiveCreators, getVideoFeed } from '@/server/services/video-hub';
 import {
   DEMO_CREATORS,
@@ -41,7 +42,6 @@ export interface FanLiveItem {
   /** 가입: 도네이도 샵 / 미가입: 시청 화면 */
   href: string;
   donatable: boolean;
-  creator?: { code: string; avatarUrl: string | null; avatarIndex: number | null };
 }
 
 export interface FanCreator {
@@ -195,11 +195,10 @@ async function loadLive(demo: boolean, channels: FanChannel[]): Promise<FanLiveI
         name: c.displayName,
         category: c.category,
         viewers: d?.liveViewers ?? null,
-        thumbnail: null,
+        thumbnail: liveThumbnailUrl(c.liveUrl),
         platform: c.platform,
         href: `/c/${encodeURIComponent(c.code)}?tab=video`,
         donatable: true,
-        creator: { code: c.code, avatarUrl: c.avatarUrl, avatarIndex: c.avatarIndex },
       };
     });
   if (demo) {

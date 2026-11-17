@@ -3,7 +3,7 @@ import Link from 'next/link';
 import {
   SmsDonation, CreditCard, ShieldCheck, CircleAlert, ChevronRight,
   Gauge, Flag, Phone, BellRing, Smartphone, Users, CalendarDays, HandCoins,
-  Video, Camera, Music2, ThumbsUp,
+  Video, Camera, Music2, ThumbsUp, Radio, Tv, Gamepad2, Globe,
 } from '@/components/brand/icons';
 import { CreatorCodeForm } from '@/components/creator-code-form';
 import { CopyButton } from '@/components/public/copy-button';
@@ -28,7 +28,8 @@ import { resolvePolicy } from '@/server/services/limits';
 import { getPaymentAdapter } from '@/server/adapters/payment';
 import { resolveWebDonationChannel } from '@/server/services/web-donation';
 import { readSnsLinks, type SnsPlatform } from '@/lib/sns-platforms';
-import { ShopTabs, resolveShopTab } from '@/components/shop/shop-tabs';
+import { DONATE_METHODS, ShopTabs, resolveDonateMethod, resolveShopTab, type DonateMethod } from '@/components/shop/shop-tabs';
+import { CardDonateForm } from '@/components/shop/card-donate-form';
 import { FollowButton } from '@/components/shop/follow-button';
 import { ShopVideoTab } from '@/components/shop/shop-video-tab';
 import { ShopProductGrid } from '@/components/shop/shop-product-grid';
@@ -37,7 +38,8 @@ import { getShopVideos } from '@/server/services/shop/videos';
 import { listShopProducts } from '@/server/services/shop/catalog';
 import { parseDonationPresets } from '@/server/services/shop/video-donation';
 import { isShopPaymentMock } from '@/server/adapters/shop-payment';
-import { formatViews, timeAgo } from '@/lib/video-hub';
+import { formatViews, platformSlugOf, timeAgo, VIDEO_PLATFORMS } from '@/lib/video-hub';
+import { platformLabel } from '@/lib/creator-channels';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,7 +56,7 @@ export const dynamic = 'force-dynamic';
  * 모바일에서는 하단 고정 CTA(문자 보내기)가 탭바를 대신한다.
  */
 
-type Params = { params: Promise<{ code: string }>; searchParams?: Promise<{ tab?: string; cat?: string }> };
+type Params = { params: Promise<{ code: string }>; searchParams?: Promise<{ tab?: string; cat?: string; m?: string }> };
 
 /** SNS 링크 버튼 아이콘. lucide 에는 브랜드 로고가 없어 성격이 가까운 일반 아이콘을 쓰고, 구분은 색으로 한다. */
 const SNS_ICONS: Record<SnsPlatform, typeof Video> = {
@@ -62,6 +64,17 @@ const SNS_ICONS: Record<SnsPlatform, typeof Video> = {
   INSTAGRAM: Camera,
   TIKTOK: Music2,
   FACEBOOK: ThumbsUp,
+};
+
+/** 크리에이터 채널(스튜디오 · 신청서에 등록한 플랫폼 채널) 아이콘. SNS 링크에 없는 플랫폼에 쓴다. */
+const CHANNEL_ICONS: Record<string, typeof Video> = {
+  YOUTUBE: Video,
+  INSTAGRAM: Camera,
+  TIKTOK: Music2,
+  FACEBOOK: ThumbsUp,
+  CHZZK: Radio,
+  SOOP: Tv,
+  TWITCH: Gamepad2,
 };
 
 /** 결제가 끝나 공개해도 되는 후원 상태. 통계와 최근 후원 목록이 같은 기준을 쓴다. */
@@ -183,6 +196,41 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
    */
   const snsLinks = readSnsLinks(creator);
   const liveLinks = snsLinks.filter((l) => l.live);
+
+  /**
+   * 플랫폼 바로가기 버튼 (2026-11-17).
+   * 영상 카드 프로필 → 도네이도 샵으로 들어온 시청자가 여기서 유튜브 · 틱톡 · 치지직 등 원래 채널로 갈 수 있게
+   * SNS 링크(방송중 표시 포함) + 등록 채널(치지직 · 숲 · 트위치 · 기타 등)을 합쳐 보여 준다. 모두 새 창.
+   */
+  const channelRows = await prisma.creatorChannel
+    .findMany({ where: { creatorId: creator.id }, orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }], select: { platform: true, url: true }, take: 12 })
+    .catch(() => [] as Array<{ platform: string; url: string }>);
+  const platformLinks: Array<{ key: string; label: string; url: string; color: string; live: boolean; Icon: typeof Video }> = snsLinks.map((l) => ({
+    key: l.platform.value,
+    label: l.platform.label,
+    url: l.url,
+    color: l.platform.color,
+    live: l.live,
+    Icon: SNS_ICONS[l.platform.value],
+  }));
+  {
+    const seen = new Set(platformLinks.map((l) => l.key));
+    for (const r of channelRows) {
+      if (!/^https?:\/\//i.test(r.url)) continue;
+      const dedupe = seen.has(r.platform) ? `${r.platform}:${r.url.toLowerCase()}` : r.platform;
+      if (seen.has(dedupe) || snsLinks.some((l) => l.platform.value === r.platform)) continue;
+      seen.add(dedupe);
+      const slug = platformSlugOf(r.platform);
+      platformLinks.push({
+        key: dedupe,
+        label: r.platform === 'OTHER' ? '기타 채널' : platformLabel(r.platform),
+        url: r.url,
+        color: VIDEO_PLATFORMS.find((x) => x.slug === slug)?.color ?? '#9A9AA3',
+        live: false,
+        Icon: CHANNEL_ICONS[r.platform] ?? Globe,
+      });
+    }
+  }
   const onAir = liveLinks.length > 0;
   const primaryLive = liveLinks[0] ?? null;
 
@@ -210,6 +258,10 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
   // 크리에이터마다 전용 수신번호(대표번호 + 서브번호 4자리)가 부여되므로
   // keyword 없이 번호만으로 라우팅한다. (과거 대표번호 공유 방식의 keyword 선입력 로직 제거)
   const smsHref = route ? `sms:${route.phoneNumber}` : null;
+  // [후원하기] 탭 후원 방식 (2026-11-17): 문자후원 / 신용카드 후원 / 간편계좌이체 후원
+  const method: DonateMethod = resolveDonateMethod(sp.m, Boolean(route));
+  const cardMin = creator.shopDonationMin > 0n ? creator.shopDonationMin : 1000n;
+  const cardMax = creator.maxAmount > 0n && creator.maxAmount < 1_000_000n ? creator.maxAmount : 1_000_000n;
   const moNumberLabel = route ? formatMoNumber(route.phoneNumber) : null;
 
   return (
@@ -225,7 +277,7 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
         marginPreset: creator.shopMarginPreset,
       }}
       bottomBar={
-        tab === 'donate' && smsHref && route ? (
+        tab === 'donate' && method === 'sms' && smsHref && route ? (
           <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 border-t border-warm-300/70 bg-white/95 px-4 py-3 backdrop-blur-xl sm:hidden">
             <div className="mx-auto flex max-w-[560px] items-center gap-3">
               <div className="min-w-0">
@@ -351,27 +403,28 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
           SNS 링크 버튼. 크리에이터가 스튜디오에서 등록한 플랫폼만 그린다.
           방송 중인 플랫폼에는 빨간 점을 찍어 위 배지와 같은 것을 가리킨다는 걸 보여 준다.
         */}
-        {snsLinks.length > 0 ? (
-          <div className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            {snsLinks.map((l) => {
-              const Icon = SNS_ICONS[l.platform.value];
-              return (
+        {platformLinks.length > 0 ? (
+          <div className="mt-5">
+            <p className="mb-2 text-[12px] font-bold text-ink-400">플랫폼 바로가기</p>
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              {platformLinks.map((l) => (
                 <a
-                  key={l.platform.value}
+                  key={l.key}
                   href={l.url}
                   target="_blank"
                   rel="noopener noreferrer"
+                  aria-label={`${creator.displayName} ${l.label} (새 창)`}
                   className="flex items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-[13px] font-bold text-ink-700 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                  style={{ borderColor: `${l.platform.color}26`, backgroundColor: `${l.platform.color}0a` }}
+                  style={{ borderColor: `${l.color}26`, backgroundColor: `${l.color}0a` }}
                 >
-                  <Icon size={16} strokeWidth={1.9} style={{ color: l.platform.color }} />
-                  <span className="truncate">{l.platform.label}</span>
+                  <l.Icon size={16} strokeWidth={1.9} style={{ color: l.color }} />
+                  <span className="truncate">{l.label}</span>
                   {l.live ? (
                     <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#e5342f]" />
                   ) : null}
                 </a>
-              );
-            })}
+              ))}
+            </div>
           </div>
         ) : null}
 
@@ -402,44 +455,24 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
           보내주신 응원은 {creator.displayName} 님의 방송 화면에 그대로 전해집니다.
         </p>
 
-        {/*
-          PC 웹 후원(내통장결제)은 MO 수신번호가 전혀 필요 없다.
-          예전에는 번호 미배정 시 카드 전체를 안내문으로 갈아끼워 웹 후원까지 막았는데,
-          그러면 번호를 기다리는 신규 크리에이터는 PC 후원도 하나도 받지 못했다.
-          그래서 PC 패널은 번호 배정 여부와 무관하게 항상 노출하고,
-          번호가 필요한 모바일 문자후원 영역만 조건부로 바꾼다.
-        */}
-        {/*
-          휴대폰에서는 원래 문자후원이 기본이라 PC 패널을 숨긴다. 그런데 **번호가 아직 없으면**
-          휴대폰으로 들어온 시청자(대부분)가 후원할 방법이 전혀 없었다(UI-4). 그때는 휴대폰에도
-          웹 후원(PIN 인증) 패널을 보여 준다.
-        */}
-        <div className={`mt-6 text-left ${route ? 'hidden sm:block' : ''}`}>
-          <p className="mb-4 text-center text-[15px] font-black tracking-[-0.02em] text-ink-900">
-            {creator.displayName} 님에게 후원하기
-          </p>
-          {/* 기본은 PIN 인증 흐름이다. 구 즉시결제 화면은 되돌림 플래그를 켰을 때만 쓴다. */}
-          {resolveWebDonationChannel() === 'PIN' ? (
-            <WebDonationPinPanel
-              creatorId={creator.id}
-              creatorName={creator.displayName}
-              defaultAmount={creator.donationAmount.toString()}
-              minAmount={effMin.toString()}
-              maxAmount={effMax.toString()}
-              paymentMock={paymentMock}
-            />
-          ) : (
-            <WebDonationPanel
-              creatorId={creator.id}
-              creatorName={creator.displayName}
-              defaultAmount={creator.donationAmount.toString()}
-              minAmount={effMin.toString()}
-              maxAmount={effMax.toString()}
-              paymentMock={paymentMock}
-            />
-          )}
-        </div>
+        {/* 후원 방식 선택 (2026-11-17): 문자후원 / 신용카드 후원 / 간편계좌이체 후원. 주소 ?m= 로 유지된다. */}
+        <nav aria-label="후원 방식" className="mt-5 grid grid-cols-3 gap-1.5 rounded-2xl bg-warm-100 p-1.5">
+          {DONATE_METHODS.map((d) => (
+            <Link
+              key={d.key}
+              href={`/c/${creator.code}?tab=donate&m=${d.key}`}
+              scroll={false}
+              aria-current={method === d.key ? 'page' : undefined}
+              className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-center text-[12.5px] font-extrabold transition-colors sm:flex-row sm:gap-1.5 sm:text-[13.5px] ${method === d.key ? 'bg-ink-900 text-white shadow-sm' : 'text-ink-600 hover:bg-white'}`}
+            >
+              {d.key === 'sms' ? <SmsDonation size={16} strokeWidth={1.8} /> : d.key === 'card' ? <CreditCard size={16} strokeWidth={1.8} /> : <HandCoins size={16} strokeWidth={1.8} />}
+              <span className="sm:hidden">{d.short}</span>
+              <span className="hidden sm:inline">{d.label}</span>
+            </Link>
+          ))}
+        </nav>
 
+        {method === 'sms' ? (<>
         {/* PC: 문자 후원번호 안내. 데스크톱에서는 문자를 보낼 수 없으므로 번호만 안내한다. */}
         {route ? (
           <div className="mt-5 hidden rounded-2xl border border-brand-200/70 bg-brand-50/60 px-4 py-3.5 text-left sm:block">
@@ -495,18 +528,72 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
             </p>
           </div>
         ) : (
-          /* 번호 미배정: 문자후원 영역만 안내로 대체한다. 위 PC 웹 후원은 그대로 동작한다. */
-          <div className="mt-6 sm:hidden">
+          /* 번호 미배정: 문자후원 대신 안내. 신용카드 · 간편계좌이체 후원은 그대로 동작한다. */
+          <div className="mt-6">
             <span className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-warning-50 text-warning-600">
               <CircleAlert size={22} strokeWidth={1.7} />
             </span>
             <p className="mt-3 text-[15px] font-extrabold text-ink-900">후원 번호가 아직 배정되지 않았습니다</p>
             <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-500">
               아직 문자 수신 번호가 배정되지 않아 문자후원을 접수할 수 없습니다. 번호가 배정되면 이 페이지에
-              표시됩니다. 위의 웹 후원으로는 지금도 후원하실 수 있습니다.
+              표시됩니다. 위에서 신용카드 후원 또는 간편계좌이체 후원을 선택하면 지금도 후원하실 수 있습니다.
             </p>
           </div>
         )}
+        </>) : null}
+
+        {method === 'card' ? (
+          <div className="mt-5">
+            {shopViewer ? (
+              <CardDonateForm
+                creatorId={creator.id}
+                creatorName={creator.displayName}
+                presets={parseDonationPresets(creator.shopDonationPresets).map((v) => v.toString())}
+                minAmount={cardMin.toString()}
+                maxAmount={cardMax.toString()}
+                defaultNickname={viewerDonor?.displayName ?? shopViewer.name ?? ''}
+                paymentMock={isShopPaymentMock()}
+              />
+            ) : (
+              <div className="rounded-[1.5rem] border border-brand-200 bg-brand-50/70 p-5 text-center">
+                <p className="text-[14px] font-extrabold text-ink-900">신용카드 후원은 로그인 후 이용할 수 있어요</p>
+                <p className="mt-1 text-[12.5px] text-ink-500">도네이도 회원 계정 하나로 모든 크리에이터 샵에서 후원할 수 있습니다.</p>
+                <LinkButton href={`/c/${creator.code}/login?next=${encodeURIComponent(`/c/${creator.code}?tab=donate&m=card`)}`} className="mt-3">
+                  로그인하고 카드로 후원하기
+                </LinkButton>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {method === 'transfer' ? (
+          <div className="mt-5 text-left">
+            <p className="mb-1 text-center text-[15px] font-black tracking-[-0.02em] text-ink-900">
+              간편계좌이체로 {creator.displayName} 님에게 후원하기
+            </p>
+            <p className="mb-4 text-center text-[12px] text-ink-500">휴대폰 번호 인증 후 등록한 계좌에서 바로 이체됩니다 (내통장결제).</p>
+          {/* 기본은 PIN 인증 흐름이다. 구 즉시결제 화면은 되돌림 플래그를 켰을 때만 쓴다. */}
+          {resolveWebDonationChannel() === 'PIN' ? (
+            <WebDonationPinPanel
+              creatorId={creator.id}
+              creatorName={creator.displayName}
+              defaultAmount={creator.donationAmount.toString()}
+              minAmount={effMin.toString()}
+              maxAmount={effMax.toString()}
+              paymentMock={paymentMock}
+            />
+          ) : (
+            <WebDonationPanel
+              creatorId={creator.id}
+              creatorName={creator.displayName}
+              defaultAmount={creator.donationAmount.toString()}
+              minAmount={effMin.toString()}
+              maxAmount={effMax.toString()}
+              paymentMock={paymentMock}
+            />
+          )}
+          </div>
+        ) : null}
         </>) : null}
       </div>
 
@@ -571,7 +658,8 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
         </section>
       ) : null}
 
-      {/* 첫 문자 안내 (모바일 문자후원) */}
+      {/* 첫 문자 안내 (문자후원) */}
+      {method === 'sms' && route ? (
       <section className="mt-5 rounded-[1.5rem] border border-warning-500/30 bg-warning-50 px-5 py-4 sm:hidden">
         <p className="flex items-center gap-1.5 text-[13px] font-bold text-ink-900">
           <CircleAlert size={15} strokeWidth={1.8} className="shrink-0 text-warning-600" />
@@ -582,18 +670,20 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
           문자를 보내주세요.
         </p>
       </section>
+      ) : null}
 
       {/* ── 후원 방법 ───────────────────────────────────────────────── */}
       <section id="how" className="mt-8 scroll-mt-20">
         <h2 className="px-1 text-[16px] font-black tracking-[-0.02em] text-ink-900">후원 방법</h2>
 
-        {/* PC(웹 후원) */}
-        <div className="mt-3 hidden space-y-2.5 sm:block">
+        {/* 간편계좌이체 (웹 PIN 후원) */}
+        {method === 'transfer' ? (
+        <div className="mt-3 space-y-2.5">
           <Step
             no="1"
             icon={<SmsDonation size={17} strokeWidth={1.7} />}
             title="금액과 응원 메시지를 고릅니다"
-            body="문자후원하기를 누르면 금액(직접 입력 포함)과 방송에 표시될 응원 메시지를 고를 수 있습니다."
+            body="간편계좌이체로 후원하기를 누르면 금액(직접 입력 포함)과 방송에 표시될 응원 메시지를 고를 수 있습니다."
           />
           <Step
             no="2"
@@ -614,9 +704,21 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
             body="결제가 완료된 후원만 유튜브 라이브 채팅과 방송 오버레이, 음성 안내로 전달됩니다. 결제되지 않은 메시지는 표시되지 않습니다."
           />
         </div>
+        ) : null}
 
-        {/* 모바일(문자후원) */}
-        <div className="mt-3 space-y-2.5 sm:hidden">
+        {/* 신용카드 (PG) */}
+        {method === 'card' ? (
+        <div className="mt-3 space-y-2.5">
+          <Step no="1" icon={<Users size={17} strokeWidth={1.7} />} title="도네이도 회원으로 로그인합니다" body="회원 계정 하나로 모든 크리에이터 샵에서 후원할 수 있습니다." />
+          <Step no="2" icon={<HandCoins size={17} strokeWidth={1.7} />} title="금액과 응원 메시지를 고릅니다" body="금액(직접 입력 포함)과 방송에 표시될 이름 · 응원 메시지를 입력합니다." />
+          <Step no="3" icon={<CreditCard size={17} strokeWidth={1.7} />} title="카드로 결제합니다" body="결제창에서 카드 결제를 마치면 후원이 완료됩니다. 지금은 PG 계약 전이라 테스트 결제로 동작합니다." />
+          <Step no="4" icon={<ShieldCheck size={17} strokeWidth={1.7} />} title="방송에 표시됩니다" body="결제가 승인된 후원만 방송 오버레이와 유튜브 라이브 채팅, 샵 실시간 후원에 전달됩니다." />
+        </div>
+        ) : null}
+
+        {/* 문자후원 */}
+        {method === 'sms' ? (
+        <div className="mt-3 space-y-2.5">
           <Step
             no="1"
             icon={<CreditCard size={17} strokeWidth={1.7} />}
@@ -642,6 +744,7 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
             body="결제가 완료된 후원만 유튜브 채팅과 방송 오버레이, 음성 안내로 전달됩니다. 결제되지 않은 메시지는 표시되지 않습니다."
           />
         </div>
+        ) : null}
       </section>
 
       {/* ── 최근 후원 ───────────────────────────────────────────────── */}

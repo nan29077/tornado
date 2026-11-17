@@ -7,7 +7,7 @@ import { VideoHubFilters } from '@/components/video-hub/video-hub-filters';
 import { VideoCard, VideoProfile } from '@/components/video-hub/video-card';
 import { LiveCreatorCard } from '@/components/video-hub/live-creator-card';
 import { AutoRail } from '@/components/public/auto-rail';
-import { CONTENT_CATEGORY_SLUGS, categoryLabel, isVideoCategory, videosHref, videoOrder, videoType, sortVideos, type LiveCreator, type VideoCategorySlug, type VideoItem, type VideoType } from '@/lib/video-hub';
+import { CONTENT_CATEGORY_SLUGS, categoryLabel, isVideoCategory, isVideoPlatform, platformSlugOf, videoOpenTarget, videoPlatformLabel, videoPlatformOf, videosHref, videoOrder, videoType, sortVideos, type LiveCreator, type VideoCategorySlug, type VideoItem, type VideoPlatformSlug, type VideoType } from '@/lib/video-hub';
 import { getLiveCreators, getVideoFeed, isVideoHubEnabled } from '@/server/services/video-hub';
 import { filterVideos } from '@/server/services/video-hub-parse';
 
@@ -28,12 +28,14 @@ function first(v: string | string[] | undefined): string {
 export default async function VideosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ c?: string | string[]; q?: string | string[]; limit?: string | string[]; sort?: string | string[]; t?: string | string[] }>;
+  searchParams: Promise<{ c?: string | string[]; p?: string | string[]; q?: string | string[]; limit?: string | string[]; sort?: string | string[]; t?: string | string[] }>;
 }) {
   if (!isVideoHubEnabled()) notFound();
   const sp = await searchParams;
   const cRaw = first(sp.c);
   const c = isVideoCategory(cRaw) ? cRaw : 'all';
+  const pRaw = first(sp.p);
+  const p: VideoPlatformSlug | 'all' = isVideoPlatform(pRaw) ? pRaw : 'all';
   const q = first(sp.q).trim().slice(0, 50);
   const sort = videoOrder(first(sp.sort));
   const limitNum = Number.parseInt(first(sp.limit), 10);
@@ -43,10 +45,13 @@ export default async function VideosPage({
 
   const [feed, lives] = await Promise.all([getVideoFeed(), getLiveCreators()]);
   const { curated, now } = feed;
-  const filtered = sortVideos(filterVideos(feed.items, { c, q }), sort);
+  const filtered = sortVideos(filterVideos(feed.items, { c, p, q }), sort);
   const items = type === 'shorts' ? filtered.filter((v) => v.isShort) : type === 'video' ? filtered.filter((v) => !v.isShort) : filtered;
-  const liveShown = filterLives(lives, c, q);
+  const liveShown = filterLives(lives, c, q, p);
 
+  const platformCounts: Partial<Record<VideoPlatformSlug, number>> = {};
+  for (const item of feed.items) platformCounts[videoPlatformOf(item)] = (platformCounts[videoPlatformOf(item)] ?? 0) + 1;
+  for (const l of lives) platformCounts[platformSlugOf(l.platform)] = (platformCounts[platformSlugOf(l.platform)] ?? 0) + 1;
   const counts: Partial<Record<VideoCategorySlug, number>> = {};
   const categories = new Set<VideoCategorySlug>(['all', c]);
   for (const item of feed.items) {
@@ -62,7 +67,7 @@ export default async function VideosPage({
   for (const l of lives) if (l.category) categories.add(l.category);
 
   // 유튜브 홈처럼: 전체 첫 화면에서는 라이브 → 영상 → 쇼츠 선반 → 카테고리별 선반 → 나머지 영상
-  const home = type === 'all' && c === 'all' && !q;
+  const home = type === 'all' && c === 'all' && p === 'all' && !q;
   const shelfShorts = type === 'all' && !q ? items.filter((v) => v.isShort).slice(0, 14) : [];
   const main = type === 'all' && shelfShorts.length > 0 ? items.filter((v) => !v.isShort) : items;
   const visible = main.slice(0, limit);
@@ -71,7 +76,7 @@ export default async function VideosPage({
   const shelves = home ? categoryShelves(main) : [];
   const heading = q
     ? `‘${q}’ 검색 결과 ${(type === 'live' ? liveShown.length : items.length).toLocaleString('ko-KR')}개`
-    : `${c === 'all' ? '' : `${categoryLabel(c)} `}${type === 'shorts' ? '쇼츠' : type === 'live' ? '라이브' : type === 'video' ? '동영상' : c === 'all' ? '전체 영상' : '영상'}`;
+    : `${p === 'all' ? '' : `${videoPlatformLabel(p)} `}${c === 'all' ? '' : `${categoryLabel(c)} `}${type === 'shorts' ? '쇼츠' : type === 'live' ? '라이브' : type === 'video' ? '동영상' : c === 'all' ? '전체 영상' : '영상'}`;
 
   return (
     <PublicShell>
@@ -88,7 +93,7 @@ export default async function VideosPage({
         ) : null}
       </header>
 
-      <VideoHubFilters category={c} query={q} sort={sort} type={type} categories={[...categories]} liveCount={lives.length} counts={counts} />
+      <VideoHubFilters category={c} platform={p} query={q} sort={sort} type={type} categories={[...categories]} liveCount={lives.length} counts={counts} platformCounts={platformCounts} />
 
       {type === 'live' ? (
         <LiveSection lives={liveShown} query={q} category={c} />
@@ -129,14 +134,14 @@ export default async function VideosPage({
                   <ShortCard key={v.id} item={v} fluid />
                 ))}
               </div>
-              <LoadMore show={main.length > visible.length && limit < MAX} href={videosHref({ t: type, c, q, sort, limit: limit + PAGE })} />
+              <LoadMore show={main.length > visible.length && limit < MAX} href={videosHref({ t: type, c, p, q, sort, limit: limit + PAGE })} />
             </>
           ) : (
             <>
               <VideoGrid items={head} now={now} />
               {shelfShorts.length > 0 ? (
                 <section className="mt-6" aria-labelledby="shorts-title">
-                  <ShelfHeader id="shorts-title" title="쇼츠" href={videosHref({ t: 'shorts', c, sort })} />
+                  <ShelfHeader id="shorts-title" title="쇼츠" href={videosHref({ t: 'shorts', c, p, sort })} />
                   <AutoRail bleed={false} gap="gap-3 pr-3" className="pb-2" speed={20} controls label="쇼츠">
                     {shelfShorts.map((v) => (
                       <ShortCard key={v.id} item={v} />
@@ -163,7 +168,7 @@ export default async function VideosPage({
                   <VideoGrid items={rest} now={now} />
                 </>
               ) : null}
-              <LoadMore show={main.length > visible.length && limit < MAX} href={videosHref({ t: type, c, q, sort, limit: limit + PAGE })} />
+              <LoadMore show={main.length > visible.length && limit < MAX} href={videosHref({ t: type, c, p, q, sort, limit: limit + PAGE })} />
             </>
           )}
         </>
@@ -185,9 +190,9 @@ function categoryShelves(items: VideoItem[]): Array<{ slug: VideoCategorySlug; i
     .map((slug) => ({ slug, items: by.get(slug)! }));
 }
 
-function filterLives(lives: LiveCreator[], c: VideoCategorySlug, q: string): LiveCreator[] {
+function filterLives(lives: LiveCreator[], c: VideoCategorySlug, q: string, p: VideoPlatformSlug | 'all' = 'all'): LiveCreator[] {
   const needle = q.toLowerCase();
-  return lives.filter((l) => (c === 'all' || c === 'donaido' || l.category === c) && (!needle || l.displayName.toLowerCase().includes(needle)));
+  return lives.filter((l) => (c === 'all' || c === 'donaido' || l.category === c) && (p === 'all' || platformSlugOf(l.platform) === p) && (!needle || l.displayName.toLowerCase().includes(needle)));
 }
 
 function ShelfHeader({ id, title, href, live = false }: { id: string; title: string; href: string; live?: boolean }) {
@@ -257,7 +262,7 @@ function VideoGrid({ items, now }: { items: VideoItem[]; now: number }) {
 function ShortCard({ item, fluid = false }: { item: VideoItem; fluid?: boolean }) {
   return (
     <article className={fluid ? 'min-w-0' : 'w-[132px] shrink-0 snap-start sm:w-[150px]'}>
-      <Link href={`/watch/${encodeURIComponent(item.id)}`} prefetch={false} className="block rounded-xl focus-visible:outline-2 focus-visible:outline-brand-500">
+      <Link href={videoOpenTarget(item).href} {...(videoOpenTarget(item).newWindow ? { target: '_blank', rel: 'noopener' } : {})} prefetch={false} className="block rounded-xl focus-visible:outline-2 focus-visible:outline-brand-500">
         <div className="relative aspect-[9/16] overflow-hidden rounded-xl bg-ink-100">
           {item.thumbnail ? (
             // eslint-disable-next-line @next/next/no-img-element

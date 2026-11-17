@@ -11,12 +11,28 @@ export function resolveShopTab(param: string | undefined, fallback: string | nul
   return f === 'SHOP' ? 'shop' : f === 'DONATE' ? 'donate' : 'video';
 }
 
-/** 도네이도 샵 탭: 영상 / 쇼핑 / 후원하기(기존 문자·웹 후원) */
+/** [후원하기] 탭 안의 후원 방식 (2026-11-17): 문자후원 / 신용카드 후원 / 간편계좌이체 후원 */
+export type DonateMethod = 'sms' | 'card' | 'transfer';
+
+export const DONATE_METHODS: Array<{ key: DonateMethod; label: string; short: string }> = [
+  { key: 'sms', label: '문자후원', short: '문자' },
+  { key: 'card', label: '신용카드 후원', short: '신용카드' },
+  { key: 'transfer', label: '간편계좌이체 후원', short: '계좌이체' },
+];
+
+/** 주소의 ?m= 값. 없으면 문자 번호가 있으면 문자후원, 없으면 간편계좌이체 */
+export function resolveDonateMethod(param: string | undefined, hasSmsNumber: boolean): DonateMethod {
+  const v = (param ?? '').toLowerCase();
+  if (v === 'sms' || v === 'card' || v === 'transfer') return v;
+  return hasSmsNumber ? 'sms' : 'transfer';
+}
+
+/** 도네이도 샵 탭: 영상 / 쇼핑 / 후원하기(문자 · 신용카드 · 간편계좌이체) */
 export function ShopTabs({ code, active, live }: { code: string; active: ShopTab; live: boolean }) {
   const tabs: Array<{ key: ShopTab; label: string; icon: React.ReactNode }> = [
     { key: 'video', label: live ? '영상 · LIVE' : '영상', icon: <Clapperboard size={16} strokeWidth={1.85} /> },
     { key: 'shop', label: '쇼핑', icon: <ShoppingBag size={16} strokeWidth={1.85} /> },
-    { key: 'donate', label: '문자 후원', icon: <HeartHandshake size={16} strokeWidth={1.85} /> },
+    { key: 'donate', label: '후원하기', icon: <HeartHandshake size={16} strokeWidth={1.85} /> },
   ];
   return (
     <nav aria-label="도네이도 샵 탭" className="sticky top-[64px] z-30 -mx-4 mt-5 bg-warm-50/95 px-4 py-2 backdrop-blur lg:static lg:mx-0 lg:px-0">

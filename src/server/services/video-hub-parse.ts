@@ -147,12 +147,14 @@ export function toVideoItem(raw: RawFeedVideo, spec: ChannelSpec): VideoItem {
 }
 
 /** 카테고리·검색어 필터. 검색은 제목·채널명에 대해 대소문자 무시 부분 일치. */
-export function filterVideos(items: VideoItem[], opts: { c?: string | null; q?: string | null }): VideoItem[] {
+export function filterVideos(items: VideoItem[], opts: { c?: string | null; p?: string | null; q?: string | null }): VideoItem[] {
   const c = opts.c && opts.c !== 'all' ? opts.c : null;
+  const p = opts.p && opts.p !== 'all' ? opts.p : null;
   const q = (opts.q ?? '').trim().toLowerCase().slice(0, 50);
   return items.filter((v) => {
     if (c === 'donaido' && !v.creator) return false;
     if (c && c !== 'donaido' && v.category !== c) return false;
+    if (p && (v.platform ?? 'youtube') !== p) return false;
     if (q && !v.title.toLowerCase().includes(q) && !v.channelTitle.toLowerCase().includes(q)) return false;
     return true;
   });

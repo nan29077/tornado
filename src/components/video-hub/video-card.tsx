@@ -1,9 +1,9 @@
 import * as React from 'react';
 import Link from 'next/link';
-import { ChevronRight, HeartHandshake, PlayCircle } from '@/components/brand/icons';
+import { ChevronRight, ExternalLink, HeartHandshake, PlayCircle } from '@/components/brand/icons';
 import { GeneratedAvatar, ProfileAvatar } from '@/components/profile/generated-avatar';
 import { cx } from '@/components/ui';
-import { formatViews, timeAgo, youtubeChannelUrl, type VideoItem } from '@/lib/video-hub';
+import { formatViews, timeAgo, videoOpenTarget, videoPlatformLabel, videoPlatformOf, videoProfileTarget, type VideoItem } from '@/lib/video-hub';
 
 /**
  * 영상 카드 (유튜브형).
@@ -36,6 +36,9 @@ export function VideoThumb({ item, className, rounded = 'rounded-xl' }: { item: 
         {item.source === 'sample' ? (
           <span className="rounded-md bg-ink-900/80 px-1.5 py-0.5 text-[10.5px] font-bold text-white">샘플</span>
         ) : null}
+        {videoPlatformOf(item) !== 'youtube' ? (
+          <span className="rounded-md bg-ink-900/80 px-1.5 py-0.5 text-[10.5px] font-bold text-white">{videoPlatformLabel(videoPlatformOf(item))}</span>
+        ) : null}
         {item.isShort ? (
           <span className="rounded-md bg-ink-900/80 px-1.5 py-0.5 text-[10.5px] font-bold text-white">쇼츠</span>
         ) : null}
@@ -50,9 +53,15 @@ export function VideoThumb({ item, className, rounded = 'rounded-xl' }: { item: 
   );
 }
 
+/**
+ * 영상 카드 하단 프로필 (2026-11-17).
+ *  - 도네이도 가입 크리에이터 → 도네이도 샵 (새 창). 샵 프로필에서 유튜브·틱톡 등 플랫폼으로 이동할 수 있다.
+ *  - 미가입(스크래핑) 채널 → 원래 플랫폼 채널 (새 창). 미가입 채널에는 후원 링크를 만들지 않는다.
+ */
 export function VideoProfile({ item, detailed = false }: { item: VideoItem; detailed?: boolean }) {
   const creator = item.creator;
   const name = creator?.displayName ?? item.channelTitle;
+  const target = videoProfileTarget(item);
   const avatarSize = detailed ? 'h-10 w-10' : 'h-7 w-7';
   const className = 'relative z-10 inline-flex min-w-0 max-w-full items-center gap-2 rounded-lg text-left hover:text-brand-800 focus-visible:outline-2 focus-visible:outline-brand-500';
   const content = (
@@ -67,19 +76,17 @@ export function VideoProfile({ item, detailed = false }: { item: VideoItem; deta
       )}
       <span className="min-w-0">
         <span className={cx('block truncate font-bold', detailed ? 'text-[15px]' : 'text-xs')}>{name}</span>
-        {detailed ? <span className="block text-xs text-ink-500">{creator ? '도네이도 샵' : 'YouTube 채널'}</span> : null}
+        {detailed ? <span className="block text-xs text-ink-500">{target?.label ?? `${videoPlatformLabel(videoPlatformOf(item))} 채널`}</span> : null}
       </span>
-      {creator ? <ChevronRight size={14} className="shrink-0 text-brand-700" aria-hidden /> : null}
+      {target?.kind === 'shop' ? <ChevronRight size={14} className="shrink-0 text-brand-700" aria-hidden /> : null}
+      {target?.kind === 'platform' ? <ExternalLink size={12} className="shrink-0 text-ink-400" aria-hidden /> : null}
     </>
   );
-  if (creator) {
-    return <Link href={`/c/${encodeURIComponent(creator.code)}`} aria-label={`${name} 도네이도 샵`} className={className}>{content}</Link>;
-  }
-  if (item.source === 'youtube') {
-    return <a href={youtubeChannelUrl(item.channelId)} target="_blank" rel="noopener noreferrer" aria-label={`${name} YouTube 채널`} className={className}>{content}</a>;
-  }
+  if (!target) return <span className={className}>{content}</span>;
   return (
-    <span className={className}>{content}</span>
+    <a href={target.href} target="_blank" rel={target.kind === 'shop' ? 'noopener' : 'noopener noreferrer'} aria-label={`${name} ${target.label} (새 창)`} className={className}>
+      {content}
+    </a>
   );
 }
 
@@ -110,13 +117,16 @@ export function VideoCard({
   className?: string;
 }) {
   const row = layout === 'row';
+  const open = videoOpenTarget(item);
   const actionClass = 'absolute inset-0 z-[1] rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500';
   return (
     <article className={cx('relative w-full rounded-2xl p-1.5 text-left transition-colors hover:bg-brand-50/70', row && 'flex gap-2.5', active && 'bg-brand-50 ring-1 ring-brand-200', className)}>
-      {onSelect ? (
+      {onSelect && item.source !== 'external' ? (
         <button type="button" onClick={() => onSelect(item)} className={actionClass} aria-pressed={active} aria-label={`${item.title} 재생`} />
+      ) : open.newWindow ? (
+        <a href={open.href} target="_blank" rel="noopener" aria-label={`${item.title} 보기 (새 창)`} className={actionClass} />
       ) : (
-        <Link href={`/watch/${encodeURIComponent(item.id)}`} aria-label={`${item.title} 보기`} className={actionClass} prefetch={false} />
+        <Link href={open.href} aria-label={`${item.title} 보기`} className={actionClass} prefetch={false} />
       )}
       <div className={row ? 'w-[34%] max-w-[168px] shrink-0' : undefined}>
         <VideoThumb item={item} rounded={row ? 'rounded-lg' : 'rounded-xl'} />

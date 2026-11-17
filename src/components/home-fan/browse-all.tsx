@@ -8,7 +8,7 @@ import { VideoCard } from '@/components/video-hub/video-card';
 import { cx } from '@/components/ui';
 import { categoryLabel, type VideoItem } from '@/lib/video-hub';
 import type { FanChannel, FanCreator, FanLiveItem } from '@/server/services/home-fan';
-import { ChannelAvatar, FanLiveCard, UnregisteredBadge, compactKo } from './parts';
+import { ChannelAvatar, FanLiveCard, UnregisteredBadge, compactKo, newWindowIfShop } from './parts';
 
 type Tab = 'creator' | 'video' | 'live';
 type Sort = 'popular' | 'latest';
@@ -117,7 +117,7 @@ export function BrowseAll({
           <ul className="divide-y divide-ink-100 rounded-2xl border border-warm-200 bg-white">
             {people.slice(0, limit).map((p, i) => (
               <li key={p.key} className="relative flex items-center gap-3 px-3 py-2.5">
-                <Link href={p.href} prefetch={false} aria-label={`${p.name} 보기`} className="absolute inset-0 z-[1] rounded-2xl" />
+                <Link href={p.href} prefetch={false} {...newWindowIfShop(p.href)} aria-label={`${p.name} 보기`} className="absolute inset-0 z-[1] rounded-2xl" />
                 <span className="w-5 shrink-0 text-center text-[12px] font-black tabular-nums text-ink-400">{i + 1}</span>
                 {p.creator ? (
                   <ProfileAvatar seed={p.creator.code} avatarIndex={p.creator.avatarIndex} name={p.name} imageUrl={p.creator.avatarUrl} className="h-10 w-10" />

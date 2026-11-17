@@ -91,7 +91,10 @@ export function PublicShellClient({
   mockMode = false,
   business,
   marginPreset = DEFAULT_SITE_IMAGE,
+  headerExtra,
 }: {
+  /** 헤더 가운데 영역 (메인 구독자 전용 탭의 시청 현황) */
+  headerExtra?: React.ReactNode;
   children: React.ReactNode;
   aside?: React.ReactNode;
   home?: boolean;
@@ -133,10 +136,15 @@ export function PublicShellClient({
         ) : null}
         <div className="public-app-surface min-h-dvh w-full min-w-0 max-w-[var(--public-app-width)] shadow-[0_0_60px_rgba(74,49,25,0.12)]">
       <header className="public-header sticky top-0 z-40 border-b backdrop-blur-xl">
-        <div className="flex h-[68px] w-full items-center justify-between px-4 sm:px-6">
-          <Link href="/" aria-label="도네이도 홈">
-            <Logo />
+        <div className="grid h-[68px] w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center px-2 min-[360px]:px-3 sm:px-6">
+          <Link href="/" aria-label="도네이도 홈" className="col-start-1 row-start-1 justify-self-start">
+            <span className={headerExtra ? 'hidden min-[420px]:inline-flex' : 'inline-flex'}>
+              <Logo />
+            </span>
+            {headerExtra ? <span className="inline-flex min-[420px]:hidden"><Logo compact /></span> : null}
           </Link>
+
+          {headerExtra ? <div className="col-start-2 row-start-1 flex min-w-0 justify-center">{headerExtra}</div> : null}
 
           {/*
             알림 버튼.
@@ -144,7 +152,7 @@ export function PublicShellClient({
             모바일에서는 햄버거 바로 왼쪽에 나란히 놓인다.
             알림은 사용자별 데이터라 로그인한 경우에만 노출한다.
           */}
-          <div className="flex items-center gap-2">
+          <div className="col-start-3 row-start-1 flex items-center justify-self-end gap-1 min-[360px]:gap-1.5 sm:gap-2">
             {viewer ? <NotificationBell /> : null}
             <button
               type="button"

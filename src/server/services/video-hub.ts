@@ -16,7 +16,7 @@
 import * as React from 'react';
 import { prisma } from '@/server/db';
 import { logger } from '@/lib/logger';
-import { CONTENT_CATEGORY_SLUGS, isVideoCategory, isYouTubeChannelId, type LiveCreator, type VideoCategorySlug, type VideoItem } from '@/lib/video-hub';
+import { CONTENT_CATEGORY_SLUGS, isVideoCategory, isYouTubeChannelId, platformSlugOf, type LiveCreator, type VideoCategorySlug, type VideoItem } from '@/lib/video-hub';
 import { SEED_CHANNELS, defaultChannelsEnabled } from './video-hub-channels';
 import { DEMO_CHANNELS, isDemoDataEnabled } from './demo-data';
 import { PUBLIC_VIDEOS } from './video-hub-public-videos';
@@ -188,6 +188,63 @@ export async function getLiveCreators(limit = 48): Promise<LiveCreator[]> {
   });
 }
 
+/**
+ * 가입·승인 크리에이터가 도네이도 샵에 직접 등록한 유튜브 외 영상 (틱톡·인스타·페이스북 등).
+ * 플랫폼 카테고리(틱톡·인스타…)가 비지 않도록 방송국 피드에 함께 싣는다. 실패해도 빈 목록.
+ */
+async function loadExternalVideos(): Promise<VideoItem[]> {
+  const rows = await prisma.shopVideo
+    .findMany({
+      where: { source: 'MANUAL', hidden: false, platform: { not: 'YOUTUBE' }, creator: { status: 'APPROVED', user: { status: 'ACTIVE' } } },
+      orderBy: { createdAt: 'desc' },
+      take: 120,
+      select: {
+        id: true,
+        platform: true,
+        externalId: true,
+        url: true,
+        title: true,
+        thumbnail: true,
+        createdAt: true,
+        creator: {
+          select: {
+            code: true,
+            displayName: true,
+            avatarUrl: true,
+            contentCategory: true,
+            user: { select: { avatarIndex: true } },
+            channels: { select: { platform: true, url: true }, take: 8 },
+          },
+        },
+      },
+    })
+    .catch((e) => {
+      logger.warn('video-hub: 샵 등록 영상 조회 실패', { error: e instanceof Error ? e.message : String(e) });
+      return [];
+    });
+  return rows.map((r) => {
+    const c = r.creator;
+    const short = r.platform === 'TIKTOK' || (r.platform === 'INSTAGRAM' && r.externalId.startsWith('reel/'));
+    return {
+      id: `ext-${r.id}`,
+      source: 'external' as const,
+      platform: platformSlugOf(r.platform),
+      title: r.title?.trim() || `${c.displayName} 님의 영상`,
+      channelId: `donaido:${c.code}`,
+      channelTitle: c.displayName,
+      channelAvatarUrl: c.avatarUrl,
+      channelUrl: c.channels.find((ch) => ch.platform === r.platform)?.url ?? null,
+      externalUrl: r.url,
+      thumbnail: r.thumbnail,
+      publishedAt: r.createdAt.toISOString(),
+      views: null,
+      category: contentCategoryOf(c.contentCategory) ?? 'talk',
+      isShort: short,
+      creator: { code: c.code, displayName: c.displayName, avatarUrl: c.avatarUrl, avatarIndex: c.user.avatarIndex },
+    };
+  });
+}
+
 export interface VideoFeed {
   items: VideoItem[];
   /** 연동 피드 대신 선별한 공개 영상을 사용했는가 */
@@ -223,10 +280,11 @@ export const getVideoFeed = requestCache(async function getVideoFeedUncached(): 
     await Promise.race([runLimited(cold), new Promise((r) => setTimeout(r, FIRST_LOAD_BUDGET_MS))]).catch(() => undefined);
   }
 
+  const external = await loadExternalVideos();
   const real = mergeVideos(specs.map((s) => (cache.get(s.channelId)?.videos ?? []).map((v) => toVideoItem(v, s))));
   const curated = real.length === 0;
   return {
-    items: curated ? PUBLIC_VIDEOS : real,
+    items: mergeVideos([curated ? PUBLIC_VIDEOS : real, external]),
     curated,
     channelCount: specs.length,
     now,

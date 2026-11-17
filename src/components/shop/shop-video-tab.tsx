@@ -2,9 +2,10 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { HeartHandshake, Pin, PlayCircle, Radio, X } from '@/components/brand/icons';
+import { HeartHandshake, Pin, PlayCircle, X } from '@/components/brand/icons';
+import { LiveBadge, LiveCardFrame } from '@/components/public/live-card-frame';
 import { cx } from '@/components/ui';
-import { embedUrlFor, SHOP_VIDEO_PLATFORM_LABEL } from '@/lib/shop-video-embed';
+import { embedUrlFor, liveThumbnailUrl, SHOP_VIDEO_PLATFORM_LABEL } from '@/lib/shop-video-embed';
 import { donateVideoAction } from '@/app/actions/shop';
 import { ShopActionForm } from './shop-action-form';
 import { ShopLiveFeed } from './shop-live-feed';
@@ -74,10 +75,7 @@ export function ShopVideoTab({
         ) : live ? (
           <section className="overflow-hidden rounded-[1.5rem] border border-warm-300/70 bg-white shadow-card">
             <div className="flex items-center gap-2 px-4 py-3">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#e5342f] px-2.5 py-1 text-[11px] font-black text-white">
-                <Radio size={12} strokeWidth={2.2} />
-                LIVE
-              </span>
+              {liveEmbedUrl ? <LiveBadge /> : null}
               <p className="text-[14px] font-extrabold text-ink-900">{creatorName} 님이 방송 중이에요</p>
             </div>
             {liveEmbedUrl ? (
@@ -85,9 +83,12 @@ export function ShopVideoTab({
                 <iframe src={liveEmbedUrl} title="라이브 방송" className="absolute inset-0 h-full w-full" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen />
               </div>
             ) : liveUrl ? (
-              <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="mx-4 mb-3 flex h-24 items-center justify-center gap-2 rounded-2xl bg-ink-900 text-[14px] font-bold text-white">
-                <PlayCircle size={20} strokeWidth={1.7} />
-                방송 보러 가기
+              <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="mx-4 mb-3 block rounded-2xl focus-visible:outline-2 focus-visible:outline-brand-500">
+                <LiveCardFrame thumbnail={liveThumbnailUrl(liveUrl)} className="rounded-2xl" />
+                <span className="mt-2 flex items-center justify-center gap-1.5 rounded-xl bg-brand-50 px-3 py-2 text-[13px] font-bold text-brand-800 hover:bg-brand-100">
+                  <PlayCircle size={16} strokeWidth={1.7} aria-hidden />
+                  방송 보러 가기
+                </span>
               </a>
             ) : null}
             <div className="px-4 py-3">

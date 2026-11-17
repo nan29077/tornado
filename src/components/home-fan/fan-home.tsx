@@ -8,13 +8,12 @@ import { ProfileAvatar } from '@/components/profile/generated-avatar';
 import { VideoCard } from '@/components/video-hub/video-card';
 import { Card, CardTitle, SectionTitle } from '@/components/ui';
 import { AutoRail } from '@/components/public/auto-rail';
-import { CONTENT_CATEGORY_SLUGS, categoryLabel, sortVideos, videosHref } from '@/lib/video-hub';
+import { CONTENT_CATEGORY_SLUGS, VIDEO_PLATFORMS, categoryLabel, sortVideos, videoOpenTarget, videosHref } from '@/lib/video-hub';
 import { formatKst } from '@/lib/datetime';
 import type { FanHomeData } from '@/server/services/home-fan';
 import { BrowseAll } from './browse-all';
 import { CategoryChips } from './category-chips';
 import { ComingSoonSticker } from './coming-soon-sticker';
-import { WatchingCounter } from './watching-counter';
 import {
   ChannelAvatar, FanChannelCard, FanCreatorCard, FanLiveCard, FanProductCard, UnregisteredBadge, compactKo, won,
 } from './parts';
@@ -71,8 +70,7 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
 
   return (
     <div data-home-tab="fan">
-      <WatchingCounter viewers={data.watching.viewers} liveCount={data.watching.liveCount} />
-
+      {/* "지금 N명이 시청 중" 은 상단 헤더로 옮겼다 (2026-11-17, FanHeaderWatchingLoader) */}
       {/* 1. 크리에이터 찾기 (크리에이터 전용 탭에서 옮겨 왔다) */}
       <section className="mt-4">
         <Card className="border border-brand-100">
@@ -120,7 +118,7 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
               </div>
               <AutoRail speed={20} controls label="쇼츠">
                 {shorts.slice(0, 10).map((s) => (
-                  <Link key={s.id} href={`/watch/${encodeURIComponent(s.id)}`} prefetch={false} className="relative w-[118px] shrink-0 snap-start">
+                  <Link key={s.id} href={videoOpenTarget(s).href} {...(videoOpenTarget(s).newWindow ? { target: '_blank', rel: 'noopener' } : {})} prefetch={false} className="relative w-[118px] shrink-0 snap-start">
                     <div className="relative aspect-[9/16] overflow-hidden rounded-xl bg-ink-100">
                       {s.thumbnail ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -151,7 +149,7 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
               <div className="min-w-0 flex-1">
                 <AutoRail bleed={false} fill speed={18} gap="gap-2 pr-2" className="py-1" label="새로 합류한 크리에이터">
                   {newCreators.map((c) => (
-                    <Link key={c.id} href={`/c/${encodeURIComponent(c.code)}`} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-ink-100 bg-white py-1 pl-1 pr-2.5 text-[12.5px] font-bold text-ink-700 hover:bg-ink-50">
+                    <Link key={c.id} href={`/c/${encodeURIComponent(c.code)}`} target="_blank" rel="noopener" className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-ink-100 bg-white py-1 pl-1 pr-2.5 text-[12.5px] font-bold text-ink-700 hover:bg-ink-50">
                       <ProfileAvatar seed={c.code} avatarIndex={c.avatarIndex} name={c.displayName} imageUrl={c.avatarUrl} className="h-6 w-6" />
                       {c.displayName}
                     </Link>
@@ -199,7 +197,7 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
             {data.mine.follows.length > 0 ? (
               <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]">
                 {data.mine.follows.map((f) => (
-                  <Link key={f.code} href={`/c/${encodeURIComponent(f.code)}`} className="w-16 shrink-0 text-center">
+                  <Link key={f.code} href={`/c/${encodeURIComponent(f.code)}`} target="_blank" rel="noopener" className="w-16 shrink-0 text-center">
                     <span className="relative mx-auto block w-fit">
                       <ProfileAvatar seed={f.code} avatarIndex={f.avatarIndex} name={f.displayName} imageUrl={f.avatarUrl} className={f.liveOn ? 'h-14 w-14 ring-2 ring-danger-600 ring-offset-2' : 'h-14 w-14'} />
                     </span>
@@ -216,7 +214,7 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
                 <ul className="space-y-1.5">
                   {data.mine.donations.map((d) => (
                     <li key={d.id} className="flex items-center justify-between text-[13px]">
-                      <Link href={`/c/${encodeURIComponent(d.creatorCode)}`} className="truncate font-bold text-ink-800">{d.creatorName}</Link>
+                      <Link href={`/c/${encodeURIComponent(d.creatorCode)}`} target="_blank" rel="noopener" className="truncate font-bold text-ink-800">{d.creatorName}</Link>
                       <span className="shrink-0 text-ink-500">{won(d.amount)} · {mmdd(d.paidAt)}</span>
                     </li>
                   ))}
@@ -276,6 +274,16 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
           <Link href="/videos" className="flex min-h-14 items-center justify-center rounded-xl border border-dashed border-brand-300 bg-brand-50 text-[12.5px] font-extrabold text-brand-800">
             더보기
           </Link>
+        </div>
+        {/* 플랫폼별 (2026-11-17) */}
+        <p className="mb-2 mt-4 text-[13px] font-extrabold text-ink-700">플랫폼별</p>
+        <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+          {VIDEO_PLATFORMS.map((p) => (
+            <Link key={p.slug} href={videosHref({ p: p.slug })} className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-warm-200 bg-white px-1 text-center text-[12.5px] font-bold text-ink-700 hover:border-brand-300 hover:bg-brand-50">
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: p.color }} aria-hidden />
+              <span className="truncate">{p.label}</span>
+            </Link>
+          ))}
         </div>
       </section>
 

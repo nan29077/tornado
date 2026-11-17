@@ -98,6 +98,32 @@ export async function donateVideoAction(_p: ShopActionState, fd: FormData): Prom
   });
 }
 
+/** 도네이도 샵 [후원하기] 탭 · 신용카드 후원 (PG, 지금은 테스트 결제). 결제·송출 흐름은 영상 후원과 같다. */
+export async function donateCardAction(_p: ShopActionState, fd: FormData): Promise<ShopActionState> {
+  return wrap(async () => {
+    const user = await member();
+    const limited = await consumeIpRateLimit('shop-card-donate', 10, 60);
+    if (!limited.ok) throw new Error('잠시 후 다시 시도해 주세요.');
+    const amountRaw = str(fd, 'amount').replace(/[,원\s]/g, '');
+    if (!/^\d{3,7}$/.test(amountRaw)) throw new Error('후원 금액을 확인해 주세요.');
+    const r = await donateToVideo(
+      { id: user.id, name: user.name },
+      {
+        creatorId: str(fd, 'creatorId'),
+        videoRef: 'CARD',
+        videoTitle: '신용카드 후원',
+        amount: BigInt(amountRaw),
+        message: str(fd, 'message'),
+        nickname: str(fd, 'nickname'),
+        anonymous: str(fd, 'anonymous') === 'on',
+        kind: 'CARD',
+      },
+    );
+    if (!r.ok) throw new Error(r.message);
+    return { ok: true, message: `${r.message} (거래번호 ${r.transactionNo ?? '-'})` };
+  });
+}
+
 // ------------------------------------------------------------------ 장바구니 · 주문
 
 export async function addToCartAction(_p: ShopActionState, fd: FormData): Promise<ShopActionState> {

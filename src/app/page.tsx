@@ -12,16 +12,16 @@ import { HeroSlider } from '@/components/public/hero-slider';
 import { BannerStrip } from '@/components/public/banner-strip';
 import { Card, CardTitle, SectionTitle, LinkButton, Notice } from '@/components/ui';
 import { prisma } from '@/server/db';
-import { siteImageUrl } from '@/lib/site-images';
-import { getSiteImageSelection } from '@/server/services/site-images';
+import { DONAIDO_PROMO_POSTER, DONAIDO_PROMO_VIDEO, homeBannerVideo } from '@/lib/home-banners';
+import { getHomeBannerEntries } from '@/server/services/home-banners';
 import { isVideoHubEnabled } from '@/server/services/video-hub';
 import { HomeVideoPaneLoader } from '@/components/video-hub/home-video-loaders';
 import { HomeVideoPaneSkeleton } from '@/components/video-hub/home-video-section';
 import { MobileVideoPreview } from '@/components/video-hub/mobile-video-preview';
 import { getSessionUser } from '@/server/auth';
-import { HOME_TAB_COOKIE, resolveHomeTab } from '@/lib/home-tab';
+import { HOME_TAB_COOKIE, HOME_TAB_LABEL, resolveHomeTab } from '@/lib/home-tab';
 import { HomeTabs } from '@/components/home/home-tabs';
-import { FanHomeLoader, FanHomeSkeleton } from '@/components/home-fan/fan-home-loader';
+import { FanHeaderWatchingLoader, FanHomeLoader, FanHomeSkeleton } from '@/components/home-fan/fan-home-loader';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +33,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   // 공개 메인은 DB가 재기동되는 짧은 순간에도 전체 화면이 무너지지 않게 한다.
   // FAQ만 비워서 렌더링하고, 서버 상태는 /api/health에서 별도로 확인한다.
-  const [banner, faqs] = await Promise.all([getSiteImageSelection('banner'), prisma.contentPost.findMany({
+  const [banners, faqs] = await Promise.all([getHomeBannerEntries(tab, true), prisma.contentPost.findMany({
     where: { type: 'FAQ', published: true },
     orderBy: { sortOrder: 'asc' },
     take: 5,
@@ -46,6 +46,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     <PublicShell
       home
       aside={<HomeAside />}
+      headerExtra={tab === 'fan' ? (
+        <Suspense fallback={null}>
+          <FanHeaderWatchingLoader viewerId={viewer?.id ?? null} />
+        </Suspense>
+      ) : undefined}
       leftPane={
         videoHub ? (
           <Suspense fallback={<HomeVideoPaneSkeleton />}>
@@ -61,7 +66,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </MobileVideoPreview>
       ) : undefined}
     >
-      <HeroSlider bannerImage={siteImageUrl('banner', banner)} />
+      <HeroSlider
+        key={tab}
+        slides={banners.map(({ banner }) => ({ ...banner, video: homeBannerVideo(banner.video) }))}
+        label={`${HOME_TAB_LABEL[tab]} 상단 배너`}
+        autoRotate={tab === 'creator'}
+      />
 
       <HomeTabs active={tab} viewerId={viewer?.id ?? null} />
 
@@ -151,12 +161,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             preload="none"
             width={1280}
             height={720}
-            poster="/videos/donaido-creator-promo-poster.webp"
+            poster={DONAIDO_PROMO_POSTER}
             aria-labelledby="creator-promo-title"
             className="block aspect-video h-auto w-full bg-ink-900"
           >
-            <source src="/videos/donaido-creator-promo.mp4" type="video/mp4" />
-            <a href="/videos/donaido-creator-promo.mp4">홍보 영상 다운로드</a>
+            <source src={DONAIDO_PROMO_VIDEO} type="video/mp4" />
+            <a href={DONAIDO_PROMO_VIDEO}>홍보 영상 다운로드</a>
           </video>
           <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <p className="text-[13px] leading-relaxed text-ink-600">

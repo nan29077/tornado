@@ -7,6 +7,9 @@
  *  - 샵 라이브 화면의 실시간 후원 목록에도 나온다(같은 donation 을 읽는다)
  * 결제 성공과 송출 성공은 별개다(CLAUDE.md 규칙 3) — 송출이 실패해도 결제·원장은 그대로다.
  * 결제는 아직 mock(테스트 결제)이며 화면에 표시한다.
+ *
+ * 2026-11-17: 샵 [후원하기] 탭의 '신용카드 후원'도 같은 흐름을 쓴다 (input.kind = 'CARD').
+ *   영상 후원 설정(shopVideoDonation)과 무관하게 받고, 결제 기록 종류만 CARD_DONATION 으로 남긴다.
  */
 import { prisma } from '@/server/db';
 import { newId, newTransactionNo } from '@/lib/id';
@@ -38,14 +41,15 @@ export interface VideoDonationResult {
 
 export async function donateToVideo(
   user: { id: string; name: string | null },
-  input: { creatorId: string; videoRef: string; videoTitle: string; amount: bigint; message: string; nickname: string; anonymous?: boolean },
+  input: { creatorId: string; videoRef: string; videoTitle: string; amount: bigint; message: string; nickname: string; anonymous?: boolean; kind?: 'VIDEO' | 'CARD' },
 ): Promise<VideoDonationResult> {
   const creator = await prisma.creatorProfile.findUnique({
     where: { id: input.creatorId },
     select: { id: true, status: true, displayName: true, shopVideoDonation: true, shopDonationMin: true, maxAmount: true },
   });
   if (!creator || creator.status !== 'APPROVED') return { ok: false, message: '후원할 수 없는 크리에이터입니다.' };
-  if (!creator.shopVideoDonation) return { ok: false, message: '이 크리에이터는 영상 후원을 받지 않습니다.' };
+  const card = input.kind === 'CARD';
+  if (!card && !creator.shopVideoDonation) return { ok: false, message: '이 크리에이터는 영상 후원을 받지 않습니다.' };
   const min = creator.shopDonationMin > 0n ? creator.shopDonationMin : 1000n;
   const max = creator.maxAmount > 0n && creator.maxAmount < VIDEO_DONATION_MAX ? creator.maxAmount : VIDEO_DONATION_MAX;
   if (input.amount < min || input.amount > max) return { ok: false, message: `후원 금액은 ${min.toString()}원 ~ ${max.toString()}원 사이로 입력해 주세요.` };
@@ -70,13 +74,13 @@ export async function donateToVideo(
 
   // 1) 결제 준비
   const adapter = getShopPaymentAdapter();
-  const paymentNo = `VDN${Date.now().toString(36).toUpperCase()}${newId().slice(-6)}`;
+  const paymentNo = `${card ? 'CDN' : 'VDN'}${Date.now().toString(36).toUpperCase()}${newId().slice(-6)}`;
   const paymentId = newId();
-  await prisma.shopPayment.create({ data: { id: paymentId, paymentNo, userId: user.id, kind: 'VIDEO_DONATION', amount: input.amount, provider: adapter.provider } });
+  await prisma.shopPayment.create({ data: { id: paymentId, paymentNo, userId: user.id, kind: card ? 'CARD_DONATION' : 'VIDEO_DONATION', amount: input.amount, provider: adapter.provider } });
 
   // 2) 승인
   const approved = await adapter
-    .approve({ paymentNo, amount: input.amount, buyerName: nickname, itemName: `${creator.displayName} 영상 후원` })
+    .approve({ paymentNo, amount: input.amount, buyerName: nickname, itemName: `${creator.displayName} ${card ? '신용카드' : '영상'} 후원` })
     .catch((e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message : '결제 오류' }));
   if (!approved.ok) {
     await prisma.shopPayment.updateMany({ where: { id: paymentId, status: 'READY' }, data: { status: 'FAILED', failReason: approved.reason.slice(0, 200) } });
@@ -113,7 +117,7 @@ export async function donateToVideo(
     });
     await tx.donationStatusLog.createMany({
       data: [
-        { id: newId(), donationId, fromStatus: 'RECEIVED', toStatus: 'PAYMENT_SUCCESS', reason: `도네이도 샵 영상 후원 결제 ${paymentNo} · ${input.videoTitle.slice(0, 60)}`, actor: 'system' },
+        { id: newId(), donationId, fromStatus: 'RECEIVED', toStatus: 'PAYMENT_SUCCESS', reason: card ? `도네이도 샵 신용카드 후원 결제 ${paymentNo}` : `도네이도 샵 영상 후원 결제 ${paymentNo} · ${input.videoTitle.slice(0, 60)}`, actor: 'system' },
         { id: newId(), donationId, fromStatus: 'PAYMENT_SUCCESS', toStatus: 'SETTLEMENT_PENDING', reason: '정산 대기', actor: 'system' },
       ],
     });
@@ -133,7 +137,7 @@ export async function donateToVideo(
   try {
     await dispatchBroadcast(donationId);
   } catch (e) {
-    logger.error('영상 후원 송출 실패 (결제는 정상 완료)', { donationId, message: (e as Error).message });
+    logger.error(card ? '신용카드 후원 송출 실패 (결제는 정상 완료)' : '영상 후원 송출 실패 (결제는 정상 완료)', { donationId, message: (e as Error).message });
   }
   return { ok: true, message: `${creator.displayName} 님에게 후원했습니다.`, transactionNo };
 }

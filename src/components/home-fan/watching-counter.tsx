@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import { Radio, Users } from '@/components/brand/icons';
 
 /**
  * 구독자 전용 탭 맨 위 "지금 N명이 시청 중".
@@ -29,25 +28,23 @@ export function WatchingCounter({ viewers, liveCount }: { viewers: number | null
   if (viewers == null && liveCount === 0) return null;
 
   return (
-    <section aria-label="실시간 시청 현황" className="mt-4 overflow-hidden rounded-2xl border border-brand-200 bg-[linear-gradient(135deg,#fff8e1_0%,#ffe9a8_100%)] px-4 py-3.5">
-      <div className="flex items-center gap-3">
-        <span className="relative grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white text-danger-600 shadow-sm">
-          <span className="absolute inset-0 animate-ping rounded-full bg-danger-600/15 motion-reduce:hidden" aria-hidden />
-          {viewers != null ? <Users size={20} strokeWidth={1.8} /> : <Radio size={20} strokeWidth={1.8} />}
+    <section
+      aria-label="실시간 시청 현황"
+      className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-full border border-warm-300 bg-white/85 px-2 text-[11.5px] font-semibold leading-none text-ink-600 min-[360px]:px-2.5 sm:min-h-9 sm:gap-2 sm:px-3.5 sm:text-[12px]"
+    >
+      <span className="size-1.5 shrink-0 rounded-full bg-danger-500" aria-hidden />
+      {viewers != null ? (
+        <span>
+          <strong className="text-[13px] font-extrabold tabular-nums text-brand-800 sm:text-[14px]">{value.toLocaleString('ko-KR')}</strong>명 시청 중
         </span>
-        <div className="min-w-0">
-          {viewers != null ? (
-            <p className="text-[19px] font-black tracking-[-0.02em] text-ink-900" aria-live="off">
-              지금 <span className="tabular-nums text-brand-800">{value.toLocaleString('ko-KR')}</span>명이 시청 중
-            </p>
-          ) : (
-            <p className="text-[17px] font-black text-ink-900">지금 {liveCount.toLocaleString('ko-KR')}개 방송이 진행 중</p>
-          )}
-          <p className="mt-0.5 text-[12px] text-ink-600">
-            {liveCount > 0 ? `라이브 ${liveCount.toLocaleString('ko-KR')}개 방송 · ` : ''}도네이도 방송국 실시간 현황
-          </p>
-        </div>
-      </div>
+      ) : (
+        <span>
+          <strong className="text-[13px] font-extrabold tabular-nums text-brand-800 sm:text-[14px]">{liveCount.toLocaleString('ko-KR')}</strong>개 방송 중
+        </span>
+      )}
+      {viewers != null && liveCount > 0 ? (
+        <span className="hidden border-l border-warm-300 pl-2.5 sm:inline">{liveCount.toLocaleString('ko-KR')}개 방송 중</span>
+      ) : null}
     </section>
   );
 }

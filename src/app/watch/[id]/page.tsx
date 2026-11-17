@@ -52,7 +52,9 @@ export default async function WatchPage({ params }: { params: Promise<{ id: stri
             <div className="flex flex-wrap gap-2">
               {item.creator ? (
                 <Link
-                  href={`/c/${encodeURIComponent(item.creator.code)}`}
+                  href={`/c/${encodeURIComponent(item.creator.code)}?tab=donate`}
+                  target="_blank"
+                  rel="noopener"
                   className="inline-flex h-10 items-center gap-1.5 rounded-full bg-brand-400 px-4 text-[13.5px] font-extrabold text-ink-900 shadow-[0_6px_14px_rgba(237,166,0,0.28)] hover:bg-brand-500"
                 >
                   <HeartHandshake size={16} strokeWidth={1.9} />
