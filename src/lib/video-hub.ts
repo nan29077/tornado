@@ -37,7 +37,9 @@ export interface VideoItem {
 }
 
 /**
- * 카테고리 (2026-11-17 확장: 시사·정치·경제·예능·요리·댄스·지식·과학·IT·자동차·영화·드라마·애니·캠핑 등).
+ * 카테고리 (2026-11-17 확장: 시사·정치·경제·예능·요리·댄스·지식·과학·IT·자동차·영화·드라마·애니·캠핑 등.
+ *   같은 날 2차 확장: 부동산·브이로그·ASMR·미스터리·책·패션·키즈·육아·건강·역사·밀리터리·외국어·인테리어·공예·농사·기타).
+ * - 배열 순서 = 화면 표시 순서(주제별로 묶어 둠).
  * - 'all' 은 필터 없음, 'donaido' 는 "후원 가능(가입 크리에이터)" 모아보기다.
  * - 기존 slug 는 크리에이터 신청서(contentCategory)에도 저장되므로 바꾸거나 지우지 않는다. 추가만 한다.
  * - 성인 카테고리는 법률 검토(본인인증 게이트) 결정 전까지 넣지 않는다.
@@ -45,32 +47,60 @@ export interface VideoItem {
 export const VIDEO_CATEGORIES = [
   { slug: 'all', label: '전체' },
   { slug: 'donaido', label: '후원 가능' },
+  // 시사·경제
   { slug: 'news', label: '시사' },
   { slug: 'politics', label: '정치' },
   { slug: 'economy', label: '경제' },
+  { slug: 'finance', label: '주식·코인' },
+  { slug: 'realestate', label: '부동산' },
+  // 예능·소통
   { slug: 'humor', label: '유머' },
   { slug: 'entertain', label: '예능' },
   { slug: 'talk', label: '소통·토크' },
+  { slug: 'vlog', label: '일상·브이로그' },
+  { slug: 'asmr', label: 'ASMR' },
+  { slug: 'mystery', label: '미스터리·괴담' },
+  // 먹방·요리
   { slug: 'mukbang', label: '먹방' },
   { slug: 'cooking', label: '요리' },
+  // 게임·음악
   { slug: 'game', label: '게임' },
   { slug: 'music', label: '노래·음악' },
   { slug: 'dance', label: '댄스' },
+  // 영화·드라마·책
   { slug: 'movie', label: '영화·리뷰' },
   { slug: 'drama', label: '드라마' },
   { slug: 'animation', label: '애니·웹툰' },
+  { slug: 'books', label: '책·독서' },
+  // 뷰티·패션
   { slug: 'beauty', label: '뷰티' },
+  { slug: 'fashion', label: '패션' },
+  // 여행·아웃도어
   { slug: 'travel', label: '여행' },
   { slug: 'camping', label: '캠핑·아웃도어' },
+  { slug: 'fishing', label: '낚시' },
+  // 반려·가족
   { slug: 'pet', label: '반려동물' },
+  { slug: 'kids', label: '키즈' },
+  { slug: 'parenting', label: '육아·가족' },
+  // 운동·건강
   { slug: 'sports', label: '운동·스포츠' },
+  { slug: 'health', label: '건강·의학' },
+  // 지식·테크
   { slug: 'knowledge', label: '지식·교양' },
+  { slug: 'history', label: '역사' },
   { slug: 'science', label: '과학' },
   { slug: 'tech', label: 'IT·테크' },
   { slug: 'car', label: '자동차' },
+  { slug: 'military', label: '밀리터리' },
+  // 공부
   { slug: 'study', label: '공부' },
-  { slug: 'finance', label: '주식·코인' },
-  { slug: 'fishing', label: '낚시' },
+  { slug: 'language', label: '외국어' },
+  // 생활·취미
+  { slug: 'interior', label: '인테리어·살림' },
+  { slug: 'art', label: '그림·공예' },
+  { slug: 'farming', label: '농사·전원생활' },
+  { slug: 'other', label: '기타' },
 ] as const;
 
 export type VideoCategorySlug = (typeof VIDEO_CATEGORIES)[number]['slug'];

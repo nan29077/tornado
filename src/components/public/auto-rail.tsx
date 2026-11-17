@@ -13,6 +13,7 @@ import { cx } from '@/components/ui';
  *   손을 떼면 잠시 뒤 다시 흐른다.
  * - 화면 밖이거나 탭이 숨겨졌거나 "동작 줄이기" 설정이면 흐르지 않는다.
  * - controls: 마우스를 쓰는 PC 화면에서 좌우 넘김 버튼을 보여 준다(터치 기기에서는 숨김).
+ * - fill: 항목이 적어 화면보다 좁아도 흐르게 한다. 넘칠 때까지 항목을 반복해 채운다(반복본은 스크린리더·탭 이동에서 제외).
  */
 export function AutoRail({
   children,
@@ -22,6 +23,7 @@ export function AutoRail({
   gap = 'gap-2.5 pr-2.5',
   controls = false,
   label,
+  fill = false,
 }: {
   children: React.ReactNode;
   className?: string;
@@ -34,6 +36,8 @@ export function AutoRail({
   controls?: boolean;
   /** 넘김 버튼 이름에 붙일 섹션 이름 */
   label?: string;
+  /** 짧은 목록도 넘칠 때까지 반복해 채워서 흐르게 한다 */
+  fill?: boolean;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -42,6 +46,7 @@ export function AutoRail({
   const nudgeRef = useRef<((dir: 1 | -1) => void) | null>(null);
   const [overflow, setOverflow] = useState(false);
   const [loop, setLoop] = useState(false);
+  const [reps, setReps] = useState(1);
 
   // 넘치는지 확인 → 넘칠 때만 복제본을 붙여 흐르게 한다
   useEffect(() => {
@@ -51,6 +56,11 @@ export function AutoRail({
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)');
     const check = () => {
       const over = first.offsetWidth > scroller.clientWidth + 8;
+      // fill: 넘치지 않으면 반복 횟수를 늘려 다시 잰다(최대 8번)
+      if (fill && !over && !reduce?.matches && first.offsetWidth > 0) {
+        setReps((r) => (r < 8 ? r + 1 : r));
+        return;
+      }
       setOverflow(over);
       setLoop(over && !reduce?.matches);
     };
@@ -63,13 +73,14 @@ export function AutoRail({
       ro.disconnect();
       reduce?.removeEventListener?.('change', check);
     };
-  }, []);
+  }, [fill, reps]);
 
   // 복제본 안의 링크·버튼은 탭 이동에서 뺀다
   useEffect(() => {
     if (!loop) return;
     cloneRef.current?.querySelectorAll<HTMLElement>('a, button, [tabindex]').forEach((el) => el.setAttribute('tabindex', '-1'));
-  }, [loop, children]);
+    firstRef.current?.querySelectorAll<HTMLElement>('[data-auto-rail-repeat] a, [data-auto-rail-repeat] button, [data-auto-rail-repeat] [tabindex]').forEach((el) => el.setAttribute('tabindex', '-1'));
+  }, [loop, children, reps]);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -198,9 +209,19 @@ export function AutoRail({
           className,
         )}
       >
-        <div ref={firstRef} className={cx('flex shrink-0', gap)}>{children}</div>
+        <div ref={firstRef} className={cx('flex shrink-0', gap)}>
+          {children}
+          {Array.from({ length: reps - 1 }, (_, i) => (
+            <div key={i} aria-hidden data-auto-rail-repeat className="contents">{children}</div>
+          ))}
+        </div>
         {loop ? (
-          <div ref={cloneRef} aria-hidden data-auto-rail-clone className={cx('flex shrink-0', gap)}>{children}</div>
+          <div ref={cloneRef} aria-hidden data-auto-rail-clone className={cx('flex shrink-0', gap)}>
+            {children}
+            {Array.from({ length: reps - 1 }, (_, i) => (
+              <div key={i} className="contents">{children}</div>
+            ))}
+          </div>
         ) : null}
       </div>
       {controls && overflow ? (

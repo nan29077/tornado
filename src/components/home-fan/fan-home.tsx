@@ -12,10 +12,11 @@ import { CONTENT_CATEGORY_SLUGS, categoryLabel, sortVideos, videosHref } from '@
 import { formatKst } from '@/lib/datetime';
 import type { FanHomeData } from '@/server/services/home-fan';
 import { BrowseAll } from './browse-all';
+import { CategoryChips } from './category-chips';
 import { ComingSoonSticker } from './coming-soon-sticker';
 import { WatchingCounter } from './watching-counter';
 import {
-  ChannelAvatar, FanChannelCard, FanCreatorCard, FanLiveCard, FanProductCard, Rail, UnregisteredBadge, compactKo, won,
+  ChannelAvatar, FanChannelCard, FanCreatorCard, FanLiveCard, FanProductCard, UnregisteredBadge, compactKo, won,
 } from './parts';
 
 /**
@@ -107,17 +108,7 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
       {videos.length > 0 ? (
         <section className="mt-8" aria-labelledby="fan-broadcast">
           <HeadRow id="fan-broadcast" title="방송국" href="/videos" />
-          <Rail className="mb-2">
-            {[{ slug: 'all', label: '전체' }, ...quickCats.slice(0, 8).map((s) => ({ slug: s, label: categoryLabel(s) }))].map((c) => (
-              <Link
-                key={c.slug}
-                href={videosHref({ c: c.slug })}
-                className="shrink-0 rounded-full border border-ink-200 bg-white px-3 py-1.5 text-[12.5px] font-bold text-ink-700 hover:border-brand-300 hover:bg-brand-50"
-              >
-                {c.label}
-              </Link>
-            ))}
-          </Rail>
+          <CategoryChips className="mb-3" />
           <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
             {videos.map((v) => <VideoCard key={v.id} item={v} now={data.now} />)}
           </div>
@@ -155,14 +146,18 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
             {creatorsPopular.map((c) => <FanCreatorCard key={c.id} creator={c} />)}
           </AutoRail>
           {newCreators.length > 0 ? (
-            <div className="mt-3 flex items-center gap-2 overflow-x-auto [scrollbar-width:none]">
+            <div className="mt-3 flex items-center gap-2">
               <span className="shrink-0 rounded-md bg-brand-50 px-2 py-1 text-[11.5px] font-extrabold text-brand-800">새로 합류</span>
-              {newCreators.map((c) => (
-                <Link key={c.id} href={`/c/${encodeURIComponent(c.code)}`} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-ink-100 bg-white py-1 pl-1 pr-2.5 text-[12.5px] font-bold text-ink-700 hover:bg-ink-50">
-                  <ProfileAvatar seed={c.code} avatarIndex={c.avatarIndex} name={c.displayName} imageUrl={c.avatarUrl} className="h-6 w-6" />
-                  {c.displayName}
-                </Link>
-              ))}
+              <div className="min-w-0 flex-1">
+                <AutoRail bleed={false} fill speed={18} gap="gap-2 pr-2" className="py-1" label="새로 합류한 크리에이터">
+                  {newCreators.map((c) => (
+                    <Link key={c.id} href={`/c/${encodeURIComponent(c.code)}`} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-ink-100 bg-white py-1 pl-1 pr-2.5 text-[12.5px] font-bold text-ink-700 hover:bg-ink-50">
+                      <ProfileAvatar seed={c.code} avatarIndex={c.avatarIndex} name={c.displayName} imageUrl={c.avatarUrl} className="h-6 w-6" />
+                      {c.displayName}
+                    </Link>
+                  ))}
+                </AutoRail>
+              </div>
             </div>
           ) : null}
         </section>
