@@ -72,6 +72,9 @@ export async function generateMetadata(): Promise<Metadata> {
       images: [shareImage],
     },
     robots: { index: true, follow: true },
+    // iOS Safari 가 숫자(시청자 수 · 후원번호 · 날짜)를 전화번호/날짜 링크로 바꾸며 HTML 을 고치면
+    // React 하이드레이션이 서버 HTML 과 어긋났다고 경고한다(아이폰 개발 화면의 '3 Issues'). 자동 감지를 끈다.
+    formatDetection: { telephone: false, date: false, email: false, address: false },
   };
 }
 

@@ -32,7 +32,12 @@ export function WatchingCounter({ viewers, liveCount }: { viewers: number | null
       aria-label="실시간 시청 현황"
       className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-full border border-warm-300 bg-white/85 px-2 text-[11.5px] font-semibold leading-none text-ink-600 min-[360px]:px-2.5 sm:min-h-9 sm:gap-2 sm:px-3.5 sm:text-[12px]"
     >
-      <span className="size-1.5 shrink-0 rounded-full bg-danger-500" aria-hidden />
+      {/* 빨간 점: 전파가 퍼지듯 고리 두 겹이 번갈아 커지며 사라진다 (동작 줄이기 설정이면 멈춘 점) */}
+      <span className="relative grid size-2.5 shrink-0 place-items-center" aria-hidden>
+        <span className="donaido-live-wave absolute inset-0 rounded-full bg-danger-500" />
+        <span className="donaido-live-wave donaido-live-wave-2 absolute inset-0 rounded-full bg-danger-500" />
+        <span className="donaido-live-dot relative size-1.5 rounded-full bg-danger-500" />
+      </span>
       {viewers != null ? (
         <span>
           <strong className="text-[13px] font-extrabold tabular-nums text-brand-800 sm:text-[14px]">{value.toLocaleString('ko-KR')}</strong>명 시청 중

@@ -70,7 +70,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         key={tab}
         slides={banners.map(({ banner }) => ({ ...banner, video: homeBannerVideo(banner.video) }))}
         label={`${HOME_TAB_LABEL[tab]} 상단 배너`}
-        autoRotate={tab === 'creator'}
+        autoRotate
       />
 
       <HomeTabs active={tab} viewerId={viewer?.id ?? null} />

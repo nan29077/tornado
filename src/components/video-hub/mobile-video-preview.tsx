@@ -49,7 +49,7 @@ export function MobileVideoPreview({ children }: { children: ReactNode }) {
               setOpen(false);
             }}
             aria-label="방송국 미리보기 닫기"
-            className="grid h-10 w-10 place-items-center rounded-full text-ink-600 hover:bg-ink-100"
+            className="grid h-10 w-10 place-items-center rounded-full text-ink-600 outline-none hover:bg-ink-100 focus:outline-none focus-visible:bg-ink-100"
           >
             <X size={20} />
           </button>

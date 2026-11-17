@@ -1224,3 +1224,20 @@ a {
   50% { transform: rotate(0deg) translateY(-4px); }
   75% { transform: rotate(5deg) translateY(-2px); }
 }
+
+/* 메인 헤더 '시청 중' 빨간 점 — 전파처럼 퍼지는 고리 + 점 깜빡임 (2026-11-17) */
+@keyframes donaido-live-wave {
+  0% { transform: scale(0.6); opacity: 0.55; }
+  100% { transform: scale(2.8); opacity: 0; }
+}
+@keyframes donaido-live-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.donaido-live-wave { animation: donaido-live-wave 1.8s cubic-bezier(0.2, 0.6, 0.35, 1) infinite; }
+.donaido-live-wave-2 { animation-delay: 0.9s; }
+.donaido-live-dot { animation: donaido-live-dot 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  /* 퍼지는 고리(크기 변화)만 끄고, 점의 은은한 깜빡임은 남긴다 */
+  .donaido-live-wave { animation: none; opacity: 0; }
+}
