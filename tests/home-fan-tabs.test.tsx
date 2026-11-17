@@ -19,7 +19,7 @@ import { ComingSoonSticker } from '@/components/home-fan/coming-soon-sticker';
 
 /**
  * 메인 [크리에이터 전용] / [구독자 전용] 탭 (2026-11-17)
- *  - 기본 탭 규칙 (비로그인·크리에이터 → 크리에이터 전용 / 일반회원·관리자 → 구독자 전용)
+ *  - 기본 탭 규칙 (크리에이터 → 크리에이터 전용 / 비로그인·일반회원·관리자 → 구독자 전용)
  *  - 미가입 채널에는 후원 버튼·후원 링크가 절대 없다
  *  - 더미 데이터는 demo- 접두사로만 넣고, 정리하면 남지 않는다
  */
@@ -36,8 +36,9 @@ vi.mock('@/server/services/video-hub', async (orig) => {
 });
 
 describe('기본 탭 규칙', () => {
-  it('역할 기본값: 비로그인·크리에이터 = 크리에이터 전용 / 일반회원·관리자 = 구독자 전용', () => {
-    expect(defaultHomeTabForRole(null)).toBe('creator');
+  it('역할 기본값: 크리에이터 = 크리에이터 전용 / 비로그인·일반회원·관리자 = 구독자 전용', () => {
+    expect(defaultHomeTabForRole(null)).toBe('fan');
+    expect(defaultHomeTabForRole(undefined)).toBe('fan');
     expect(defaultHomeTabForRole('CREATOR')).toBe('creator');
     expect(defaultHomeTabForRole('DONOR')).toBe('fan');
     expect(defaultHomeTabForRole('ADMIN')).toBe('fan');
@@ -50,10 +51,12 @@ describe('기본 탭 규칙', () => {
   });
 
   it('직접 고른 탭(쿠키)은 고른 사람이 같을 때만 쓴다 — 로그인·로그아웃하면 역할 기본값으로 돌아간다', () => {
-    const guestPick = encodeHomeTabCookie('fan', null);
-    expect(resolveHomeTab({ cookie: guestPick, userId: null, role: null })).toBe('fan');
-    // 같은 브라우저에서 크리에이터로 로그인 → 비로그인 때 고른 값은 무시
-    expect(resolveHomeTab({ cookie: guestPick, userId: 'u1', role: 'CREATOR' })).toBe('creator');
+    const guestPick = encodeHomeTabCookie('creator', null);
+    expect(resolveHomeTab({ cookie: guestPick, userId: null, role: null })).toBe('creator');
+    // 같은 브라우저에서 일반회원으로 로그인 → 비로그인 때 고른 값은 무시
+    expect(resolveHomeTab({ cookie: guestPick, userId: 'u1', role: 'DONOR' })).toBe('fan');
+    // 비로그인 때 구독자 전용을 골랐어도 크리에이터로 로그인하면 크리에이터 전용
+    expect(resolveHomeTab({ cookie: encodeHomeTabCookie('fan', null), userId: 'u4', role: 'CREATOR' })).toBe('creator');
     // 일반회원이 크리에이터 전용을 골랐으면 유지
     const donorPick = encodeHomeTabCookie('creator', 'u2');
     expect(resolveHomeTab({ cookie: donorPick, userId: 'u2', role: 'DONOR' })).toBe('creator');

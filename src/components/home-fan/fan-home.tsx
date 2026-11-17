@@ -7,7 +7,7 @@ import { BannerStrip } from '@/components/public/banner-strip';
 import { ProfileAvatar } from '@/components/profile/generated-avatar';
 import { VideoCard } from '@/components/video-hub/video-card';
 import { Card, CardTitle, SectionTitle } from '@/components/ui';
-import { AutoRail } from './auto-rail';
+import { AutoRail } from '@/components/public/auto-rail';
 import { CONTENT_CATEGORY_SLUGS, categoryLabel, sortVideos, videosHref } from '@/lib/video-hub';
 import { formatKst } from '@/lib/datetime';
 import type { FanHomeData } from '@/server/services/home-fan';
@@ -97,7 +97,7 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
       {data.live.length > 0 ? (
         <section className="mt-8" aria-labelledby="fan-live">
           <HeadRow id="fan-live" title="지금 라이브" href="/explore/live" />
-          <AutoRail>
+          <AutoRail controls label="지금 라이브">
             {data.live.slice(0, 12).map((l) => <FanLiveCard key={l.key} item={l} />)}
           </AutoRail>
         </section>
@@ -127,7 +127,7 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
                 <p className="text-[14px] font-extrabold text-ink-900">쇼츠</p>
                 <MoreButton href={videosHref({ t: 'shorts' })} title="쇼츠" />
               </div>
-              <AutoRail speed={20}>
+              <AutoRail speed={20} controls label="쇼츠">
                 {shorts.slice(0, 10).map((s) => (
                   <Link key={s.id} href={`/watch/${encodeURIComponent(s.id)}`} prefetch={false} className="relative w-[118px] shrink-0 snap-start">
                     <div className="relative aspect-[9/16] overflow-hidden rounded-xl bg-ink-100">
@@ -151,7 +151,7 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
       {creatorsPopular.length > 0 ? (
         <section className="mt-8">
           <HeadRow title="도네이도 크리에이터" description="도네이도에 가입한 크리에이터예요. 문자 한 통으로 바로 후원할 수 있어요." href="/explore/creators" />
-          <AutoRail>
+          <AutoRail controls label="도네이도 크리에이터">
             {creatorsPopular.map((c) => <FanCreatorCard key={c.id} creator={c} />)}
           </AutoRail>
           {newCreators.length > 0 ? (
@@ -172,7 +172,7 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
       {data.channels.length > 0 ? (
         <section className="mt-8">
           <HeadRow title="방송국 인기 채널" description="아직 도네이도에 가입하지 않은 채널이에요. 영상만 볼 수 있어요." href="/explore/channels" />
-          <AutoRail>
+          <AutoRail controls label="방송국 인기 채널">
             {data.channels.slice(0, 12).map((c) => <FanChannelCard key={c.channelId} channel={c} />)}
           </AutoRail>
         </section>
@@ -186,7 +186,7 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
           href={data.products.length > 0 ? '/explore/products' : undefined}
         />
         {data.products.length > 0 ? (
-          <AutoRail>
+          <AutoRail controls label="크리에이터 샵 인기 상품">
             {data.products.map((p) => <FanProductCard key={p.id} product={p} />)}
           </AutoRail>
         ) : (
@@ -243,7 +243,7 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
         <section className="mt-8">
           <HeadRow title="이번 주 주목받은 크리에이터" description="후원이 많이 모인 크리에이터와 업로드가 활발한 채널이에요." href="/explore/trending" />
           {data.trending.creators.length > 0 ? (
-            <AutoRail>
+            <AutoRail controls label="이번 주 주목받은 크리에이터">
               {data.trending.creators.map((c, i) => <FanCreatorCard key={c.id} creator={c} rank={i + 1} />)}
             </AutoRail>
           ) : null}

@@ -27,7 +27,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   // [크리에이터 전용] / [구독자 전용] 탭 (2026-11-17). 규칙은 src/lib/home-tab.ts
-  //   주소 ?tab= → 직접 고른 탭(쿠키, 같은 사람일 때만) → 역할 기본값(비로그인·크리에이터 = 크리에이터 전용, 일반회원·관리자 = 구독자 전용)
+  //   주소 ?tab= → 직접 고른 탭(쿠키, 같은 사람일 때만) → 역할 기본값(크리에이터 = 크리에이터 전용, 비로그인·일반회원·관리자 = 구독자 전용)
   const [sp, jar, viewer] = await Promise.all([searchParams, cookies(), getSessionUser().catch(() => null)]);
   const tab = resolveHomeTab({ query: sp.tab, cookie: jar.get(HOME_TAB_COOKIE)?.value ?? null, userId: viewer?.id ?? null, role: viewer?.role ?? null });
 

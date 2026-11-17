@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { AutoRail } from '@/components/home-fan/auto-rail';
+import { AutoRail } from '@/components/public/auto-rail';
 import { MoreButton } from '@/components/home-fan/fan-home';
 
 /**

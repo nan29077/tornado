@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { ChevronRight, HeartHandshake, PlayCircle, Radio, ShoppingBag, Store, Users } from '@/components/brand/icons';
-import { ProfileAvatar } from '@/components/profile/generated-avatar';
+import { GeneratedAvatar, ProfileAvatar } from '@/components/profile/generated-avatar';
 import { cx } from '@/components/ui';
 import { categoryLabel, youtubeChannelUrl } from '@/lib/video-hub';
 import type { FanChannel, FanCreator, FanLiveItem, FanProduct } from '@/server/services/home-fan';
@@ -32,20 +32,16 @@ export function Rail({ children, className }: { children: React.ReactNode; class
   );
 }
 
-function ChannelInitial({ name, className }: { name: string; className?: string }) {
-  return (
-    <span aria-hidden className={cx('grid shrink-0 place-items-center rounded-full bg-brand-100 font-extrabold text-brand-800', className)}>
-      {Array.from(name.trim())[0] ?? '?'}
-    </span>
-  );
-}
-
-export function ChannelAvatar({ channel, className }: { channel: Pick<FanChannel, 'title' | 'avatarUrl'>; className?: string }) {
+/**
+ * 미가입 채널 프로필. 채널 사진이 있으면 그 사진, 없으면 한글 첫 글자 대신
+ * 채널 ID로 고정 매핑한 도네이도 캐릭터를 보여 준다(같은 채널은 항상 같은 캐릭터).
+ */
+export function ChannelAvatar({ channel, className }: { channel: Pick<FanChannel, 'channelId' | 'title' | 'avatarUrl'>; className?: string }) {
   if (channel.avatarUrl) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={channel.avatarUrl} alt="" loading="lazy" decoding="async" className={cx('shrink-0 rounded-full bg-brand-50 object-cover', className)} />;
   }
-  return <ChannelInitial name={channel.title} className={className} />;
+  return <GeneratedAvatar seed={channel.channelId || channel.title} name={channel.title} className={className} />;
 }
 
 export function UnregisteredBadge() {

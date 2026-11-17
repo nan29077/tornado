@@ -6,6 +6,7 @@ import { PublicShell } from '@/components/layout/public-shell';
 import { VideoHubFilters } from '@/components/video-hub/video-hub-filters';
 import { VideoCard, VideoProfile } from '@/components/video-hub/video-card';
 import { LiveCreatorCard } from '@/components/video-hub/live-creator-card';
+import { AutoRail } from '@/components/public/auto-rail';
 import { CONTENT_CATEGORY_SLUGS, categoryLabel, isVideoCategory, videosHref, videoOrder, videoType, sortVideos, type LiveCreator, type VideoCategorySlug, type VideoItem, type VideoType } from '@/lib/video-hub';
 import { getLiveCreators, getVideoFeed, isVideoHubEnabled } from '@/server/services/video-hub';
 import { filterVideos } from '@/server/services/video-hub-parse';
@@ -96,11 +97,11 @@ export default async function VideosPage({
           {home && lives.length > 0 ? (
             <section className="mt-5" aria-labelledby="live-shelf-title">
               <ShelfHeader id="live-shelf-title" title="지금 라이브" href={videosHref({ t: 'live' })} live />
-              <div className="flex snap-x gap-3 overflow-x-auto pb-2 [scrollbar-width:none]">
+              <AutoRail bleed={false} gap="gap-3 pr-3" className="pb-2" controls label="지금 라이브">
                 {lives.slice(0, 12).map((l) => (
                   <LiveCreatorCard key={l.code} live={l} compact />
                 ))}
-              </div>
+              </AutoRail>
             </section>
           ) : null}
 
@@ -136,23 +137,24 @@ export default async function VideosPage({
               {shelfShorts.length > 0 ? (
                 <section className="mt-6" aria-labelledby="shorts-title">
                   <ShelfHeader id="shorts-title" title="쇼츠" href={videosHref({ t: 'shorts', c, sort })} />
-                  <div className="flex snap-x gap-3 overflow-x-auto pb-2 [scrollbar-width:none]">
+                  <AutoRail bleed={false} gap="gap-3 pr-3" className="pb-2" speed={20} controls label="쇼츠">
                     {shelfShorts.map((v) => (
                       <ShortCard key={v.id} item={v} />
                     ))}
-                  </div>
+                  </AutoRail>
                 </section>
               ) : null}
               {shelves.map((shelf) => (
                 <section key={shelf.slug} className="mt-6" aria-labelledby={`shelf-${shelf.slug}`}>
                   <ShelfHeader id={`shelf-${shelf.slug}`} title={categoryLabel(shelf.slug)} href={videosHref({ c: shelf.slug, sort })} />
-                  <div className="flex snap-x gap-3 overflow-x-auto pb-2 [scrollbar-width:none]">
+                  {/* 자동 흐름 선반 안에서는 % 폭이 계산되지 않아 고정 폭으로 둔다 */}
+                  <AutoRail bleed={false} gap="gap-3 pr-3" className="pb-2" controls label={categoryLabel(shelf.slug)}>
                     {shelf.items.map((v) => (
-                      <div key={v.id} className="w-[78%] shrink-0 snap-start sm:w-[46%]">
+                      <div key={v.id} className="w-[264px] shrink-0 sm:w-[300px]">
                         <VideoCard item={v} now={now} className="border border-warm-200 bg-white" />
                       </div>
                     ))}
-                  </div>
+                  </AutoRail>
                 </section>
               ))}
               {rest.length > 0 ? (

@@ -5,7 +5,7 @@
  *   1. 주소의 ?tab=creator | ?tab=fan
  *   2. 사용자가 직접 고른 탭 (쿠키). 쿠키에는 "누가 골랐는지"를 함께 적어 두고,
  *      로그인·로그아웃으로 사람이 바뀌면 그 쿠키는 무시한다 → 로그인 직후에는 역할 기본값이 보인다.
- *   3. 역할 기본값 — 비로그인·크리에이터 → 크리에이터 전용 / 일반회원(DONOR)·관리자 → 구독자 전용
+ *   3. 역할 기본값 — 크리에이터 → 크리에이터 전용 / 그 외(비로그인·일반회원·관리자) → 구독자 전용 (2026-11-17 변경)
  *
  * 이 파일은 브라우저 번들에도 실린다. env·DB·node 모듈을 import 하지 않는다.
  */
@@ -47,8 +47,7 @@ export function decodeHomeTabCookie(raw: string | null | undefined, userId: stri
 }
 
 export function defaultHomeTabForRole(role: HomeViewerRole): HomeTab {
-  if (role === 'DONOR' || role === 'ADMIN') return 'fan';
-  return 'creator';
+  return role === 'CREATOR' ? 'creator' : 'fan';
 }
 
 export function resolveHomeTab(input: {
