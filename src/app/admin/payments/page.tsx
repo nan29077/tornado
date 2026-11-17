@@ -5,6 +5,8 @@ import { AdminField, AdminInput, AdminSelect, FilterBar, Pager } from '@/compone
 import { PAGE_SIZE, parsePage, clampPageOrRedirect } from '@/components/admin/constants';
 import { ActionForm } from '@/components/admin/action-form';
 import { reconcilePaymentAction } from '@/app/actions/admin/transactions';
+import { retryShopCancelAction } from '@/app/actions/admin/shop';
+import { listPendingShopCancels } from '@/server/services/shop/payment-cancel';
 import { prisma } from '@/server/db';
 import { formatWon, formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
@@ -17,6 +19,15 @@ export const dynamic = 'force-dynamic';
 
 /** 상단 "결과 확인 필요" 목록에 한 번에 띄우는 최대 건수. */
 const NEEDS_CHECK_LIMIT = 200;
+
+const SHOP_KIND_LABEL: Record<string, string> = {
+  ORDER: '샵 주문',
+  VIDEO_DONATION: '영상 후원',
+  CARD_DONATION: '카드 후원',
+  VOTE_TICKET: '투표권 충전',
+  TALK_SUBSCRIPTION: '소통 구독',
+  TALK_SESSION: '1:1 채팅',
+};
 
 const STATUSES: PaymentTxStatus[] = ['REQUESTED', 'APPROVED', 'FAILED', 'CANCELED', 'TIMEOUT', 'UNKNOWN'];
 
@@ -227,6 +238,7 @@ export default async function AdminPaymentsPage({
     }),
     prisma.paymentTransaction.groupBy({ by: ['status'], _count: { _all: true }, _sum: { amount: true } }),
   ]);
+  const pendingShopCancels = await listPendingShopCancels();
 
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
   // 필터를 바꿔 결과가 줄었을 때 URL 의 옛 page 번호 때문에 빈 목록이 뜨는 것을 막는다.
@@ -286,6 +298,45 @@ export default async function AdminPaymentsPage({
                 </tr>
               </thead>
               <TxRows rows={needsCheck} reconcilable />
+            </Table>
+          </div>
+        </section>
+      ) : null}
+
+      {pendingShopCancels.length > 0 ? (
+        <section id="shop-cancel" className="mb-6">
+          <Notice tone="danger" title={`결제 취소 재시도가 필요한 샵 결제 ${pendingShopCancels.length}건`}>
+            투표권·소통 구독·1:1 채팅 환불 때 결제사 취소가 실패한 건입니다. 회원의 투표권·이용권은 이미 회수·종료되었으니
+            결제사 취소만 다시 보내면 됩니다. [취소 재시도]는 두 번 눌러도 한 번만 나갑니다.
+          </Notice>
+          <div className="mt-3">
+            <Table>
+              <thead>
+                <tr>
+                  <Th>결제번호</Th>
+                  <Th>회원</Th>
+                  <Th>종류</Th>
+                  <Th className="text-right">취소할 금액</Th>
+                  <Th>실패 사유</Th>
+                  <Th>처리</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingShopCancels.map((p) => (
+                  <tr key={p.id}>
+                    <Td className="font-mono text-[12px]">{p.paymentNo}</Td>
+                    <Td>{p.user.name ?? p.user.email ?? '-'}</Td>
+                    <Td>{SHOP_KIND_LABEL[p.kind] ?? p.kind}</Td>
+                    <Td className="text-right font-bold tabular-nums">{formatWon(p.cancelPendingAmount)}</Td>
+                    <Td className="text-[12px] text-ink-500">{p.cancelPendingReason ?? '-'}</Td>
+                    <Td>
+                      <ActionForm action={retryShopCancelAction} submitLabel="취소 재시도" compact>
+                        <input type="hidden" name="paymentId" value={p.id} />
+                      </ActionForm>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
             </Table>
           </div>
         </section>

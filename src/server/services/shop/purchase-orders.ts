@@ -5,7 +5,7 @@
  */
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
-import { csvCell as encodeCell } from '@/lib/csv';
+import { csvCell as encodeCell, csvRow, type CsvColumnKind } from '@/lib/csv';
 
 /** 공용 CSV 인코더(음수 숫자 보존 + 수식 주입 방지) */
 const csvCell = (v: unknown) => encodeCell(v == null ? '' : String(v));
@@ -85,7 +85,9 @@ export async function purchaseOrderCsv(poId: string): Promise<{ filename: string
       unit?.toString() ?? '', unit != null ? (unit * BigInt(pi.quantity)).toString() : '', a.recipient, a.phone, a.zipcode, a.address, o.memo ?? '', o.courier ?? '', o.trackingNo ?? '',
     ];
   });
-  const body = '﻿' + [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n');
+  // 연락처·우편번호·송장번호는 엑셀에서 앞자리 0 이 사라지지 않게 텍스트 열로 내보낸다 (5차 P2-7)
+  const kinds: CsvColumnKind[] = ['auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'text', 'text', 'auto', 'auto', 'auto', 'text'];
+  const body = '﻿' + [header.map(csvCell).join(','), ...rows.map((r) => csvRow(r.map((v) => (v == null ? '' : String(v))), kinds))].join('\r\n');
   return { filename: `${po.poNo}.csv`, body };
 }
 
@@ -97,7 +99,8 @@ export async function applyTrackingCsv(actor: Actor, text: string) {
   const results: Array<{ line: number; orderNo: string; ok: boolean; message: string }> = [];
   const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim());
   for (const [idx, raw] of lines.entries()) {
-    const cols = parseCsvLine(raw).map((c) => c.trim().replace(/^'/, ''));
+    // 발주서의 텍스트 열(="010…")과 수식 방지 접두(')를 걷어 낸다
+    const cols = parseCsvLine(raw).map((c) => c.trim().replace(/^="(.*)"$/, '$1').replace(/^'/, ''));
     // 발주서 CSV 형식이면 주문번호=3열, 택배사=14열, 송장=15열
     const [orderNo, courier, tracking] = cols.length >= 15 ? [cols[2], cols[13], cols[14]] : [cols[0], cols[1], cols[2]];
     if (!orderNo || orderNo === '주문번호') continue;

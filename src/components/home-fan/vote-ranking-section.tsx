@@ -3,6 +3,7 @@ import { ChevronRight, Clock3, Sparkles, Ticket, Trophy } from '@/components/bra
 import { EmptyRanking, Podium, RankList } from '@/components/vote/ranking-board';
 import { Countdown } from '@/components/vote/live-bits';
 import { VoteHomeTabs } from '@/components/vote/home-tabs';
+import { CategoryRankingBoard } from '@/components/vote/category-ranking-board';
 import { getRanking, type RankingTab } from '@/server/services/vote/ranking';
 import { getVoteViewer, voteContextOf } from '@/server/services/vote/view';
 import { ensureDemoData } from '@/server/services/demo-data';
@@ -94,6 +95,9 @@ export async function VoteRankingSection({ viewerId }: { viewerId: string | null
           };
         })}
       />
+
+      {/* 카테고리별 랭킹 (2026-11-18) — 한 표가 전체·카테고리 랭킹에 함께 들어간다 */}
+      <CategoryRankingBoard vote={vote} />
     </section>
   );
 }

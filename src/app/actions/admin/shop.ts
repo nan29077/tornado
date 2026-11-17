@@ -12,7 +12,8 @@ import { newId } from '@/lib/id';
 import { notifyUser } from '@/server/services/notifications';
 import { parseProductForm, saveProduct } from '@/server/services/shop/catalog';
 import { getShopConfig, percentToRate, saveShopConfig } from '@/server/services/shop/config';
-import { autoConfirmOrders, confirmOrder, markDelivered, markPreparing, markShipped, processClaim } from '@/server/services/shop/orders';
+import { autoConfirmOrders, completeApprovedClaim, confirmOrder, markDelivered, markPreparing, markShipped, processClaim } from '@/server/services/shop/orders';
+import { retryPendingShopCancel } from '@/server/services/shop/payment-cancel';
 import { applyTrackingCsv, createPurchaseOrders, setPurchaseOrderStatus } from '@/server/services/shop/purchase-orders';
 import { assertFinanceAdmin, assertOperationAdmin, run, text, type AdminActionState } from './shared';
 
@@ -95,7 +96,7 @@ export async function saveSupplier(_p: AdminActionState, fd: FormData): Promise<
       phone: text(fd, 'phone').slice(0, 30) || null,
       email: text(fd, 'email').slice(0, 120) || null,
       memo: text(fd, 'memo').slice(0, 300) || null,
-      active: text(fd, 'active') !== 'off',
+      active: text(fd, 'active') === 'on',
     };
     if (id) await prisma.supplier.update({ where: { id }, data });
     else await prisma.supplier.create({ data: { id: newId(), ...data } });
@@ -241,3 +242,31 @@ export async function adminClaimAction(_p: AdminActionState, fd: FormData): Prom
     return approve ? '승인하고 환불했습니다.' : '거절했습니다.';
   });
 }
+
+/** 결제 취소는 끝났는데 주문 반영이 멈춘 취소·반품 요청을 마무리한다 (5차 P2-5) */
+export async function resumeClaimAction(_p: AdminActionState, fd: FormData): Promise<AdminActionState> {
+  return run(async (admin) => {
+    assertFinanceAdmin(admin, '취소·반품 재처리');
+    const id = text(fd, 'claimId');
+    const done = await completeApprovedClaim(id);
+    if (!done) throw new Error('재처리할 요청이 아닙니다. 새로고침해 주세요.');
+    await writeAudit({ adminUserId: admin.id, action: 'SHOP_CLAIM_RESUME', targetType: 'OrderClaim', targetId: id });
+    revalidatePath('/admin/shop/claims');
+    revalidatePath('/admin/shop/orders');
+    return '재고·결제 반영을 마쳤습니다.';
+  });
+}
+
+/** 결제사 취소가 실패해 남은 샵 결제 취소를 다시 보낸다 (5차 P2-2) */
+export async function retryShopCancelAction(_p: AdminActionState, fd: FormData): Promise<AdminActionState> {
+  return run(async (admin) => {
+    assertFinanceAdmin(admin, '결제 취소 재시도');
+    const id = text(fd, 'paymentId');
+    const r = await retryPendingShopCancel(id);
+    await writeAudit({ adminUserId: admin.id, action: 'SHOP_PAYMENT_CANCEL_RETRY', targetType: 'ShopPayment', targetId: id, after: { ok: r.ok } });
+    if (!r.ok) throw new Error(r.message);
+    revalidatePath('/admin/payments');
+    return r.message;
+  });
+}
+

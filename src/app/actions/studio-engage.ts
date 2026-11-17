@@ -9,6 +9,7 @@ import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/server/db';
 import { requireCreator } from '@/server/auth';
+import { isOwnUploadUrl } from '@/server/uploads';
 import { getCreatorEngagement, getTalkConfig } from '@/server/services/engagement/config';
 import {
   deleteTalkMessage, getOrCreateRoom, markCreatorRead, sendBroadcast, sendDirect, setTalkBlock, toggleHeart,
@@ -102,7 +103,8 @@ export async function saveTalkRoomAction(_p: StudioActionState, fd: FormData): P
 export async function sendBroadcastAction(_p: StudioActionState, fd: FormData): Promise<StudioActionState> {
   return withCreatorCtx(async ({ creatorId }) => {
     const image = text(fd, 'imageUrl');
-    if (image && !/^(\/|https:\/\/)/.test(image)) throw new Error('사진 주소가 올바르지 않습니다.');
+    // 외부 주소·//주소는 받지 않는다. 업로드한 사진(도네이도 저장소)만 쓴다 (5차 P2-12)
+    if (image && !isOwnUploadUrl(image)) throw new Error('사진은 [사진 올리기]로 올린 이미지만 쓸 수 있습니다.');
     const r = await sendBroadcast(creatorId, text(fd, 'body'), image || null);
     if (r.ok) refresh();
     return { ok: r.ok, message: r.message };

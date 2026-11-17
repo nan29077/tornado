@@ -12,6 +12,11 @@ import {
 } from '@/server/services/idempotency';
 import { purgeExpiredResetTokens } from '@/server/services/password-reset';
 import { purgeStaleSessions } from '@/server/services/session-cleanup';
+import { reconcileStaleShopPayments } from '@/server/services/shop/reconcile';
+import { autoConfirmOrders } from '@/server/services/shop/orders';
+import { expireLots } from '@/server/services/vote/wallet';
+import { sweepSessions } from '@/server/services/talk/sessions';
+import { ensureRecentFinalized } from '@/server/services/vote/ranking';
 import { retryAllPendingRefundRecoveries } from '@/server/services/refund';
 import {
   reconcileStuckPendingPayments,
@@ -151,6 +156,25 @@ export async function GET(req: Request) {
      * ERROR 로그를 남기고 건수를 응답에 실어 관리자 화면·헬스체크가 보게 한다.
      */
     const mtQueueStuck = await step('EMMA 발송 큐 적체 확인', () => checkEmmaMtQueueBacklog(env.emma.enabled));
+    /**
+     * [5차 P2-6] 도네이도 샵·투표·소통 정리. 예전에는 화면을 열거나 관리자 버튼을 눌러야만 돌았다.
+     *  - 멈춘 샵 결제(READY 30분) 정리 → 묶인 재고·1:1 자리 해제
+     *  - 발송 후 N일 지난 주문 자동 구매 확정 → 판매 대금·레퍼럴 정산 적립
+     *  - 기한 지난 투표권 만료 처리
+     *  - 1:1 예약 기한 정리(승인 기한 초과 환불, 종료 예약 완료·정산 또는 불참 환불)
+     *  - 지난 기간 투표 순위 확정
+     */
+    const shopStalePayments = await step('멈춘 샵 결제 정리', async () => (await reconcileStaleShopPayments()).failed);
+    const shopAutoConfirm = await step('샵 주문 자동 구매 확정', () => autoConfirmOrders());
+    const voteExpire = await step('기한 지난 투표권 만료', () => expireLots());
+    const talkSessions = await step('1:1 예약 기한 정리', async () => {
+      const r = await sweepSessions();
+      return r.expired + r.completed;
+    });
+    const voteFinalize = await step('지난 기간 투표 순위 확정', async () => {
+      await ensureRecentFinalized(new Date(), true);
+      return 0;
+    });
 
     const steps = {
       pinSessions,
@@ -172,6 +196,11 @@ export async function GET(req: Request) {
       failedResidents,
       staleSessions,
       mtQueueStuck,
+      shopStalePayments,
+      shopAutoConfirm,
+      voteExpire,
+      talkSessions,
+      voteFinalize,
     };
     const allOk = Object.values(steps).every((s) => s.ok);
     return NextResponse.json({

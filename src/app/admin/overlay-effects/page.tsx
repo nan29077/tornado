@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import { PageHeader } from '@/components/layout/console-shell';
 import { Card, CardTitle, Notice, SectionTitle, StatTile } from '@/components/ui';
+import { TableCards } from '@/components/ui/table-cards';
 import { ActionForm } from '@/components/admin/action-form';
 import { AdminField, AdminInput, AdminSelect } from '@/components/admin/controls';
 import { resetOverlayLadderAction, updateOverlayLadder } from '@/app/actions/admin/broadcast';
@@ -75,7 +76,7 @@ export default async function AdminOverlayEffectsPage() {
         <section>
           <SectionTitle title="현재 적용 중인 구간" description="경계 금액은 위 단계에 포함됩니다 (예: 2단계 시작 금액과 같은 금액은 2단계)." />
           <Card>
-            <div className="overflow-x-auto">
+            <TableCards className="donaido-table-cards overflow-x-auto">
               <table className="w-full min-w-[520px] text-left text-[13px]">
                 <thead className="text-ink-500">
                   <tr>
@@ -111,7 +112,7 @@ export default async function AdminOverlayEffectsPage() {
                   })}
                 </tbody>
               </table>
-            </div>
+            </TableCards>
           </Card>
         </section>
 

@@ -11,13 +11,18 @@ export const ROUND_KIND_LABEL: Record<string, string> = { CHAMPION: '왕중왕�
 export const ROUND_STATUS_LABEL: Record<string, string> = { DRAFT: '준비', OPEN: '진행', CLOSED: '종료' };
 
 /** 지난달(또는 지정 월) 월간 TOP N 크리에이터 ID */
-export async function suggestChampionCandidates(topN = 10, now: Date = new Date()): Promise<string[]> {
+export async function suggestChampionCandidates(topN = 10, now: Date = new Date(), category?: string | null): Promise<string[]> {
   const key = previousPeriodKey('MONTH', now);
   await finalizePeriod('MONTH', key);
-  const results = await prisma.votePeriodResult.findMany({ where: { periodType: 'MONTH', periodKey: key }, orderBy: { rank: 'asc' }, take: topN, select: { creatorId: true } });
+  const results = await prisma.votePeriodResult.findMany({
+    where: { periodType: 'MONTH', periodKey: key, ...(category ? { creator: { contentCategory: category } } : {}) },
+    orderBy: { rank: 'asc' },
+    take: topN,
+    select: { creatorId: true },
+  });
   if (results.length > 0) return results.map((r) => r.creatorId);
-  // 지난달 기록이 없으면 누적 상위
-  const { rows } = await rankTally('ALL', 'ALL', { limit: topN });
+  // 지난달 기록이 없으면 누적 상위 (카테고리를 주면 그 카테고리 안에서)
+  const { rows } = await rankTally('ALL', 'ALL', { limit: topN, category: category ?? null });
   return rows.map((r) => r.creator_id);
 }
 

@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/public/page-header';
 import { ProfileAvatar } from '@/components/profile/generated-avatar';
 import { EmptyRanking } from '@/components/vote/ranking-board';
 import { periodLabel } from '@/lib/vote-period';
-import { ensureRecentFinalized, getHallOfFame } from '@/server/services/vote/ranking';
+import { ensureRecentFinalized, getCategoryChampions, getHallOfFame } from '@/server/services/vote/ranking';
 import { ensureDemoData } from '@/server/services/demo-data';
 
 export const dynamic = 'force-dynamic';
@@ -16,14 +16,14 @@ export const metadata: Metadata = { title: '명예의 전당 | 도네이도 투�
 export default async function HallOfFamePage() {
   await ensureDemoData();
   await ensureRecentFinalized();
-  const { months, champions } = await getHallOfFame();
+  const [{ months, champions }, catChamps] = await Promise.all([getHallOfFame(), getCategoryChampions(3)]);
   return (
     <PublicShell>
       <Link href="/vote" className="mb-3 inline-flex items-center gap-0.5 text-[13px] font-bold text-ink-500 hover:text-brand-800">
         <ChevronLeft size={15} aria-hidden />
         투표 랭킹으로
       </Link>
-      <PageHeader eyebrow="HALL OF FAME" title="명예의 전당" description="매달 1위와 왕중왕전 우승 크리에이터를 기록해요." />
+      <PageHeader eyebrow="HALL OF FAME" title="명예의 전당" description="매달 1위 · 카테고리별 1위 · 왕중왕전 우승 크리에이터를 기록해요." />
 
       <h2 className="mb-2 flex items-center gap-1.5 text-[16px] font-black text-ink-900"><Crown size={18} className="text-brand-600" aria-hidden />왕중왕</h2>
       {champions.length === 0 ? (
@@ -58,6 +58,31 @@ export default async function HallOfFamePage() {
           ))}
         </ol>
       )}
+
+      {catChamps.some((m) => m.winners.length > 0) ? (
+        <>
+          <h2 className="mb-2 mt-7 flex items-center gap-1.5 text-[16px] font-black text-ink-900"><Award size={18} className="text-brand-600" aria-hidden />카테고리별 월간 1위</h2>
+          <div className="space-y-4">
+            {catChamps.filter((m) => m.winners.length > 0).map((m) => (
+              <section key={m.periodKey}>
+                <p className="mb-1.5 text-[12.5px] font-extrabold text-ink-500">{periodLabel('MONTH', m.periodKey)}</p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                  {m.winners.map((w) => (
+                    <Link key={w.category} href={`/c/${w.code}`} target="_blank" rel="noopener" className="flex items-center gap-2.5 rounded-2xl bg-white p-3 shadow-card hover:bg-warm-50">
+                      <ProfileAvatar seed={w.code} avatarIndex={w.avatarIndex} name={w.displayName} imageUrl={w.avatarUrl} className="h-10 w-10" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[11px] font-extrabold text-brand-800">{w.label}</span>
+                        <span className="block truncate text-[13px] font-extrabold text-ink-900">{w.displayName}</span>
+                        <span className="block text-[11px] tabular-nums text-ink-400">{w.votes.toLocaleString('ko-KR')}표</span>
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </>
+      ) : null}
     </PublicShell>
   );
 }

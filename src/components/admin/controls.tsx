@@ -58,7 +58,8 @@ export function FilterBar({
     <form
       method="get"
       action={action}
-      className="mb-4 flex flex-wrap items-end gap-2 rounded-2xl border border-ink-100 bg-white p-3"
+      // 휴대폰에서는 PC 용 고정 폭(w-64 등)을 풀고 칸마다 한 줄씩 쓴다
+      className="mb-4 flex flex-wrap items-end gap-2 rounded-2xl border border-ink-100 bg-white p-3 max-sm:[&>label]:w-full"
     >
       {children}
       <div className="flex items-center gap-2 pb-0.5">

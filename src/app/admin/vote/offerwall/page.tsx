@@ -1,8 +1,8 @@
 import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle, Notice, Table, Td, Th } from '@/components/ui';
 import { ActionForm } from '@/components/admin/action-form';
-import { AdminField, AdminInput } from '@/components/admin/controls';
-import { OnOff } from '@/components/admin/engage-bits';
+import { AdminInput } from '@/components/admin/controls';
+import { Switch } from '@/components/admin/switch';
 import { saveOfferwallAction } from '@/app/actions/admin/engagement';
 import { formatKst } from '@/lib/datetime';
 import { requestNowMs } from '@/lib/vote-period';
@@ -31,16 +31,33 @@ export default async function AdminOfferwallPage() {
         <Card>
           <CardTitle>광고사 설정</CardTitle>
           <ActionForm action={saveOfferwallAction} submitLabel="저장" className="mt-2">
-            {OFFERWALL_PROVIDERS.map((p) => (
-              <div key={p.key} className="rounded-xl border border-ink-100 p-3">
-                <p className="text-[13px] font-bold text-ink-900">{p.label} {p.live ? <Badge tone="success">사용 가능</Badge> : <Badge tone="warning">연동 대기</Badge>}</p>
-                <p className="mb-2 mt-0.5 text-[11.5px] text-ink-400">{p.note}</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <AdminField label="사용"><OnOff name={`${p.key}_enabled`} value={settings.providers[p.key].enabled} /></AdminField>
-                  <AdminField label="전환 비율" hint="광고사 리워드 1 → 투표권 N개"><AdminInput name={`${p.key}_ratio`} inputMode="decimal" defaultValue={settings.providers[p.key].ratio} /></AdminField>
+            <div className="space-y-2.5">
+              {OFFERWALL_PROVIDERS.map((p) => (
+                <div key={p.key} className="min-w-0 rounded-2xl border border-ink-100 bg-white p-3.5">
+                  {/* 머리: 이름·상태 + 스위치 (줄 어디를 눌러도 켜고 끈다) */}
+                  <label className="flex cursor-pointer items-start justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="flex flex-wrap items-center gap-1.5 text-[14px] font-black text-ink-900">
+                        {p.label}
+                        {p.live ? <Badge tone="success">사용 가능</Badge> : <Badge tone="warning">연동 대기</Badge>}
+                      </span>
+                      <span className="mt-1 block text-[11.5px] leading-relaxed text-ink-400">{p.note}</span>
+                    </span>
+                    <Switch name={`${p.key}_enabled`} defaultChecked={settings.providers[p.key].enabled} ariaLabel={`${p.label} 사용`} className="shrink-0 pt-0.5" />
+                  </label>
+                  <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-warm-50 px-3 py-2.5">
+                    <label htmlFor={`${p.key}_ratio`} className="shrink-0 text-[12px] font-bold text-ink-600">전환 비율</label>
+                    <span className="flex min-w-0 items-center gap-1.5 whitespace-nowrap text-[12.5px] text-ink-500">
+                      리워드 1 →
+                      <span className="w-[72px] shrink-0">
+                        <AdminInput id={`${p.key}_ratio`} name={`${p.key}_ratio`} inputMode="decimal" defaultValue={settings.providers[p.key].ratio} className="text-right" />
+                      </span>
+                      투표권
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </ActionForm>
         </Card>
         <Card>

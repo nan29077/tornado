@@ -78,7 +78,7 @@ export function Podium({ rows, vote }: { rows: BoardRow[]; vote?: VoteContext | 
                   </Link>
                   <span className="mt-0.5 text-[12px] font-extrabold tabular-nums text-brand-800">{nf(r.votes)}표</span>
                   <span className="mt-0.5 h-4"><RankChange rank={r.rank} prevRank={r.prevRank} /></span>
-                  {vote ? <VoteButton {...vote} creator={{ id: r.creatorId, name: r.displayName, code: r.code, avatarUrl: r.avatarUrl, avatarIndex: r.avatarIndex }} size="xs" className="mt-1.5" /> : null}
+                  {vote ? <VoteButton {...vote} creator={{ id: r.creatorId, name: r.displayName, code: r.code, avatarUrl: r.avatarUrl, avatarIndex: r.avatarIndex, category: r.category }} size="xs" className="mt-1.5" /> : null}
                 </>
               ) : (
                 <span className="mb-2 text-[12px] font-bold text-ink-300">비어 있음</span>
@@ -121,7 +121,7 @@ export function RankList({ rows, vote, startAt = 4, compact = false }: { rows: B
             </div>
             {!compact && r.category ? <span className="mt-0.5 block text-[11px] text-ink-400">{categoryLabel(r.category)}</span> : null}
           </div>
-          {vote ? <VoteButton {...vote} creator={{ id: r.creatorId, name: r.displayName, code: r.code, avatarUrl: r.avatarUrl, avatarIndex: r.avatarIndex }} size="sm" /> : null}
+          {vote ? <VoteButton {...vote} creator={{ id: r.creatorId, name: r.displayName, code: r.code, avatarUrl: r.avatarUrl, avatarIndex: r.avatarIndex, category: r.category }} size="sm" /> : null}
         </li>
       ))}
     </ol>

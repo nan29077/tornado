@@ -11,6 +11,7 @@ import { prisma } from '@/server/db';
 import { getPublicBaseUrl } from '@/server/public-base-url';
 import { getCreatorEngagement } from '@/server/services/engagement/config';
 import { ensureRecentFinalized, getCreatorDailyTrend, getCreatorRanks, getCreatorResultHistory, getTopVoters } from '@/server/services/vote/ranking';
+import { categoryLabel, isVideoCategory } from '@/lib/video-hub';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,13 +25,15 @@ export default async function StudioVotePage({ searchParams }: { searchParams: P
   const range = sp.r === 'week' || sp.r === 'all' ? sp.r : 'month';
   const since = range === 'all' ? null : periodRange(range === 'week' ? 'WEEK' : 'MONTH').start;
   const [creator, ranks, trend, voters, history, eng] = await Promise.all([
-    prisma.creatorProfile.findUniqueOrThrow({ where: { id: creatorId }, select: { code: true, displayName: true } }),
+    prisma.creatorProfile.findUniqueOrThrow({ where: { id: creatorId }, select: { code: true, displayName: true, contentCategory: true } }),
     getCreatorRanks(creatorId),
     getCreatorDailyTrend(creatorId, 30),
     getTopVoters(creatorId, since, 20),
     getCreatorResultHistory(creatorId, 20),
     getCreatorEngagement(creatorId),
   ]);
+  const category = creator.contentCategory && isVideoCategory(creator.contentCategory) && creator.contentCategory !== 'other' ? creator.contentCategory : null;
+  const catRanks = category ? await getCreatorRanks(creatorId, new Date(), category) : null;
   const max = Math.max(...trend.map((t) => t.votes), 1);
   const shareUrl = `${await getPublicBaseUrl()}/vote?vote=${creator.code}`;
   const roundIds = history.filter((h) => h.periodType === 'ROUND').map((h) => h.periodKey);
@@ -63,6 +66,27 @@ export default async function StudioVotePage({ searchParams }: { searchParams: P
         <StatTile label="이번 달" value={rk(ranks.month.rank)} sub={`${ranks.month.votes.toLocaleString('ko-KR')}표`} />
         <StatTile label="누적" value={rk(ranks.all.rank)} sub={`${ranks.all.votes.toLocaleString('ko-KR')}표`} />
       </div>
+
+      {category && catRanks ? (
+        <section className="mt-3 rounded-[22px] bg-[linear-gradient(135deg,#fff3cf,#ffffff)] p-4 shadow-card ring-1 ring-brand-200" aria-label="카테고리 순위">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[14px] font-black text-ink-900">
+              <span className="mr-1.5 rounded-full bg-brand-100 px-2 py-0.5 text-[12px] font-extrabold text-brand-800">{categoryLabel(category)}</span>
+              카테고리 순위
+            </p>
+            <Link href={`/vote?p=week&cat=${category}`} target="_blank" className="text-[12.5px] font-bold text-brand-700">카테고리 랭킹 보기</Link>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+            {([['오늘', catRanks.live], ['이번 주', catRanks.week], ['이번 달', catRanks.month]] as const).map(([label, r]) => (
+              <div key={label} className="rounded-2xl bg-white px-2 py-2.5">
+                <p className="text-[11px] font-bold text-ink-400">{label}</p>
+                <p className="mt-0.5 text-[18px] font-black tabular-nums text-ink-900">{rk(r.rank)}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[11.5px] leading-relaxed text-ink-500">팬이 보낸 표는 전체 랭킹과 내 활동 카테고리 랭킹에 함께 들어가요. 활동 카테고리는 채널 신청 때 고른 값이에요.</p>
+        </section>
+      ) : null}
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[1.4fr_1fr]">
         <Card>

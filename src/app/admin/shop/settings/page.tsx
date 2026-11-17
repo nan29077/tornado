@@ -1,7 +1,8 @@
 import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle, Table, Td, Th } from '@/components/ui';
 import { ActionForm } from '@/components/admin/action-form';
-import { AdminField, AdminInput, AdminSelect } from '@/components/admin/controls';
+import { AdminField, AdminInput } from '@/components/admin/controls';
+import { OnOff } from '@/components/admin/engage-bits';
 import { saveCreatorCommission, saveShopSettings, saveSupplier } from '@/app/actions/admin/shop';
 import { prisma } from '@/server/db';
 import { requireAdminPage } from '@/server/admin-guard';
@@ -30,10 +31,7 @@ function SupplierFields({ s }: { s?: { id: string; name: string; contactName: st
           <AdminInput name="memo" defaultValue={s?.memo ?? ''} maxLength={300} />
         </AdminField>
         <AdminField label="사용">
-          <AdminSelect name="active" defaultValue={s && !s.active ? 'off' : 'on'}>
-            <option value="on">사용</option>
-            <option value="off">사용 안 함</option>
-          </AdminSelect>
+          <OnOff name="active" value={!(s && !s.active)} onLabel="사용" offLabel="사용 안 함" />
         </AdminField>
       </div>
     </>

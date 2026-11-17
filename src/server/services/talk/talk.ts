@@ -12,10 +12,10 @@
  */
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
-import { logger } from '@/lib/logger';
 import { kstStartOfDay } from '@/lib/datetime';
 import { maskContacts, personalize } from '@/lib/contact-mask';
 import { getShopPaymentAdapter } from '@/server/adapters/shop-payment';
+import { cancelShopPayment } from '@/server/services/shop/payment-cancel';
 import { appendLedger } from '@/server/services/settlement';
 import { notifyUser } from '@/server/services/notifications';
 import { loadBannedWords } from '@/server/services/donation-flow';
@@ -127,24 +127,13 @@ export async function refundTalkSubscription(subscriptionId: string, adminUserId
     return true;
   });
   if (!moved) return { ok: false, message: '이미 처리된 구독입니다.' };
-  await cancelPayment(sub.paymentId, sub.price, reason);
-  return { ok: true, message: '구독을 환불했습니다.' };
+  const done = await cancelPayment(sub.paymentId, sub.price, reason);
+  return { ok: true, message: done ? '구독을 환불했습니다.' : '구독을 종료하고 정산을 되돌렸습니다. 결제사 취소는 실패해 [결제 취소 재시도] 목록에 남겼습니다.' };
 }
 
+/** 결제 취소. 실패하면 재시도 대기로 남긴다(관리자 > 결제). true = 취소 완료 */
 export async function cancelPayment(paymentId: string | null, amount: bigint, reason: string): Promise<boolean> {
-  if (!paymentId || amount <= 0n) return true;
-  const payment = await prisma.shopPayment.findUnique({ where: { id: paymentId } });
-  if (!payment) return true;
-  const r = await getShopPaymentAdapter()
-    .cancel({ paymentNo: payment.paymentNo, providerTx: payment.providerTx, amount, reason })
-    .catch((e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message : '취소 오류' }));
-  if (!r.ok) {
-    logger.error('소통 결제 취소 실패 — 결제사 수동 취소 필요', { paymentNo: payment.paymentNo, reason: r.reason });
-    return false;
-  }
-  const cancelled = payment.cancelledAmount + amount;
-  await prisma.shopPayment.update({ where: { id: payment.id }, data: { cancelledAmount: cancelled, status: cancelled >= payment.amount ? 'CANCELLED' : 'PARTIAL_CANCELLED' } });
-  return true;
+  return (await cancelShopPayment(paymentId, amount, reason)).done;
 }
 
 // ---------------------------------------------------------------------- 메시지
@@ -224,6 +213,8 @@ export async function getFanThread(user: { id: string; name: string | null }, cr
   const group = cfg.roomMode === 'GROUP';
   const since = new Date(status.firstStartAt.getTime() - 3 * 86_400_000);
   const blocked = group ? (await prisma.talkBlock.findMany({ where: { creatorId }, select: { userId: true } })).map((b) => b.userId) : [];
+  // [5차 P2-13] 차단된 구독자는 크리에이터 메시지·자기 메시지만 본다 (다른 구독자 대화는 보지 않는다)
+  const meBlocked = blocked.includes(user.id) || (!group && (await isBlocked(creatorId, user.id)));
   const rows = await prisma.talkMessage.findMany({
     where: {
       creatorId,
@@ -231,7 +222,7 @@ export async function getFanThread(user: { id: string; name: string | null }, cr
       ...(opts.after ? { createdAt: { gt: opts.after } } : {}),
       OR: [
         { kind: 'BROADCAST', createdAt: { gte: since } },
-        group
+        group && !meBlocked
           ? { kind: 'FAN_REPLY', createdAt: { gte: since }, OR: [{ fanUserId: user.id }, { fanUserId: { notIn: blocked } }] }
           : { kind: 'FAN_REPLY', fanUserId: user.id },
         { kind: 'DIRECT', fanUserId: user.id },
@@ -406,12 +397,23 @@ export async function reportTalkMessage(input: { target: 'MESSAGE' | 'SESSION_ME
   const reason = input.reason.trim().slice(0, 300);
   if (!reason) return { ok: false, message: '신고 사유를 입력해 주세요.' };
   let creatorId: string | null = null;
+  /**
+   * [5차 P2-13] 신고는 그 메시지를 볼 수 있는 사람만 한다.
+   *  - 소통방: 그 방의 크리에이터, 또는 그 크리에이터를 구독한 적이 있는 회원 (남에게 간 1:1 답장은 제외)
+   *  - 1:1 대화: 그 예약의 구독자 또는 크리에이터
+   * (아무 메시지 ID 로나 신고해 관리자 열람 대상으로 만드는 것을 막는다)
+   */
   if (input.target === 'MESSAGE') {
-    const m = await prisma.talkMessage.findUnique({ where: { id: input.messageId }, select: { creatorId: true } });
-    creatorId = m?.creatorId ?? null;
+    const m = await prisma.talkMessage.findUnique({ where: { id: input.messageId }, select: { creatorId: true, kind: true, fanUserId: true, creator: { select: { userId: true } } } });
+    if (m) {
+      const isCreator = m.creator.userId === input.reporterUserId;
+      const subscribed = isCreator ? true : Boolean(await prisma.talkSubscription.findFirst({ where: { creatorId: m.creatorId, userId: input.reporterUserId }, select: { id: true } }));
+      const visible = isCreator || (subscribed && (m.kind !== 'DIRECT' || m.fanUserId === input.reporterUserId));
+      creatorId = visible ? m.creatorId : null;
+    }
   } else {
-    const m = await prisma.talkSessionMessage.findUnique({ where: { id: input.messageId }, select: { session: { select: { creatorId: true } } } });
-    creatorId = m?.session.creatorId ?? null;
+    const m = await prisma.talkSessionMessage.findUnique({ where: { id: input.messageId }, select: { session: { select: { creatorId: true, userId: true, creator: { select: { userId: true } } } } } });
+    if (m && (m.session.userId === input.reporterUserId || m.session.creator.userId === input.reporterUserId)) creatorId = m.session.creatorId;
   }
   if (!creatorId) return { ok: false, message: '메시지를 찾을 수 없습니다.' };
   const dup = await prisma.talkReport.findFirst({ where: { messageId: input.messageId, reporterUserId: input.reporterUserId, status: 'OPEN' }, select: { id: true } });

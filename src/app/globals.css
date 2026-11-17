@@ -1241,3 +1241,182 @@ a {
   /* 퍼지는 고리(크기 변화)만 끄고, 점의 은은한 깜빡임은 남긴다 */
   .donaido-live-wave { animation: none; opacity: 0; }
 }
+
+/* ---------------------------------------------------------------------------
+ * 표 → 모바일 카드 (2026-11-18)
+ * 공용 <Table> 이 .donaido-table-cards 래퍼를 쓴다. 640px 미만에서 한 행 = 한 장의 카드.
+ * 첫 칸은 카드 제목, 나머지 칸은 "항목 이름(표 머리) | 값" 두 줄 정렬.
+ * 항목 이름은 table-cards.tsx 가 <th> 글자를 data-label 로 붙인다.
+ * ------------------------------------------------------------------------- */
+@media (max-width: 639.98px) {
+  .donaido-table-cards {
+    margin-left: 0;
+    margin-right: 0;
+    width: 100%;
+    max-width: 100%;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .donaido-table-cards > table {
+    display: block;
+    min-width: 0 !important;
+    width: 100%;
+  }
+  .donaido-table-cards > table > thead {
+    display: none;
+  }
+  .donaido-table-cards > table > tbody,
+  .donaido-table-cards > table > tfoot {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .donaido-table-cards > table > tbody + tbody,
+  .donaido-table-cards > table > tbody + tfoot {
+    margin-top: 10px;
+  }
+  .donaido-table-cards > table > tbody > tr,
+  .donaido-table-cards > table > tfoot > tr {
+    display: block;
+    border: 1px solid var(--color-ink-100);
+    border-radius: 18px;
+    background: #fff;
+    padding: 4px 14px;
+    box-shadow: 0 8px 22px rgba(23, 22, 26, 0.05);
+  }
+  .donaido-table-cards > table > tbody > tr > td,
+  .donaido-table-cards > table > tfoot > tr > td,
+  .donaido-table-cards > table > tbody > tr > th {
+    position: relative;
+    display: block;
+    min-width: 0 !important;
+    max-width: none !important;
+    width: auto !important;
+    border-bottom: 1px dashed var(--color-ink-100);
+    padding: 9px 0 9px 38%;
+    min-height: 36px;
+    text-align: left !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    font-size: 13px;
+  }
+  .donaido-table-cards > table > tbody > tr > td::before,
+  .donaido-table-cards > table > tfoot > tr > td::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 0;
+    top: 9px;
+    width: calc(38% - 10px);
+    font-size: 11.5px;
+    font-weight: 800;
+    line-height: 1.45;
+    color: var(--color-ink-400);
+    overflow-wrap: anywhere;
+  }
+  /* 첫 칸 = 카드 제목 */
+  .donaido-table-cards > table > tbody > tr > td:first-child {
+    padding-left: 0;
+    border-bottom-style: solid;
+    font-weight: 700;
+    color: var(--color-ink-900);
+  }
+  .donaido-table-cards > table > tbody > tr > td:first-child::before {
+    position: static;
+    display: block;
+    width: auto;
+    margin-bottom: 2px;
+  }
+  .donaido-table-cards > table > tbody > tr > td:last-child,
+  .donaido-table-cards > table > tfoot > tr > td:last-child {
+    border-bottom: 0;
+  }
+  /* 항목 이름이 없는 칸(조작 버튼 등)·여러 칸을 합친 칸은 전체 폭 */
+  .donaido-table-cards > table > tbody > tr > td[data-label=''],
+  .donaido-table-cards > table > tbody > tr > td[data-full],
+  .donaido-table-cards > table > tfoot > tr > td[data-label=''],
+  .donaido-table-cards > table > tfoot > tr > td[data-full] {
+    padding-left: 0;
+  }
+  .donaido-table-cards > table > tbody > tr > td[data-label='']::before,
+  .donaido-table-cards > table > tbody > tr > td[data-full]::before,
+  .donaido-table-cards > table > tfoot > tr > td[data-label='']::before,
+  .donaido-table-cards > table > tfoot > tr > td[data-full]::before {
+    display: none;
+  }
+  .donaido-table-cards > table > tbody > tr > td[data-full] {
+    text-align: center !important;
+    color: var(--color-ink-400);
+  }
+  /* 값이 비어 있는 칸은 숨긴다 (빈 목록 줄의 빈 칸 등) */
+  .donaido-table-cards > table > tbody > tr > td:empty {
+    display: none;
+  }
+  /* 칸 안에서 최소 폭을 고정한 묶음(min-w-[220px] 등)이 카드 밖으로 넘치지 않게 */
+  .donaido-table-cards td [class*='min-w-['] {
+    min-width: 0 !important;
+  }
+  /* 칸 안의 입력·버튼은 남은 폭을 다 쓴다 */
+  .donaido-table-cards td input:not([type='checkbox']):not([type='radio']),
+  .donaido-table-cards td select,
+  .donaido-table-cards td textarea {
+    max-width: 100%;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 켜기/끄기 스위치 (2026-11-18) — components/admin/switch.tsx
+ * ------------------------------------------------------------------------- */
+.donaido-switch-track {
+  position: relative;
+  display: inline-block;
+  width: 46px;
+  height: 26px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--color-ink-200);
+  box-shadow: inset 0 1px 2px rgba(23, 22, 26, 0.12);
+  transition: background-color 180ms ease;
+}
+.donaido-switch-track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(23, 22, 26, 0.25);
+  transition: transform 200ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.donaido-switch-input:checked + .donaido-switch-track {
+  background: var(--color-brand-500);
+}
+.donaido-switch-input:checked + .donaido-switch-track::after {
+  transform: translateX(20px);
+}
+.donaido-switch-input:focus-visible + .donaido-switch-track {
+  outline: 2px solid var(--color-brand-400);
+  outline-offset: 2px;
+}
+.donaido-switch-input:disabled + .donaido-switch-track {
+  opacity: 0.5;
+}
+.donaido-switch-input + .donaido-switch-track + .donaido-switch-text .donaido-switch-on {
+  display: none;
+}
+.donaido-switch-input:checked + .donaido-switch-track + .donaido-switch-text .donaido-switch-on {
+  display: inline;
+}
+.donaido-switch-input:checked + .donaido-switch-track + .donaido-switch-text .donaido-switch-off {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .donaido-switch-track,
+  .donaido-switch-track::after {
+    transition: none;
+  }
+}

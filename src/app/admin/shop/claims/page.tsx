@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, EmptyState, Table, Td, Th, cx } from '@/components/ui';
 import { ActionForm } from '@/components/admin/action-form';
 import { AdminInput } from '@/components/admin/controls';
-import { adminClaimAction } from '@/app/actions/admin/shop';
+import { adminClaimAction, resumeClaimAction } from '@/app/actions/admin/shop';
 import { prisma } from '@/server/db';
 import { requireAdminPage } from '@/server/admin-guard';
 import { CLAIM_STATUS_LABEL, CLAIM_TYPE_LABEL, ORDER_STATUS_LABEL } from '@/server/services/shop/orders';
@@ -18,7 +18,7 @@ export default async function AdminShopClaimsPage({ searchParams }: { searchPara
   const sp = await searchParams;
   const showAll = sp.all === '1';
   const claims = await prisma.orderClaim.findMany({
-    where: showAll ? {} : { status: 'REQUESTED' },
+    where: showAll ? {} : { OR: [{ status: 'REQUESTED' }, { status: 'APPROVED', refundAmount: { not: null } }] },
     orderBy: { createdAt: 'desc' },
     take: 200,
     include: { order: { select: { orderNo: true, status: true, totalAmount: true, sellerType: true, items: { select: { productName: true }, take: 1 } } } },
@@ -78,6 +78,13 @@ export default async function AdminShopClaimsPage({ searchParams }: { searchPara
                         <input type="hidden" name="claimId" value={c.id} />
                         <input type="hidden" name="decision" value="REJECT" />
                         <AdminInput name="reason" placeholder="거절 사유 (구매자에게 보입니다)" required maxLength={200} />
+                      </ActionForm>
+                    </div>
+                  ) : c.status === 'APPROVED' && c.refundAmount != null ? (
+                    <div className="space-y-1">
+                      <p className="text-[12px] font-semibold text-danger-600">결제 취소는 끝났고 재고·결제 반영이 멈췄습니다.</p>
+                      <ActionForm action={resumeClaimAction} submitLabel="재처리" compact>
+                        <input type="hidden" name="claimId" value={c.id} />
                       </ActionForm>
                     </div>
                   ) : null}

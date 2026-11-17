@@ -8,9 +8,9 @@
  */
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
-import { logger } from '@/lib/logger';
 import { getShopPaymentAdapter } from '@/server/adapters/shop-payment';
 import { getVoteConfig } from '@/server/services/engagement/config';
+import { cancelShopPayment } from '@/server/services/shop/payment-cancel';
 import { grantTickets, revokeLot } from './wallet';
 
 export type PayMethod = 'CARD' | 'TRANSFER';
@@ -124,6 +124,14 @@ export async function checkTicketRefund(orderId: string, now: Date = new Date(),
   }
   const lot = await prisma.voteTicketLot.findUnique({ where: { id: order.paidLotId }, select: { remaining: true, amount: true } });
   if (!lot || lot.remaining !== lot.amount) return { refundable: false, reason: '이미 사용한 투표권이 있어 환불할 수 없습니다. (사용하지 않은 결제만 환불)' };
+  // [5차 PAY-B] 보너스도 하나도 쓰지 않았어야 한다. (보너스만 쓰고 전액 환불 → 재구매로 표를 무한히 만드는 경로 차단)
+  if (order.bonusLotId) {
+    // 만료로 0 이 된 것은 사용이 아니다 → 실제 투표 사용 이력으로 판단한다
+    const spent = await prisma.voteTicketLedger.count({ where: { lotId: order.bonusLotId, type: 'VOTE_SPEND' } });
+    if (spent > 0) {
+      return { refundable: false, reason: '함께 받은 보너스 투표권을 사용해 환불할 수 없습니다. (보너스까지 사용하지 않은 결제만 환불)' };
+    }
+  }
   return { refundable: true };
 }
 
@@ -141,26 +149,22 @@ export async function refundTicketOrder(orderId: string, by: { type: 'USER'; use
     const lockedLot = await tx.$queryRaw<Array<{ remaining: number; amount: number }>>`
       SELECT remaining, amount FROM vote_ticket_lot WHERE id = ${order.paidLotId} FOR UPDATE`;
     if (!lockedLot[0] || lockedLot[0].remaining !== lockedLot[0].amount) return false;
+    if (order.bonusLotId) {
+      // 보너스 묶음도 잠근 뒤 사용 이력을 본다 (동시에 투표가 들어와도 잠금 순서로 직렬화된다)
+      await tx.$queryRaw`SELECT id FROM vote_ticket_lot WHERE id = ${order.bonusLotId} FOR UPDATE`;
+      const spent = await tx.voteTicketLedger.count({ where: { lotId: order.bonusLotId, type: 'VOTE_SPEND' } });
+      if (spent > 0) return false;
+    }
     const moved = await tx.voteTicketOrder.updateMany({ where: { id: orderId, status: 'PAID' }, data: { status: 'REFUNDED', refundedAt: now, refundReason: reason.slice(0, 200) } });
     if (moved.count === 0) return false;
     await revokeLot(tx, order.paidLotId!, 'REFUND', `환불 ${order.orderNo}`, { refType: 'VOTE_TICKET_ORDER', refId: order.id });
     if (order.bonusLotId) await revokeLot(tx, order.bonusLotId, 'REFUND', `환불 보너스 회수 ${order.orderNo}`, { refType: 'VOTE_TICKET_ORDER', refId: order.id });
     return true;
   });
-  if (!revoked) return { ok: false, message: '방금 사용된 투표권이 있어 환불할 수 없습니다.' };
+  if (!revoked) return { ok: false, message: '방금 사용된 투표권(보너스 포함)이 있어 환불할 수 없습니다.' };
 
-  // 2) 결제 취소 (실패해도 투표권은 이미 회수됨 → 관리자 확인 대상으로 남긴다)
-  const payment = order.paymentId ? await prisma.shopPayment.findUnique({ where: { id: order.paymentId } }) : null;
-  if (payment) {
-    const cancelled = await getShopPaymentAdapter()
-      .cancel({ paymentNo: payment.paymentNo, providerTx: payment.providerTx, amount: payment.amount, reason })
-      .catch((e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message : '취소 오류' }));
-    if (cancelled.ok) {
-      await prisma.shopPayment.update({ where: { id: payment.id }, data: { status: 'CANCELLED', cancelledAmount: payment.amount } });
-    } else {
-      logger.error('투표권 환불 결제 취소 실패 — 투표권은 회수됨, 결제사 수동 취소 필요', { orderNo: order.orderNo, reason: cancelled.reason });
-      return { ok: true, message: '투표권은 회수되었고, 결제 취소는 확인 중입니다. 영업일 기준 1~3일 안에 처리됩니다.' };
-    }
-  }
+  // 2) 결제 취소 (실패해도 투표권은 이미 회수됨 → 재시도 대기로 남기고 관리자가 다시 취소한다)
+  const cancel = await cancelShopPayment(order.paymentId, order.price, reason);
+  if (!cancel.done) return { ok: true, message: '투표권은 회수되었고, 결제 취소는 확인 중입니다. 영업일 기준 1~3일 안에 처리됩니다.' };
   return { ok: true, message: `${order.productName} 결제를 환불했습니다.` };
 }

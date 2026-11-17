@@ -776,6 +776,7 @@ model CreatorProfile {
   @@index([status])
   // 세무관리 화면은 과세유형으로 걸러 본다(비사업자 = 원천징수 대상).
   @@index([taxType])
+  @@index([contentCategory])
   @@map("creator_profile")
 }
 
@@ -2319,6 +2320,13 @@ model ShopPayment {
   providerTx  String?   @map("provider_tx")
   failReason  String?   @map("fail_reason")
   cancelledAmount BigInt @default(0) @map("cancelled_amount")
+  /// 영상·카드 후원 결제가 만든 후원 (환불 경로·한도 집계용, 2026-11-18)
+  donationId  String?   @map("donation_id")
+  /// 이 결제로 돈을 받는 크리에이터 (영상·카드 후원 한도 집계용, 2026-11-18)
+  creatorId   String?   @map("creator_id")
+  /// 결제사 취소가 실패해 다시 시도해야 하는 금액 (0 = 없음, 2026-11-18)
+  cancelPendingAmount BigInt @default(0) @map("cancel_pending_amount")
+  cancelPendingReason String? @map("cancel_pending_reason")
   paidAt      DateTime? @map("paid_at") @db.Timestamptz(3)
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -2327,6 +2335,9 @@ model ShopPayment {
   orders ShopOrder[]
 
   @@index([userId, createdAt])
+  @@index([donationId])
+  @@index([creatorId, createdAt])
+  @@index([status, createdAt])
   @@map("shop_payment")
 }
 

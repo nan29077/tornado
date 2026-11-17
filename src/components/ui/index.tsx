@@ -1,5 +1,6 @@
 import * as React from 'react';
 import Link from 'next/link';
+import { TableCards } from './table-cards';
 
 /**
  * 도네이도 공통 UI 프리미티브.
@@ -73,7 +74,8 @@ export function Card({
   padded = true,
   ...props
 }: React.HTMLAttributes<HTMLDivElement> & { padded?: boolean }) {
-  return <div className={cx('card', padded && 'p-5 sm:p-6', className)} {...props} />;
+  // min-w-0: 그리드·플렉스 안에서 안쪽의 넓은 표 때문에 카드가 화면 밖으로 밀려나지 않게 한다
+  return <div className={cx('card min-w-0', padded && 'p-5 sm:p-6', className)} {...props} />;
 }
 
 export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
@@ -312,15 +314,18 @@ export function DataRow({ label, value }: { label: string; value: React.ReactNod
   );
 }
 
-export function Table({ children, className }: { children: React.ReactNode; className?: string }) {
+export function Table({ children, className, cards = true }: { children: React.ReactNode; className?: string; cards?: boolean }) {
   // className(min-w-* 등)은 안쪽 table 에 적용한다.
   // 바깥 래퍼에 min-w 를 주면 래퍼 자체가 부모보다 넓어져 가로 스크롤 컨테이너가
   // 무력화되고 페이지 전체가 옆으로 밀린다.
-  return (
-    <div className="-mx-3 w-[calc(100%+1.5rem)] max-w-[calc(100%+1.5rem)] overflow-x-auto overscroll-x-contain rounded-[18px] border border-ink-100 bg-white shadow-[0_10px_30px_rgba(23,22,26,0.05)] sm:mx-0 sm:w-full sm:max-w-full sm:rounded-[20px]">
-      <table className={cx('w-full min-w-[720px] border-collapse text-[12.5px] sm:text-[13px]', className)}>{children}</table>
-    </div>
-  );
+  // className 에 min-w-* 가 있으면 기본 최소 폭(720px)을 빼서 둘이 겹치지 않게 한다.
+  const minW = /(^|\s)min-w-/.test(className ?? '') ? '' : 'min-w-[720px]';
+  const wrap =
+    '-mx-3 w-[calc(100%+1.5rem)] max-w-[calc(100%+1.5rem)] overflow-x-auto overscroll-x-contain rounded-[18px] border border-ink-100 bg-white shadow-[0_10px_30px_rgba(23,22,26,0.05)] sm:mx-0 sm:w-full sm:max-w-full sm:rounded-[20px]';
+  const table = <table className={cx('w-full border-collapse text-[12.5px] sm:text-[13px]', minW, className)}>{children}</table>;
+  // 휴대폰 폭에서는 한 행을 한 장의 카드로 그린다 (cards={false} 면 가로 스크롤 표 그대로)
+  if (!cards) return <div className={wrap}>{table}</div>;
+  return <TableCards className={cx(wrap, 'donaido-table-cards')}>{table}</TableCards>;
 }
 
 export function Th({ children, className }: { children?: React.ReactNode; className?: string }) {

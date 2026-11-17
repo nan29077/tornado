@@ -3,7 +3,8 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { Card, CardTitle, StatTile, Table, Td, Th } from '@/components/ui';
 import { ActionForm } from '@/components/admin/action-form';
 import { AdminField, AdminInput, AdminSelect } from '@/components/admin/controls';
-import { OnOff, pctLabel, pctText, won } from '@/components/admin/engage-bits';
+import { pctLabel, pctText, won } from '@/components/admin/engage-bits';
+import { SwitchField } from '@/components/admin/switch';
 import { finalizeNowAction, saveVoteSettingsAction, saveVoteShareRateAction } from '@/app/actions/admin/engagement';
 import { requireAdminPage } from '@/server/admin-guard';
 import { prisma } from '@/server/db';
@@ -42,16 +43,20 @@ export default async function AdminVotePage() {
         <Card>
           <CardTitle>투표 규칙</CardTitle>
           <ActionForm action={saveVoteSettingsAction} submitLabel="저장" className="mt-2" confirm="바로 적용됩니다. 저장할까요?">
+            <p className="mb-1.5 text-[11.5px] font-extrabold text-ink-400">기능 켜기·끄기</p>
             <div className="grid gap-2 sm:grid-cols-2">
-              <AdminField label="투표 기능"><OnOff name="enabled" value={cfg.enabled} /></AdminField>
-              <AdminField label="랭킹 공개"><OnOff name="rankingPublic" value={cfg.rankingPublic} onLabel="공개" offLabel="비공개" /></AdminField>
-              <AdminField label="결제 충전 판매"><OnOff name="purchaseEnabled" value={cfg.purchaseEnabled} /></AdminField>
-              <AdminField label="오퍼월(무료 충전)"><OnOff name="offerwallEnabled" value={cfg.offerwallEnabled} /></AdminField>
+              <SwitchField label="투표 기능" hint="끄면 모든 화면에서 투표를 받지 않습니다" name="enabled" value={cfg.enabled} tone="danger" />
+              <SwitchField label="랭킹 공개" hint="끄면 순위를 숨기고 투표만 받습니다" name="rankingPublic" value={cfg.rankingPublic} onLabel="공개" offLabel="비공개" />
+              <SwitchField label="결제 충전 판매" hint="투표권 구매(신용카드·간편계좌이체)" name="purchaseEnabled" value={cfg.purchaseEnabled} />
+              <SwitchField label="오퍼월(무료 충전)" hint="광고 시청·퀴즈로 무료 투표권 지급" name="offerwallEnabled" value={cfg.offerwallEnabled} />
+              <SwitchField label="휴대폰 연결 회원만 투표" hint="다계정 투표를 줄입니다 (운영 전 켜기 권장)" name="requirePhone" value={cfg.requirePhone} onLabel="예" offLabel="아니오" className="sm:col-span-2" />
+            </div>
+            <p className="mb-1.5 mt-4 text-[11.5px] font-extrabold text-ink-400">투표 규칙</p>
+            <div className="grid gap-2 sm:grid-cols-2">
               <AdminField label="1표당 소진 투표권" hint="예) 10 이면 1표에 투표권 10개"><AdminInput name="ticketsPerVote" inputMode="numeric" defaultValue={cfg.ticketsPerVote} /></AdminField>
               <AdminField label="한 번에 최대 표"><AdminInput name="maxVotesPerAction" inputMode="numeric" defaultValue={cfg.maxVotesPerAction} /></AdminField>
               <AdminField label="회원 하루 최대 표 (0=제한 없음)"><AdminInput name="dailyMaxVotesPerUser" inputMode="numeric" defaultValue={cfg.dailyMaxVotesPerUser} /></AdminField>
               <AdminField label="크리에이터 1명에게 하루 최대 (0=제한 없음)"><AdminInput name="dailyMaxVotesPerCreator" inputMode="numeric" defaultValue={cfg.dailyMaxVotesPerCreator} /></AdminField>
-              <AdminField label="휴대폰 연결 회원만 투표"><OnOff name="requirePhone" value={cfg.requirePhone} onLabel="예" offLabel="아니오" /></AdminField>
               <AdminField label="사용 순서">
                 <AdminSelect name="spendOrder" defaultValue={cfg.spendOrder}>
                   <option value="FREE_FIRST">무료 → 보너스 → 유료</option>

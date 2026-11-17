@@ -15,7 +15,7 @@
  *  크리에이터 불참: 시작 후 N분 동안 크리에이터 메시지가 없으면 구독자가 [불참 신고] → NO_SHOW(전액 환불)
  * 같은 크리에이터·같은 시작 시각에 살아 있는 예약은 DB 부분 유니크 인덱스로 하나만 허용한다.
  */
-import { prisma } from '@/server/db';
+import { prisma, withAdvisoryLock } from '@/server/db';
 import { newId } from '@/lib/id';
 import { kstDateKey } from '@/lib/datetime';
 import { maskContacts } from '@/lib/contact-mask';
@@ -122,6 +122,15 @@ export function parseRuleLines(input: string): Array<{ weekday: number; startMin
     out.push({ weekday, startMinute, endMinute });
   }
   if (out.length > 40) throw new Error('시간대는 40개까지 등록할 수 있습니다.');
+  // [5차 P2-10] 같은 요일에 겹치는 시간대는 받지 않는다 (겹친 시간에 예약이 두 건 잡히는 것을 막는다)
+  const sorted = [...out].sort((a, b) => a.weekday - b.weekday || a.startMinute - b.startMinute);
+  for (let i = 1; i < sorted.length; i++) {
+    const a = sorted[i - 1];
+    const b = sorted[i];
+    if (a.weekday === b.weekday && b.startMinute < a.endMinute) {
+      throw new Error(`${formatRule(a)} 와 ${formatRule(b)} 시간이 겹칩니다. 겹치지 않게 나눠 적어 주세요.`);
+    }
+  }
   return out;
 }
 
@@ -171,6 +180,7 @@ export async function bookSession(user: { id: string; name: string | null }, cre
 
   const terms = (await getCreatorEngagement(creatorId, prisma, { talk })).session;
   const price = BigInt(terms.price);
+  if (price <= 0n) return { ok: false, message: '1:1 채팅 가격이 정해지지 않았습니다.' };
   const { fee, net } = splitFee(price, terms.feeRate);
   const startsAt = new Date(slot.startsAt);
   const endsAt = new Date(slot.endsAt);
@@ -180,11 +190,18 @@ export async function bookSession(user: { id: string; name: string | null }, cre
   const paymentId = newId();
   const cleanNote = maskContacts(note.trim().slice(0, 300)).text;
 
-  // 1) 자리 먼저 잡기 (부분 유니크 인덱스가 동시 신청을 막는다)
+  // 1) 자리 먼저 잡기 — 크리에이터 단위 잠금 안에서 겹치는 예약을 다시 확인한다
+  //    (부분 유니크 인덱스는 같은 시작 시각만 막으므로, 시간이 겹치는 다른 시작 시각도 여기서 막는다)
   try {
-    await prisma.$transaction([
-      prisma.shopPayment.create({ data: { id: paymentId, paymentNo: sessionNo, userId: user.id, kind: 'TALK_SESSION', method, amount: price, provider: getShopPaymentAdapter().provider } }),
-      prisma.talkSession.create({
+    const clash = await prisma.$transaction((tx) =>
+      withAdvisoryLock(tx, `talk-session:creator:${creatorId}`, async () => {
+        const overlap = await tx.talkSession.findFirst({
+          where: { creatorId, status: { in: ['REQUESTED', 'ACCEPTED'] }, startsAt: { lt: endsAt }, endsAt: { gt: startsAt } },
+          select: { id: true },
+        });
+        if (overlap) return true;
+        await tx.shopPayment.create({ data: { id: paymentId, paymentNo: sessionNo, userId: user.id, kind: 'TALK_SESSION', method, amount: price, provider: getShopPaymentAdapter().provider, creatorId } });
+        await tx.talkSession.create({
         data: {
           id: sessionId,
           sessionNo,
@@ -204,8 +221,11 @@ export async function bookSession(user: { id: string; name: string | null }, cre
           approvalDeadline: deadline,
           createdAt: now,
         },
+      });
+        return false;
       }),
-    ]);
+    );
+    if (clash) return { ok: false, message: '방금 다른 분이 겹치는 시간을 예약했어요. 다른 시간을 골라 주세요.' };
   } catch (e) {
     if ((e as { code?: string })?.code === 'P2002') return { ok: false, message: '방금 다른 분이 이 시간을 예약했어요. 다른 시간을 골라 주세요.' };
     throw e;
@@ -235,14 +255,28 @@ export function formatKstShort(d: Date): string {
 
 // ---------------------------------------------------------------------- 상태 변경
 
-async function refundSession(sessionId: string, status: string, refund: bigint, by: string, reason: string, now: Date): Promise<boolean> {
+async function refundSession(
+  sessionId: string,
+  status: string,
+  refund: bigint,
+  by: string,
+  reason: string,
+  now: Date,
+  extra?: (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0], s: NonNullable<Awaited<ReturnType<typeof prisma.talkSession.findUnique>>>) => Promise<void>,
+): Promise<boolean> {
   const s = await prisma.talkSession.findUnique({ where: { id: sessionId } });
   if (!s) return false;
-  const moved = await prisma.talkSession.updateMany({
-    where: { id: sessionId, status: { in: ['REQUESTED', 'ACCEPTED'] } },
-    data: { status, refundAmount: refund, refundedAt: refund > 0n ? now : null, cancelledBy: by, cancelReason: reason.slice(0, 200), decidedAt: now },
+  // 상태 변경과 (있다면) 정산 적립을 한 트랜잭션으로 묶는다 (5차 P2-11)
+  const moved = await prisma.$transaction(async (tx) => {
+    const m = await tx.talkSession.updateMany({
+      where: { id: sessionId, status: { in: ['REQUESTED', 'ACCEPTED'] } },
+      data: { status, refundAmount: refund, refundedAt: refund > 0n ? now : null, cancelledBy: by, cancelReason: reason.slice(0, 200), decidedAt: now },
+    });
+    if (m.count === 0) return false;
+    if (extra) await extra(tx, s);
+    return true;
   });
-  if (moved.count === 0) return false;
+  if (!moved) return false;
   if (refund > 0n) await cancelPayment(s.paymentId, refund, reason);
   return true;
 }
@@ -297,17 +331,16 @@ export async function cancelSessionByFan(userId: string, sessionId: string, now:
   if (!s) return { ok: false, message: '신청을 찾을 수 없습니다.' };
   const r = fanCancelRefund(s, talk, now);
   if (!r.allowed) return { ok: false, message: r.reason ?? '취소할 수 없습니다.' };
-  const ok = await refundSession(s.id, 'CANCELLED', r.refund, 'FAN', '구독자 취소', now);
-  if (!ok) return { ok: false, message: '이미 처리된 신청입니다.' };
-  // 일부만 환불한 경우 남은 금액은 크리에이터 정산 (예약 시간에 대한 보상)
+  // 일부만 환불한 경우 남은 금액은 크리에이터 정산 (예약 시간에 대한 보상) — 상태 변경과 같은 트랜잭션
   const kept = s.price - r.refund;
-  if (kept > 0n) {
-    const { net } = splitFee(kept, Number(s.feeRate));
-    if (net > 0n) {
-      await appendLedger([{ creatorId: s.creatorId, entryType: 'TALK_SESSION_PROCEEDS', amount: net, memo: `1:1 채팅 늦은 취소 정산 ${s.sessionNo} (${kept.toString()}원 중 수수료 차감)`, occurredAt: now }]);
-      await prisma.talkSession.update({ where: { id: s.id }, data: { settledAt: now } });
-    }
-  }
+  const keptNet = kept > 0n ? splitFee(kept, Number(s.feeRate)).net : 0n;
+  const ok = await refundSession(s.id, 'CANCELLED', r.refund, 'FAN', '구독자 취소', now, keptNet > 0n
+    ? async (tx) => {
+        await appendLedger([{ creatorId: s.creatorId, entryType: 'TALK_SESSION_PROCEEDS', amount: keptNet, memo: `1:1 채팅 늦은 취소 정산 ${s.sessionNo} (${kept.toString()}원 중 수수료 차감)`, occurredAt: now }], tx);
+        await tx.talkSession.update({ where: { id: s.id }, data: { settledAt: now } });
+      }
+    : undefined);
+  if (!ok) return { ok: false, message: '이미 처리된 신청입니다.' };
   const creator = await prisma.creatorProfile.findUnique({ where: { id: s.creatorId }, select: { userId: true } });
   if (creator) await notifyUser({ userId: creator.userId, title: '1:1 채팅이 취소되었어요', body: `${formatKstShort(s.startsAt)} 예약을 구독자가 취소했어요.`, linkUrl: '/studio/talk/sessions' }).catch(() => undefined);
   return { ok: true, message: r.refund === s.price ? '취소했어요. 전액 환불됩니다.' : `취소했어요. ${r.refund.toLocaleString('ko-KR')}원이 환불됩니다.` };
@@ -342,7 +375,22 @@ export async function sweepSessions(now: Date = new Date(), scope?: { creatorId?
   }
   const finishing = await prisma.talkSession.findMany({ where: { ...where, status: 'ACCEPTED', endsAt: { lte: now } }, take: 200 });
   let completed = 0;
+  const talk = finishing.length > 0 ? await getTalkConfig() : null;
+  const switchOn = Boolean(talk?.enabled && talk?.sessionEnabled);
   for (const s of finishing) {
+    /**
+     * [5차 TALK-A·B] 크리에이터가 한 마디도 하지 않은 예약은 정산하지 않고 전액 환불한다.
+     *  - 크리에이터 불참: 10분짜리 예약은 불참 신고 가능 시각이 곧 종료 시각이라 구독자가 신고할 틈이 없었다.
+     *  - 1:1 스위치가 꺼진 동안에는 메시지를 보낼 수 없으므로, 대화가 없었던 예약은 진행 불가로 환불한다.
+     */
+    const creatorMsgs = await prisma.talkSessionMessage.count({ where: { sessionId: s.id, senderType: 'CREATOR' } });
+    if (creatorMsgs === 0) {
+      const reason = switchOn ? '크리에이터 불참 (자동 확인)' : '1:1 채팅 서비스 중지로 진행 불가';
+      if (await refundSession(s.id, 'NO_SHOW', s.price, 'SYSTEM', reason, now)) {
+        await notifyUser({ userId: s.userId, title: '1:1 채팅이 진행되지 않아 환불돼요', body: `${formatKstShort(s.startsAt)} 1:1 채팅이 진행되지 않아 전액 환불됩니다. (${reason})`, linkUrl: `/my/talk/sessions/${s.id}` }).catch(() => undefined);
+      }
+      continue;
+    }
     const done = await prisma.$transaction(async (tx) => {
       const m = await tx.talkSession.updateMany({ where: { id: s.id, status: 'ACCEPTED' }, data: { status: 'COMPLETED', completedAt: now, settledAt: s.netAmount > 0n ? now : null } });
       if (m.count === 0) return false;

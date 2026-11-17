@@ -472,7 +472,8 @@ export async function computeHoldingAmount(
     where: { creatorId, paidAt: { gte: fromDateKey(fromKey) } },
     select: { id: true, paidAt: true },
   });
-  if (donations.length === 0) return 0n;
+  const otherHolding = await computeNonDonationHolding(creatorId, client, todayKey, fromKey);
+  if (donations.length === 0) return otherHolding;
 
   /**
    * **같은 client 로 읽는다.** 이 함수는 `createSettlementRequest` 의 advisory lock
@@ -483,7 +484,7 @@ export async function computeHoldingAmount(
   const immature = donations
     .filter((d) => d.paidAt && settlementDateFor(toDateKey(d.paidAt), holidays) > todayKey)
     .map((d) => d.id);
-  if (immature.length === 0) return 0n;
+  if (immature.length === 0) return otherHolding;
 
   let holding = 0n;
   for (let i = 0; i < immature.length; i += IN_CHUNK) {
@@ -494,7 +495,43 @@ export async function computeHoldingAmount(
     holding += agg._sum.amount ?? 0n;
   }
   // 환불이 커서 순액이 음수가 되면 보류할 것이 없다(잔액에서 이미 차감돼 있다).
-  return holding > 0n ? holding : 0n;
+  return (holding > 0n ? holding : 0n) + otherHolding;
+}
+
+/**
+ * [5차 SET-A] 후원이 아닌 수익(소통 구독·1:1 채팅·투표 수익 배분·샵 판매 대금·레퍼럴)의 보류 금액.
+ *
+ * 이 분개들은 후원(donation)에 묶이지 않아 예전에는 적립 즉시 출금할 수 있었다. 그러면 결제 직후 출금한 뒤
+ * 환불(소통 구독 7일 등)이 들어오면 원장이 음수가 된다. 후원과 같은 규칙(발생일 다음날부터 영업일 5일)으로 보류한다.
+ * 날짜(KST)별 순액으로 계산하고, 음수인 날은 0 으로 본다(같은 날 적립·환불은 서로 상쇄).
+ */
+export const NON_DONATION_HOLD_TYPES: LedgerEntryType[] = [
+  'TALK_SUBSCRIPTION_PROCEEDS',
+  'TALK_SESSION_PROCEEDS',
+  'VOTE_REVENUE_SHARE',
+  'SALES_PROCEEDS',
+  'BROKER_FEE',
+  'REFERRAL_COMMISSION',
+];
+
+async function computeNonDonationHolding(creatorId: string, client: SummaryClient, todayKey: string, fromKey: string): Promise<bigint> {
+  const rows = await (client as typeof prisma).$queryRaw<Array<{ d: string; amount: bigint | null }>>`
+    SELECT to_char(occurred_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS d, SUM(amount)::bigint AS amount
+    FROM settlement_ledger
+    WHERE creator_id = ${creatorId}
+      AND donation_id IS NULL
+      AND entry_type::text = ANY(${NON_DONATION_HOLD_TYPES as string[]})
+      AND occurred_at >= ${fromDateKey(fromKey)}
+    GROUP BY 1`;
+  if (rows.length === 0) return 0n;
+  const holidays = await loadHolidaysAround(fromKey, todayKey, client);
+  let held = 0n;
+  for (const r of rows) {
+    const amount = BigInt(r.amount ?? 0n);
+    if (amount <= 0n) continue;
+    if (settlementDateFor(r.d, holidays) > todayKey) held += amount;
+  }
+  return held;
 }
 
 /**

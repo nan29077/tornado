@@ -8,6 +8,7 @@ import { Check, Heart, Loader2, Ticket, X } from '@/components/brand/icons';
 import { ProfileAvatar } from '@/components/profile/generated-avatar';
 import { cx } from '@/components/ui';
 import { castVoteAction, type VoteActionState } from '@/app/actions/vote';
+import { categoryLabel, isVideoCategory } from '@/lib/video-hub';
 
 /**
  * [투표] 버튼 + 투표 창 (2026-11-17).
@@ -15,7 +16,8 @@ import { castVoteAction, type VoteActionState } from '@/app/actions/vote';
  */
 
 export interface VoteButtonProps {
-  creator: { id: string; name: string; code: string; avatarUrl: string | null; avatarIndex: number };
+  /** category: 크리에이터 활동 카테고리 slug — 이 표가 그 카테고리 랭킹에도 함께 들어간다는 것을 보여 준다 */
+  creator: { id: string; name: string; code: string; avatarUrl: string | null; avatarIndex: number; category?: string | null };
   loggedIn: boolean;
   balance: number;
   ticketsPerVote: number;
@@ -103,7 +105,17 @@ function VoteSheet({ creator, loggedIn, balance, ticketsPerVote, quickVotes, max
           <ProfileAvatar seed={creator.code} avatarIndex={creator.avatarIndex} name={creator.name} imageUrl={creator.avatarUrl} className="h-12 w-12" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-[16px] font-black tracking-[-0.02em] text-ink-900">{creator.name}</p>
-            <p className="text-[12px] text-ink-400">{roundId ? '왕중왕전 투표' : '실시간 · 주간 · 월간 랭킹에 함께 반영돼요'}</p>
+            <p className="text-[12px] text-ink-400">
+              {roundId ? (
+                '왕중왕전 투표'
+              ) : creator.category && isVideoCategory(creator.category) && creator.category !== 'other' ? (
+                <>
+                  전체 랭킹 + <b className="font-extrabold text-brand-700">{categoryLabel(creator.category)}</b> 카테고리 랭킹에 함께 반영돼요
+                </>
+              ) : (
+                '실시간 · 주간 · 월간 랭킹에 함께 반영돼요'
+              )}
+            </p>
           </div>
           <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full text-ink-400 hover:bg-ink-50" aria-label="닫기">
             <X size={18} aria-hidden />

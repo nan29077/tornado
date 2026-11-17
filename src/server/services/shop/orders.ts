@@ -438,8 +438,13 @@ export async function requestClaim(userId: string, orderId: string, type: 'CANCE
   await prisma.orderClaim.create({ data: { id: claimId, orderId, type, reason: r, requestedBy: userId } });
   // 발주·준비 전(결제 완료 상태)의 취소는 판매자 확인 없이 바로 처리한다
   if (type === 'CANCEL' && order.status === 'PAID') {
-    await processClaim(claimId, { type: 'SYSTEM' }, true);
-    return { autoApproved: true };
+    try {
+      await processClaim(claimId, { type: 'SYSTEM' }, true);
+      return { autoApproved: true };
+    } catch (e) {
+      // 그 사이 판매자가 준비·발송했거나 결제 취소가 실패한 경우: 요청은 그대로 두고 판매자 확인으로 넘긴다
+      logger.warn('shop: 자동 취소 실패 — 판매자 확인으로 전환', { orderId, error: (e as Error).message });
+    }
   }
   if (order.sellerType === 'DONAIDO') {
     await notifySuperAdmins({ title: `도네이도 샵 ${type === 'CANCEL' ? '취소' : '반품'} 요청`, body: `${order.orderNo} · ${r}`, linkUrl: '/admin/shop/claims' }).catch(() => undefined);
@@ -468,27 +473,68 @@ export async function processClaim(claimId: string, actor: Actor | { type: 'SYST
   }
   if (order.status === 'CONFIRMED') throw new Error('구매 확정된 주문은 이 화면에서 환불할 수 없습니다.');
   const refund = order.totalAmount - order.refundedAmount;
-  // 1) 결제 취소 (먼저 선점: 같은 요청을 두 번 승인해도 환불은 한 번)
+  const fromStatuses = claim.type === 'CANCEL' ? ['PAID', 'PREPARING'] : ['SHIPPED', 'DELIVERED'];
+  const toStatus = claim.type === 'CANCEL' ? 'CANCELLED' : 'RETURNED';
+  // 1) 요청 선점 (같은 요청을 두 번 승인해도 환불은 한 번)
   const lock = await prisma.orderClaim.updateMany({ where: { id: claimId, status: 'REQUESTED' }, data: { status: 'APPROVED', processedBy, processedAt: now } });
   if (lock.count === 0) throw new Error('이미 처리된 요청입니다.');
-  const cancel = await getShopPaymentAdapter().cancel({ paymentNo: order.payment.paymentNo, providerTx: order.payment.providerTx, amount: refund, reason: claim.reason });
+  /**
+   * 2) 주문 상태도 먼저 선점한다 (5차 P2-4).
+   * 예전에는 결제 취소 뒤에 상태를 조건 없이 바꿔서, 결제 직후 자동 취소와 판매자 [발송]이 겹치면
+   * 이미 발송된 주문이 취소·환불됐다. 이제는 취소 가능한 상태일 때만 선점하고, 선점한 뒤에는 발송·구매 확정이 막힌다.
+   */
+  const orderLock = await prisma.shopOrder.updateMany({ where: { id: order.id, status: { in: fromStatuses } }, data: { status: toStatus, cancelledAt: now } });
+  if (orderLock.count === 0) {
+    await prisma.orderClaim.updateMany({ where: { id: claimId, status: 'APPROVED' }, data: { status: 'REQUESTED', processedBy: null, processedAt: null } });
+    throw new Error(claim.type === 'CANCEL' ? '주문이 이미 발송되었거나 상태가 바뀌어 취소할 수 없습니다. 반품으로 진행해 주세요.' : '주문 상태가 바뀌어 반품을 처리할 수 없습니다. 새로고침해 주세요.');
+  }
+  // 3) 결제 취소
+  const cancel = await getShopPaymentAdapter()
+    .cancel({ paymentNo: order.payment.paymentNo, providerTx: order.payment.providerTx, amount: refund, reason: claim.reason })
+    .catch((e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message : '취소 오류' }));
   if (!cancel.ok) {
+    await prisma.shopOrder.updateMany({ where: { id: order.id, status: toStatus }, data: { status: order.status, cancelledAt: order.cancelledAt } });
     await prisma.orderClaim.update({ where: { id: claimId }, data: { status: 'REQUESTED', processedBy: null, processedAt: null } });
     throw new Error(`결제 취소에 실패했습니다: ${cancel.reason}`);
   }
-  // 2) 주문·재고·레퍼럴·결제 반영
-  await prisma.$transaction(async (tx) => {
-    await tx.shopOrder.update({
-      where: { id: order.id },
-      data: { status: claim.type === 'CANCEL' ? 'CANCELLED' : 'RETURNED', refundedAmount: order.totalAmount, cancelledAt: now },
-    });
+  // 결제사 취소가 끝났다는 표시 (뒤 단계가 실패해도 [재처리]로 마무리할 수 있게, 5차 P2-5)
+  await prisma.orderClaim.update({ where: { id: claimId }, data: { refundAmount: refund } });
+  // 4) 재고·레퍼럴·결제·주문 금액 반영
+  try {
+    await completeApprovedClaim(claimId);
+  } catch (e) {
+    logger.error('shop: 결제 취소 후 주문 반영 실패 — 재처리 필요', { claimId, orderNo: order.orderNo, error: (e as Error).message });
+    await notifySuperAdmins({ title: '취소·반품 반영 실패 (재처리 필요)', body: `${order.orderNo} · 결제 취소는 완료됨. 취소·반품 관리에서 [재처리]를 눌러 주세요.`, linkUrl: '/admin/shop/claims' }).catch(() => undefined);
+    throw new Error('결제는 취소되었지만 주문 반영 중 오류가 났습니다. 관리자 화면에서 [재처리]로 마무리됩니다.');
+  }
+  await notifyUser({ userId: order.userId, title: `${CLAIM_TYPE_LABEL[claim.type]}가 완료되었습니다`, body: `${order.orderNo} · ${refund.toString()}원 환불`, linkUrl: `/my/orders/${order.id}` }).catch(() => undefined);
+}
+
+/**
+ * 결제 취소가 끝난(APPROVED + refundAmount 기록) 요청을 마무리한다. 두 번 불러도 한 번만 반영된다.
+ * 관리자 [재처리] 버튼과 processClaim 이 함께 쓴다 (5차 P2-5).
+ */
+export async function completeApprovedClaim(claimId: string): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    const claim = await tx.orderClaim.findUnique({ where: { id: claimId }, include: { order: { include: { items: true } } } });
+    if (!claim || claim.status !== 'APPROVED' || claim.refundAmount == null) return false;
+    const done = await tx.orderClaim.updateMany({ where: { id: claimId, status: 'APPROVED' }, data: { status: 'COMPLETED' } });
+    if (done.count === 0) return false;
+    const order = claim.order;
+    const refund = claim.refundAmount;
+    await tx.shopOrder.update({ where: { id: order.id }, data: { refundedAmount: order.refundedAmount + refund } });
     for (const it of order.items) {
       await tx.productVariant.update({ where: { id: it.variantId }, data: { stock: { increment: it.quantity } } });
       await tx.referralCommission.updateMany({ where: { orderItemId: it.id, status: 'PENDING' }, data: { status: 'CANCELLED' } });
     }
     const pay = await tx.shopPayment.update({ where: { id: order.paymentId }, data: { cancelledAmount: { increment: refund } } });
     await tx.shopPayment.update({ where: { id: order.paymentId }, data: { status: pay.cancelledAmount >= pay.amount ? 'CANCELLED' : 'PARTIAL_CANCELLED' } });
-    await tx.orderClaim.update({ where: { id: claimId }, data: { status: 'COMPLETED', refundAmount: refund } });
+    return true;
   });
-  await notifyUser({ userId: order.userId, title: `${CLAIM_TYPE_LABEL[claim.type]}가 완료되었습니다`, body: `${order.orderNo} · ${refund.toString()}원 환불`, linkUrl: `/my/orders/${order.id}` }).catch(() => undefined);
 }
+
+/** 결제 취소까지 끝났는데 반영이 멈춘 요청 (관리자 재처리 대상) */
+export async function listStuckClaims() {
+  return prisma.orderClaim.findMany({ where: { status: 'APPROVED', refundAmount: { not: null } }, include: { order: { select: { id: true, orderNo: true } } }, orderBy: { processedAt: 'asc' }, take: 50 });
+}
+

@@ -1,12 +1,14 @@
-import { AdminSelect } from '@/components/admin/controls';
+import { Switch } from '@/components/admin/switch';
 
-/** 켜기/끄기 선택칸 (관리자 폼) — 값 'on' 이면 켬 */
+/**
+ * 켜기/끄기 (관리자 폼) — 켜면 'on' 이 전송된다.
+ * 2026-11-18: 선택칸에서 스위치로 바꿨다. AdminField(라벨) 안에 넣으면 칸 어디를 눌러도 켜고 끈다.
+ */
 export function OnOff({ name, value, onLabel = '켜기', offLabel = '끄기' }: { name: string; value: boolean; onLabel?: string; offLabel?: string }) {
   return (
-    <AdminSelect name={name} defaultValue={value ? 'on' : 'off'}>
-      <option value="on">{onLabel}</option>
-      <option value="off">{offLabel}</option>
-    </AdminSelect>
+    <span className="flex h-9 items-center">
+      <Switch name={name} defaultChecked={value} onLabel={onLabel} offLabel={offLabel} />
+    </span>
   );
 }
 

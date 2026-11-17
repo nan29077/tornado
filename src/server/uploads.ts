@@ -106,3 +106,19 @@ export function storageWarnings(): string[] {
   if (!S3_BUCKET) return ['STORAGE_DRIVER=s3 인데 S3_BUCKET 이 비어 있습니다.'];
   return [];
 }
+
+/**
+ * 우리 업로드 저장소가 돌려준 이미지 주소인가 (5차 P2-12).
+ * 소통방 사진처럼 다른 회원 화면에 그대로 뜨는 이미지는 외부 주소를 받지 않는다
+ * (외부 서버가 보는 사람의 IP·접속 시각을 수집하는 추적 픽셀로 쓰일 수 있다).
+ */
+export function isOwnUploadUrl(url: string): boolean {
+  const u = url.trim();
+  if (/^\/api\/media\/[a-f0-9]{32}\.(jpg|png|gif|webp)$/.test(u)) return true;
+  if (S3_PUBLIC_BASE && u.startsWith(`${S3_PUBLIC_BASE}/${S3_PREFIX}/`)) {
+    const rest = u.slice(`${S3_PUBLIC_BASE}/${S3_PREFIX}/`.length);
+    return /^[a-f0-9]{32}\.(jpg|png|gif|webp)$/.test(rest);
+  }
+  return false;
+}
+

@@ -66,6 +66,14 @@ try {
     DB_TRANSACTION_MAX_WAIT_MS: '10000',
     DB_TRANSACTION_TIMEOUT_MS: '20000',
     ALLOW_INMEMORY_FALLBACK: 'true',
+    // 로컬 .env 의 개발 편의 스위치가 테스트 결과를 바꾸지 않게 고정한다 (5차 점검).
+    // 예: 터널 테스트 로그인을 켜 두면 SEC-1 차단 테스트가 실패한다.
+    ALLOW_DEV_LOGIN_ON_TUNNEL: 'false',
+    TRUST_CF_HEADER: 'false',
+    TRUST_REAL_IP_HEADER: 'false',
+    DEMO_DATA: 'false',
+    OFFERWALL_MOCK_ALLOW: '',
+    SHOP_PAYMENT_PROVIDER: 'mock',
   };
 
   const prismaCli = localScript('prisma/build/index.js', 'prisma/build/index.js');

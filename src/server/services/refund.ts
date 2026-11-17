@@ -1,6 +1,7 @@
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
 import { getPaymentAdapter, type PaymentAdapter } from '@/server/adapters/payment';
+import { getShopPaymentAdapter } from '@/server/adapters/shop-payment';
 import { calculateFees, postRefundSettlement } from './settlement';
 import { rollbackCounters } from './limits';
 import { sendMtForDonor } from './donation-flow';
@@ -81,6 +82,8 @@ export async function approveRefund(refundId: string, adminUserId?: string) {
   if (refund.status !== 'REQUESTED') {
     throw new Error('요청 상태의 환불만 승인할 수 있습니다. 목록을 새로고침해 현재 상태를 확인해 주세요.');
   }
+  // [5차 PAY-A] 도네이도 샵 영상·카드 후원은 결제 거래(payment_transaction)가 아니라 샵 결제(shop_payment)로 결제됐다.
+  if (refund.donation.channel === 'SHOP') return approveShopDonationRefund(refund, adminUserId);
   /**
    * 승인된 결제 거래 확인은 **선점보다 먼저** 한다.
    *
@@ -104,6 +107,62 @@ export async function approveRefund(refundId: string, adminUserId?: string) {
   const res = await callCancel(adapter, refund, txn, refundId);
   await finishRefundCancel(refund, txn, res, adminUserId);
   return prisma.refund.findUnique({ where: { id: refundId } });
+}
+
+/**
+ * [5차 PAY-A] 도네이도 샵 영상·카드 후원 환불.
+ *
+ * 순서는 문자 후원 환불과 같다: REQUESTED → APPROVED 선점 → 결제사 취소 → (성공) 환불 확정 + 원장 반대분개를
+ * 한 트랜잭션으로. 취소가 실패하면 FAILED 로 확정하고 후원 상태를 되돌린다(다시 요청할 수 있게).
+ * 한도 집계는 샵 결제 상태(CANCELLED)로 자동 제외되므로 따로 되돌리지 않는다.
+ */
+async function approveShopDonationRefund(refund: RefundWithDonation, adminUserId?: string) {
+  const payment = await prisma.shopPayment.findFirst({ where: { donationId: refund.donationId, status: { in: ['PAID', 'PARTIAL_CANCELLED'] } } });
+  if (!payment) throw new Error('이 샵 후원의 결제 기록을 찾을 수 없습니다. (결제 관리에서 확인해 주세요)');
+  const claimed = await prisma.refund.updateMany({ where: { id: refund.id, status: 'REQUESTED' }, data: { status: 'APPROVED' } });
+  if (claimed.count === 0) throw new Error('이미 다른 처리가 진행 중인 환불입니다. 잠시 후 상태를 다시 확인해 주세요.');
+
+  const cancel = await getShopPaymentAdapter()
+    .cancel({ paymentNo: payment.paymentNo, providerTx: payment.providerTx, amount: refund.amount, reason: refund.reason ?? '고객 요청' })
+    .catch((e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message : '취소 오류' }));
+  if (!cancel.ok) {
+    await prisma.refund.update({ where: { id: refund.id }, data: { status: 'FAILED', resultCode: 'SHOP_CANCEL_FAILED', resultMessage: cancel.reason.slice(0, 500) } });
+    await restoreDonationStatusAfterRefundFailure(refund.donationId, refund.id);
+    throw new Error(`결제 취소에 실패했습니다: ${cancel.reason}`);
+  }
+
+  const fees = await calculateFees(refund.donation.creatorId, refund.amount);
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    await tx.refund.update({ where: { id: refund.id }, data: { status: 'DONE', approvedBy: adminUserId ?? null, processedAt: now, providerTid: payment.providerTx } });
+    const cancelled = payment.cancelledAmount + refund.amount;
+    await tx.shopPayment.update({ where: { id: payment.id }, data: { cancelledAmount: cancelled, status: cancelled >= payment.amount ? 'CANCELLED' : 'PARTIAL_CANCELLED' } });
+    await tx.donation.update({ where: { id: refund.donationId }, data: { status: 'REFUNDED', refundedAt: now } });
+    await tx.donationStatusLog.create({
+      data: { id: newId(), donationId: refund.donationId, toStatus: 'REFUNDED', actor: adminUserId ?? 'admin', reason: `샵 결제 취소 ${payment.paymentNo}${refund.reason ? ` · ${refund.reason}` : ''}`.slice(0, 200) },
+    });
+    await postRefundSettlement({ creatorId: refund.donation.creatorId, donationId: refund.donationId, refundId: refund.id, amount: refund.amount, fees, occurredAt: now }, tx);
+  });
+
+  await notifyUser({
+    userId: refund.donation.creator.userId,
+    title: '후원 1건이 환불되어 정산 잔액에서 차감되었습니다',
+    body: `${refund.donation.transactionNo} · ${formatWon(refund.amount)} 환불 (도네이도 샵 결제)${refund.reason ? ` · 사유: ${refund.reason}` : ''}`,
+    linkUrl: `/studio/donations/${refund.donationId}`,
+  }).catch(() => undefined);
+  await notifyUser({
+    userId: payment.userId,
+    title: '후원 결제가 취소되었습니다',
+    body: `${refund.donation.creator.displayName} 님 후원 ${formatWon(refund.amount)} 결제를 취소했습니다.`,
+    linkUrl: '/my',
+  }).catch(() => undefined);
+  if (refund.donation.donorId) {
+    await prisma.donorCreatorLink.updateMany({
+      where: { donorId: refund.donation.donorId, creatorId: refund.donation.creatorId },
+      data: { totalAmount: { decrement: refund.amount }, totalCount: { decrement: 1 } },
+    });
+  }
+  return prisma.refund.findUnique({ where: { id: refund.id } });
 }
 
 /**

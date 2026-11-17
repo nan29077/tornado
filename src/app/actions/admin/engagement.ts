@@ -22,6 +22,7 @@ import { adminRevokeTickets, expireLots, grantTickets, type TicketBucket } from 
 import { deleteTalkMessage, refundTalkSubscription } from '@/server/services/talk/talk';
 import { adminRefundSession, closeAllPendingSessions, sweepSessions } from '@/server/services/talk/sessions';
 import { assertFinanceAdmin, assertOperationAdmin, run, text, type AdminActionState } from './shared';
+import { CONTENT_CATEGORY_SLUGS } from '@/lib/video-hub';
 
 const on = (fd: FormData, key: string) => text(fd, key) === 'on';
 
@@ -164,7 +165,11 @@ export async function createRoundAction(_p: AdminActionState, fd: FormData): Pro
       if (missing.length) throw new Error(`찾을 수 없는 코드: ${missing.join(', ')}`);
       ids = codes.map((c) => rows.find((r) => r.code === c.toUpperCase())!.id);
     } else if (kind === 'CHAMPION') {
-      ids = await suggestChampionCandidates(int(fd, 'topN', '자동 후보 수', 2, 50));
+      // 카테고리를 고르면 그 카테고리의 지난달 상위 N명이 후보가 된다 (카테고리 왕중왕전, 2026-11-18)
+      const cat = text(fd, 'category');
+      const category = cat && (CONTENT_CATEGORY_SLUGS as string[]).includes(cat) ? cat : null;
+      ids = await suggestChampionCandidates(int(fd, 'topN', '자동 후보 수', 2, 50), new Date(), category);
+      if (category && ids.length < 2) throw new Error('이 카테고리에는 후보가 될 크리에이터가 2명 이상 없습니다. 후보 코드를 직접 입력해 주세요.');
     }
     const id = await createRound({ kind, title: text(fd, 'title'), description: text(fd, 'description'), startsAt, endsAt, creatorIds: ids, status: on(fd, 'openNow') ? 'OPEN' : 'DRAFT' }, admin.id);
     await writeAudit({ adminUserId: admin.id, action: 'VOTE_ROUND_CREATE', targetType: 'VoteRound', targetId: id, after: { kind, title: text(fd, 'title'), candidates: ids.length } });
@@ -309,7 +314,7 @@ export async function setSessionSwitchAction(_p: AdminActionState, fd: FormData)
     revalidatePath('/studio/talk');
     return enable
       ? '1:1 채팅을 켰습니다. 크리에이터 샵·마이페이지·스튜디오에 노출됩니다.'
-      : `1:1 채팅을 껐습니다. 어디에도 노출되지 않습니다.${cancelled > 0 ? ` 시작 전 예약 ${cancelled}건을 취소·전액 환불했습니다.` : ' 이미 잡힌 예약은 그대로 진행할 수 없으니 필요하면 예약 관리에서 처리해 주세요.'}`;
+      : `1:1 채팅을 껐습니다. 어디에도 노출되지 않습니다.${cancelled > 0 ? ` 시작 전 예약 ${cancelled}건을 취소·전액 환불했습니다.` : ' 이미 잡힌 예약은 대화를 할 수 없으므로, 종료 시각이 지나면 자동으로 전액 환불됩니다.'}`;
   });
 }
 

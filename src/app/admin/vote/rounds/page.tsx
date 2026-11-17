@@ -2,12 +2,14 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle } from '@/components/ui';
 import { ActionForm } from '@/components/admin/action-form';
 import { AdminField, AdminInput, AdminSelect, AdminTextarea } from '@/components/admin/controls';
+import { OnOff } from '@/components/admin/engage-bits';
 import { createRoundAction, setRoundStatusAction } from '@/app/actions/admin/engagement';
 import { formatKst } from '@/lib/datetime';
 import { requireAdminPage } from '@/server/admin-guard';
 import { prisma } from '@/server/db';
 import { ROUND_KIND_LABEL, ROUND_STATUS_LABEL } from '@/server/services/vote/rounds';
 import { roundRanking } from '@/server/services/vote/ranking';
+import { VIDEO_CATEGORIES } from '@/lib/video-hub';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,10 +38,18 @@ export default async function AdminVoteRoundsPage() {
             <AdminField label="시작 (KST)"><AdminInput type="datetime-local" name="startsAt" defaultValue={kstInput(now)} required /></AdminField>
             <AdminField label="종료 (KST)"><AdminInput type="datetime-local" name="endsAt" defaultValue={kstInput(new Date(now.getTime() + 7 * 86_400_000))} required /></AdminField>
             <AdminField label="자동 후보 수 (코드 비울 때)"><AdminInput name="topN" inputMode="numeric" defaultValue={10} /></AdminField>
+            <AdminField label="카테고리 왕중왕전 (선택)" hint="고르면 그 카테고리의 지난달 상위 N명이 자동 후보가 됩니다">
+              <AdminSelect name="category" defaultValue="">
+                <option value="">전체 카테고리</option>
+                {VIDEO_CATEGORIES.filter((c) => c.slug !== 'all' && c.slug !== 'donaido').map((c) => (
+                  <option key={c.slug} value={c.slug}>{c.label}</option>
+                ))}
+              </AdminSelect>
+            </AdminField>
             <AdminField label="후보 코드 (쉼표 · 줄바꿈)" className="sm:col-span-3" hint="이벤트 투표는 반드시 입력"><AdminTextarea name="codes" rows={2} placeholder="TOR-ABCD, TOR-EFGH" /></AdminField>
             <AdminField label="설명" className="sm:col-span-2"><AdminInput name="description" maxLength={300} placeholder="우승자는 12월 메인 배너에 노출됩니다" /></AdminField>
             <AdminField label="바로 열기">
-              <AdminSelect name="openNow" defaultValue="on"><option value="on">바로 열기</option><option value="off">준비 상태로</option></AdminSelect>
+              <OnOff name="openNow" value onLabel="바로 열기" offLabel="준비 상태로" />
             </AdminField>
           </div>
         </ActionForm>

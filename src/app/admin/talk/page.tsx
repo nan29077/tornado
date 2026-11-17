@@ -3,7 +3,8 @@ import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle, StatTile } from '@/components/ui';
 import { ActionForm } from '@/components/admin/action-form';
 import { AdminField, AdminInput, AdminSelect } from '@/components/admin/controls';
-import { OnOff, pctLabel, pctText, won } from '@/components/admin/engage-bits';
+import { pctLabel, pctText, won } from '@/components/admin/engage-bits';
+import { SwitchField } from '@/components/admin/switch';
 import { saveTalkPricingAction, saveTalkSettingsAction, setSessionSwitchAction } from '@/app/actions/admin/engagement';
 import { requireAdminPage } from '@/server/admin-guard';
 import { prisma } from '@/server/db';
@@ -44,7 +45,7 @@ export default async function AdminTalkPage() {
               <input type="hidden" name="enable" value="0" />
               <AdminField label={`시작 전 예약 ${pending}건 처리`}>
                 <AdminSelect name="pending" defaultValue="keep">
-                  <option value="keep">그대로 두기 (나중에 예약 관리에서 처리)</option>
+                  <option value="keep">그대로 두기 (대화 없이 끝난 예약은 자동 전액 환불)</option>
                   <option value="cancel">전부 취소 · 전액 환불</option>
                 </AdminSelect>
               </AdminField>
@@ -61,8 +62,13 @@ export default async function AdminTalkPage() {
         <Card>
           <CardTitle>운영 설정</CardTitle>
           <ActionForm action={saveTalkSettingsAction} submitLabel="저장" className="mt-2" confirm="바로 적용됩니다.">
+            <p className="mb-1.5 text-[11.5px] font-extrabold text-ink-400">기능 켜기·끄기</p>
             <div className="grid gap-2 sm:grid-cols-2">
-              <AdminField label="소통 기능"><OnOff name="enabled" value={cfg.enabled} /></AdminField>
+              <SwitchField label="소통 기능" hint="끄면 소통방 구독·메시지를 받지 않습니다" name="enabled" value={cfg.enabled} tone="danger" />
+              <SwitchField label="1:1 성인 인증 회원만" hint="1:1 채팅 신청을 성인 인증 회원으로 제한" name="sessionRequireAdult" value={cfg.sessionRequireAdult} onLabel="예" offLabel="아니오" />
+            </div>
+            <p className="mb-1.5 mt-4 text-[11.5px] font-extrabold text-ink-400">운영 규칙</p>
+            <div className="grid gap-2 sm:grid-cols-2">
               <AdminField label="소통방 방식">
                 <AdminSelect name="roomMode" defaultValue={cfg.roomMode}>
                   <option value="GROUP">1:N 단체방 (구독자끼리도 보임)</option>
@@ -80,7 +86,6 @@ export default async function AdminTalkPage() {
               <AdminField label="전액 환불 기준(시작 N시간 전)"><AdminInput name="sessionFullRefundHours" inputMode="numeric" defaultValue={cfg.sessionFullRefundHours} /></AdminField>
               <AdminField label="그 이후 취소 환불 비율(%)"><AdminInput name="sessionLateRefundRate" inputMode="decimal" defaultValue={pctText(cfg.sessionLateRefundRate)} /></AdminField>
               <AdminField label="크리에이터 불참 판정(분)"><AdminInput name="sessionNoShowMinutes" inputMode="numeric" defaultValue={cfg.sessionNoShowMinutes} /></AdminField>
-              <AdminField label="1:1 성인 인증 회원만"><OnOff name="sessionRequireAdult" value={cfg.sessionRequireAdult} onLabel="예" offLabel="아니오" /></AdminField>
             </div>
           </ActionForm>
         </Card>

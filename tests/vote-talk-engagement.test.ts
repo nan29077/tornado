@@ -372,6 +372,9 @@ describe('1:1 예약 채팅', () => {
     // 진행 중
     const live = new Date(s.startsAt.getTime() + 60_000);
     expect((await sendSessionMessage(s.id, { userId: u.id }, '안녕하세요', live)).ok).toBe(true);
+    // 크리에이터도 대화에 참여해야 완료·정산된다 (대화가 없으면 불참 환불, 2026-11-18)
+    const creatorUser = await prisma.creatorProfile.findUniqueOrThrow({ where: { id: fx.creatorId }, select: { userId: true } });
+    expect((await sendSessionMessage(s.id, { userId: creatorUser.userId, creatorId: fx.creatorId }, '반가워요', live)).ok).toBe(true);
     // 종료 후 정산
     const done = await sweepSessions(new Date(s.endsAt.getTime() + 1000));
     expect(done.completed).toBe(1);
