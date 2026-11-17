@@ -1,7 +1,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { ChevronRight, HeartHandshake, PlayCircle } from '@/components/brand/icons';
-import { ProfileAvatar } from '@/components/profile/generated-avatar';
+import { GeneratedAvatar, ProfileAvatar } from '@/components/profile/generated-avatar';
 import { cx } from '@/components/ui';
 import { formatViews, timeAgo, youtubeChannelUrl, type VideoItem } from '@/lib/video-hub';
 
@@ -63,9 +63,7 @@ export function VideoProfile({ item, detailed = false }: { item: VideoItem; deta
         // eslint-disable-next-line @next/next/no-img-element
         <img src={item.channelAvatarUrl} alt="" loading="lazy" decoding="async" className={cx('shrink-0 rounded-full bg-brand-50 object-cover', avatarSize)} />
       ) : (
-        <span aria-hidden className={cx('grid shrink-0 place-items-center rounded-full bg-brand-100 text-xs font-extrabold text-brand-800', avatarSize)}>
-          {Array.from(name.trim())[0] ?? '?'}
-        </span>
+        <GeneratedAvatar seed={item.channelId || name} name={name} className={avatarSize} />
       )}
       <span className="min-w-0">
         <span className={cx('block truncate font-bold', detailed ? 'text-[15px]' : 'text-xs')}>{name}</span>
