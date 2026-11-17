@@ -57,7 +57,7 @@ function mmdd(iso: string): string {
   return formatKst(new Date(iso), false).slice(5, 10).replace('-', '.');
 }
 
-export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boolean }) {
+export function FanHome({ data, loggedIn, voteSection }: { data: FanHomeData; loggedIn: boolean; /** 크리에이터 투표 랭킹 섹션 (2026-11-17, 서버에서 따로 불러와 끼운다) */ voteSection?: React.ReactNode }) {
   const shorts = data.feed.filter((v) => v.isShort);
   const videos = sortVideos(data.feed.filter((v) => !v.isShort), 'recommended').slice(0, 4);
   const browseVideos = sortVideos(data.feed, 'popular').slice(0, 120);
@@ -101,6 +101,9 @@ export function FanHome({ data, loggedIn }: { data: FanHomeData; loggedIn: boole
           </AutoRail>
         </section>
       ) : null}
+
+      {/* 2-1. 크리에이터 투표 랭킹 (2026-11-17) */}
+      {voteSection}
 
       {/* 3. 방송국 */}
       {videos.length > 0 ? (

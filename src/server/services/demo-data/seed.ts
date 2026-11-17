@@ -15,6 +15,7 @@ import {
   demoCreatorId,
   demoProductId,
 } from './catalog';
+import { periodKey } from '../../../lib/vote-period';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const userId = (n: number) => `${DEMO_ID_PREFIX}user-${pad(n)}`;
@@ -123,7 +124,149 @@ export async function seedDemoData(db: PrismaClient): Promise<{ creators: number
     }
   }
 
+  await seedDemoEngagement(db, now);
+
   return { creators: DEMO_CREATORS.length, products: DEMO_PRODUCTS.length };
+}
+
+/**
+ * 투표 랭킹 · 소통방 더미 (2026-11-17). 표 수는 크리에이터마다 고정 비율로 만들어 새로 고쳐도 순위가 흔들리지 않는다.
+ * 지난 일·주·월 집계도 넣어 두면 화면을 열 때 확정 순위(일간 탭 · 명예의 전당)가 만들어진다.
+ */
+async function seedDemoEngagement(db: PrismaClient, now: Date) {
+  // 지금 진행 중인 기간 + 지난 기간(일 7 · 주 4 · 월 6). 지난 기간은 확정 순위(vote_period_result)까지 넣어
+  // 일간 탭 · 순위 변동(▲▼) · 명예의 전당 · 크리에이터 순위 기록이 모두 채워지게 한다.
+  const DAY = 86_400_000;
+  const specs: Array<{ type: 'DAY' | 'WEEK' | 'MONTH' | 'ALL'; key: string; mul: number; past: boolean }> = [];
+  for (let i = 0; i <= 7; i++) specs.push({ type: 'DAY', key: periodKey('DAY', new Date(now.getTime() - i * DAY)), mul: i === 0 ? 1 : 1.1 + (i % 3) * 0.12, past: i > 0 });
+  for (let i = 0; i <= 4; i++) specs.push({ type: 'WEEK', key: periodKey('WEEK', new Date(now.getTime() - i * 7 * DAY)), mul: i === 0 ? 5.5 : 7 + (i % 2), past: i > 0 });
+  let monthCursor = now;
+  for (let i = 0; i <= 6; i++) {
+    specs.push({ type: 'MONTH', key: periodKey('MONTH', monthCursor), mul: i === 0 ? 18 : 26 + (i % 3) * 3, past: i > 0 });
+    monthCursor = new Date(new Date(`${periodKey('MONTH', monthCursor)}-01T00:00:00+09:00`).getTime() - DAY);
+  }
+  specs.push({ type: 'ALL', key: 'ALL', mul: 160, past: false });
+
+  for (const sp of specs) {
+    const rows = DEMO_CREATORS.map((c) => {
+      const base = c.weeklyDonations * 3 + c.growth * 17 + c.n * 7;
+      // 기간마다 순위가 조금씩 바뀌도록 크리에이터 번호와 기간 키로 흔든다
+      const seed = [...sp.key].reduce((a, ch) => a + ch.charCodeAt(0), 0);
+      const wobble = 1 + (((c.n * 37 + seed * 13) % 17) - 8) / 22;
+      return { c, votes: BigInt(Math.max(3, Math.round(base * sp.mul * wobble))) };
+    });
+    for (const r of rows) {
+      await db.voteTally.upsert({
+        where: { periodType_periodKey_creatorId: { periodType: sp.type, periodKey: sp.key, creatorId: demoCreatorId(r.c.n) } },
+        create: { id: `${DEMO_ID_PREFIX}tally-${sp.type}-${sp.key}-${pad(r.c.n)}`, periodType: sp.type, periodKey: sp.key, creatorId: demoCreatorId(r.c.n), votes: r.votes, lastVoteAt: new Date(now.getTime() - r.c.n * 60_000) },
+        update: {},
+      });
+    }
+    if (sp.past) {
+      const ranked = [...rows].sort((a, b) => (b.votes > a.votes ? 1 : b.votes < a.votes ? -1 : a.c.n - b.c.n));
+      for (let i = 0; i < ranked.length; i++) {
+        const r = ranked[i];
+        await db.votePeriodResult.upsert({
+          where: { periodType_periodKey_creatorId: { periodType: sp.type, periodKey: sp.key, creatorId: demoCreatorId(r.c.n) } },
+          create: { id: `${DEMO_ID_PREFIX}result-${sp.type}-${sp.key}-${pad(r.c.n)}`, periodType: sp.type, periodKey: sp.key, creatorId: demoCreatorId(r.c.n), rank: i + 1, votes: r.votes },
+          update: {},
+        });
+      }
+    }
+  }
+
+  // 단체 소통방에 보이는 더미 팬 (프로필 캐릭터 · 닉네임)
+  const FANS = ['꿀벌단장', '민트초코', '별빛소녀', '야식요정', '캠핑러버', '댕댕맘', '고양이집사', '새벽감성', '노래방왕', '먹방매니아', '여행가자', '주식초보'];
+  for (let i = 0; i < FANS.length; i++) {
+    const id = `${DEMO_ID_PREFIX}fan-${pad(i + 1)}`;
+    await db.user.upsert({
+      where: { id },
+      create: { id, email: `demo-fan-${pad(i + 1)}@demo.donaido.invalid`, role: 'DONOR', name: FANS[i], avatarIndex: (i * 7 + 5) % 50 },
+      update: { name: FANS[i] },
+    });
+  }
+
+  for (const c of DEMO_CREATORS) {
+    const roomId = `${DEMO_ID_PREFIX}talk-room-${pad(c.n)}`;
+    await db.talkRoom.upsert({
+      where: { creatorId: demoCreatorId(c.n) },
+      create: { id: roomId, creatorId: demoCreatorId(c.n), open: true, welcomeMessage: `${c.name} 소통방에 오신 걸 환영해요!`, sessionEnabled: c.n <= 4, sessionMinutes: 20 },
+      update: {},
+    });
+    const msgId = `${DEMO_ID_PREFIX}talk-msg-${pad(c.n)}-1`;
+    await db.talkMessage.upsert({
+      where: { id: msgId },
+      create: { id: msgId, creatorId: demoCreatorId(c.n), kind: 'BROADCAST', body: `{닉네임}님 안녕하세요! ${c.name}이에요. ${c.description}`, createdAt: new Date(now.getTime() - 3600_000) },
+      update: {},
+    });
+    // 더미 팬 구독 + 단체방 대화 (팬 3명씩)
+    for (let k = 0; k < 3; k++) {
+      const fi = ((c.n - 1) * 3 + k) % FANS.length;
+      const fanId = `${DEMO_ID_PREFIX}fan-${pad(fi + 1)}`;
+      const subId = `${DEMO_ID_PREFIX}talk-sub-${pad(c.n)}-${k}`;
+      await db.talkSubscription.upsert({
+        where: { id: subId },
+        create: { id: subId, userId: fanId, creatorId: demoCreatorId(c.n), startsAt: new Date(now.getTime() - 5 * DAY), endsAt: new Date(now.getTime() + 25 * DAY), price: 4900n, method: 'CARD' },
+        update: {},
+      });
+      const replyId = `${DEMO_ID_PREFIX}talk-msg-${pad(c.n)}-r${k}`;
+      const lines = ['오늘 방송 최고였어요!', '매일 기다리고 있어요', '다음 방송은 언제 해요?'];
+      await db.talkMessage.upsert({
+        where: { id: replyId },
+        create: { id: replyId, creatorId: demoCreatorId(c.n), kind: 'FAN_REPLY', fanUserId: fanId, body: lines[k], createdAt: new Date(now.getTime() - 3600_000 + (k + 1) * 600_000) },
+        update: {},
+      });
+    }
+    if (c.n <= 4) {
+      for (const wd of [1, 3, 5, 6]) {
+        const rid = `${DEMO_ID_PREFIX}slot-${pad(c.n)}-${wd}`;
+        await db.talkSlotRule.upsert({ where: { id: rid }, create: { id: rid, creatorId: demoCreatorId(c.n), weekday: wd, startMinute: 20 * 60, endMinute: 23 * 60 }, update: {} });
+      }
+    }
+  }
+  const pastRoundId = `${DEMO_ID_PREFIX}round-champion-past`;
+  if (!(await db.voteRound.findUnique({ where: { id: pastRoundId }, select: { id: true } }))) {
+    const picks = DEMO_CREATORS.slice(2, 8);
+    await db.voteRound.create({
+      data: {
+        id: pastRoundId,
+        kind: 'CHAMPION',
+        title: '지난 시즌 왕중왕전',
+        description: '테스트용 더미 — 지난 시즌 결과',
+        startsAt: new Date(now.getTime() - 40 * DAY),
+        endsAt: new Date(now.getTime() - 33 * DAY),
+        status: 'CLOSED',
+        candidates: { create: picks.map((c, i) => ({ id: `${DEMO_ID_PREFIX}round-past-cand-${pad(c.n)}`, creatorId: demoCreatorId(c.n), sortOrder: i })) },
+      },
+    });
+    for (let i = 0; i < picks.length; i++) {
+      const c = picks[i];
+      const votes = BigInt(9000 - i * 1100 + c.n * 3);
+      await db.voteTally.create({ data: { id: `${DEMO_ID_PREFIX}tally-round-past-${pad(c.n)}`, periodType: 'ROUND', periodKey: pastRoundId, creatorId: demoCreatorId(c.n), votes, lastVoteAt: new Date(now.getTime() - 34 * DAY) } });
+      await db.votePeriodResult.create({ data: { id: `${DEMO_ID_PREFIX}result-round-past-${pad(c.n)}`, periodType: 'ROUND', periodKey: pastRoundId, creatorId: demoCreatorId(c.n), rank: i + 1, votes } });
+    }
+  }
+
+  const roundId = `${DEMO_ID_PREFIX}round-champion`;
+  const exists = await db.voteRound.findUnique({ where: { id: roundId }, select: { id: true } });
+  if (!exists) {
+    const picks = DEMO_CREATORS.slice(0, 6);
+    await db.voteRound.create({
+      data: {
+        id: roundId,
+        kind: 'CHAMPION',
+        title: '테스트 왕중왕전',
+        description: '지난달 월간 상위 크리에이터끼리 겨루는 왕중왕전입니다. (테스트용 더미)',
+        startsAt: new Date(now.getTime() - 86_400_000),
+        endsAt: new Date(now.getTime() + 6 * 86_400_000),
+        status: 'OPEN',
+        candidates: { create: picks.map((c, i) => ({ id: `${DEMO_ID_PREFIX}round-cand-${pad(c.n)}`, creatorId: demoCreatorId(c.n), sortOrder: i })) },
+      },
+    });
+    for (const c of picks) {
+      await db.voteTally.create({ data: { id: `${DEMO_ID_PREFIX}tally-round-${pad(c.n)}`, periodType: 'ROUND', periodKey: roundId, creatorId: demoCreatorId(c.n), votes: BigInt(c.weeklyDonations * 2 + c.n * 13), lastVoteAt: now } });
+    }
+  }
 }
 
 export interface DemoCleanResult {
@@ -140,6 +283,14 @@ export interface DemoCleanResult {
  */
 export async function cleanDemoData(db: PrismaClient): Promise<DemoCleanResult> {
   const startsWith = { startsWith: DEMO_ID_PREFIX };
+  // 투표 · 소통 더미 (2026-11-17)
+  await db.voteRound.deleteMany({ where: { id: startsWith } });
+  await db.talkSubscription.deleteMany({ where: { id: startsWith } });
+  await db.voteTally.deleteMany({ where: { creatorId: startsWith } });
+  await db.votePeriodResult.deleteMany({ where: { creatorId: startsWith } });
+  await db.talkSlotRule.deleteMany({ where: { creatorId: startsWith } });
+  await db.talkMessage.deleteMany({ where: { id: startsWith } });
+  await db.talkRoom.deleteMany({ where: { id: startsWith } });
   await db.creatorProduct.deleteMany({ where: { OR: [{ id: startsWith }, { productId: startsWith }, { creatorId: startsWith }] } });
   const products = await db.product.deleteMany({ where: { id: startsWith } });
 
@@ -161,5 +312,8 @@ export async function cleanDemoData(db: PrismaClient): Promise<DemoCleanResult> 
       suspended++;
     }
   }
+  // 더미 팬 계정 (소통방 대화용)
+  await db.talkMessage.deleteMany({ where: { fanUserId: { startsWith: `${DEMO_ID_PREFIX}fan-` } } });
+  await db.user.deleteMany({ where: { id: { startsWith: `${DEMO_ID_PREFIX}fan-` } } }).catch(() => undefined);
   return { products: products.count, creators: removed, creatorsSuspended: suspended };
 }

@@ -30,6 +30,11 @@ export async function resetDb() {
     'shop_payment', 'cart_item', 'member_address', 'product_wish', 'creator_product', 'creator_commission',
     'creator_product_commission', 'product_image', 'product_variant', 'product', 'supplier',
     'creator_channel', 'member_follow', 'shop_video',
+    // 투표 · 소통 (2026-11-17)
+    'vote_cast', 'vote_tally', 'vote_period_result', 'vote_round_candidate', 'vote_round',
+    'vote_ticket_ledger', 'vote_ticket_lot', 'vote_ticket_order', 'vote_ticket_product', 'offerwall_reward',
+    'talk_session_message', 'talk_session', 'talk_slot_rule', 'talk_report', 'talk_block', 'talk_read_state',
+    'talk_message', 'talk_subscription', 'talk_room', 'creator_engagement_policy',
   ];
   // 정산 원장은 append-only 트리거로 DELETE 가 막혀 있으므로 트리거를 잠시 끈다.
   await prisma.$executeRawUnsafe('ALTER TABLE settlement_ledger DISABLE TRIGGER settlement_ledger_append_only');

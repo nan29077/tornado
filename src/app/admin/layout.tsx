@@ -34,16 +34,17 @@ export const metadata: Metadata = {
 /** 대기 건수 조회가 실패해도 메뉴는 떠야 한다. 배지는 부가 정보이지 화면의 조건이 아니다. */
 async function loadPendingCounts() {
   try {
-    const [creators, settlements, inquiries, unverifiedAccounts, riskOpen] = await Promise.all([
+    const [creators, settlements, inquiries, unverifiedAccounts, riskOpen, talkReports] = await Promise.all([
       prisma.creatorProfile.count({ where: { status: 'PENDING' } }),
       prisma.settlementRequest.count({ where: { status: { in: ['REQUESTED', 'REVIEWING'] } } }),
       prisma.supportInquiry.count({ where: { status: 'OPEN' } }),
       prisma.settlementAccount.count({ where: { verified: false } }),
       prisma.riskDetection.count({ where: { resolved: false } }),
+      prisma.talkReport.count({ where: { status: 'OPEN' } }),
     ]);
-    return { creators, settlements, inquiries, unverifiedAccounts, riskOpen };
+    return { creators, settlements, inquiries, unverifiedAccounts, riskOpen, talkReports };
   } catch {
-    return { creators: 0, settlements: 0, inquiries: 0, unverifiedAccounts: 0, riskOpen: 0 };
+    return { creators: 0, settlements: 0, inquiries: 0, unverifiedAccounts: 0, riskOpen: 0, talkReports: 0 };
   }
 }
 
@@ -129,6 +130,29 @@ function buildGroups(c: Awaited<ReturnType<typeof loadPendingCounts>>): NavGroup
         { href: '/admin/shop/purchase-orders', label: '발주·배송', icon: 'truck' },
         { href: '/admin/shop/claims', label: '취소·반품', icon: 'refunds' },
         { href: '/admin/shop/settings', label: '공급처·수익률·설정', icon: 'shop' },
+      ],
+    },
+    {
+      // 2026-11-17 크리에이터 투표 · 투표권
+      title: '투표 관리',
+      items: [
+        { href: '/admin/vote', label: '투표 설정', icon: 'vote' },
+        { href: '/admin/vote/products', label: '투표권 상품', icon: 'ticket' },
+        { href: '/admin/vote/offerwall', label: '오퍼월 연동', icon: 'gift' },
+        { href: '/admin/vote/rounds', label: '왕중왕전 · 이벤트', icon: 'effects' },
+        { href: '/admin/vote/casts', label: '투표 내역 · 이상 투표', icon: 'risk' },
+        { href: '/admin/vote/tickets', label: '투표권 지급·회수', icon: 'payments' },
+      ],
+    },
+    {
+      // 2026-11-17 소통방(월 구독) · 1:1 예약 채팅
+      title: '소통 관리',
+      items: [
+        { href: '/admin/talk', label: '소통 설정 · 1:1 스위치', icon: 'talk' },
+        { href: '/admin/talk/creators', label: '크리에이터별 요율·권한', icon: 'policy' },
+        { href: '/admin/talk/subscriptions', label: '소통방 · 구독 현황', icon: 'users' },
+        { href: '/admin/talk/sessions', label: '1:1 예약 관리', icon: 'calendar' },
+        { href: '/admin/talk/reports', label: '신고 메시지', icon: 'flag', badge: c.talkReports, badgeTone: 'danger' },
       ],
     },
     {

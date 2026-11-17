@@ -128,3 +128,9 @@ svg.lucide:where(.text-danger-600, .text-success-600, .text-warning-600, .hover\
 
 /* 찜을 선택한 경우 하트 전체가 상태 색을 표시한다. */
 .lucide-donaido-heart.fill-current > path:last-child { fill: currentColor; }
+
+/* 투표 · 소통 (2026-11-17) — 하단 메뉴의 다른 아이콘처럼 꿀빛 면을 넣는다 */
+.lucide-trophy > path:nth-child(5) { fill: color-mix(in srgb, var(--donaido-icon-gold) 42%, transparent); }
+.lucide-trophy > path:nth-child(4) { stroke: var(--donaido-icon-detail); }
+.lucide-messages-square > path:first-child { fill: color-mix(in srgb, var(--donaido-icon-gold) 36%, transparent); }
+.lucide-ticket > path:first-child { fill: color-mix(in srgb, var(--donaido-icon-gold) 30%, transparent); }

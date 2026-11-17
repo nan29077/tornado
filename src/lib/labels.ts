@@ -152,6 +152,9 @@ export const ledgerEntryLabel: Record<LedgerEntryType, string> = {
   REFERRAL_COMMISSION: '샵 레퍼럴 수익',
   SALES_PROCEEDS: '샵 판매 대금',
   BROKER_FEE: '샵 중개 수수료',
+  VOTE_REVENUE_SHARE: '투표 수익 배분',
+  TALK_SUBSCRIPTION_PROCEEDS: '소통 구독 정산',
+  TALK_SESSION_PROCEEDS: '1:1 채팅 정산',
 };
 
 export const riskLevelLabel: Record<RiskLevel, { text: string; tone: Tone }> = {

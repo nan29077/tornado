@@ -11,6 +11,7 @@ import {
   Settings, Undo2, UserCog, CircleUserRound, UserRoundCog,
   UsersRound, Video, Volume2, WalletCards, X,
   Store, Package, ShoppingBag, Truck,
+  Trophy, MessagesSquare, Ticket, CalendarClock, Gift, Flag, UserCheck,
 } from '@/components/brand/icons';
 import { Logo } from '@/components/brand/logo';
 import { ConsoleCornerMascot, MascotAccent } from '@/components/brand/mascot-decorations';
@@ -52,7 +53,8 @@ export type ConsoleIconName =
   | 'moderation' | 'numbers' | 'overlay' | 'payments' | 'policies' | 'profile'
   | 'refunds' | 'reports' | 'risk' | 'settlement' | 'simulator'
   | 'system' | 'tax' | 'templates' | 'terms' | 'tts' | 'users' | 'youtube' | 'settings' | 'send'
-  | 'shop' | 'products' | 'orders' | 'truck';
+  | 'shop' | 'products' | 'orders' | 'truck'
+  | 'vote' | 'talk' | 'ticket' | 'calendar' | 'gift' | 'flag' | 'policy';
 
 const CONSOLE_ICONS = {
   activity: Activity,
@@ -95,6 +97,13 @@ const CONSOLE_ICONS = {
   products: ShoppingBag,
   orders: Package,
   truck: Truck,
+  vote: Trophy,
+  talk: MessagesSquare,
+  ticket: Ticket,
+  calendar: CalendarClock,
+  gift: Gift,
+  flag: Flag,
+  policy: UserCheck,
 } satisfies Record<ConsoleIconName, typeof Home>;
 
 export function ConsoleShell({

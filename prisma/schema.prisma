@@ -212,6 +212,12 @@ enum LedgerEntryType {
   SALES_PROCEEDS
   /// 도네이도 샵: 직접 판매 중개 수수료(-)
   BROKER_FEE
+  /// 투표: 유료 투표권 사용분 중 크리에이터 몫(+). 비율은 최고관리자 설정 (2026-11-17)
+  VOTE_REVENUE_SHARE
+  /// 소통 월 구독 정산액(+, 플랫폼 수수료 차감 후). 환불 시 반대분개(-)
+  TALK_SUBSCRIPTION_PROCEEDS
+  /// 1:1 예약 채팅 정산액(+, 플랫폼 수수료 차감 후). 완료 후 환불 시 반대분개(-)
+  TALK_SESSION_PROCEEDS
 
   @@map("ledger_entry_type")
 }
@@ -360,6 +366,16 @@ model User {
   wishes           ProductWish[]
   shopOrders       ShopOrder[]
   shopPayments     ShopPayment[]
+  // 투표 · 소통 (2026-11-17)
+  voteLots          VoteTicketLot[]
+  voteLedger        VoteTicketLedger[]
+  voteOrders        VoteTicketOrder[]
+  offerwallRewards  OfferwallReward[]
+  voteCasts         VoteCast[]
+  talkSubscriptions TalkSubscription[]
+  talkReadStates    TalkReadState[]
+  talkBlocks        TalkBlock[]
+  talkSessions      TalkSession[]
 
   @@index([role, status])
   @@index([signupCreatorId])
@@ -744,6 +760,18 @@ model CreatorProfile {
   commission         CreatorCommission?
   productCommissions CreatorProductCommission[]
   referralCommissions ReferralCommission[]
+  // 투표 · 소통 (2026-11-17)
+  engagementPolicy    CreatorEngagementPolicy?
+  voteRoundEntries    VoteRoundCandidate[]
+  voteCasts           VoteCast[]
+  voteTallies         VoteTally[]
+  voteResults         VotePeriodResult[]
+  talkRoom            TalkRoom?
+  talkSubscriptions   TalkSubscription[]
+  talkMessages        TalkMessage[]
+  talkBlocks          TalkBlock[]
+  talkSlotRules       TalkSlotRule[]
+  talkSessions        TalkSession[]
 
   @@index([status])
   // 세무관리 화면은 과세유형으로 걸러 본다(비사업자 = 원천징수 대상).
@@ -2280,9 +2308,11 @@ model ShopPayment {
   id          String    @id
   paymentNo   String    @unique @map("payment_no")
   userId      String    @map("user_id")
-  /// ORDER | VIDEO_DONATION
+  /// ORDER | VIDEO_DONATION | CARD_DONATION | VOTE_TICKET | TALK_SUBSCRIPTION | TALK_SESSION
   kind        String
   amount      BigInt
+  /// 결제 수단 CARD | TRANSFER (2026-11-17 투표권·소통 결제부터 기록. 이전 행은 null)
+  method      String?
   /// READY | PAID | FAILED | CANCELLED | PARTIAL_CANCELLED
   status      String    @default("READY")
   provider    String
@@ -2446,4 +2476,461 @@ model ReferralCommission {
 
   @@index([creatorId, status])
   @@map("referral_commission")
+}
+
+// ===========================================================================
+// 투표 · 투표권 · 소통 채팅(버블형 월 구독) · 1:1 예약 채팅 (2026-11-17)
+//
+// - 투표권은 "투표 전용"이다. 현금 환급·양도·상품 구매·후원에 쓸 수 없다.
+// - 투표권은 묶음(lot) 단위로 보관한다. 무료(FREE: 오퍼월·이벤트) / 유료(PAID: 결제) / 보너스(BONUS: 상품 덤·관리자 지급)
+//   환불은 "유료 묶음을 하나도 쓰지 않은" 결제만 가능하므로 묶음별 잔량이 필요하다.
+// - 모든 증감은 vote_ticket_ledger 에 한 줄씩 남는다(잔액은 묶음 잔량 합계).
+// - 비율(크리에이터 몫·플랫폼 수수료)과 가격은 전역 설정(system_setting) + 크리에이터별 지정(creator_engagement_policy).
+//   크리에이터별 지정이 항상 우선한다.
+// ===========================================================================
+
+/// 크리에이터별 정책 (최고관리자 지정). null 인 칸은 전역 설정을 따른다.
+model CreatorEngagementPolicy {
+  id               String   @id
+  creatorId        String   @unique @map("creator_id")
+  /// 유료 투표권 사용분 중 크리에이터 몫 비율 (0.1 = 10%)
+  voteShareRate    Decimal? @map("vote_share_rate") @db.Decimal(10, 6)
+  /// 소통(월 구독) 플랫폼 수수료율
+  talkSubFeeRate   Decimal? @map("talk_sub_fee_rate") @db.Decimal(10, 6)
+  /// 소통 구독 가격 방식. FIXED(관리자 고정) | CREATOR(크리에이터가 범위 안에서 정함)
+  talkSubPriceMode String?  @map("talk_sub_price_mode")
+  talkSubPrice     BigInt?  @map("talk_sub_price")
+  talkSubPriceMin  BigInt?  @map("talk_sub_price_min")
+  talkSubPriceMax  BigInt?  @map("talk_sub_price_max")
+  /// 1:1 채팅 플랫폼 수수료율
+  sessionFeeRate   Decimal? @map("session_fee_rate") @db.Decimal(10, 6)
+  /// 1:1 채팅 가격 방식. FIXED | CREATOR
+  sessionPriceMode String?  @map("session_price_mode")
+  sessionPrice     BigInt?  @map("session_price")
+  sessionPriceMin  BigInt?  @map("session_price_min")
+  sessionPriceMax  BigInt?  @map("session_price_max")
+  /// false 면 이 크리에이터만 1:1 채팅을 막는다 (null = 전역 설정 그대로)
+  sessionAllowed   Boolean? @map("session_allowed")
+  memo             String?
+  updatedBy        String?  @map("updated_by")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@map("creator_engagement_policy")
+}
+
+/// 투표권 묶음. 잔량(remaining)이 0 이 되거나 만료되면 쓸 수 없다.
+model VoteTicketLot {
+  id        String    @id
+  userId    String    @map("user_id")
+  /// FREE | PAID | BONUS
+  bucket    String
+  amount    Int
+  remaining Int
+  /// 유료 묶음의 결제 금액(원). 사용분의 금액 가치 = valueWon × 사용수 / amount
+  valueWon  BigInt    @default(0) @map("value_won")
+  /// OFFERWALL | PURCHASE | PURCHASE_BONUS | ADMIN | PROMO
+  source    String
+  refId     String?   @map("ref_id")
+  expiresAt DateTime? @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, bucket])
+  @@index([expiresAt])
+  @@map("vote_ticket_lot")
+}
+
+/// 투표권 증감 이력 (지급 + / 사용·만료·회수 -)
+model VoteTicketLedger {
+  id        String   @id
+  userId    String   @map("user_id")
+  bucket    String
+  delta     Int
+  /// OFFERWALL_EARN | OFFERWALL_REVOKE | PURCHASE | PURCHASE_BONUS | VOTE_SPEND | REFUND | EXPIRE | ADMIN_GRANT | ADMIN_REVOKE | PROMO
+  type      String
+  lotId     String?  @map("lot_id")
+  refType   String?  @map("ref_type")
+  refId     String?  @map("ref_id")
+  memo      String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+  @@map("vote_ticket_ledger")
+}
+
+/// 투표권 상품(팩)
+model VoteTicketProduct {
+  id        String   @id
+  name      String
+  price     BigInt
+  tickets   Int
+  bonus     Int      @default(0)
+  /// 표시용 배지 (BEST · 인기 등)
+  badge     String?
+  sortOrder Int      @default(0) @map("sort_order")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("vote_ticket_product")
+}
+
+/// 투표권 충전 결제
+model VoteTicketOrder {
+  id           String    @id
+  orderNo      String    @unique @map("order_no")
+  userId       String    @map("user_id")
+  productId    String?   @map("product_id")
+  productName  String    @map("product_name")
+  /// CARD | TRANSFER
+  method       String
+  price        BigInt
+  tickets      Int
+  bonus        Int       @default(0)
+  paymentId    String?   @unique @map("payment_id")
+  /// READY | PAID | FAILED | REFUNDED
+  status       String    @default("READY")
+  paidLotId    String?   @map("paid_lot_id")
+  bonusLotId   String?   @map("bonus_lot_id")
+  paidAt       DateTime? @map("paid_at") @db.Timestamptz(3)
+  refundedAt   DateTime? @map("refunded_at") @db.Timestamptz(3)
+  refundReason String?   @map("refund_reason")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("vote_ticket_order")
+}
+
+/// 오퍼월(광고 참여) 리워드. (provider, rewardKey) 유니크가 중복 지급을 막는 마지막 방어선이다.
+model OfferwallReward {
+  id            String    @id
+  /// mock | buzzvil | adpopcorn
+  provider      String
+  rewardKey     String    @map("reward_key")
+  userId        String    @map("user_id")
+  campaign      String?
+  points        Int
+  tickets       Int
+  /// GRANTED | REVOKED | REJECTED
+  status        String    @default("GRANTED")
+  reason        String?
+  lotId         String?   @map("lot_id")
+  payloadMasked Json?     @map("payload_masked")
+  ip            String?
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, rewardKey])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("offerwall_reward")
+}
+
+/// 투표 회차 (왕중왕전 · 이벤트 투표). 상시 랭킹(일·주·월)은 회차 없이 집계한다.
+model VoteRound {
+  id          String   @id
+  /// CHAMPION | EVENT
+  kind        String
+  title       String
+  description String?
+  startsAt    DateTime @map("starts_at") @db.Timestamptz(3)
+  endsAt      DateTime @map("ends_at") @db.Timestamptz(3)
+  /// DRAFT | OPEN | CLOSED
+  status      String   @default("DRAFT")
+  createdBy   String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  candidates VoteRoundCandidate[]
+
+  @@index([status, startsAt])
+  @@map("vote_round")
+}
+
+model VoteRoundCandidate {
+  id        String @id
+  roundId   String @map("round_id")
+  creatorId String @map("creator_id")
+  sortOrder Int    @default(0) @map("sort_order")
+
+  round   VoteRound      @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, creatorId])
+  @@map("vote_round_candidate")
+}
+
+/// 투표 1건
+model VoteCast {
+  id          String    @id
+  userId      String    @map("user_id")
+  creatorId   String    @map("creator_id")
+  roundId     String?   @map("round_id")
+  votes       Int
+  /// 소진한 투표권 수 = votes × 1표당 소진 투표권
+  tickets     Int
+  fromFree    Int       @default(0) @map("from_free")
+  fromPaid    Int       @default(0) @map("from_paid")
+  fromBonus   Int       @default(0) @map("from_bonus")
+  /// 유료분의 금액 가치(원)
+  paidValue   BigInt    @default(0) @map("paid_value")
+  shareRate   Decimal   @default(0) @map("share_rate") @db.Decimal(10, 6)
+  /// 크리에이터 몫(원). 0 보다 크면 정산 원장 VOTE_REVENUE_SHARE 로 적립된다
+  shareAmount BigInt    @default(0) @map("share_amount")
+  ipHash      String?   @map("ip_hash")
+  voidedAt    DateTime? @map("voided_at") @db.Timestamptz(3)
+  voidReason  String?   @map("void_reason")
+  voidedBy    String?   @map("voided_by")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([creatorId, createdAt])
+  @@index([userId, createdAt])
+  @@index([roundId])
+  @@index([createdAt])
+  @@map("vote_cast")
+}
+
+/// 기간별 집계. periodType = DAY(YYYY-MM-DD) | WEEK(YYYY-Www) | MONTH(YYYY-MM) | ALL(ALL) | ROUND(회차 ID)
+model VoteTally {
+  id         String   @id
+  periodType String   @map("period_type")
+  periodKey  String   @map("period_key")
+  creatorId  String   @map("creator_id")
+  votes      BigInt   @default(0)
+  /// 마지막으로 표를 받은 시각. 동점이면 먼저 그 표 수에 도달한 쪽이 위다
+  lastVoteAt DateTime @map("last_vote_at") @db.Timestamptz(3)
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@unique([periodType, periodKey, creatorId])
+  @@index([periodType, periodKey, votes])
+  @@map("vote_tally")
+}
+
+/// 마감된 기간의 확정 순위 (다시 바뀌지 않는다). 월간 1위 = 명예의 전당
+model VotePeriodResult {
+  id          String   @id
+  periodType  String   @map("period_type")
+  periodKey   String   @map("period_key")
+  creatorId   String   @map("creator_id")
+  rank        Int
+  votes       BigInt
+  finalizedAt DateTime @default(now()) @map("finalized_at") @db.Timestamptz(3)
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@unique([periodType, periodKey, creatorId])
+  @@index([periodType, periodKey, rank])
+  @@index([creatorId])
+  @@map("vote_period_result")
+}
+
+/// 크리에이터 소통방 (버블형). 크리에이터 메시지는 구독한 팬 모두에게 1:1 처럼 보이고, 팬 답장은 크리에이터에게만 보인다.
+model TalkRoom {
+  id                  String    @id
+  creatorId           String    @unique @map("creator_id")
+  open                Boolean   @default(false)
+  welcomeMessage      String?   @map("welcome_message")
+  /// 팬을 부르는 호칭 (메시지의 {닉네임} 뒤에 붙이기 등에 사용)
+  fanTitle            String?   @map("fan_title")
+  /// 크리에이터가 정한 월 구독 가격 (관리자가 CREATOR 방식을 허용했을 때만 쓴다)
+  subPrice            BigInt?   @map("sub_price")
+  /// 크리에이터가 1:1 채팅 신청을 받는가
+  sessionEnabled      Boolean   @default(false) @map("session_enabled")
+  /// 크리에이터가 정한 1:1 가격 (허용 시)
+  sessionPrice        BigInt?   @map("session_price")
+  /// 1회 1:1 채팅 시간(분)
+  sessionMinutes      Int       @default(20) @map("session_minutes")
+  /// 1:1 채팅을 받지 않는 날짜 (KST YYYY-MM-DD)
+  sessionBlockedDates String[]  @default([]) @map("session_blocked_dates")
+  creatorLastReadAt   DateTime? @map("creator_last_read_at") @db.Timestamptz(3)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@map("talk_room")
+}
+
+/// 소통 월 구독 (결제 1건 = 기간 1개). 이어서 결제하면 기존 만료일 뒤로 붙는다
+model TalkSubscription {
+  id           String    @id
+  userId       String    @map("user_id")
+  creatorId    String    @map("creator_id")
+  /// ACTIVE | REFUNDED
+  status       String    @default("ACTIVE")
+  startsAt     DateTime  @map("starts_at") @db.Timestamptz(3)
+  endsAt       DateTime  @map("ends_at") @db.Timestamptz(3)
+  price        BigInt
+  feeRate      Decimal   @default(0) @map("fee_rate") @db.Decimal(10, 6)
+  feeAmount    BigInt    @default(0) @map("fee_amount")
+  netAmount    BigInt    @default(0) @map("net_amount")
+  method       String
+  paymentId    String?   @unique @map("payment_id")
+  refundAmount BigInt    @default(0) @map("refund_amount")
+  refundedAt   DateTime? @map("refunded_at") @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([userId, creatorId, endsAt])
+  @@index([creatorId, endsAt])
+  @@map("talk_subscription")
+}
+
+/// 소통 메시지. BROADCAST(크리에이터 → 전체 구독자) | FAN_REPLY(팬 → 크리에이터) | DIRECT(크리에이터 → 팬 한 명)
+model TalkMessage {
+  id        String    @id
+  creatorId String    @map("creator_id")
+  kind      String
+  /// FAN_REPLY 의 작성 팬 / DIRECT 의 받는 팬
+  fanUserId String?   @map("fan_user_id")
+  body      String
+  imageUrl  String?   @map("image_url")
+  /// 크리에이터가 팬 답장에 하트를 눌렀는가
+  hearted   Boolean   @default(false)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  deletedBy String?   @map("deleted_by")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([creatorId, kind, createdAt])
+  @@index([creatorId, fanUserId, createdAt])
+  @@map("talk_message")
+}
+
+model TalkReadState {
+  id         String   @id
+  userId     String   @map("user_id")
+  creatorId  String   @map("creator_id")
+  lastReadAt DateTime @map("last_read_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, creatorId])
+  @@map("talk_read_state")
+}
+
+model TalkBlock {
+  id        String   @id
+  creatorId String   @map("creator_id")
+  userId    String   @map("user_id")
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([creatorId, userId])
+  @@map("talk_block")
+}
+
+/// 소통·1:1 메시지 신고. 관리자는 신고된 메시지만 열람한다
+model TalkReport {
+  id             String    @id
+  /// MESSAGE | SESSION_MESSAGE
+  target         String
+  messageId      String    @map("message_id")
+  creatorId      String    @map("creator_id")
+  reporterUserId String    @map("reporter_user_id")
+  /// FAN | CREATOR
+  reporterRole   String    @map("reporter_role")
+  reason         String
+  /// OPEN | RESOLVED | DISMISSED
+  status         String    @default("OPEN")
+  handledBy      String?   @map("handled_by")
+  handledAt      DateTime? @map("handled_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+  @@map("talk_report")
+}
+
+/// 1:1 채팅 가능 시간 (요일 반복). weekday 0=일 ~ 6=토, 분 단위(KST)
+model TalkSlotRule {
+  id          String   @id
+  creatorId   String   @map("creator_id")
+  weekday     Int
+  startMinute Int      @map("start_minute")
+  endMinute   Int      @map("end_minute")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([creatorId])
+  @@map("talk_slot_rule")
+}
+
+/// 1:1 예약 채팅.
+/// 상태: REQUESTED(결제 완료·승인 대기) → ACCEPTED(확정) → COMPLETED(종료·정산 적립)
+///       REJECTED / EXPIRED(승인 기한 초과) / CANCELLED / NO_SHOW(크리에이터 불참) 은 환불
+/// 같은 크리에이터·같은 시작 시각에 살아 있는 예약은 하나뿐이다(부분 유니크 인덱스, 마이그레이션 SQL)
+model TalkSession {
+  id               String    @id
+  sessionNo        String    @unique @map("session_no")
+  creatorId        String    @map("creator_id")
+  userId           String    @map("user_id")
+  startsAt         DateTime  @map("starts_at") @db.Timestamptz(3)
+  endsAt           DateTime  @map("ends_at") @db.Timestamptz(3)
+  minutes          Int
+  price            BigInt
+  feeRate          Decimal   @default(0) @map("fee_rate") @db.Decimal(10, 6)
+  feeAmount        BigInt    @default(0) @map("fee_amount")
+  netAmount        BigInt    @default(0) @map("net_amount")
+  status           String    @default("REQUESTED")
+  requestNote      String?   @map("request_note")
+  method           String
+  paymentId        String?   @unique @map("payment_id")
+  approvalDeadline DateTime  @map("approval_deadline") @db.Timestamptz(3)
+  decidedAt        DateTime? @map("decided_at") @db.Timestamptz(3)
+  cancelledBy      String?   @map("cancelled_by")
+  cancelReason     String?   @map("cancel_reason")
+  refundAmount     BigInt    @default(0) @map("refund_amount")
+  refundedAt       DateTime? @map("refunded_at") @db.Timestamptz(3)
+  completedAt      DateTime? @map("completed_at") @db.Timestamptz(3)
+  settledAt        DateTime? @map("settled_at") @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  creator  CreatorProfile       @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  user     User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages TalkSessionMessage[]
+
+  @@index([creatorId, startsAt])
+  @@index([userId, startsAt])
+  @@index([status, startsAt])
+  @@map("talk_session")
+}
+
+model TalkSessionMessage {
+  id         String   @id
+  sessionId  String   @map("session_id")
+  /// CREATOR | FAN | SYSTEM
+  senderType String   @map("sender_type")
+  body       String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  session TalkSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("talk_session_message")
 }

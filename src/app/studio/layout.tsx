@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { ConsoleShell, type NavGroup } from '@/components/layout/console-shell';
 import { getSessionUser, requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
+import { getTalkConfig } from '@/server/services/engagement/config';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-const groups: NavGroup[] = [
+const baseGroups: NavGroup[] = [
   {
     title: '현황',
     items: [
@@ -119,6 +120,18 @@ export default async function StudioLayout({ children }: { children: React.React
 
   const user = await requireCreator().catch(() => null);
   if (!user) redirect('/login?next=/studio');
+
+  // 팬 소통 메뉴 (2026-11-17). 1:1 채팅은 최고관리자가 켰을 때만 보인다.
+  const talk = await getTalkConfig().catch(() => null);
+  const fanGroup: NavGroup = {
+    title: '팬 소통',
+    items: [
+      { href: '/studio/vote', label: '투표·랭킹', icon: 'vote' },
+      ...(talk?.enabled !== false ? [{ href: '/studio/talk', label: '소통 관리', icon: 'talk' as const }] : []),
+      ...(talk?.enabled && talk.sessionEnabled ? [{ href: '/studio/talk/sessions', label: '1:1 채팅', icon: 'calendar' as const }] : []),
+    ],
+  };
+  const groups = [baseGroups[0], fanGroup, ...baseGroups.slice(1)];
 
   return (
     <ConsoleShell

@@ -1,12 +1,12 @@
 import Link from 'next/link';
-import { Clapperboard, HeartHandshake, ShoppingBag } from '@/components/brand/icons';
+import { Clapperboard, HeartHandshake, MessagesSquare, ShoppingBag } from '@/components/brand/icons';
 import { cx } from '@/components/ui';
 
-export type ShopTab = 'video' | 'shop' | 'donate';
+export type ShopTab = 'video' | 'shop' | 'donate' | 'talk';
 
 export function resolveShopTab(param: string | undefined, fallback: string | null | undefined): ShopTab {
   const v = (param ?? '').toLowerCase();
-  if (v === 'video' || v === 'shop' || v === 'donate') return v;
+  if (v === 'video' || v === 'shop' || v === 'donate' || v === 'talk') return v;
   const f = (fallback ?? '').toUpperCase();
   return f === 'SHOP' ? 'shop' : f === 'DONATE' ? 'donate' : 'video';
 }
@@ -27,16 +27,17 @@ export function resolveDonateMethod(param: string | undefined, hasSmsNumber: boo
   return hasSmsNumber ? 'sms' : 'transfer';
 }
 
-/** 도네이도 샵 탭: 영상 / 쇼핑 / 후원하기(문자 · 신용카드 · 간편계좌이체) */
-export function ShopTabs({ code, active, live }: { code: string; active: ShopTab; live: boolean }) {
+/** 도네이도 샵 탭: 영상 / 쇼핑 / 후원하기(문자 · 신용카드 · 간편계좌이체) / 소통(2026-11-17, 소통 기능이 켜져 있을 때) */
+export function ShopTabs({ code, active, live, talk = false }: { code: string; active: ShopTab; live: boolean; talk?: boolean }) {
   const tabs: Array<{ key: ShopTab; label: string; icon: React.ReactNode }> = [
     { key: 'video', label: live ? '영상 · LIVE' : '영상', icon: <Clapperboard size={16} strokeWidth={1.85} /> },
     { key: 'shop', label: '쇼핑', icon: <ShoppingBag size={16} strokeWidth={1.85} /> },
     { key: 'donate', label: '후원하기', icon: <HeartHandshake size={16} strokeWidth={1.85} /> },
+    ...(talk ? [{ key: 'talk' as const, label: '소통', icon: <MessagesSquare size={16} strokeWidth={1.85} /> }] : []),
   ];
   return (
     <nav aria-label="도네이도 샵 탭" className="sticky top-[64px] z-30 -mx-4 mt-5 bg-warm-50/95 px-4 py-2 backdrop-blur lg:static lg:mx-0 lg:px-0">
-      <div className="grid grid-cols-3 gap-1 rounded-2xl bg-white p-1 shadow-card">
+      <div className={cx('grid gap-1 rounded-2xl bg-white p-1 shadow-card', tabs.length >= 4 ? 'grid-cols-4' : 'grid-cols-3')}>
         {tabs.map((t) => (
           <Link
             key={t.key}
@@ -44,7 +45,7 @@ export function ShopTabs({ code, active, live }: { code: string; active: ShopTab
             scroll={false}
             aria-current={active === t.key ? 'page' : undefined}
             className={cx(
-              'flex h-11 items-center justify-center gap-1.5 rounded-xl text-[13.5px] font-extrabold transition-colors',
+              'flex h-11 min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl text-[12.5px] font-extrabold transition-colors min-[400px]:gap-1.5 sm:text-[13.5px]',
               active === t.key ? 'bg-ink-900 text-white' : 'text-ink-600 hover:bg-warm-100',
             )}
           >

@@ -4,6 +4,8 @@ import {
   CircleCheck,
   ChevronRight,
   Info,
+  MessagesSquare,
+  Trophy,
 } from '@/components/brand/icons';
 import { Badge, Card, EmptyState, LinkButton } from '@/components/ui';
 import { PageHeader } from '@/components/layout/console-shell';
@@ -252,6 +254,26 @@ export default async function StudioDashboardPage() {
             </span>
           </p>
         ) : null}
+
+        {/* 팬 소통 · 투표 안내 (2026-11-17) */}
+        <section className="grid gap-2.5 sm:grid-cols-2" aria-label="팬 소통 · 투표 안내">
+          <Link href="/studio/vote" className="flex items-center gap-3 rounded-2xl border border-brand-200 bg-[linear-gradient(135deg,#fff3cf,#ffffff)] px-4 py-3.5 transition-transform hover:-translate-y-0.5">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-brand-700 shadow-sm"><Trophy size={19} strokeWidth={1.8} /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13.5px] font-extrabold text-ink-900">투표 · 랭킹</span>
+              <span className="block text-[12px] text-ink-600">팬들이 투표권으로 나에게 투표해요. 실시간 · 주간 · 월간 순위와 나에게 투표한 팬을 확인하세요.</span>
+            </span>
+            <ChevronRight size={16} strokeWidth={1.8} className="shrink-0 text-ink-400" />
+          </Link>
+          <Link href="/studio/talk" className="flex items-center gap-3 rounded-2xl border border-ink-200 bg-white px-4 py-3.5 transition-transform hover:-translate-y-0.5">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-ink-900 text-white"><MessagesSquare size={19} strokeWidth={1.8} /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13.5px] font-extrabold text-ink-900">소통방 (월 구독)</span>
+              <span className="block text-[12px] text-ink-600">소통방을 열면 구독한 팬들과 함께 대화할 수 있어요. 구독료는 정산에 자동 적립돼요.</span>
+            </span>
+            <ChevronRight size={16} strokeWidth={1.8} className="shrink-0 text-ink-400" />
+          </Link>
+        </section>
 
         {/* 1) 핵심 수치 — 카드 8개 대신 한 판에 정리 */}
         <Card padded={false} className="overflow-hidden">

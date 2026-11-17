@@ -40,6 +40,9 @@ import { parseDonationPresets } from '@/server/services/shop/video-donation';
 import { isShopPaymentMock } from '@/server/adapters/shop-payment';
 import { formatViews, platformSlugOf, timeAgo, VIDEO_PLATFORMS } from '@/lib/video-hub';
 import { platformLabel } from '@/lib/creator-channels';
+import { ShopTalkTab } from '@/components/talk/shop-talk-tab';
+import { CreatorVoteStrip } from '@/components/vote/creator-vote-strip';
+import { getTalkConfig } from '@/server/services/engagement/config';
 
 export const dynamic = 'force-dynamic';
 
@@ -148,7 +151,10 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
   if (!creator) return <NotFoundView />;
 
   // 도네이도 샵 탭 (2026-11-17): 영상 / 쇼핑 / 문자 후원(기존 화면)
-  const tab = resolveShopTab(sp.tab, creator.shopDefaultTab);
+  // 소통 탭 (2026-11-17) — 소통 기능이 꺼져 있으면 탭을 숨기고 영상 탭으로
+  const talkOn = (await getTalkConfig().catch(() => null))?.enabled ?? false;
+  const requestedTab = resolveShopTab(sp.tab, creator.shopDefaultTab);
+  const tab = requestedTab === 'talk' && !talkOn ? resolveShopTab(undefined, creator.shopDefaultTab) : requestedTab;
   const shopViewer = await getSessionUser().catch(() => null);
   const [following, followers] = await Promise.all([isFollowing(shopViewer?.id, creator.id), followerCount(creator.id)]);
 
@@ -597,7 +603,16 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
         </>) : null}
       </div>
 
-      <ShopTabs code={creator.code} active={tab} live={onAir} />
+      <CreatorVoteStrip creatorId={creator.id} code={creator.code} name={creator.displayName} avatarUrl={creator.avatarUrl} avatarIndex={creator.user.avatarIndex} viewerId={shopViewer?.id ?? null} />
+
+      <ShopTabs code={creator.code} active={tab} live={onAir} talk={talkOn} />
+
+      {tab === 'talk' ? (
+        <ShopTalkTab
+          creator={{ id: creator.id, code: creator.code, displayName: creator.displayName, avatarUrl: creator.avatarUrl, avatarIndex: creator.user.avatarIndex }}
+          viewer={shopViewer ? { id: shopViewer.id, name: shopViewer.name } : null}
+        />
+      ) : null}
 
       {tab === 'video' ? (
         <ShopVideoTab

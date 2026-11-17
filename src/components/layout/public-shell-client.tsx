@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Bell, CircleHelp, CircleUserRound, HeartHandshake, House,
-  Clapperboard, Compass, LifeBuoy, LogIn, LogOut, Menu, UserPlus, X,
+  Clapperboard, Compass, LifeBuoy, MessagesSquare, Trophy, LogIn, LogOut, Menu, UserPlus, X,
 } from '@/components/brand/icons';
 import { Logo, TornadoMark } from '@/components/brand/logo';
 import { PublicMarginMascots } from '@/components/brand/mascot-decorations';
@@ -59,8 +59,12 @@ interface NavItem {
 function buildNav(myHref: string, videoHubEnabled: boolean): NavItem[] {
   return [
     { href: '/', label: '홈', icon: House },
-    ...(videoHubEnabled ? [{ href: '/videos', label: '방송국', icon: Clapperboard }] : []),
-    { href: '/how-it-works', label: '이용방법', icon: Compass },
+    // (2026-11-17) 모바일 하단 탭바: 홈 · 투표 · 소통 · 후원확인 · 마이페이지.
+    // 방송국(문의 버튼 위 떠 있는 버튼으로 이동 가능)과 이용방법은 하단에서 빼고 우측 메뉴·PC 레일에만 둔다.
+    { href: '/vote', label: '투표', icon: Trophy },
+    { href: '/talk', label: '소통', icon: MessagesSquare },
+    ...(videoHubEnabled ? [{ href: '/videos', label: '방송국', icon: Clapperboard, bottom: false }] : []),
+    { href: '/how-it-works', label: '이용방법', icon: Compass, bottom: false },
     { href: '#lookup', label: '후원확인', icon: HeartHandshake, sheet: true },
     // (2026-11-17) 모바일 하단 탭바에서는 뺀다. 우측 메뉴(드로어)·PC 레일에만 보인다.
     { href: '/faq', label: 'FAQ', icon: CircleHelp, bottom: false },
