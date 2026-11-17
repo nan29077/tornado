@@ -13,6 +13,7 @@ import { BannerStrip } from '@/components/public/banner-strip';
 import { Card, CardTitle, SectionTitle, LinkButton, Notice } from '@/components/ui';
 import { prisma } from '@/server/db';
 import { DONAIDO_PROMO_POSTER, DONAIDO_PROMO_VIDEO, homeBannerVideo } from '@/lib/home-banners';
+import { CREATOR_HOME_BANNER_IMAGES } from '@/lib/site-images';
 import { getHomeBannerEntries } from '@/server/services/home-banners';
 import { isVideoHubEnabled } from '@/server/services/video-hub';
 import { HomeVideoPaneLoader } from '@/components/video-hub/home-video-loaders';
@@ -185,10 +186,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <SectionTitle title="유튜브·OBS·PRISM 연동" description="결제가 완료된 후원만 방송에 노출됩니다." />
         <Card padded={false} className="overflow-hidden">
           <Image
-            src="/assets/tornado-hero-studio-v2.png"
+            src={CREATOR_HOME_BANNER_IMAGES.studio}
             alt="라이브 방송을 진행하는 크리에이터 스튜디오"
-            width={1536}
-            height={1024}
+            width={1440}
+            height={960}
             className="h-[230px] w-full object-cover object-center sm:h-[270px]"
           />
           <div className="space-y-2.5 p-5">
@@ -223,7 +224,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <section className="mt-8">
         <SectionTitle title="후원자 보호와 이용 한도" description="과도한 후원을 막기 위한 안전장치가 기본으로 적용됩니다." />
         <Card padded={false} className="overflow-hidden">
-          <Image src="/assets/tornado-hero-viewer-v2.png" alt="안전하게 문자 후원을 보내는 시청자" width={1536} height={1024} className="h-[210px] w-full object-cover object-center sm:h-[250px]" />
+          <Image src={CREATOR_HOME_BANNER_IMAGES.viewer} alt="안전하게 문자 후원을 보내는 시청자" width={1440} height={960} className="h-[210px] w-full object-cover object-center sm:h-[250px]" />
           <div className="grid grid-cols-2 gap-3 p-5 text-[13px]">
             <Guard label="문자 1건당" value="1,000~50,000원" note="크리에이터 설정" />
             <Guard label="후원자별 1일 최대" value="100,000원" note="한도 조정 가능" />

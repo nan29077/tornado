@@ -17,6 +17,10 @@ import { FanChannelCard, FanCreatorCard, FanLiveCard, compactKo } from '@/compon
 import { BrowseAll } from '@/components/home-fan/browse-all';
 import { ComingSoonSticker } from '@/components/home-fan/coming-soon-sticker';
 import { liveThumbnailUrl } from '@/lib/shop-video-embed';
+import { HOME_BANNER_DEFAULTS } from '@/lib/home-banners';
+import { CREATOR_HOME_BANNER_IMAGES, currentBannerImageUrl } from '@/lib/site-images';
+import { getHomeBannerEntries, homeBannerKey } from '@/server/services/home-banners';
+import { SITE_IMAGE_KEYS } from '@/server/services/site-images';
 
 /**
  * 메인 [크리에이터 전용] / [구독자 전용] 탭 (2026-11-17)
@@ -34,6 +38,34 @@ const FEED: VideoItem[] = [
 vi.mock('@/server/services/video-hub', async (orig) => {
   const real = await orig<typeof import('@/server/services/video-hub')>();
   return { ...real, getVideoFeed: vi.fn(async () => ({ items: FEED, curated: false, channelCount: 2, now: Date.now() })) };
+});
+
+describe('크리에이터 상단 배너 이미지', () => {
+  it('기본 슬라이드 4장은 새 이미지를 쓰고 다른 사이트의 배너 주소는 유지한다', () => {
+    expect(HOME_BANNER_DEFAULTS.creator.map((banner) => banner.image)).toEqual(Object.values(CREATOR_HOME_BANNER_IMAGES));
+    const legacy = '/assets/tornado-hero-studio-v2.png';
+    const site = 'https://donaido.example';
+    expect(currentBannerImageUrl(`${site}${legacy}?v=2`, site)).toBe(CREATOR_HOME_BANNER_IMAGES.studio);
+    expect(currentBannerImageUrl(`https://other.example${legacy}`, site)).toBe(`https://other.example${legacy}`);
+  });
+
+  it('저장된 예전 이미지는 새 주소로 표시하고 배너 문구와 사이트 프리셋을 유지한다', async () => {
+    await resetDb();
+    const legacy = '/assets/tornado-hero-viewer-v1.png';
+    await prisma.systemSetting.createMany({
+      data: [
+        { key: SITE_IMAGE_KEYS.banner, value: 'photo-studio' },
+        { key: homeBannerKey('creator', 2), value: { ...HOME_BANNER_DEFAULTS.creator[1], image: legacy, title: '운영자가 저장한 슬로건' } },
+      ],
+    });
+    const entries = await getHomeBannerEntries('creator');
+    expect(entries[0].banner.image).toBe('/site-images/banner/photo-studio.webp');
+    expect(entries[1]).toMatchObject({
+      customized: true,
+      imageInput: CREATOR_HOME_BANNER_IMAGES.viewer,
+      banner: { image: CREATOR_HOME_BANNER_IMAGES.viewer, title: '운영자가 저장한 슬로건', href: HOME_BANNER_DEFAULTS.creator[1].href },
+    });
+  });
 });
 
 describe('기본 탭 규칙', () => {

@@ -106,7 +106,7 @@ function SiteImageGallery({ kind, selected }: { kind: SiteImageKind; selected: s
                 </div>
               </div>
             ) : (
-              <div className="max-w-48">{option({ id: DEFAULT_SITE_IMAGE, name: '기존 기본 이미지' })}</div>
+              <div className="max-w-48">{option({ id: DEFAULT_SITE_IMAGE, name: '기본 배너' })}</div>
             )}
             {groups.map((group) => (
               <div key={group.title}>

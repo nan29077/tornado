@@ -1,6 +1,7 @@
 import { HOME_BANNER_DEFAULTS, homeBannerSchema } from '@/lib/home-banners';
 import type { HomeTab } from '@/lib/home-tab';
-import { siteImageUrl } from '@/lib/site-images';
+import { env } from '@/lib/env';
+import { currentBannerImageUrl, siteImageUrl } from '@/lib/site-images';
 import { prisma } from '@/server/db';
 import { getSiteImageSelection } from './site-images';
 
@@ -27,11 +28,12 @@ export async function getHomeBannerEntries(tab: HomeTab, allowDefaultsOnFailure 
     const override = homeBannerSchema.safeParse(byKey.get(key)).data;
     const defaultImage = (preset && slot === 1 && siteImageUrl('banner', preset)) || defaultBanner.image;
     const banner = override ?? defaultBanner;
+    const imageInput = currentBannerImageUrl(override?.image ?? '', env.baseUrl);
     return {
       slot,
       customized: byKey.has(key),
-      imageInput: override?.image ?? '',
-      banner: { ...banner, image: override?.image || defaultImage },
+      imageInput,
+      banner: { ...banner, image: imageInput || defaultImage, poster: currentBannerImageUrl(banner.poster, env.baseUrl) },
     };
   });
 }

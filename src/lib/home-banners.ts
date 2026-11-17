@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { HomeTab } from '@/lib/home-tab';
 import { parseVideoUrl } from '@/lib/shop-video-embed';
-import { DEFAULT_HOME_BANNER } from '@/lib/site-images';
+import { CREATOR_HOME_BANNER_IMAGES, DEFAULT_HOME_BANNER } from '@/lib/site-images';
 
 const isBannerUrl = (value: string) => {
   if (!value || /[\s\\"'<>]/u.test(value)) return false;
@@ -54,7 +54,7 @@ export const HOME_BANNER_DEFAULTS: Record<HomeTab, readonly HomeBanner[]> = {
       poster: '',
     },
     {
-      image: '/assets/tornado-hero-viewer-v2.png',
+      image: CREATOR_HOME_BANNER_IMAGES.viewer,
       eyebrow: 'SIMPLE SUPPORT',
       title: '보는 순간 바로\n응원을 전하세요',
       description: '복잡한 앱 설치 없이 안내된 번호로 문자를 보내고 안전하게 후원하세요.',
@@ -64,7 +64,7 @@ export const HOME_BANNER_DEFAULTS: Record<HomeTab, readonly HomeBanner[]> = {
       poster: '',
     },
     {
-      image: '/assets/tornado-hero-studio-v2.png',
+      image: CREATOR_HOME_BANNER_IMAGES.studio,
       eyebrow: 'FOR CREATORS',
       title: '후원의 순간을\n더 특별한 장면으로',
       description: '유튜브·OBS·PRISM·TTS를 연결해 크리에이터만의 후원 경험을 만드세요.',
@@ -74,7 +74,7 @@ export const HOME_BANNER_DEFAULTS: Record<HomeTab, readonly HomeBanner[]> = {
       poster: '',
     },
     {
-      image: '/assets/tornado-hero-mascot-v1.png',
+      image: CREATOR_HOME_BANNER_IMAGES.mascot,
       eyebrow: 'MEET DONAIDO',
       title: '도네이도와 함께\n응원이 주인공이 됩니다',
       description: '마음을 담은 문자 한 통이 도네이도 캐릭터와 방송 효과로 살아납니다.',

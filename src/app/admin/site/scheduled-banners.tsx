@@ -5,6 +5,8 @@ import { saveBanner, deleteBanner } from '@/app/actions/admin/content';
 import { prisma } from '@/server/db';
 import { formatNumber } from '@/lib/money';
 import { formatKst, kstDateKey } from '@/lib/datetime';
+import { env } from '@/lib/env';
+import { currentBannerImageUrl } from '@/lib/site-images';
 
 // FAN_TOP · FAN_MIDDLE: 메인 [구독자 전용] 탭 상단·중간 (2026-11-17)
 const POSITIONS = ['HOME_TOP', 'HOME_MIDDLE', 'FAN_TOP', 'FAN_MIDDLE', 'SUPPORT_TOP', 'CONSOLE_TOP'];
@@ -141,7 +143,7 @@ export async function ScheduledBanners() {
                         <AdminInput name="sortOrder" inputMode="numeric" defaultValue={String(b.sortOrder)} required />
                       </AdminField>
                       <AdminField label="이미지 주소">
-                        <AdminInput name="imageUrl" defaultValue={b.imageUrl ?? ''} />
+                        <AdminInput name="imageUrl" defaultValue={currentBannerImageUrl(b.imageUrl ?? '', env.baseUrl)} />
                       </AdminField>
                       <AdminField label="연결 주소">
                         <AdminInput name="linkUrl" defaultValue={b.linkUrl ?? ''} />

@@ -1,7 +1,32 @@
 export const DEFAULT_SITE_IMAGE = 'default';
 export const CLASSIC_MARGIN_IMAGE = 'classic';
 export const CLASSIC_PUBLIC_MARGIN_URL = '/assets/donaido-mascot-world-bg-v1.png';
-export const DEFAULT_HOME_BANNER = '/assets/tornado-hero-creator-v2.png';
+export const CREATOR_HOME_BANNER_IMAGES = {
+  broadcast: '/banners/donaido-creator-broadcast-v3.webp',
+  viewer: '/banners/donaido-creator-viewer-v3.webp',
+  studio: '/banners/donaido-creator-studio-v3.webp',
+  mascot: '/banners/donaido-creator-mascot-v3.webp',
+} as const;
+export const DEFAULT_HOME_BANNER = CREATOR_HOME_BANNER_IMAGES.broadcast;
+
+const legacyBannerImages = new Map<string, string>([
+  ['/assets/tornado-hero-creator-v1.png', CREATOR_HOME_BANNER_IMAGES.broadcast],
+  ['/assets/tornado-hero-creator-v2.png', CREATOR_HOME_BANNER_IMAGES.broadcast],
+  ['/assets/tornado-hero-viewer-v1.png', CREATOR_HOME_BANNER_IMAGES.viewer],
+  ['/assets/tornado-hero-viewer-v2.png', CREATOR_HOME_BANNER_IMAGES.viewer],
+  ['/assets/tornado-hero-studio-v1.png', CREATOR_HOME_BANNER_IMAGES.studio],
+  ['/assets/tornado-hero-studio-v2.png', CREATOR_HOME_BANNER_IMAGES.studio],
+  ['/assets/tornado-hero-mascot-v1.png', CREATOR_HOME_BANNER_IMAGES.mascot],
+]);
+
+/** 운영자가 저장한 예전 기본 배너 주소로도 최신 이미지를 보여 준다. */
+export function currentBannerImageUrl(url: string, siteUrl?: string): string {
+  if (url.startsWith('/')) return legacyBannerImages.get(url.split(/[?#]/, 1)[0]) ?? url;
+  if (!siteUrl) return url;
+  const absolute = URL.parse(url);
+  if (!absolute || absolute.origin !== URL.parse(siteUrl)?.origin) return url;
+  return legacyBannerImages.get(absolute.pathname) ?? url;
+}
 
 export const SITE_IMAGE_PRESETS = {
   margin: [

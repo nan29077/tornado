@@ -65,7 +65,7 @@ export default async function AdminBannersPage({ searchParams }: { searchParams:
                 />
               ) : null}
             </div>
-            <div className="relative mb-4 aspect-[3/1] overflow-hidden rounded-xl bg-ink-900">
+            <div className={cx('relative mb-4 overflow-hidden rounded-xl bg-ink-900', tab === 'creator' ? 'aspect-video' : 'aspect-[3/1]')}>
               <Image src={banner.image} alt="" fill unoptimized loading={slot === 1 ? 'eager' : 'lazy'} sizes="500px" className="object-cover object-right" />
             </div>
 

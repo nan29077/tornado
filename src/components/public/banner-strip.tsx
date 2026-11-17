@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { Megaphone, ArrowRight } from '@/components/brand/icons';
+import { env } from '@/lib/env';
+import { currentBannerImageUrl } from '@/lib/site-images';
 import { prisma } from '@/server/db';
 
 /**
@@ -34,7 +36,7 @@ export async function BannerStrip({ position, className }: { position: string; c
     <div className={className}>
       <div className="space-y-2">
         {banners.map((b) => {
-          const imageUrl = safeImageUrl(b.imageUrl);
+          const imageUrl = b.imageUrl ? safeImageUrl(currentBannerImageUrl(b.imageUrl, env.baseUrl)) : null;
           const inner = imageUrl ? (
             <div
               className="relative flex min-h-[76px] items-end overflow-hidden rounded-2xl bg-ink-900 bg-cover bg-center"
