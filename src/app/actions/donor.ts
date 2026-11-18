@@ -11,6 +11,7 @@ import { requestRefund } from '@/server/services/refund';
 import { resolvePolicy } from '@/server/services/limits';
 import { validateDonorName } from '@/server/services/donor-name';
 import { newId } from '@/lib/id';
+import { cleanupMemberOnWithdraw, getWithdrawSummary } from '@/server/services/member-withdraw';
 
 /**
  * 후원자 마이페이지 서버 액션.
@@ -344,6 +345,17 @@ export async function withdrawAccount(_prev: DonorActionState, formData: FormDat
     return { ok: false, message: '확인 문구를 정확히 입력해 주세요. (탈퇴합니다)' };
   }
 
+  // [6차 P1-3] 끝나지 않은 주문·예약이 있으면 막고, 사라지는 유료 이용권은 동의를 받는다
+  const summary = await getWithdrawSummary(user.id);
+  if (summary.blockers.length > 0) return { ok: false, message: summary.blockers.join(' ') };
+  if ((summary.paidTickets > 0 || summary.activeSubs > 0) && formData.get('forfeit') !== 'on') {
+    const parts = [
+      summary.paidTickets > 0 ? `유료 투표권 ${summary.paidTickets.toLocaleString('ko-KR')}장` : '',
+      summary.activeSubs > 0 ? `이용 중인 소통 구독 ${summary.activeSubs}건` : '',
+    ].filter(Boolean);
+    return { ok: false, message: `${parts.join(', ')}이(가) 남아 있습니다. 탈퇴하면 환불 없이 사라집니다. 아래 동의에 체크한 뒤 다시 진행해 주세요.` };
+  }
+
   const donor = await prisma.donorProfile.findUnique({
     where: { userId: user.id },
     select: { id: true },
@@ -369,7 +381,8 @@ export async function withdrawAccount(_prev: DonorActionState, formData: FormDat
   }
 
   try {
-    await prisma.$transaction([
+    await prisma.$transaction(async (tx) => {
+      await cleanupMemberOnWithdraw(tx, user.id);
       /**
        * 후원자 프로필은 남기고 계정 연결만 끊는다 (거래 이력 보존).
        *
@@ -381,7 +394,7 @@ export async function withdrawAccount(_prev: DonorActionState, formData: FormDat
        * **이전 사람 후원 건의 환불 요청 권한까지** 그대로 상속했다.
        * (`unlinkPhone` 은 처음부터 이 값을 남기고 있었다 — 탈퇴 경로만 빠져 있었다)
        */
-      prisma.donorProfile.updateMany({
+      await tx.donorProfile.updateMany({
         where: { userId: user.id },
         data: {
           userId: null,
@@ -389,8 +402,8 @@ export async function withdrawAccount(_prev: DonorActionState, formData: FormDat
           unlinkedAt: new Date(),
           onboardingStatus: 'WITHDRAWN',
         },
-      }),
-      prisma.user.update({
+      });
+      await tx.user.update({
         where: { id: user.id },
         data: {
           status: 'WITHDRAWN',
@@ -403,16 +416,16 @@ export async function withdrawAccount(_prev: DonorActionState, formData: FormDat
           phoneMasked: null,
           deletedAt: new Date(),
         },
-      }),
-      prisma.userSession.deleteMany({ where: { userId: user.id } }),
+      });
+      await tx.userSession.deleteMany({ where: { userId: user.id } });
       /**
        * [SEC-C2] 소셜 연결도 끊는다.
        * 예전에는 social_identity 가 남아 같은 카카오·네이버 계정으로 다시 가입할 수 없었고
        * (공급자 고유 ID 가 탈퇴 계정에 묶여 "로그인할 수 없는 계정" 오류), 탈퇴자의 공급자 ID 를
        * 이유 없이 계속 보관했다. 이메일·비밀번호와 마찬가지로 로그인 수단이므로 함께 지운다.
        */
-      prisma.socialIdentity.deleteMany({ where: { userId: user.id } }),
-    ]);
+      await tx.socialIdentity.deleteMany({ where: { userId: user.id } });
+    });
   } catch {
     return { ok: false, message: '탈퇴 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.' };
   }

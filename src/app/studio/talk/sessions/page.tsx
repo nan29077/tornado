@@ -8,7 +8,7 @@ import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { getCreatorEngagement, getTalkConfig } from '@/server/services/engagement/config';
 import { getOrCreateRoom } from '@/server/services/talk/talk';
-import { SESSION_STATUS_LABEL, formatKstShort, formatRule, sweepSessions } from '@/server/services/talk/sessions';
+import { SESSION_STATUS_LABEL, formatKstShort, formatRule, onlyPaidSessions, sweepSessions } from '@/server/services/talk/sessions';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +26,7 @@ export default async function StudioSessionsPage() {
   }
   await sweepSessions(new Date(), { creatorId }).catch(() => undefined);
   const now = new Date();
-  const [room, eng, rules, requests, upcoming, past] = await Promise.all([
+  const [room, eng, rules, requestsAll, upcoming, past] = await Promise.all([
     getOrCreateRoom(creatorId),
     getCreatorEngagement(creatorId, prisma, { talk }),
     prisma.talkSlotRule.findMany({ where: { creatorId, active: true }, orderBy: [{ weekday: 'asc' }, { startMinute: 'asc' }] }),
@@ -34,6 +34,8 @@ export default async function StudioSessionsPage() {
     prisma.talkSession.findMany({ where: { creatorId, status: 'ACCEPTED' }, orderBy: { startsAt: 'asc' }, include: { user: { select: { name: true } } } }),
     prisma.talkSession.findMany({ where: { creatorId, status: { notIn: ['REQUESTED', 'ACCEPTED'] } }, orderBy: { startsAt: 'desc' }, take: 30, include: { user: { select: { name: true } } } }),
   ]);
+  // 결제가 끝난 신청만 보여 준다 (결제 진행 중·실패 건은 수락할 수 없다)
+  const requests = await onlyPaidSessions(requestsAll);
 
   return (
     <div>

@@ -116,25 +116,43 @@ export async function approveRefund(refundId: string, adminUserId?: string) {
  * 한 트랜잭션으로. 취소가 실패하면 FAILED 로 확정하고 후원 상태를 되돌린다(다시 요청할 수 있게).
  * 한도 집계는 샵 결제 상태(CANCELLED)로 자동 제외되므로 따로 되돌리지 않는다.
  */
-async function approveShopDonationRefund(refund: RefundWithDonation, adminUserId?: string) {
+async function approveShopDonationRefund(refund: RefundWithDonation, adminUserId?: string, from: 'REQUESTED' | 'PENDING_RECOVERY' = 'REQUESTED') {
   const payment = await prisma.shopPayment.findFirst({ where: { donationId: refund.donationId, status: { in: ['PAID', 'PARTIAL_CANCELLED'] } } });
   if (!payment) throw new Error('이 샵 후원의 결제 기록을 찾을 수 없습니다. (결제 관리에서 확인해 주세요)');
-  const claimed = await prisma.refund.updateMany({ where: { id: refund.id, status: 'REQUESTED' }, data: { status: 'APPROVED' } });
+  const claimed = await prisma.refund.updateMany({ where: { id: refund.id, status: from }, data: { status: 'APPROVED' } });
   if (claimed.count === 0) throw new Error('이미 다른 처리가 진행 중인 환불입니다. 잠시 후 상태를 다시 확인해 주세요.');
 
-  const cancel = await getShopPaymentAdapter()
-    .cancel({ paymentNo: payment.paymentNo, providerTx: payment.providerTx, amount: refund.amount, reason: refund.reason ?? '고객 요청' })
-    .catch((e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message : '취소 오류' }));
-  if (!cancel.ok) {
-    await prisma.refund.update({ where: { id: refund.id }, data: { status: 'FAILED', resultCode: 'SHOP_CANCEL_FAILED', resultMessage: cancel.reason.slice(0, 500) } });
-    await restoreDonationStatusAfterRefundFailure(refund.donationId, refund.id);
-    throw new Error(`결제 취소에 실패했습니다: ${cancel.reason}`);
+  /**
+   * [6차 P2-5] 결제사 취소 결과를 세 가지로 나눈다.
+   *  - 성공: 아래에서 환불을 확정한다.
+   *  - 명확한 거절(ok:false): FAILED 로 확정하고 후원 상태를 되돌린다.
+   *  - 예외(타임아웃·네트워크): 취소가 됐는지 알 수 없으므로 FAILED 로 단정하지 않고 PENDING_RECOVERY 로 둔다.
+   * 이미 취소까지 끝났는데 DB 반영만 실패했던 건(SHOP_CANCEL_DONE)은 결제사를 다시 부르지 않고 반영만 한다.
+   */
+  const alreadyCancelled = from === 'PENDING_RECOVERY' && refund.resultCode === 'SHOP_CANCEL_DONE';
+  if (!alreadyCancelled) {
+    let cancel: { ok: true } | { ok: false; reason: string };
+    try {
+      cancel = await getShopPaymentAdapter().cancel({ paymentNo: payment.paymentNo, providerTx: payment.providerTx, amount: refund.amount, reason: refund.reason ?? '고객 요청' });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : '취소 오류';
+      await prisma.refund.update({ where: { id: refund.id }, data: { status: 'PENDING_RECOVERY', resultCode: 'SHOP_CANCEL_UNKNOWN', resultMessage: message.slice(0, 500) } });
+      throw new Error('결제사 응답을 받지 못해 취소 여부를 확인하지 못했습니다. 잠시 후 [재시도]로 다시 진행해 주세요.');
+    }
+    if (!cancel.ok) {
+      await prisma.refund.update({ where: { id: refund.id }, data: { status: 'FAILED', resultCode: 'SHOP_CANCEL_FAILED', resultMessage: cancel.reason.slice(0, 500) } });
+      await restoreDonationStatusAfterRefundFailure(refund.donationId, refund.id);
+      throw new Error(`결제 취소에 실패했습니다: ${cancel.reason}`);
+    }
   }
 
-  const fees = await calculateFees(refund.donation.creatorId, refund.amount);
   const now = new Date();
+  try {
+  const fees = await calculateFees(refund.donation.creatorId, refund.amount);
   await prisma.$transaction(async (tx) => {
-    await tx.refund.update({ where: { id: refund.id }, data: { status: 'DONE', approvedBy: adminUserId ?? null, processedAt: now, providerTid: payment.providerTx } });
+    // 조건부 확정 — 같은 환불이 두 번 반영되어 원장에 반대분개가 두 번 쌓이지 않게 한다
+    const done = await tx.refund.updateMany({ where: { id: refund.id, status: 'APPROVED' }, data: { status: 'DONE', approvedBy: adminUserId ?? null, processedAt: now, providerTid: payment.providerTx, resultCode: null, resultMessage: null } });
+    if (done.count === 0) throw new Error('이미 처리된 환불입니다.');
     const cancelled = payment.cancelledAmount + refund.amount;
     await tx.shopPayment.update({ where: { id: payment.id }, data: { cancelledAmount: cancelled, status: cancelled >= payment.amount ? 'CANCELLED' : 'PARTIAL_CANCELLED' } });
     await tx.donation.update({ where: { id: refund.donationId }, data: { status: 'REFUNDED', refundedAt: now } });
@@ -143,6 +161,14 @@ async function approveShopDonationRefund(refund: RefundWithDonation, adminUserId
     });
     await postRefundSettlement({ creatorId: refund.donation.creatorId, donationId: refund.donationId, refundId: refund.id, amount: refund.amount, fees, occurredAt: now }, tx);
   });
+  } catch (e) {
+    // 결제사 취소는 끝났는데 우리 쪽 반영이 실패했다. APPROVED 에 고착되지 않게 재시도 대기로 옮긴다.
+    await prisma.refund
+      .updateMany({ where: { id: refund.id, status: 'APPROVED' }, data: { status: 'PENDING_RECOVERY', resultCode: 'SHOP_CANCEL_DONE', resultMessage: `결제 취소 완료, 반영 실패: ${e instanceof Error ? e.message : '오류'}`.slice(0, 500) } })
+      .catch(() => undefined);
+    logger.error('샵 후원 환불 — 결제 취소 후 반영 실패', { refundId: refund.id, message: e instanceof Error ? e.message : String(e) });
+    throw new Error('결제는 취소됐지만 환불 반영 중 오류가 났습니다. [재시도]를 누르면 반영만 다시 진행합니다.');
+  }
 
   await notifyUser({
     userId: refund.donation.creator.userId,
@@ -352,6 +378,9 @@ export async function retryRefundRecovery(refundId: string, adminUserId?: string
   if (refund.status !== 'PENDING_RECOVERY') {
     throw new Error('재시도 대기 상태의 환불만 다시 시도할 수 있습니다.');
   }
+
+  // [6차 P2-5] 샵 영상·카드 후원은 샵 결제로 다시 진행한다 (결제 거래가 없어 예전에는 재시도가 불가능했다)
+  if (refund.donation.channel === 'SHOP') return approveShopDonationRefund(refund, adminUserId, 'PENDING_RECOVERY');
 
   const txn = refund.donation.transactions.find((t) => t.status === 'APPROVED');
   if (!txn) throw new Error('연결된 결제 거래를 찾을 수 없습니다.');

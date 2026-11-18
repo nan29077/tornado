@@ -9,7 +9,7 @@ import { SettlementAmountField } from '@/components/studio/settlement-amount-fie
 import { requestSettlementAction, saveSettlementAccountAction } from '@/app/actions/studio';
 import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
-import { getSettlementSummary, resolveFeePolicy, calculateWithholding, computeFees } from '@/server/services/settlement';
+import { getSettlementSummary, resolveFeePolicy, calculateWithholding, computeFees, NON_DONATION_HOLD_TYPES } from '@/server/services/settlement';
 import { formatWon, formatNumber } from '@/lib/money';
 import { env } from '@/lib/env';
 import { formatKst, kstDateKey, kstMonthKey, kstMonthRange } from '@/lib/datetime';
@@ -236,6 +236,32 @@ export default async function StudioSettlementPage({
   const withholds = taxInfo.withholding;
   const zeroWithholding = { total: 0n, incomeTax: 0n, localTax: 0n, exempt: false };
   const previewWithholding = withholds ? calculateWithholding(summary.available) : zeroWithholding;
+  /**
+   * [6차 P2-2] 후원 외 수익(소통 구독·1:1 채팅·투표·샵)을 따로 보여 준다.
+   * 위 캘린더와 "후원 합계"는 문자·카드 후원만 세므로, 이 수익이 잔액에 섞여 있어도 어디서 왔는지 알 수 없었다.
+   */
+  const [otherMonth, otherAll] = await Promise.all([
+    prisma.settlementLedger.groupBy({
+      by: ['entryType'],
+      where: { creatorId, donationId: null, entryType: { in: NON_DONATION_HOLD_TYPES }, occurredAt: { gte: range.start, lt: range.end } },
+      _sum: { amount: true },
+    }),
+    prisma.settlementLedger.groupBy({
+      by: ['entryType'],
+      where: { creatorId, donationId: null, entryType: { in: NON_DONATION_HOLD_TYPES } },
+      _sum: { amount: true },
+    }),
+  ]);
+  const otherSum = (rows: typeof otherMonth, types: string[]) =>
+    rows.filter((r) => types.includes(r.entryType)).reduce((acc, r) => acc + (r._sum.amount ?? 0n), 0n);
+  const OTHER_GROUPS = [
+    { label: '소통 구독', types: ['TALK_SUBSCRIPTION_PROCEEDS'] },
+    { label: '1:1 채팅', types: ['TALK_SESSION_PROCEEDS'] },
+    { label: '투표 수익', types: ['VOTE_REVENUE_SHARE'] },
+    { label: '샵 판매·레퍼럴', types: ['SALES_PROCEEDS', 'BROKER_FEE', 'REFERRAL_COMMISSION'] },
+  ].map((g) => ({ label: g.label, month: otherSum(otherMonth, g.types), total: otherSum(otherAll, g.types) }));
+  const hasOtherRevenue = OTHER_GROUPS.some((g) => g.total !== 0n || g.month !== 0n);
+
   const isCurrentMonth = range.key === kstMonthKey();
 
   /** 정산 요청 확인 문구에 쓸 계좌 표기. 끝 4자리만 남긴다. */
@@ -334,6 +360,27 @@ export default async function StudioSettlementPage({
                 </p>
               ) : null}
             </section>
+
+            {hasOtherRevenue ? (
+              <section>
+                <Card>
+                  <CardTitle>후원 외 수익</CardTitle>
+                  <p className="mt-1 text-[12px] leading-relaxed text-ink-500">
+                    소통 구독·1:1 채팅·투표·샵에서 생긴 수익입니다. 수수료를 뺀 금액이며 확정 잔액과 정산 예정에 이미 포함돼 있습니다.
+                    아래 캘린더와 후원 합계에는 문자·카드 후원만 표시됩니다.
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+                    {OTHER_GROUPS.map((g) => (
+                      <div key={g.label} className="rounded-xl border border-ink-100 bg-warm-50/60 px-3.5 py-3">
+                        <p className="text-[11.5px] font-bold text-ink-500">{g.label}</p>
+                        <p className="mt-1 text-[15px] font-extrabold tabular-nums text-ink-900">{formatWon(g.month)}</p>
+                        <p className="mt-0.5 text-[11px] text-ink-400">{range.month}월 · 누적 {formatWon(g.total)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              </section>
+            ) : null}
 
             <section>
               <Card>

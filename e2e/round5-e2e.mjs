@@ -17,7 +17,7 @@ const MENUS = [
   ['후원 내역', '/studio/donations', '후원 내역'],
   ['문자 관리', '/studio/messages', null],
   ['유튜브 채널 연결', '/studio/youtube', '유튜브 채널 연결'],
-  ['방송·오버레이', '/studio/overlay', '방송·오버레이'],
+  ['후원 오버레이', '/studio/overlay', '후원·게임 오버레이'],
   ['후원 설정', '/studio/settings', '후원 설정'],
   ['금칙어·차단', '/studio/moderation', '금칙어 · 차단'],
   ['신고', '/studio/reports', null],

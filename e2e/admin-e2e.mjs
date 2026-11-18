@@ -25,17 +25,17 @@ const TITLES = Object.fromEntries([
   ['/admin/donors', '후원자 관리'],
   ['/admin/creators', '크리에이터 심사'],
   ['/admin/codes', '크리에이터 코드 관리'],
-  ['/admin/mo-numbers', 'MO 번호 재고·배정'],
-  ['/admin/mo-messages', '수신 문자 관리'],
-  ['/admin/mt-templates', 'MT 메시지 관리'],
-  ['/admin/mt-messages', 'MT 발송 관리'],
+  ['/admin/mo-numbers', 'MO 번호 관리'],
+  ['/admin/mo-messages', '수신 문자 (MO)'],
+  ['/admin/mt-templates', '문자 템플릿'],
+  ['/admin/mt-messages', '발송 문자 (MT)'],
   ['/admin/payments', '결제 관리'],
   ['/admin/refunds', '환불 관리'],
   ['/admin/risk', '한도·이상거래'],
   ['/admin/youtube', '유튜브 연동 관리'],
   ['/admin/streams', '방송·스트림 관리'],
-  ['/admin/tts', 'TTS 연동'],
-  ['/admin/overlay', '오버레이·TTS 관리'],
+  ['/admin/tts', 'TTS·음성 연동'],
+  ['/admin/overlay', '오버레이 현황'],
   ['/admin/settlements', '정산 관리'],
   ['/admin/holidays', '공휴일 관리'],
   ['/admin/fees', '수수료 정책'],
@@ -51,7 +51,8 @@ const TITLES = Object.fromEntries([
 ]);
 
 // 사이드바 그룹 제목. 메뉴 재편이 잦아 목록 자체보다 "그룹이 제대로 서 있는가"를 본다.
-const MENU_GROUPS = ['운영현황', '회원·크리에이터', '거래·결제', '방송·오버레이', '정산·수수료', '콘텐츠·운영', '시스템·보안'];
+// 2026-09 메뉴 개편 + 2026-11 샵·투표·소통 추가 후의 그룹 이름 (src/app/admin/layout.tsx)
+const MENU_GROUPS = ['운영 현황', '회원 관리', '문자·번호', '결제·거래', '정산·세무', '방송·오버레이', '도네이도 샵', '투표 관리', '소통 관리', '콘텐츠·고객지원', '시스템·보안'];
 
 const POLICY_FIELDS = [
   'defaultAmount', 'minAmount', 'maxAmount',

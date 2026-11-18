@@ -34,6 +34,8 @@ export function ProductFormFields({ v, isAdmin, suppliers = [] }: { v: ProductFo
   return (
     <div className="space-y-4">
       {v.id ? <input type="hidden" name="id" value={v.id} /> : null}
+      {v.id ? <input type="hidden" name="variantsBase" value={v.variantsText ?? ''} /> : null}
+      {v.id ? <input type="hidden" name="stockBase" value={v.stock ?? ''} /> : null}
       <label className={label}>
         상품명 *
         <input name="name" required maxLength={100} defaultValue={v.name ?? ''} className={`mt-1 ${input}`} />
@@ -65,10 +67,10 @@ export function ProductFormFields({ v, isAdmin, suppliers = [] }: { v: ProductFo
         한 줄 소개
         <input name="summary" maxLength={200} defaultValue={v.summary ?? ''} className={`mt-1 ${input}`} />
       </label>
-      <ImageUploadField name="thumbnailUrl" label="대표 이미지" defaultValue={v.thumbnailUrl ?? ''} aspect="square" hint="정사각형 권장. JPG/PNG/WEBP 5MB 이하" />
+      <ImageUploadField uploadOnly={!isAdmin} name="thumbnailUrl" label="대표 이미지" defaultValue={v.thumbnailUrl ?? ''} aspect="square" hint="정사각형 권장. JPG/PNG/WEBP 5MB 이하" />
       <div className="grid grid-cols-2 gap-3">
         {extra.map((url, i) => (
-          <ImageUploadField key={i} name="images" label={`추가 이미지 ${i + 1}`} defaultValue={url} aspect="square" />
+          <ImageUploadField uploadOnly={!isAdmin} key={i} name="images" label={`추가 이미지 ${i + 1}`} defaultValue={url} aspect="square" />
         ))}
       </div>
       <div className="grid gap-3 sm:grid-cols-3">

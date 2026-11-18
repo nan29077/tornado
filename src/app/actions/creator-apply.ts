@@ -230,7 +230,7 @@ export async function applyCreator(_prev: CreatorApplyState, formData: FormData)
         select: { id: true, code: true, displayName: true },
       });
       // 채널 목록 저장 + 대표 채널을 기존 단일 채널 컬럼에도 반영 (기존 화면 호환)
-      const primary = await replaceCreatorChannels(tx, profile.id, channels);
+      const { cols: primary } = await replaceCreatorChannels(tx, profile.id, channels);
       await tx.creatorProfile.update({ where: { id: profile.id }, data: primary });
 
       await tx.creatorCode.create({
@@ -313,7 +313,7 @@ export async function resubmitCreatorApplication(_prev: ResubmitState, formData:
     await prisma.$transaction(async (tx) => {
       const taken = await findTakenChannel(tx, channels, profile.id);
       if (taken) throw new ChannelTakenError(taken);
-      const primary = await replaceCreatorChannels(tx, profile.id, channels);
+      const { cols: primary } = await replaceCreatorChannels(tx, profile.id, channels);
       // 상태가 그 사이 바뀌었으면(예: 관리자가 방금 승인) 덮어쓰지 않는다
       const moved = await tx.creatorProfile.updateMany({
         where: { id: profile.id, status: profile.status },

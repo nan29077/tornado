@@ -8,7 +8,7 @@
  */
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
-import { getShopPaymentAdapter } from '@/server/adapters/shop-payment';
+import { getShopPaymentAdapter, shopPaymentClosedMessage } from '@/server/adapters/shop-payment';
 import { getVoteConfig } from '@/server/services/engagement/config';
 import { cancelShopPayment } from '@/server/services/shop/payment-cancel';
 import { grantTickets, revokeLot } from './wallet';
@@ -43,6 +43,8 @@ export interface PurchaseResult {
 }
 
 export async function purchaseTickets(user: { id: string; name: string | null }, productId: string, method: PayMethod): Promise<PurchaseResult> {
+  const closed = shopPaymentClosedMessage();
+  if (closed) return { ok: false, message: closed };
   const cfg = await getVoteConfig();
   if (!cfg.enabled || !cfg.purchaseEnabled) return { ok: false, message: '지금은 투표권을 판매하지 않습니다.' };
   const product = await prisma.voteTicketProduct.findFirst({ where: { id: productId, active: true } });

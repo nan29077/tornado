@@ -12,7 +12,7 @@
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
 import { logger } from '@/lib/logger';
-import { getShopPaymentAdapter } from '@/server/adapters/shop-payment';
+import { getShopPaymentAdapter, shopPaymentClosedMessage } from '@/server/adapters/shop-payment';
 import { appendLedger } from '@/server/services/settlement';
 import { notifySuperAdmins, notifyUser } from '@/server/services/notifications';
 import { applyRate, getShopConfig } from './config';
@@ -133,6 +133,8 @@ export async function placeOrder(
   user: { id: string; name: string | null },
   input: { cartItemIds: string[]; address: AddressInput; memo?: string | null },
 ): Promise<PlaceOrderResult> {
+  const closed = shopPaymentClosedMessage();
+  if (closed) return { ok: false, message: closed };
   if (input.cartItemIds.length === 0) return { ok: false, message: '주문할 상품을 선택해 주세요.' };
   const addrErr = validateAddress(input.address);
   if (addrErr) return { ok: false, message: addrErr };

@@ -17,6 +17,8 @@ import { issueMoNumberForCreator, reclaimMoNumberForCreator } from '@/server/ser
 import { issueTemporaryPassword } from '@/server/services/password-reset';
 import { hasDirectTriggerWrittenApproval } from '@/server/services/financial-approval';
 import { resolvePolicy } from '@/server/services/limits';
+import { verifyCreatorChannels } from '@/server/services/creator-application';
+import { CONTENT_CATEGORY_SLUGS, categoryLabel } from '@/lib/video-hub';
 import { createAdminInvite, revokeAdminInvite, ADMIN_INVITE_PERMISSIONS } from '@/server/services/admin-invite';
 import { run, text, optText, money, optMoney, enumValue, requiredId, assertOperationAdmin, assertFinanceAdmin } from './shared';
 
@@ -384,6 +386,8 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
     let ownerRole: string | null = null;
     if (status === 'APPROVED') {
       await prisma.user.updateMany({ where: { id: before.userId, role: 'DONOR' }, data: { role: 'CREATOR' } });
+      // [6차 P1-4] 승인 = 신청서의 채널을 확인한 것 → 확인 대기 채널을 모두 확인 처리한다
+      await prisma.$transaction((tx) => verifyCreatorChannels(tx, creatorId)).catch((e) => logger.warn('채널 확인 처리 실패', { creatorId, message: (e as Error).message }));
     } else {
       ownerRole = (await prisma.user.findUnique({ where: { id: before.userId }, select: { role: true } }))?.role ?? null;
     }
@@ -494,6 +498,47 @@ export async function updateCreatorStatus(_prev: AdminActionState, fd: FormData)
  * 보완요청 (2026-11-17).
  * 심사 상태는 PENDING 그대로 두고 사유만 남긴다. 신청자는 마이페이지에서 고쳐 다시 제출한다.
  */
+/** [6차 P1-4] 스튜디오에서 새로 넣은 채널을 확인(본인 채널 맞음) 처리하거나, 확인 대기 채널을 지운다 */
+export async function reviewCreatorChannelAction(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
+  return run(async (admin) => {
+    assertOperationAdmin(admin, '채널 확인');
+    const creatorId = requiredId(fd, 'creatorId', '크리에이터');
+    const channelId = requiredId(fd, 'channelId', '채널');
+    const decision = text(fd, 'decision');
+    const ch = await prisma.creatorChannel.findFirst({ where: { id: channelId, creatorId }, select: { id: true, url: true, verifiedAt: true, creator: { select: { userId: true } } } });
+    if (!ch) throw new Error('채널을 찾을 수 없습니다.');
+    if (decision === 'remove') {
+      if (ch.verifiedAt) throw new Error('확인된 채널은 여기서 지울 수 없습니다.');
+      await prisma.creatorChannel.delete({ where: { id: ch.id } });
+      await notifyUser({ userId: ch.creator.userId, title: '등록한 채널이 반려되었습니다', body: `${ch.url} — 본인 채널로 확인되지 않아 등록되지 않았습니다. 문의는 고객센터로 부탁드립니다.`, linkUrl: '/studio/shop' }).catch(() => undefined);
+    } else {
+      await prisma.$transaction((tx) => verifyCreatorChannels(tx, creatorId, ch.id));
+      await notifyUser({ userId: ch.creator.userId, title: '채널 확인이 완료되었습니다', body: `${ch.url} — 이제 샵 영상과 채널 링크에 반영됩니다.`, linkUrl: '/studio/shop' }).catch(() => undefined);
+    }
+    await writeAudit({ adminUserId: admin.id, action: decision === 'remove' ? 'CREATOR_CHANNEL_REJECT' : 'CREATOR_CHANNEL_VERIFY', targetType: 'CreatorChannel', targetId: ch.id, after: { url: ch.url } });
+    revalidatePath(`/admin/creators/${creatorId}`);
+    return decision === 'remove' ? '확인 대기 채널을 지웠습니다.' : '채널을 확인 처리했습니다. 샵에 반영됩니다.';
+  });
+}
+
+/** [6차 P1-2] 활동 카테고리를 관리자가 바로 바꾼다 (크리에이터의 30일 제한과 무관) */
+export async function updateCreatorCategoryAction(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
+  return run(async (admin) => {
+    assertOperationAdmin(admin, '활동 카테고리 변경');
+    const creatorId = requiredId(fd, 'creatorId', '크리에이터');
+    const raw = text(fd, 'contentCategory');
+    const next = raw === '' ? null : raw;
+    if (next && !(CONTENT_CATEGORY_SLUGS as string[]).includes(next)) throw new Error('활동 카테고리를 다시 골라 주세요.');
+    const before = await prisma.creatorProfile.findUnique({ where: { id: creatorId }, select: { contentCategory: true } });
+    if (!before) throw new Error('크리에이터를 찾을 수 없습니다.');
+    await prisma.creatorProfile.update({ where: { id: creatorId }, data: { contentCategory: next } });
+    await writeAudit({ adminUserId: admin.id, action: 'CREATOR_CATEGORY_UPDATE', targetType: 'CreatorProfile', targetId: creatorId, before: { contentCategory: before.contentCategory }, after: { contentCategory: next } });
+    revalidatePath(`/admin/creators/${creatorId}`);
+    revalidatePath('/vote');
+    return next ? `활동 카테고리를 '${categoryLabel(next)}'(으)로 바꿨습니다.` : '활동 카테고리를 비웠습니다.';
+  });
+}
+
 export async function requestCreatorRevision(_prev: AdminActionState, fd: FormData): Promise<AdminActionState> {
   return run(async (admin) => {
     assertOperationAdmin(admin, '크리에이터 보완요청');

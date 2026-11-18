@@ -4,7 +4,8 @@ import { ProfileAvatar } from '@/components/profile/generated-avatar';
 import { formatKst } from '@/lib/datetime';
 import { personalize } from '@/lib/contact-mask';
 import { prisma } from '@/server/db';
-import { isShopPaymentMock } from '@/server/adapters/shop-payment';
+import { isShopPaymentMock, isShopPaymentOff } from '@/server/adapters/shop-payment';
+import { PaymentPreparing } from '@/components/shop/payment-preparing';
 import { getCreatorEngagement, getTalkConfig } from '@/server/services/engagement/config';
 import { fanDisplayName, getSubscriptionStatus } from '@/server/services/talk/talk';
 import { sessionAvailability } from '@/server/services/talk/sessions';
@@ -74,15 +75,19 @@ export async function ShopTalkTab({ creator, viewer }: { creator: { id: string; 
                 소통방 들어가기
               </Link>
               <p className="mt-2 text-center text-[12px] text-ink-500">이용 기간 {status.endsAt ? `${formatKst(status.endsAt, false).slice(0, 10)} 까지` : ''}</p>
+{isShopPaymentOff() ? null : (
               <details className="mt-3 rounded-xl bg-warm-50 px-3 py-2">
                 <summary className="cursor-pointer text-[12.5px] font-bold text-ink-600">이용 기간 연장하기</summary>
                 <div className="mt-3"><SubscribeForm creatorId={creator.id} code={creator.code} price={eng.talkSub.price} periodDays={talk.subPeriodDays} mock={isShopPaymentMock()} renew /></div>
               </details>
+              )}
             </>
           ) : isOwner ? (
             <p className="text-center text-[13px] text-ink-500">내 소통방입니다. 메시지는 스튜디오 &gt; 소통 관리에서 보내요.</p>
           ) : !viewer ? (
             <Link href={loginHref} className="flex h-12 items-center justify-center rounded-2xl bg-ink-900 text-[15px] font-black text-white">로그인하고 소통 시작하기</Link>
+          ) : isShopPaymentOff() ? (
+            <PaymentPreparing title="소통 구독은 준비 중이에요" />
           ) : (
             <>
               <div className="mb-3 flex items-baseline justify-between">

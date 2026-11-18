@@ -65,7 +65,7 @@ export async function getShopVideos(creatorId: string, opts: { includeHidden?: b
       where: { id: creatorId },
       select: {
         youtubeConnection: { select: { channelId: true, status: true } },
-        channels: { where: { platform: 'YOUTUBE', showOnShop: true }, select: { externalId: true } },
+        channels: { where: { platform: 'YOUTUBE', showOnShop: true, verifiedAt: { not: null } }, select: { externalId: true } },
       },
     }),
     prisma.shopVideo.findMany({ where: { creatorId }, orderBy: [{ pinned: 'desc' }, { sortOrder: 'asc' }, { createdAt: 'desc' }] }),

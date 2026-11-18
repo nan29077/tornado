@@ -17,15 +17,18 @@ export function ImageUploadField({
   label,
   hint,
   aspect = 'wide',
+  uploadOnly = false,
 }: {
   name: string;
   defaultValue?: string;
   label: string;
   hint?: string;
   aspect?: 'wide' | 'square';
+  /** 외부 주소 입력을 받지 않고 파일 올리기만 허용한다 (다른 회원에게 그대로 보이는 이미지) */
+  uploadOnly?: boolean;
 }) {
   const [value, setValue] = React.useState(defaultValue);
-  const [mode, setMode] = React.useState<'upload' | 'url'>('url');
+  const [mode, setMode] = React.useState<'upload' | 'url'>(uploadOnly ? 'upload' : 'url');
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
@@ -54,7 +57,7 @@ export function ImageUploadField({
     <div>
       <p className="mb-1.5 text-[13px] font-bold text-ink-900">{label}</p>
 
-      <div className="mb-2 inline-flex overflow-hidden rounded-lg border border-ink-200 text-[12px] font-bold">
+      <div className={cx('mb-2 overflow-hidden rounded-lg border border-ink-200 text-[12px] font-bold', uploadOnly ? 'hidden' : 'inline-flex')}>
         <button
           type="button"
           onClick={() => setMode('upload')}

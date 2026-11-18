@@ -18,6 +18,7 @@ export function CardDonateForm({
   maxAmount,
   defaultNickname,
   paymentMock,
+  limitNote,
 }: {
   creatorId: string;
   creatorName: string;
@@ -26,6 +27,8 @@ export function CardDonateForm({
   maxAmount: string;
   defaultNickname: string;
   paymentMock: boolean;
+  /** 후원 한도 안내 (하루·크리에이터별) */
+  limitNote?: string;
 }) {
   const [amount, setAmount] = React.useState(presets[1] ?? presets[0] ?? minAmount);
   return (
@@ -63,6 +66,7 @@ export function CardDonateForm({
             />
             <p className="text-[11.5px] text-ink-400">
               {Number(minAmount).toLocaleString('ko-KR')}원 ~ {Number(maxAmount).toLocaleString('ko-KR')}원
+              {limitNote ? <span className="block">{limitNote}</span> : null}
             </p>
             <div className="grid grid-cols-[1fr_auto] gap-2">
               <input name="nickname" maxLength={20} defaultValue={defaultNickname} placeholder="방송에 표시할 이름" className="h-11 rounded-xl border border-warm-300 bg-white px-3 text-[14px]" aria-label="닉네임" />

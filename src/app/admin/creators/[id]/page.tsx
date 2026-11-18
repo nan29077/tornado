@@ -5,7 +5,7 @@ import {
   Badge, Card, CardTitle, DataRow, EmptyState, Notice, SectionTitle, StatTile, Table, Td, Th,
 } from '@/components/ui';
 import { ActionButton, ActionForm, SelectActionForm } from '@/components/admin/action-form';
-import { requestCreatorRevision, updateCreatorStatus, updateCreatorPaymentMode, reissueCreatorCode, updateCreatorAmountBounds, setSettlementAccountVerified } from '@/app/actions/admin/accounts';
+import { requestCreatorRevision, reviewCreatorChannelAction, updateCreatorCategoryAction, updateCreatorStatus, updateCreatorPaymentMode, reissueCreatorCode, updateCreatorAmountBounds, setSettlementAccountVerified } from '@/app/actions/admin/accounts';
 import { reissueCreatorMoNumberAction } from '@/app/actions/admin/transactions';
 import { formatMoNumber } from '@/server/emma';
 import { prisma } from '@/server/db';
@@ -24,7 +24,7 @@ import { bankLabel, shortId } from '@/components/admin/mask';
 import { hasDirectTriggerWrittenApproval } from '@/server/services/financial-approval';
 import { requireAdminPage } from '@/server/admin-guard';
 import { formatFollowerCount, platformCountLabel, platformLabel } from '@/lib/creator-channels';
-import { categoryLabel } from '@/lib/video-hub';
+import { categoryLabel, VIDEO_CATEGORIES } from '@/lib/video-hub';
 
 /** 소수 요율(0.018)을 사람이 읽는 퍼센트(1.8%)로 바꾼다. */
 function percentText(rate: unknown): string {
@@ -51,7 +51,7 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
       donationAmount: true, minAmount: true, maxAmount: true, paymentMode: true, businessNo: true,
       approvedAt: true, suspendedAt: true, createdAt: true,
       appliedVia: true, contentCategory: true, submittedAt: true, reviewNote: true, reviewRequestedAt: true,
-      channels: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }], select: { id: true, platform: true, url: true, title: true, followerCount: true, isPrimary: true } },
+      channels: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }], select: { id: true, platform: true, url: true, title: true, followerCount: true, isPrimary: true, verifiedAt: true } },
       user: { select: { email: true, name: true, phoneMasked: true, status: true, role: true } },
       codes: { orderBy: { issuedAt: 'desc' }, take: 10, select: { id: true, code: true, active: true, issuedAt: true, revokedAt: true } },
       moRoutes: {
@@ -139,7 +139,24 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
                 value={creator.appliedVia === 'CONVERT' ? '일반회원 전환 신청' : creator.appliedVia === 'SIGNUP' ? '신규 크리에이터 가입' : '기존 신청'}
               />
               <DataRow label="계정 역할" value={creator.user.role === 'CREATOR' ? '크리에이터' : creator.user.role === 'DONOR' ? '일반회원 (승인 시 크리에이터로 전환)' : creator.user.role} />
-              <DataRow label="활동 카테고리" value={creator.contentCategory ? categoryLabel(creator.contentCategory) : '-'} />
+              <DataRow
+                label="활동 카테고리"
+                value={
+                  <span className="flex flex-col items-end gap-1">
+                    <span>{creator.contentCategory ? categoryLabel(creator.contentCategory) : '정하지 않음'}</span>
+                    {/* 카테고리별 투표 랭킹에 쓰인다. 크리에이터는 30일에 한 번, 관리자는 바로 바꾼다 */}
+                    <ActionForm action={updateCreatorCategoryAction} submitLabel="변경" compact>
+                      <input type="hidden" name="creatorId" value={creator.id} />
+                      <AdminSelect name="contentCategory" defaultValue={creator.contentCategory ?? ''} aria-label="활동 카테고리">
+                        <option value="">정하지 않음</option>
+                        {VIDEO_CATEGORIES.filter((c) => c.slug !== 'all' && c.slug !== 'donaido').map((c) => (
+                          <option key={c.slug} value={c.slug}>{c.label}</option>
+                        ))}
+                      </AdminSelect>
+                    </ActionForm>
+                  </span>
+                }
+              />
               <DataRow label="최근 제출" value={formatKst(creator.submittedAt)} />
               <DataRow label="담당자" value={`${creator.user.name ?? '-'} / ${creator.user.email ?? '-'}`} />
               <DataRow label="연락처" value={creator.user.phoneMasked ?? '-'} />
@@ -193,6 +210,7 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
                         <li key={c.id} className="text-[12.5px]">
                           <span className="font-bold">{platformLabel(c.platform)}</span>
                           {c.isPrimary ? <Badge tone="brand" className="ml-1">대표</Badge> : null}
+                          {c.verifiedAt ? null : <Badge tone="warning" className="ml-1">확인 대기</Badge>}
                           {' · '}
                           {platformCountLabel(c.platform)} {formatFollowerCount(c.followerCount)}
                           <br />
@@ -201,6 +219,21 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
                             {c.url}
                             <ExternalLink size={12} strokeWidth={1.8} className="shrink-0" />
                           </a>
+                          {/* 승인된 크리에이터가 스튜디오에서 새로 넣은 채널: 본인 채널인지 확인 후 반영 */}
+                          {!c.verifiedAt && creator.status === 'APPROVED' ? (
+                            <span className="mt-1 flex flex-wrap gap-1.5">
+                              <ActionForm action={reviewCreatorChannelAction} submitLabel="본인 채널 확인" compact>
+                                <input type="hidden" name="creatorId" value={creator.id} />
+                                <input type="hidden" name="channelId" value={c.id} />
+                                <input type="hidden" name="decision" value="verify" />
+                              </ActionForm>
+                              <ActionForm action={reviewCreatorChannelAction} submitLabel="반려(삭제)" variant="secondary" compact confirm="이 채널 등록을 지울까요? 크리에이터에게 알림이 갑니다.">
+                                <input type="hidden" name="creatorId" value={creator.id} />
+                                <input type="hidden" name="channelId" value={c.id} />
+                                <input type="hidden" name="decision" value="remove" />
+                              </ActionForm>
+                            </span>
+                          ) : null}
                         </li>
                       ))}
                     </ul>

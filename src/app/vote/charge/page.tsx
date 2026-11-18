@@ -9,7 +9,8 @@ import { getVoteConfig } from '@/server/services/engagement/config';
 import { getBalance } from '@/server/services/vote/wallet';
 import { listTicketProducts } from '@/server/services/vote/purchase';
 import { MOCK_MISSIONS, OFFERWALL_PROVIDERS, completedMockMissionsToday, getOfferwallSettings, mockOfferwallAllowed } from '@/server/services/vote/offerwall';
-import { isShopPaymentMock } from '@/server/adapters/shop-payment';
+import { isShopPaymentMock, isShopPaymentOff } from '@/server/adapters/shop-payment';
+import { PaymentPreparing } from '@/components/shop/payment-preparing';
 import { ensureDemoData } from '@/server/services/demo-data';
 
 export const dynamic = 'force-dynamic';
@@ -116,7 +117,9 @@ export default async function VoteChargePage({ searchParams }: { searchParams: P
 
       {cfg.enabled && tab === 'buy' ? (
         <section>
-          {products.length === 0 ? (
+          {isShopPaymentOff() ? (
+            <PaymentPreparing title="투표권 구매는 준비 중이에요" note="결제가 열리기 전까지는 무료 충전으로 투표권을 받을 수 있어요." />
+          ) : products.length === 0 ? (
             <p className="rounded-2xl bg-white p-6 text-center text-[13.5px] font-bold text-ink-500 shadow-card">판매 중인 투표권 상품이 없어요.</p>
           ) : (
             <TicketShop

@@ -701,6 +701,8 @@ model CreatorProfile {
   appliedVia          String?       @map("applied_via")
   /// 활동 카테고리 (영상 허브 카테고리 slug)
   contentCategory     String?       @map("content_category")
+  /// 활동 카테고리를 마지막으로 바꾼 시각 (스튜디오 변경 간격 제한, 2026-11-18)
+  contentCategoryChangedAt DateTime? @map("content_category_changed_at") @db.Timestamptz(3)
   /// 최근 신청(또는 보완 후 재제출) 시각
   submittedAt         DateTime?     @map("submitted_at") @db.Timestamptz(3)
   /// 최고관리자 보완요청 사유. 값이 있으면 "보완요청" 상태로 보인다(심사 상태는 PENDING 유지)
@@ -2054,6 +2056,8 @@ model CreatorChannel {
   showOnShop    Boolean   @default(true) @map("show_on_shop")
   /// 유튜브 채널 ID(UC…). 자동 영상 수집에 쓴다
   externalId    String?   @map("external_id")
+  /// 최고관리자가 확인한 시각. 비어 있으면 확인 대기 — 샵 영상 자동 수집·공개 링크에 쓰지 않는다 (2026-11-18)
+  verifiedAt    DateTime? @map("verified_at") @db.Timestamptz(3)
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 

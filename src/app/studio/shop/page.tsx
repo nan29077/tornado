@@ -103,6 +103,13 @@ export default async function StudioShopPage() {
         <section>
           <SectionTitle title="운영 채널" description="유튜브 채널 주소(채널 ID 형식 /channel/UC…)를 넣으면 새 영상이 영상 탭에 자동으로 올라옵니다." />
           <Card>
+            {creator.channels.some((c) => !c.verifiedAt) ? (
+              <div className="mb-3">
+                <Notice tone="warning" title="확인 대기 중인 채널이 있습니다">
+                  {creator.channels.filter((c) => !c.verifiedAt).map((c) => c.title || c.url).join(', ')} — 운영팀이 본인 채널인지 확인한 뒤 샵 영상·채널 링크에 반영됩니다.
+                </Notice>
+              </div>
+            ) : null}
             <ActionForm action={saveShopChannelsAction} submitLabel="채널 저장">
               <ChannelRowsEditor initial={channelRows} initialPrimary={primaryIndex} />
             </ActionForm>

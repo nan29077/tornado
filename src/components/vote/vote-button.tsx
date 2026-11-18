@@ -29,6 +29,11 @@ export interface VoteButtonProps {
   size?: 'xs' | 'sm' | 'md' | 'lg';
   label?: string;
   className?: string;
+  /**
+   * 좁은 카드 안에서는 글자를 접고 동그란 아이콘 버튼으로 줄인다 (이름을 가리지 않게).
+   * 가장 가까운 @container 폭이 13.5rem 미만일 때 적용된다.
+   */
+  collapseNarrow?: boolean;
   /** 처음부터 창을 열어 둔다 (/vote?vote=코드) */
   autoOpen?: boolean;
 }
@@ -43,7 +48,7 @@ const SIZE: Record<NonNullable<VoteButtonProps['size']>, string> = {
 };
 
 export function VoteButton(props: VoteButtonProps) {
-  const { creator, size = 'sm', label = '투표', className } = props;
+  const { creator, size = 'sm', label = '투표', className, collapseNarrow = false } = props;
   const [open, setOpen] = React.useState(false);
   // /vote?vote=코드 로 들어오면 창을 바로 연다 (서버 렌더와 어긋나지 않도록 화면이 뜬 뒤에 연다)
   React.useEffect(() => {
@@ -59,12 +64,13 @@ export function VoteButton(props: VoteButtonProps) {
         className={cx(
           'inline-flex shrink-0 items-center justify-center gap-1 bg-ink-900 font-extrabold text-white shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-ink-800 focus-visible:outline-2 focus-visible:outline-brand-500',
           SIZE[size],
+          collapseNarrow ? 'w-8 !px-0 @[13.5rem]:w-auto @[13.5rem]:!px-3' : '',
           className,
         )}
         aria-label={`${creator.name} 에게 투표하기`}
       >
         <Heart size={size === 'xs' ? 12 : 14} strokeWidth={2} aria-hidden />
-        {label}
+        <span className={collapseNarrow ? 'hidden @[13.5rem]:inline' : undefined}>{label}</span>
       </button>
       {/* 하단 메뉴·고정 헤더 위로 뜨도록 body 에 바로 붙인다 */}
       {open ? createPortal(<VoteSheet {...props} onClose={() => setOpen(false)} />, document.body) : null}

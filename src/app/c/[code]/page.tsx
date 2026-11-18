@@ -37,7 +37,8 @@ import { followerCount, isFollowing } from '@/server/services/shop/follow';
 import { getShopVideos } from '@/server/services/shop/videos';
 import { listShopProducts } from '@/server/services/shop/catalog';
 import { parseDonationPresets } from '@/server/services/shop/video-donation';
-import { isShopPaymentMock } from '@/server/adapters/shop-payment';
+import { isShopPaymentMock, isShopPaymentOff } from '@/server/adapters/shop-payment';
+import { PaymentPreparing } from '@/components/shop/payment-preparing';
 import { formatViews, platformSlugOf, timeAgo, VIDEO_PLATFORMS } from '@/lib/video-hub';
 import { platformLabel } from '@/lib/creator-channels';
 import { ShopTalkTab } from '@/components/talk/shop-talk-tab';
@@ -209,7 +210,7 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
    * SNS 링크(방송중 표시 포함) + 등록 채널(치지직 · 숲 · 트위치 · 기타 등)을 합쳐 보여 준다. 모두 새 창.
    */
   const channelRows = await prisma.creatorChannel
-    .findMany({ where: { creatorId: creator.id }, orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }], select: { platform: true, url: true }, take: 12 })
+    .findMany({ where: { creatorId: creator.id, verifiedAt: { not: null } }, orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }], select: { platform: true, url: true }, take: 12 })
     .catch(() => [] as Array<{ platform: string; url: string }>);
   const platformLinks: Array<{ key: string; label: string; url: string; color: string; live: boolean; Icon: typeof Video }> = snsLinks.map((l) => ({
     key: l.platform.value,
@@ -243,7 +244,7 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
   // 영상 탭: 유튜브 자동 + 직접 등록 영상 / 라이브 플레이어(유튜브 채널 ID 를 알면 임베드)
   const shopVideos = tab === 'video' ? await getShopVideos(creator.id).catch(() => []) : [];
   const ytChannelId = tab === 'video'
-    ? (await prisma.creatorChannel.findFirst({ where: { creatorId: creator.id, platform: 'YOUTUBE', externalId: { not: null } }, orderBy: { isPrimary: 'desc' }, select: { externalId: true } }))?.externalId ?? null
+    ? (await prisma.creatorChannel.findFirst({ where: { creatorId: creator.id, platform: 'YOUTUBE', externalId: { not: null }, verifiedAt: { not: null } }, orderBy: { isPrimary: 'desc' }, select: { externalId: true } }))?.externalId ?? null
     : null;
   const youtubeLive = liveLinks.find((l) => l.platform.value === 'YOUTUBE');
   const liveEmbedUrl = youtubeLive && ytChannelId ? `https://www.youtube.com/embed/live_stream?channel=${ytChannelId}` : null;
@@ -550,7 +551,9 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
 
         {method === 'card' ? (
           <div className="mt-5">
-            {shopViewer ? (
+            {isShopPaymentOff() ? (
+              <PaymentPreparing title="신용카드 후원은 준비 중이에요" note="지금은 문자 후원으로 응원할 수 있어요. 카드 결제는 열리는 대로 안내드릴게요." />
+            ) : shopViewer ? (
               <CardDonateForm
                 creatorId={creator.id}
                 creatorName={creator.displayName}
@@ -559,6 +562,11 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
                 maxAmount={cardMax.toString()}
                 defaultNickname={viewerDonor?.displayName ?? shopViewer.name ?? ''}
                 paymentMock={isShopPaymentMock()}
+                limitNote={[
+                  policy.donorDailyLimit > 0n ? `하루 ${formatWon(policy.donorDailyLimit)}` : '',
+                  policy.perCreatorDailyLimit > 0n ? `이 크리에이터에게 하루 ${formatWon(policy.perCreatorDailyLimit)}` : '',
+                  policy.donorMonthlyLimit > 0n ? `월 ${formatWon(policy.donorMonthlyLimit)}` : '',
+                ].filter(Boolean).join(' · ').replace(/^(.+)$/, '후원 한도: $1')}
               />
             ) : (
               <div className="rounded-[1.5rem] border border-brand-200 bg-brand-50/70 p-5 text-center">
@@ -631,7 +639,7 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
           }))}
           liveEmbedUrl={liveEmbedUrl}
           liveUrl={primaryLive?.url ?? null}
-          donationEnabled={creator.shopVideoDonation}
+          donationEnabled={creator.shopVideoDonation && !isShopPaymentOff()}
           presets={parseDonationPresets(creator.shopDonationPresets).map((v) => v.toString())}
           minAmount={(creator.shopDonationMin > 0n ? creator.shopDonationMin : 1000n).toString()}
           loggedIn={Boolean(shopViewer)}

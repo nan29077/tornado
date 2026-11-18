@@ -8,6 +8,7 @@ import { defaultDonorName } from '@/lib/donor-name';
 import { WithdrawForm } from '@/components/my/withdraw-form';
 import { requireDonorContext } from '@/components/my/donor';
 import { prisma } from '@/server/db';
+import { getWithdrawSummary } from '@/server/services/member-withdraw';
 import { formatKst } from '@/lib/datetime';
 import { paymentMethodKindLabel } from '@/lib/labels';
 
@@ -15,6 +16,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function MyAccountPage() {
   const { donorId, user } = await requireDonorContext('/my/account');
+  const withdraw = await getWithdrawSummary(user.id);
 
   const donor = donorId
     ? await prisma.donorProfile.findUnique({
@@ -31,6 +33,7 @@ export default async function MyAccountPage() {
           후원·결제 내역이 이 계정에 연결됩니다.
         </Notice>
         <PhoneLinkForm linkedPhoneMasked={null} />
+        {user.role === 'DONOR' ? <WithdrawForm blockers={withdraw.blockers} paidTickets={withdraw.paidTickets} activeSubs={withdraw.activeSubs} /> : null}
       </div>
     );
   }
@@ -250,7 +253,7 @@ export default async function MyAccountPage() {
       </section>
 
       <section>
-        <WithdrawForm />
+        <WithdrawForm blockers={withdraw.blockers} paidTickets={withdraw.paidTickets} activeSubs={withdraw.activeSubs} />
       </section>
     </div>
   );

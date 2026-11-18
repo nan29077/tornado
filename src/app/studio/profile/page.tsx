@@ -1,9 +1,10 @@
 import { notFound } from 'next/navigation';
-import { Badge, Card, CardTitle, DataRow, EmptyState, Field, Input, Notice, SectionTitle, Table, Td, Th } from '@/components/ui';
+import { Badge, Card, CardTitle, DataRow, EmptyState, Field, Input, Notice, Select, SectionTitle, Table, Td, Th } from '@/components/ui';
 import { PageHeader } from '@/components/layout/console-shell';
 import { ActionForm } from '@/components/studio/action-form';
 import { ImageUploadField } from '@/components/studio/image-upload-field';
-import { changeCreatorPasswordAction, updateCreatorProfileAction } from '@/app/actions/studio';
+import { changeCreatorPasswordAction, updateContentCategoryAction, updateCreatorProfileAction } from '@/app/actions/studio';
+import { CATEGORY_CHANGE_DAYS, VIDEO_CATEGORIES, categoryLabel } from '@/lib/video-hub';
 import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { formatKst } from '@/lib/datetime';
@@ -82,6 +83,29 @@ export default async function StudioSettingsProfilePage() {
                 defaultValue={creator.avatarUrl ?? ''}
                 hint="파일을 올리거나 이미지 URL 을 입력하세요. 비워두면 자동 배정된 캐릭터가 표시됩니다."
               />
+            </ActionForm>
+          </Card>
+        </section>
+
+        {/* [6차 P1-2] 활동 카테고리 — 카테고리별 투표 랭킹에 쓰인다 */}
+        <section>
+          <SectionTitle
+            title="활동 카테고리"
+            description="팬이 보낸 표는 전체 랭킹과 이 카테고리 랭킹에 함께 들어갑니다. 방송국·구독자 전용 화면의 분류에도 쓰입니다."
+          />
+          <Card>
+            <p className="text-[13px] text-ink-600">
+              현재: <b className="text-ink-900">{creator.contentCategory ? categoryLabel(creator.contentCategory) : '정하지 않음 (카테고리 랭킹에 나오지 않아요)'}</b>
+            </p>
+            <ActionForm action={updateContentCategoryAction} submitLabel="카테고리 저장">
+              <Field label="활동 카테고리" hint={`한 번 정하면 ${CATEGORY_CHANGE_DAYS}일에 한 번만 바꿀 수 있어요. 가장 가까운 주제 하나를 골라 주세요.`} required>
+                <Select name="contentCategory" defaultValue={creator.contentCategory ?? ''}>
+                  <option value="" disabled>선택해 주세요</option>
+                  {VIDEO_CATEGORIES.filter((c) => c.slug !== 'all' && c.slug !== 'donaido').map((c) => (
+                    <option key={c.slug} value={c.slug}>{c.label}</option>
+                  ))}
+                </Select>
+              </Field>
             </ActionForm>
           </Card>
         </section>

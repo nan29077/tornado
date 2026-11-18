@@ -91,6 +91,11 @@ describe('채널 · 영상', () => {
     const ok = await studio.saveShopChannelsAction(P, form({ channelPlatform: ['YOUTUBE', 'TIKTOK'], channelUrl: ['https://www.youtube.com/channel/UCbbbbbbbbbbbbbbbbbbbbbb', 'https://www.tiktok.com/@mine'], channelTitle: ['', ''], channelFollowers: ['1만', ''], primaryChannel: '0' }));
     expect(ok.ok, ok.message).toBe(true);
     expect(await prisma.creatorChannel.count({ where: { creatorId: fx.creatorId } })).toBe(2);
+    // [6차 P1-4] 새로 넣은 채널은 최고관리자 확인 전까지 확인 대기 — 대표 채널로도 쓰지 않는다
+    expect(await prisma.creatorChannel.count({ where: { creatorId: fx.creatorId, verifiedAt: null } })).toBe(2);
+    expect((await prisma.creatorProfile.findUniqueOrThrow({ where: { id: fx.creatorId } })).channelUrl).toBeNull();
+    const { verifyCreatorChannels } = await import('@/server/services/creator-application');
+    await prisma.$transaction((tx) => verifyCreatorChannels(tx, fx.creatorId));
     expect((await prisma.creatorProfile.findUniqueOrThrow({ where: { id: fx.creatorId } })).channelUrl).toContain('youtube.com/channel/UCb');
   });
 

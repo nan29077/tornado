@@ -49,9 +49,9 @@ export default async function AdminShopProductsPage({ searchParams }: { searchPa
             {t.label}
           </Link>
         ))}
-        <form className="ml-auto flex gap-2">
+        <form className="flex w-full min-w-0 gap-2 sm:ml-auto sm:w-auto">
           <input type="hidden" name="tab" value={tab} />
-          <input name="q" defaultValue={q} placeholder="상품명 검색" aria-label="상품명 검색" className="h-9 rounded-xl border border-ink-200 px-3 text-[13px]" />
+          <input name="q" defaultValue={q} placeholder="상품명 검색" aria-label="상품명 검색" className="h-9 w-full min-w-0 rounded-xl border border-ink-200 px-3 text-[13px] sm:w-56" />
         </form>
       </div>
 

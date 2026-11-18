@@ -27,6 +27,7 @@ export const LEDGER_TYPE_LABEL: Record<string, string> = {
   ADMIN_GRANT: '관리자 지급',
   ADMIN_REVOKE: '관리자 회수',
   PROMO: '이벤트 지급',
+  WITHDRAW_FORFEIT: '회원 탈퇴로 소멸',
 };
 
 type Tx = Prisma.TransactionClient;

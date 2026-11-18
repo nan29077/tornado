@@ -6,6 +6,7 @@
  * - 옵션은 "옵션명 | 추가금 | 재고 | SKU" 한 줄씩. 옵션이 없으면 "기본" 한 개. 재고는 옵션 단위.
  * - 이미 주문·장바구니가 참조하는 옵션은 지우지 않고 비활성화한다(주문 기록 보존).
  */
+import { isOwnUploadUrl } from '@/server/uploads';
 import type { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
@@ -46,6 +47,8 @@ export interface ProductInput {
   returnAddress: string | null;
   notice: Array<{ label: string; value: string }>;
   variants: VariantLine[];
+  /** 수정 화면을 열었을 때의 옵션별 재고 (없으면 입력값을 그대로 저장) */
+  stockBase?: Map<string, number>;
 }
 
 function txt(fd: FormData, k: string, max: number): string | null {
@@ -64,9 +67,16 @@ function won(fd: FormData, k: string, label: string, required = false): bigint |
   return BigInt(raw);
 }
 
-function safeUrl(v: string | null): string | null {
+/**
+ * [6차 P2-3] 외부(https) 이미지 주소는 최고관리자 상품에만 허용한다.
+ * 크리에이터 상품 이미지는 모든 구매자 화면에 그대로 뜨므로, 외부 서버가 보는 사람의 IP·접속 시각을
+ * 수집하는 추적 픽셀로 쓰이지 않게 [파일 업로드]로 올린 이미지만 받는다.
+ */
+function safeUrl(v: string | null, allowExternal: boolean): string | null {
   if (!v) return null;
-  if (v.startsWith('/api/media/') || v.startsWith('/assets/')) return v;
+  if (v.startsWith('/assets/') || isOwnUploadUrl(v)) return v;
+  if (!allowExternal) throw new Error('상품 이미지는 [파일 업로드]로 올린 이미지만 쓸 수 있습니다. (외부 주소는 사용할 수 없어요)');
+  if (v.startsWith('/api/media/')) return v;
   try {
     const u = new URL(v);
     return u.protocol === 'https:' ? u.toString() : null;
@@ -117,7 +127,7 @@ export function parseProductForm(fd: FormData, opts: { forAdmin: boolean }): Pro
   const status = (PRODUCT_STATUSES as readonly string[]).includes(statusRaw) ? (statusRaw as ProductStatus) : 'DRAFT';
   const images = fd
     .getAll('images')
-    .map((v) => safeUrl(String(v).trim() || null))
+    .map((v) => safeUrl(String(v).trim() || null, opts.forAdmin))
     .filter((v): v is string => Boolean(v))
     .slice(0, 8);
   let referralRate = '0.000000';
@@ -135,8 +145,17 @@ export function parseProductForm(fd: FormData, opts: { forAdmin: boolean }): Pro
     if (!/^\d{1,7}$/.test(stockRaw)) throw new Error('재고는 0 이상의 숫자로 입력해 주세요.');
     variants = [{ name: '기본', extraPrice: 0n, stock: Number(stockRaw), sku: null }];
   }
+  // [6차 P2-4] 화면을 열었을 때의 재고(기준값). 저장할 때 "기준값 대비 바꾼 만큼"만 반영한다.
+  const stockBase = new Map<string, number>();
+  try {
+    for (const b of parseVariantLines(String(fd.get('variantsBase') ?? ''))) stockBase.set(b.name, b.stock);
+  } catch {
+    /* 기준값이 깨졌으면 예전처럼 입력값을 그대로 쓴다 */
+  }
+  const singleBase = String(fd.get('stockBase') ?? '').trim();
+  if (/^\d{1,7}$/.test(singleBase) && stockBase.size === 0) stockBase.set('기본', Number(singleBase));
   for (const v of variants) if (price + v.extraPrice < 0n) throw new Error(`옵션 '${v.name}' 가격이 0원보다 작아집니다.`);
-  const thumb = safeUrl(txt(fd, 'thumbnailUrl', 500));
+  const thumb = safeUrl(txt(fd, 'thumbnailUrl', 500), opts.forAdmin);
   return {
     name,
     category: txt(fd, 'category', 40),
@@ -156,23 +175,35 @@ export function parseProductForm(fd: FormData, opts: { forAdmin: boolean }): Pro
     returnAddress: txt(fd, 'returnAddress', 200),
     notice: parseNoticeLines(String(fd.get('notice') ?? '')),
     variants,
+    stockBase,
   };
 }
 
-async function syncVariants(tx: Prisma.TransactionClient, productId: string, lines: VariantLine[]) {
-  const existing = await tx.productVariant.findMany({ where: { productId }, select: { id: true, name: true } });
-  const byName = new Map(existing.map((v) => [v.name, v.id]));
+/**
+ * [6차 P2-4] 재고는 "화면을 열었을 때 값 대비 바꾼 만큼"만 반영한다.
+ * 예전에는 입력값으로 그대로 덮어써, 수정 화면을 열어 둔 사이에 팔린 수량이 저장과 함께 되살아났다
+ * (재고 10 → 화면 열림 → 3개 판매(7) → 설명만 고쳐 저장 → 다시 10).
+ */
+async function syncVariants(tx: Prisma.TransactionClient, productId: string, lines: VariantLine[], stockBase?: Map<string, number>): Promise<number> {
+  const existing = await tx.productVariant.findMany({ where: { productId }, select: { id: true, name: true, stock: true } });
+  const byName = new Map(existing.map((v) => [v.name, v]));
+  let totalStock = 0;
   for (const [i, v] of lines.entries()) {
-    const id = byName.get(v.name);
-    if (id) {
-      await tx.productVariant.update({ where: { id }, data: { extraPrice: v.extraPrice, stock: v.stock, sku: v.sku, active: true, sortOrder: i } });
+    const cur = byName.get(v.name);
+    if (cur) {
+      const base = stockBase?.get(v.name);
+      const stock = base == null ? v.stock : Math.max(0, cur.stock + (v.stock - base));
+      totalStock += stock;
+      await tx.productVariant.update({ where: { id: cur.id }, data: { extraPrice: v.extraPrice, stock, sku: v.sku, active: true, sortOrder: i } });
       byName.delete(v.name);
     } else {
+      totalStock += v.stock;
       await tx.productVariant.create({ data: { id: newId(), productId, name: v.name, extraPrice: v.extraPrice, stock: v.stock, sku: v.sku, sortOrder: i } });
     }
   }
   // 목록에서 빠진 옵션은 지우지 않고 판매 중지 (주문·장바구니 기록 보존)
-  if (byName.size > 0) await tx.productVariant.updateMany({ where: { id: { in: [...byName.values()] } }, data: { active: false } });
+  if (byName.size > 0) await tx.productVariant.updateMany({ where: { id: { in: [...byName.values()].map((v) => v.id) } }, data: { active: false } });
+  return totalStock;
 }
 
 async function syncImages(tx: Prisma.TransactionClient, productId: string, images: string[]) {
@@ -229,10 +260,10 @@ export async function saveProduct(
         },
       });
     }
-    await syncVariants(tx, productId, input.variants);
+    const totalStock = await syncVariants(tx, productId, input.variants, id ? input.stockBase : undefined);
     await syncImages(tx, productId, input.images);
     // 품절 자동 표시: 판매중인데 활성 옵션 재고가 모두 0 이면 품절
-    if (input.status === 'ON_SALE' && input.variants.every((v) => v.stock <= 0)) {
+    if (input.status === 'ON_SALE' && totalStock <= 0) {
       await tx.product.update({ where: { id: productId }, data: { status: 'SOLD_OUT' } });
     }
     // 크리에이터 상품은 자기 샵 전시 행을 만들어 둔다(검수 승인 전에는 노출되지 않는다)

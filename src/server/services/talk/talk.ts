@@ -14,7 +14,7 @@ import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
 import { kstStartOfDay } from '@/lib/datetime';
 import { maskContacts, personalize } from '@/lib/contact-mask';
-import { getShopPaymentAdapter } from '@/server/adapters/shop-payment';
+import { getShopPaymentAdapter, shopPaymentClosedMessage } from '@/server/adapters/shop-payment';
 import { cancelShopPayment } from '@/server/services/shop/payment-cancel';
 import { appendLedger } from '@/server/services/settlement';
 import { notifyUser } from '@/server/services/notifications';
@@ -63,6 +63,8 @@ export interface TalkResult {
 // ---------------------------------------------------------------------- 구독
 
 export async function subscribeTalk(user: { id: string; name: string | null }, creatorId: string, method: PayMethod, now: Date = new Date()): Promise<TalkResult & { endsAt?: Date }> {
+  const closed = shopPaymentClosedMessage();
+  if (closed) return { ok: false, message: closed };
   const cfg = await getTalkConfig();
   if (!cfg.enabled) return { ok: false, message: '지금은 소통 구독을 받지 않습니다.' };
   const creator = await prisma.creatorProfile.findUnique({ where: { id: creatorId }, select: { id: true, status: true, displayName: true, userId: true } });

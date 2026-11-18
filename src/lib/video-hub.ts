@@ -183,6 +183,9 @@ export const CONTENT_CATEGORY_SLUGS = VIDEO_CATEGORIES.map((c) => c.slug).filter
   (s) => s !== 'all' && s !== 'donaido',
 ) as VideoCategorySlug[];
 
+/** 크리에이터가 스튜디오에서 활동 카테고리를 바꿀 수 있는 간격(일). 처음 정할 때는 제한이 없다 */
+export const CATEGORY_CHANGE_DAYS = 30;
+
 export function isVideoCategory(value: unknown): value is VideoCategorySlug {
   return typeof value === 'string' && VIDEO_CATEGORIES.some((c) => c.slug === value);
 }

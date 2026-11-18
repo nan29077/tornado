@@ -5,7 +5,8 @@ import { CreatorDonateShell } from '@/components/public/creator-donate-shell';
 import { SlotPicker } from '@/components/talk/talk-forms';
 import { getSessionUser } from '@/server/auth';
 import { prisma } from '@/server/db';
-import { isShopPaymentMock } from '@/server/adapters/shop-payment';
+import { isShopPaymentMock, isShopPaymentOff } from '@/server/adapters/shop-payment';
+import { PaymentPreparing } from '@/components/shop/payment-preparing';
 import { loadCreatorDonateProfile } from '@/server/services/creator-donate-profile';
 import { getCreatorEngagement, getTalkConfig } from '@/server/services/engagement/config';
 import { getSlots, sessionAvailability } from '@/server/services/talk/sessions';
@@ -46,7 +47,8 @@ export default async function TalkBookPage({ params }: { params: Promise<{ code:
         {mine.length > 0 ? (
           <Link href="/my/talk" className="mb-4 block rounded-xl bg-brand-50 px-4 py-3 text-[12.5px] font-bold text-brand-800">이 크리에이터에게 신청한 예약이 {mine.length}건 있어요 · 마이페이지에서 보기</Link>
         ) : null}
-        <SlotPicker creatorId={creator.id} slots={slots.map((s) => ({ startsAt: s.startsAt, date: s.date, time: s.time, available: s.available }))} price={eng.session.price} minutes={minutes} mock={isShopPaymentMock()} refundNote={refundNote} />
+        {isShopPaymentOff() ? <PaymentPreparing title="1:1 채팅 예약은 준비 중이에요" /> : null}
+        {isShopPaymentOff() ? null : <SlotPicker creatorId={creator.id} slots={slots.map((s) => ({ startsAt: s.startsAt, date: s.date, time: s.time, available: s.available }))} price={eng.session.price} minutes={minutes} mock={isShopPaymentMock()} refundNote={refundNote} />}
       </div>
     </CreatorDonateShell>
   );

@@ -213,7 +213,7 @@ async function loadExternalVideos(): Promise<VideoItem[]> {
             avatarUrl: true,
             contentCategory: true,
             user: { select: { avatarIndex: true } },
-            channels: { select: { platform: true, url: true }, take: 8 },
+            channels: { where: { verifiedAt: { not: null } }, select: { platform: true, url: true }, take: 8 },
           },
         },
       },

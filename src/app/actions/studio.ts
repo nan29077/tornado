@@ -34,6 +34,7 @@ import { getPublicBaseUrl } from '@/server/public-base-url';
 import { bankName } from '@/components/studio/banks';
 import { SNS_PLATFORMS, deriveLiveState, type SnsLinkState } from '@/lib/sns-platforms';
 import { normalizeTaxType, taxTypeLabel } from '@/lib/labels';
+import { CATEGORY_CHANGE_DAYS, CONTENT_CATEGORY_SLUGS, categoryLabel } from '@/lib/video-hub';
 
 /**
  * 크리에이터 관리자(/studio) 서버 액션.
@@ -1332,6 +1333,39 @@ export async function updateCreatorProfileAction(
     revalidatePath('/studio/profile');
     revalidatePath('/studio');
     return { ok: true, message: '프로필을 저장했습니다.' };
+  });
+}
+
+/**
+ * [6차 P1-2] 활동 카테고리 설정.
+ *
+ * 카테고리별 투표 랭킹은 이 값으로 묶는다. 예전에는 가입 신청서에서만 고를 수 있어, 카테고리 도입 전에
+ * 승인된 크리에이터는 카테고리 랭킹에 들어갈 방법이 없었다.
+ * 유리한 카테고리로 옮겨 다니며 순위를 만드는 것을 막기 위해, 한 번 정한 뒤에는 30일에 한 번만 바꿀 수 있다
+ * (급한 변경은 최고관리자가 크리에이터 상세에서 바로 바꾼다).
+ */
+export async function updateContentCategoryAction(
+  _prev: StudioActionState,
+  formData: FormData,
+): Promise<StudioActionState> {
+  return withCreator(async (creatorId) => {
+    const next = text(formData, 'contentCategory');
+    if (!(CONTENT_CATEGORY_SLUGS as string[]).includes(next)) return { ok: false, message: '활동 카테고리를 골라 주세요.' };
+    const cur = await prisma.creatorProfile.findUnique({ where: { id: creatorId }, select: { contentCategory: true, contentCategoryChangedAt: true } });
+    if (!cur) return { ok: false, message: '채널 정보를 찾을 수 없습니다.' };
+    if (cur.contentCategory === next) return { ok: true, message: '이미 이 카테고리입니다.' };
+    if (cur.contentCategory && cur.contentCategoryChangedAt) {
+      const nextAt = cur.contentCategoryChangedAt.getTime() + CATEGORY_CHANGE_DAYS * 86_400_000;
+      if (Date.now() < nextAt) {
+        const days = Math.ceil((nextAt - Date.now()) / 86_400_000);
+        return { ok: false, message: `활동 카테고리는 ${CATEGORY_CHANGE_DAYS}일에 한 번 바꿀 수 있어요. ${days}일 뒤에 다시 바꿀 수 있습니다. (급하면 고객센터로 요청해 주세요)` };
+      }
+    }
+    await prisma.creatorProfile.update({ where: { id: creatorId }, data: { contentCategory: next, contentCategoryChangedAt: new Date() } });
+    revalidatePath('/studio/profile');
+    revalidatePath('/studio/vote');
+    revalidatePath('/vote');
+    return { ok: true, message: `활동 카테고리를 '${categoryLabel(next)}'(으)로 정했습니다. 받은 표가 이 카테고리 랭킹에 함께 들어갑니다.` };
   });
 }
 

@@ -605,6 +605,7 @@ export function assertProductionSafety(): string[] {
    * [5차 P0-1] 도네이도 샵 결제(주문·영상/카드 후원·투표권·소통 구독·1:1 채팅)도 mock 이면 막는다.
    * mock 은 금액 끝자리 999 외에는 모두 승인하므로, 돈이 들어오지 않았는데 정산 원장에 수익이 쌓여
    * 실제 돈으로 출금될 수 있다. 실 PG 를 붙이기 전에는 운영 기동 자체를 막는다.
+   * [6차 P1-1] 단, off 는 허용한다 — 유료 결제를 "준비 중"으로 닫고 문자 후원만으로 먼저 열 수 있다.
    */
   const shopPayment = (process.env.SHOP_PAYMENT_PROVIDER ?? 'mock').trim().toLowerCase() || 'mock';
   if (shopPayment === 'mock') {

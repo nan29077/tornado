@@ -19,7 +19,7 @@ import { prisma, withAdvisoryLock } from '@/server/db';
 import { newId } from '@/lib/id';
 import { kstDateKey } from '@/lib/datetime';
 import { maskContacts } from '@/lib/contact-mask';
-import { getShopPaymentAdapter } from '@/server/adapters/shop-payment';
+import { getShopPaymentAdapter, shopPaymentClosedMessage } from '@/server/adapters/shop-payment';
 import { appendLedger } from '@/server/services/settlement';
 import { notifyUser } from '@/server/services/notifications';
 import { getCreatorEngagement, getTalkConfig, rateOf, splitFee, type TalkConfig } from '@/server/services/engagement/config';
@@ -154,6 +154,8 @@ export interface SessionResult {
 }
 
 export async function bookSession(user: { id: string; name: string | null }, creatorId: string, startsAtIso: string, method: PayMethod, note: string, now: Date = new Date()): Promise<SessionResult> {
+  const closed = shopPaymentClosedMessage();
+  if (closed) return { ok: false, message: closed };
   let talk: TalkConfig;
   try {
     talk = await assertGlobalOn();
@@ -281,11 +283,28 @@ async function refundSession(
   return true;
 }
 
+/** 결제가 끝난(일부 취소 포함) 신청인가 */
+async function isSessionPaid(paymentId: string | null): Promise<boolean> {
+  if (!paymentId) return false;
+  const p = await prisma.shopPayment.findUnique({ where: { id: paymentId }, select: { status: true } });
+  return p?.status === 'PAID' || p?.status === 'PARTIAL_CANCELLED';
+}
+
+/** 목록 화면용: 결제가 끝나지 않은(진행 중·실패) 승인 대기 신청을 걸러 낸다 */
+export async function onlyPaidSessions<T extends { paymentId: string | null }>(rows: T[]): Promise<T[]> {
+  const ids = rows.map((r) => r.paymentId).filter((v): v is string => Boolean(v));
+  if (ids.length === 0) return [];
+  const paid = new Set((await prisma.shopPayment.findMany({ where: { id: { in: ids }, status: { in: ['PAID', 'PARTIAL_CANCELLED'] } }, select: { id: true } })).map((p) => p.id));
+  return rows.filter((r) => r.paymentId && paid.has(r.paymentId));
+}
+
 export async function acceptSession(creatorId: string, sessionId: string, now: Date = new Date()): Promise<SessionResult> {
   await assertGlobalOn();
   const s = await prisma.talkSession.findFirst({ where: { id: sessionId, creatorId } });
   if (!s) return { ok: false, message: '신청을 찾을 수 없습니다.' };
   if (s.status !== 'REQUESTED') return { ok: false, message: '승인 대기 중인 신청이 아닙니다.' };
+  // [6차 P1-5] 결제가 끝난 신청만 수락한다 (결제 진행 중에 수락하면, 결제가 실패해도 예약이 확정으로 남는다)
+  if (!(await isSessionPaid(s.paymentId))) return { ok: false, message: '아직 결제가 끝나지 않은 신청입니다. 잠시 후 다시 확인해 주세요.' };
   if (s.approvalDeadline <= now) {
     await refundSession(s.id, 'EXPIRED', s.price, 'SYSTEM', '승인 기한 초과', now);
     return { ok: false, message: '승인 기한이 지나 자동 취소·환불되었습니다.' };

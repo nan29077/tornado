@@ -18,7 +18,7 @@ import { formatWon } from '@/lib/money';
 import { resolvePolicy } from '@/server/services/limits';
 import { encrypt } from '@/lib/crypto';
 import { logger } from '@/lib/logger';
-import { getShopPaymentAdapter } from '@/server/adapters/shop-payment';
+import { getShopPaymentAdapter, shopPaymentClosedMessage } from '@/server/adapters/shop-payment';
 import { calculateFees, postDonationSettlement } from '@/server/services/settlement';
 import { dispatchBroadcast } from '@/server/services/broadcast-dispatch';
 import { loadBannedWords } from '@/server/services/donation-flow';
@@ -46,6 +46,8 @@ export async function donateToVideo(
   user: { id: string; name: string | null },
   input: { creatorId: string; videoRef: string; videoTitle: string; amount: bigint; message: string; nickname: string; anonymous?: boolean; kind?: 'VIDEO' | 'CARD' },
 ): Promise<VideoDonationResult> {
+  const closed = shopPaymentClosedMessage();
+  if (closed) return { ok: false, message: closed };
   const creator = await prisma.creatorProfile.findUnique({
     where: { id: input.creatorId },
     select: { id: true, status: true, displayName: true, shopVideoDonation: true, shopDonationMin: true, maxAmount: true, userId: true },

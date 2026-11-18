@@ -7,7 +7,8 @@ import { loadCreatorDonateProfile } from '@/server/services/creator-donate-profi
 import { listCart } from '@/server/services/shop/orders';
 import { getSessionUser } from '@/server/auth';
 import { prisma } from '@/server/db';
-import { isShopPaymentMock } from '@/server/adapters/shop-payment';
+import { isShopPaymentMock, isShopPaymentOff } from '@/server/adapters/shop-payment';
+import { PaymentPreparing } from '@/components/shop/payment-preparing';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: '장바구니 | 도네이도 샵', robots: { index: false, follow: false } };
@@ -42,6 +43,8 @@ export default async function ShopCartPage({ params }: { params: Promise<{ code:
             쇼핑하러 가기
           </Link>
         </div>
+      ) : isShopPaymentOff() ? (
+        <PaymentPreparing title="상품 주문은 준비 중이에요" note="장바구니에 담은 상품은 그대로 보관됩니다. 결제가 열리면 바로 주문할 수 있어요." />
       ) : (
         <CheckoutForm
           shopCode={creator.code}

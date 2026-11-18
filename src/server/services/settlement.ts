@@ -503,7 +503,7 @@ export async function computeHoldingAmount(
  *
  * 이 분개들은 후원(donation)에 묶이지 않아 예전에는 적립 즉시 출금할 수 있었다. 그러면 결제 직후 출금한 뒤
  * 환불(소통 구독 7일 등)이 들어오면 원장이 음수가 된다. 후원과 같은 규칙(발생일 다음날부터 영업일 5일)으로 보류한다.
- * 날짜(KST)별 순액으로 계산하고, 음수인 날은 0 으로 본다(같은 날 적립·환불은 서로 상쇄).
+ * 건별 순액으로 계산한다(적립과 그 환불·반대분개가 서로 상쇄). 순액이 음수인 건은 0 으로 본다.
  */
 export const NON_DONATION_HOLD_TYPES: LedgerEntryType[] = [
   'TALK_SUBSCRIPTION_PROCEEDS',
@@ -515,14 +515,31 @@ export const NON_DONATION_HOLD_TYPES: LedgerEntryType[] = [
 ];
 
 async function computeNonDonationHolding(creatorId: string, client: SummaryClient, todayKey: string, fromKey: string): Promise<bigint> {
+  /**
+   * [6차 P2-1] 같은 건(주문·구독·1:1 채팅·투표)끼리 묶어 순액을 낸다.
+   * 예전에는 날짜별로만 묶어, 1일에 적립되고 3일에 환불된 건이 "1일 +금액"으로 계속 보류에 남았다
+   * (환불일의 음수는 0 으로 버려져 상쇄되지 않음 → 실제 잔액보다 많이 묶임).
+   * 묶는 기준: 샵 주문 id → 메모 끝의 #id(구독·투표) → 1:1 채팅 번호(TC…) → 없으면 예전처럼 날짜.
+   * 보류 여부는 그 건이 처음 적립된 날 기준으로 판단한다.
+   */
   const rows = await (client as typeof prisma).$queryRaw<Array<{ d: string; amount: bigint | null }>>`
-    SELECT to_char(occurred_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS d, SUM(amount)::bigint AS amount
-    FROM settlement_ledger
-    WHERE creator_id = ${creatorId}
-      AND donation_id IS NULL
-      AND entry_type::text = ANY(${NON_DONATION_HOLD_TYPES as string[]})
-      AND occurred_at >= ${fromDateKey(fromKey)}
-    GROUP BY 1`;
+    SELECT MIN(d) AS d, SUM(amount)::bigint AS amount
+    FROM (
+      SELECT to_char(occurred_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS d,
+             amount,
+             COALESCE(
+               'o:' || shop_order_id,
+               'r:' || substring(memo from '#([A-Za-z0-9_-]+)[[:space:]]*$'),
+               't:' || substring(memo from '(TC[0-9A-Za-z]{8,})'),
+               'd:' || to_char(occurred_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD')
+             ) AS k
+      FROM settlement_ledger
+      WHERE creator_id = ${creatorId}
+        AND donation_id IS NULL
+        AND entry_type::text = ANY(${NON_DONATION_HOLD_TYPES as string[]})
+        AND occurred_at >= ${fromDateKey(fromKey)}
+    ) e
+    GROUP BY k`;
   if (rows.length === 0) return 0n;
   const holidays = await loadHolidaysAround(fromKey, todayKey, client);
   let held = 0n;

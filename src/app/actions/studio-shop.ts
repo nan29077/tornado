@@ -94,14 +94,25 @@ export async function saveShopBasicsAction(_p: StudioActionState, fd: FormData):
 export async function saveShopChannelsAction(_p: StudioActionState, fd: FormData): Promise<StudioActionState> {
   return withShop(async ({ creatorId, code }) => {
     const channels = parseChannelsFromForm(fd);
-    await prisma.$transaction(async (tx) => {
+    // [6차 P1-4] 새로 넣은 채널 주소는 최고관리자 확인 전까지 샵 영상·공개 링크에 쓰지 않는다
+    const pending = await prisma.$transaction(async (tx) => {
       const taken = await findTakenChannel(tx, channels, creatorId);
       if (taken) throw new Error(`이미 다른 크리에이터가 등록한 채널입니다: ${taken}`);
-      const cols = await replaceCreatorChannels(tx, creatorId, channels);
-      await tx.creatorProfile.update({ where: { id: creatorId }, data: cols });
+      const r = await replaceCreatorChannels(tx, creatorId, channels, { keepVerified: true });
+      if (Object.keys(r.cols).length > 0) await tx.creatorProfile.update({ where: { id: creatorId }, data: r.cols });
+      return r.pending;
     });
+    if (pending > 0) {
+      const c = await prisma.creatorProfile.findUnique({ where: { id: creatorId }, select: { displayName: true } });
+      await notifySuperAdmins({ title: '채널 확인 요청', body: `${c?.displayName ?? ''} (${code}) · 새 채널 ${pending}개`, linkUrl: `/admin/creators/${creatorId}` }).catch(() => undefined);
+    }
     refreshShop(code);
-    return { ok: true, message: `채널 ${channels.length}개를 저장했습니다. 유튜브 채널의 새 영상은 영상 탭에 자동으로 올라옵니다.` };
+    return {
+      ok: true,
+      message: pending > 0
+        ? `채널 ${channels.length}개를 저장했습니다. 새로 넣은 채널 ${pending}개는 운영팀이 본인 채널인지 확인한 뒤 샵에 반영됩니다.`
+        : `채널 ${channels.length}개를 저장했습니다. 유튜브 채널의 새 영상은 영상 탭에 자동으로 올라옵니다.`,
+    };
   });
 }
 

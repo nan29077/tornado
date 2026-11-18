@@ -12,27 +12,28 @@ import {
 await assertServerUp();
 const r = createReporter('격차 — 기기별 안내 · 모의 고지 · 공개 페이지');
 const b = await launch();
-const SHOP = `${BASE}/c/${SEED.creator1Code}`;
+// 2026-11 도네이도 샵 개편: 크리에이터 페이지 기본 탭이 [영상]이 되었고, 후원 안내는 [후원하기] 탭에 있다.
+// PC 화면 결제 패널은 없어지고(문자·신용카드·간편계좌이체 선택), PC 도 문자 후원번호와 4단계 안내를 보여 준다.
+const SHOP_HOME = `${BASE}/c/${SEED.creator1Code}`;
+const SHOP = `${SHOP_HOME}?tab=donate`;
 
 try {
   // ══════════════ 1. PC 후원샵 ══════════════
   const dctx = await b.newContext(desktop);
   const pc = await dctx.newPage();
+  await gotoReady(pc, SHOP_HOME);
+  r.ok('PC: 기본 탭은 영상', (await bodyText(pc)).includes('영상을 누르면 재생하고 후원할 수 있어요'));
   await gotoReady(pc, SHOP);
   const pcT = await bodyText(pc);
 
-  r.ok('PC: 모의 결제 고지', pcT.includes('현재 모의(mock) 결제 상태입니다'));
-  r.ok('PC: 실제 출금이 없다는 고지', pcT.includes('실제 출금이나 유튜브 댓글 등록은 일어나지 않습니다'));
-  r.ok('PC: 웹 기준 안내 문구', pcT.includes('금액과 응원 메시지를 고릅니다'));
-  r.ok('PC: 번호 입력 단계 안내', pcT.includes('휴대전화 번호를 입력합니다'));
+  r.ok('PC: 후원 수단 3종(문자·신용카드·간편계좌이체)', missingOf(pcT, ['문자후원', '신용카드 후원', '간편계좌이체 후원']).length === 0);
+  r.ok('PC: 문자 후원번호와 복사 버튼', pcT.includes('문자 후원번호') && pcT.includes('번호 복사'));
+  r.ok('PC: 계좌 1회 등록 안내', pcT.includes('계좌를 1회 등록합니다'));
   r.ok('PC: PIN 결제 단계 안내', pcT.includes('PIN 을 입력하면 결제됩니다'));
-  r.ok('PC: 유효시간 자동취소 안내', pcT.includes('유효시간 안에 입력하지 않으면 자동 취소됩니다'));
-  r.ok('PC: 문자 기준 안내가 새지 않는다', !pcT.includes('첫 문자를 보내면 오는 안내'));
+  r.ok('PC: 결제된 후원만 방송에 나간다는 고지', pcT.includes('결제되지 않은 메시지는 표시되지 않습니다'));
+  r.ok('PC: 외부 후원 서비스 고지', pcT.includes('유튜브 공식 슈퍼챗이 아닌 외부 후원 서비스입니다'));
+  r.ok('PC: 모바일 전용 첫 문자 경고는 보이지 않는다', !(await pc.getByText('처음 보내는 문자는 후원되지 않습니다', { exact: true }).isVisible().catch(() => false)));
   // 모바일 전용 블록은 DOM 에는 있고 CSS(sm:hidden)로 감춰지므로 '보이는지'로 확인한다.
-  r.ok(
-    'PC: 문자용 계좌 등록 단계 제목은 보이지 않는다',
-    !(await pc.getByText('계좌를 1회 등록합니다', { exact: true }).isVisible().catch(() => false)),
-  );
   r.ok('PC: 모바일 하단 고정바가 보이지 않는다', (await pc.locator('div.fixed.inset-x-0.bottom-0:visible').count()) === 0);
   r.ok('PC: sms 링크가 보이지 않는다', (await pc.locator('a[href^="sms:"]:visible').count()) === 0);
   await dctx.close();
@@ -49,14 +50,14 @@ try {
   r.ok('모바일: 계좌번호 원문 미저장 고지', mT.includes('계좌번호 원문은 저장하지 않고'));
   r.ok('모바일: PIN 결제 단계 안내', mT.includes('PIN 을 입력하면 결제됩니다'));
   r.ok('모바일: 결제된 후원만 방송에 나간다는 고지', mT.includes('결제되지 않은 메시지는 표시되지 않습니다'));
-  r.ok('모바일: 웹 기준 안내가 보이지 않는다', (await m.locator('p:has-text("금액과 응원 메시지를 고릅니다"):visible').count()) === 0);
+  r.ok('모바일: 문자 앱을 여는 링크가 있다', (await m.locator('a[href^="sms:"]').count()) > 0);
   r.ok('모바일: PC 후원 패널이 보이지 않는다', (await m.locator('h2:has-text("님에게 후원하기"):visible, div.hidden.sm\\:block:visible').count()) === 0);
   await mctx.close();
 
   // ══════════════ 3. 번호 미배정 크리에이터(모바일) ══════════════
   const m2ctx = await b.newContext(mobile);
   const m2 = await m2ctx.newPage();
-  await gotoReady(m2, `${BASE}/c/${SEED.creator2Code}`);
+  await gotoReady(m2, `${BASE}/c/${SEED.creator2Code}?tab=donate`);
   const m2T = await bodyText(m2);
   const assigned = m2T.includes('전용 후원 번호') || m2T.includes(SEED.creator2Mo);
   if (assigned) {

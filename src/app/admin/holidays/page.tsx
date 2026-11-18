@@ -162,7 +162,7 @@ export default async function AdminHolidaysPage({
                         disabledReason={denyReason}
                       >
                         <input type="hidden" name="id" value={h.id} />
-                        <div className="flex w-56 flex-col gap-1.5">
+                        <div className="flex w-full min-w-0 flex-col gap-1.5 sm:w-56">
                           <AdminInput name="name" defaultValue={h.name} placeholder="명칭" required />
                           <AdminSelect name="kind" defaultValue={h.kind}>
                             {KIND_OPTIONS.map((k) => (
