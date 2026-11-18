@@ -310,7 +310,8 @@ export function videosHref(params: { c?: string | null; p?: string | null; q?: s
  * 영상 파일을 내려받거나 재호스팅하지 않는다(유튜브 정책).
  */
 export function youtubeEmbedUrl(id: string, autoplay = false): string {
-  const sp = new URLSearchParams({ rel: '0', playsinline: '1', modestbranding: '1' });
+  // enablejsapi: 영상 상품 스티커가 재생 위치(표시 시간대)를 읽는다 (2026-11-18)
+  const sp = new URLSearchParams({ rel: '0', playsinline: '1', modestbranding: '1', enablejsapi: '1' });
   if (autoplay) sp.set('autoplay', '1');
   return `https://www.youtube-nocookie.com/embed/${id}?${sp.toString()}`;
 }

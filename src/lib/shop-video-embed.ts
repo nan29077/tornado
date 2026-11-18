@@ -45,7 +45,7 @@ export function embedUrlFor(platform: string, externalId: string, url: string, a
   switch (platform) {
     case 'YOUTUBE':
       return /^[A-Za-z0-9_-]{11}$/.test(externalId)
-        ? `https://www.youtube-nocookie.com/embed/${externalId}?rel=0&playsinline=1${autoplay ? '&autoplay=1' : ''}`
+        ? `https://www.youtube-nocookie.com/embed/${externalId}?rel=0&playsinline=1&enablejsapi=1${autoplay ? '&autoplay=1' : ''}`
         : null;
     case 'TIKTOK':
       return /^\d{8,25}$/.test(externalId) ? `https://www.tiktok.com/embed/v2/${externalId}` : null;

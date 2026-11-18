@@ -2,13 +2,15 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { HeartHandshake, Pin, PlayCircle, X } from '@/components/brand/icons';
+import { HeartHandshake, Pin, PlayCircle, ShoppingBag, X } from '@/components/brand/icons';
 import { LiveBadge, LiveCardFrame } from '@/components/public/live-card-frame';
 import { cx } from '@/components/ui';
 import { embedUrlFor, liveThumbnailUrl, SHOP_VIDEO_PLATFORM_LABEL } from '@/lib/shop-video-embed';
 import { donateVideoAction } from '@/app/actions/shop';
 import { ShopActionForm } from './shop-action-form';
 import { ShopLiveFeed } from './shop-live-feed';
+import { VideoProductSticker, VideoProductStrip, type VideoSticker } from './video-product-sticker';
+import { LIVE_TAG_KEY } from '@/lib/video-product-time';
 
 export interface ShopVideoView {
   key: string;
@@ -40,6 +42,7 @@ export function ShopVideoTab({
   loggedIn,
   defaultNickname,
   paymentMock,
+  stickers = {},
 }: {
   creatorId: string;
   creatorCode: string;
@@ -53,7 +56,11 @@ export function ShopVideoTab({
   loggedIn: boolean;
   defaultNickname: string;
   paymentMock: boolean;
+  /** 영상 키(platform:externalId, 라이브는 LIVE:LIVE) → 영상 상품 스티커 */
+  stickers?: Record<string, VideoSticker>;
 }) {
+  const loginHref = `/c/${creatorCode}/login?next=${encodeURIComponent(`/c/${creatorCode}?tab=video`)}`;
+  const liveSticker = stickers[LIVE_TAG_KEY] ?? null;
   const [selected, setSelected] = React.useState<ShopVideoView | null>(null);
   const [platform, setPlatform] = React.useState<string>('ALL');
   const topRef = React.useRef<HTMLDivElement>(null);
@@ -71,7 +78,20 @@ export function ShopVideoTab({
     <div className="mt-6 space-y-5">
       <div ref={topRef} className="scroll-mt-24 space-y-3">
         {selected ? (
-          <Player key={selected.key} video={selected} onClose={() => setSelected(null)} />
+          <>
+            <Player
+              key={selected.key}
+              video={selected}
+              onClose={() => setSelected(null)}
+              sticker={stickers[selected.key] ?? null}
+              shopCode={creatorCode}
+              loggedIn={loggedIn}
+              loginHref={loginHref}
+            />
+            {stickers[selected.key] ? (
+              <VideoProductStrip sticker={stickers[selected.key]} shopCode={creatorCode} loggedIn={loggedIn} loginHref={loginHref} />
+            ) : null}
+          </>
         ) : live ? (
           <section className="overflow-hidden rounded-[1.5rem] border border-warm-300/70 bg-white shadow-card">
             <div className="flex items-center gap-2 px-4 py-3">
@@ -81,6 +101,7 @@ export function ShopVideoTab({
             {liveEmbedUrl ? (
               <div className="relative aspect-video bg-ink-900">
                 <iframe src={liveEmbedUrl} title="라이브 방송" className="absolute inset-0 h-full w-full" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen />
+                {liveSticker ? <VideoProductSticker sticker={liveSticker} platform="LIVE" shopCode={creatorCode} loggedIn={loggedIn} loginHref={loginHref} /> : null}
               </div>
             ) : liveUrl ? (
               <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="mx-4 mb-3 block rounded-2xl focus-visible:outline-2 focus-visible:outline-brand-500">
@@ -90,6 +111,11 @@ export function ShopVideoTab({
                   방송 보러 가기
                 </span>
               </a>
+            ) : null}
+            {liveSticker ? (
+              <div className="px-4 pt-3">
+                <VideoProductStrip sticker={liveSticker} shopCode={creatorCode} loggedIn={loggedIn} loginHref={loginHref} />
+              </div>
             ) : null}
             <div className="px-4 py-3">
               <ShopLiveFeed creatorCode={creatorCode} />
@@ -110,7 +136,7 @@ export function ShopVideoTab({
             />
           ) : (
             <Link
-              href={`/c/${creatorCode}/login?next=${encodeURIComponent(`/c/${creatorCode}?tab=video`)}`}
+              href={loginHref}
               className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-brand-400 text-[14px] font-extrabold text-ink-900"
             >
               <HeartHandshake size={17} strokeWidth={1.9} />
@@ -157,7 +183,7 @@ export function ShopVideoTab({
                   selected?.key === v.key ? 'border-brand-400 ring-2 ring-brand-200' : 'border-warm-300/70',
                 )}
               >
-                <Thumb video={v} />
+                <Thumb video={v} hasProduct={Boolean(stickers[v.key])} />
                 <p className="mt-2 line-clamp-2 px-1 text-[13.5px] font-bold leading-snug text-ink-900">{v.title}</p>
                 <p className="mt-0.5 flex items-center gap-1 px-1 text-[11.5px] text-ink-400">
                   {v.pinned ? <Pin size={11} strokeWidth={2} className="text-brand-700" /> : null}
@@ -173,9 +199,15 @@ export function ShopVideoTab({
   );
 }
 
-function Thumb({ video }: { video: ShopVideoView }) {
+function Thumb({ video, hasProduct = false }: { video: ShopVideoView; hasProduct?: boolean }) {
   return (
     <div className="relative aspect-video overflow-hidden rounded-xl bg-ink-100">
+      {hasProduct ? (
+        <span className="absolute left-1.5 top-1.5 z-[1] flex items-center gap-1 rounded-md bg-white/95 px-1.5 py-0.5 text-[10.5px] font-extrabold text-brand-800 shadow">
+          <ShoppingBag size={11} strokeWidth={2} aria-hidden />
+          상품
+        </span>
+      ) : null}
       {video.thumbnail ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={video.thumbnail} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
@@ -191,7 +223,21 @@ function Thumb({ video }: { video: ShopVideoView }) {
   );
 }
 
-function Player({ video, onClose }: { video: ShopVideoView; onClose: () => void }) {
+function Player({
+  video,
+  onClose,
+  sticker,
+  shopCode,
+  loggedIn,
+  loginHref,
+}: {
+  video: ShopVideoView;
+  onClose: () => void;
+  sticker: VideoSticker | null;
+  shopCode: string;
+  loggedIn: boolean;
+  loginHref: string;
+}) {
   const src = embedUrlFor(video.platform, video.externalId, video.url, true);
   const vertical = video.platform === 'TIKTOK' || (video.platform === 'INSTAGRAM' && video.externalId.startsWith('reel/'));
   return (
@@ -204,6 +250,7 @@ function Player({ video, onClose }: { video: ShopVideoView; onClose: () => void 
             원본에서 보기
           </a>
         )}
+        {src && sticker ? <VideoProductSticker sticker={sticker} platform={video.platform} shopCode={shopCode} loggedIn={loggedIn} loginHref={loginHref} /> : null}
       </div>
       <div className="flex items-start gap-2 px-4 py-3">
         <p className="min-w-0 flex-1 text-[14.5px] font-extrabold leading-snug text-ink-900">{video.title}</p>

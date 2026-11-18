@@ -15,10 +15,12 @@ import {
 import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { getShopVideos } from '@/server/services/shop/videos';
-import { sellerInfoMissing } from '@/server/services/shop/catalog';
+import { listShopProducts, sellerInfoMissing } from '@/server/services/shop/catalog';
+import { listCreatorVideoTags } from '@/server/services/shop/video-products';
+import { VideoTagEditor, type CurrentVideoTag, type TagProductOption } from '@/components/studio/video-tag-editor';
 import { SITE_IMAGE_PRESETS, CLASSIC_MARGIN_IMAGE } from '@/lib/site-images';
 import { SHOP_VIDEO_PLATFORM_LABEL } from '@/lib/shop-video-embed';
-import { formatNumber } from '@/lib/money';
+import { formatNumber, formatWon } from '@/lib/money';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,13 +32,23 @@ export default async function StudioShopPage() {
     include: { channels: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
   });
   if (!creator) notFound();
-  const [videos, followers, displayCount, myProducts, openOrders] = await Promise.all([
+  const [videos, followers, displayCount, myProducts, openOrders, videoTags, displayed] = await Promise.all([
     getShopVideos(creatorId, { includeHidden: true }),
     prisma.memberFollow.count({ where: { creatorId } }),
     prisma.creatorProduct.count({ where: { creatorId, active: true, blocked: false } }),
     prisma.product.count({ where: { creatorId, ownerType: 'CREATOR', deletedAt: null } }),
     prisma.shopOrder.count({ where: { sellerType: 'CREATOR', sellerCreatorId: creatorId, status: { in: ['PAID', 'PREPARING'] } } }),
+    listCreatorVideoTags(creatorId).catch(() => []),
+    listShopProducts(creatorId, { take: 300 }).catch(() => []),
   ]);
+  // 영상 상품 스티커: 내 샵에 진열 중인 상품만 고를 수 있다
+  const tagProducts: TagProductOption[] = displayed.map((p) => ({ id: p.id, name: p.name, price: formatWon(p.price), soldOut: p.status !== 'ON_SALE' }));
+  const tagByKey = new Map<string, CurrentVideoTag>(
+    videoTags.map((t) => [
+      t.key,
+      { productId: t.productId, productName: t.product.name, startSec: t.startSec, endSec: t.endSec, clickCount: t.clickCount, soldQuantity: t.soldQuantity, visible: t.visible },
+    ]),
+  );
   const missing = sellerInfoMissing(creator);
   const channelRows = creator.channels.map((c) => ({ platform: c.platform, url: c.url, title: c.title ?? '', followers: c.followerCount != null ? String(c.followerCount) : '' }));
   const primaryIndex = Math.max(0, creator.channels.findIndex((c) => c.isPrimary));
@@ -117,7 +129,20 @@ export default async function StudioShopPage() {
         </section>
 
         <section>
-          <SectionTitle title="영상" description="자동 수집된 유튜브 영상 외에 TikTok · Instagram · Facebook · YouTube 영상 주소를 직접 붙여 넣어 올릴 수 있습니다." />
+          <SectionTitle
+            title="라이브 방송 상품"
+            description="방송 중일 때 내 샵 영상 탭의 라이브 화면 위에 상품 스티커를 띄웁니다. 유튜브 등 외부 플랫폼 화면에는 표시되지 않습니다."
+          />
+          <Card>
+            <VideoTagEditor platform="LIVE" externalId="LIVE" videoTitle="라이브 방송" products={tagProducts} current={tagByKey.get('LIVE:LIVE') ?? null} />
+          </Card>
+        </section>
+
+        <section>
+          <SectionTitle
+            title="영상"
+            description="자동 수집된 유튜브 영상 외에 TikTok · Instagram · Facebook · YouTube 영상 주소를 직접 붙여 넣어 올릴 수 있습니다. 영상마다 상품 스티커를 1개 띄울 수 있고, 도네이도 안에서 재생될 때만 보입니다."
+          />
           <Card>
             <ActionForm action={addShopVideoAction} submitLabel="영상 추가">
               <div className="grid gap-3 md:grid-cols-[2fr_1fr]">
@@ -169,6 +194,13 @@ export default async function StudioShopPage() {
                         </ActionForm>
                       ))}
                     </div>
+                    <VideoTagEditor
+                      platform={v.platform}
+                      externalId={v.externalId}
+                      videoTitle={v.title}
+                      products={tagProducts}
+                      current={tagByKey.get(v.key) ?? null}
+                    />
                   </li>
                 ))}
               </ul>

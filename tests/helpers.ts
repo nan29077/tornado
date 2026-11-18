@@ -39,6 +39,8 @@ export async function resetDb() {
     'talk_reaction', 'talk_letter', 'talk_bundle_order', 'fan_profile', 'vote_attendance', 'vote_mission_claim', 'vote_share_log',
     'vote_referral', 'fan_badge', 'vote_cheer', 'vote_reward_policy', 'vote_reward_grant', 'vote_support', 'vote_support_contribution',
     'creator_anniversary',
+    // 영상 상품 스티커 · YouTube Data API 수집 (2026-11-18)
+    'video_product_tag', 'youtube_api_video', 'youtube_api_channel',
   ];
   // 정산 원장은 append-only 트리거로 DELETE 가 막혀 있으므로 트리거를 잠시 끈다.
   await prisma.$executeRawUnsafe('ALTER TABLE settlement_ledger DISABLE TRIGGER settlement_ledger_append_only');

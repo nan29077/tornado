@@ -14,6 +14,7 @@ export function AddToCartForm({
   soldOut,
   loggedIn,
   loginHref,
+  sourceVideo,
 }: {
   shopCode: string;
   productId: string;
@@ -22,6 +23,8 @@ export function AddToCartForm({
   soldOut: boolean;
   loggedIn: boolean;
   loginHref: string;
+  /** 영상 상품 스티커에서 열었으면 그 영상 키 (구매 출처 기록) */
+  sourceVideo?: string;
 }) {
   const first = variants.find((v) => v.stock > 0) ?? variants[0];
   const [variantId, setVariantId] = React.useState(first?.id ?? '');
@@ -48,6 +51,7 @@ export function AddToCartForm({
           <input type="hidden" name="productId" value={productId} />
           <input type="hidden" name="variantId" value={variantId} />
           <input type="hidden" name="quantity" value={qty} />
+          {sourceVideo ? <input type="hidden" name="sourceVideo" value={sourceVideo} /> : null}
           {variants.length > 1 || variants[0]?.name !== '기본' ? (
             <label className="block">
               <span className="text-[12.5px] font-bold text-ink-600">옵션</span>

@@ -11,6 +11,7 @@ import { newId } from '@/lib/id';
 import { consumeIpRateLimit } from '@/server/rate-limit';
 import { setFollow, setFollowNotify } from '@/server/services/shop/follow';
 import { donateToVideo } from '@/server/services/shop/video-donation';
+import { getStickerForVideo, recordStickerClick, type VideoStickerView } from '@/server/services/shop/video-products';
 import { addToCart, confirmOrder, placeOrder, removeCartItems, requestClaim, updateCartQuantity } from '@/server/services/shop/orders';
 import { deleteMemberAddress, saveMemberAddress, setDefaultAddress, openAddress, type AddressInput } from '@/server/services/shop/address';
 
@@ -132,7 +133,9 @@ export async function addToCartAction(_p: ShopActionState, fd: FormData): Promis
     const code = str(fd, 'shopCode');
     const shop = await prisma.creatorProfile.findUnique({ where: { code }, select: { id: true } });
     if (!shop) throw new Error('샵을 찾을 수 없습니다.');
-    await addToCart(user.id, shop.id, str(fd, 'productId'), str(fd, 'variantId'), Number.parseInt(str(fd, 'quantity') || '1', 10));
+    await addToCart(user.id, shop.id, str(fd, 'productId'), str(fd, 'variantId'), Number.parseInt(str(fd, 'quantity') || '1', 10), {
+      sourceVideoKey: str(fd, 'sourceVideo').slice(0, 80) || null,
+    });
     revalidatePath(`/c/${code}/cart`);
     return str(fd, 'buyNow') === '1'
       ? { ok: true, redirectTo: `/c/${code}/cart?buy=1` }
@@ -242,4 +245,35 @@ export async function toggleWishAction(_p: ShopActionState, fd: FormData): Promi
     revalidatePath('/my/wishlist');
     return '관심 상품에서 뺐습니다.';
   });
+}
+
+// ------------------------------------------------------------------ 영상 상품 스티커
+
+/** 스티커를 눌렀을 때 클릭 수만 올린다 (로그인 불필요, IP 당 분당 30회까지만 센다) */
+export async function trackStickerClickAction(tagId: string): Promise<void> {
+  try {
+    const rl = await consumeIpRateLimit('shop:sticker-click', 30, 60);
+    if (!rl.ok) return;
+    await recordStickerClick(String(tagId ?? '').slice(0, 40));
+  } catch {
+    // 통계용이라 실패해도 화면에는 영향을 주지 않는다
+  }
+}
+
+/**
+ * 방송국 미리보기 플레이어(브라우저에서 고르는 영상)용: 그 영상의 상품 스티커 1건.
+ * 공개 정보(판매 중인 상품명·가격·이미지)만 돌려준다.
+ */
+export async function videoStickerAction(creatorCode: string, videoId: string): Promise<{ sticker: VideoStickerView | null; loggedIn: boolean }> {
+  try {
+    const code = String(creatorCode ?? '').trim().slice(0, 40);
+    const id = String(videoId ?? '').trim();
+    if (!code || !/^[A-Za-z0-9_-]{11}$/.test(id)) return { sticker: null, loggedIn: false };
+    const rl = await consumeIpRateLimit('shop:sticker-read', 120, 60);
+    if (!rl.ok) return { sticker: null, loggedIn: false };
+    const [sticker, user] = await Promise.all([getStickerForVideo(code, 'YOUTUBE', id), getSessionUser().catch(() => null)]);
+    return { sticker, loggedIn: Boolean(user && user.role !== 'ADMIN') };
+  } catch {
+    return { sticker: null, loggedIn: false };
+  }
 }

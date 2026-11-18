@@ -15,6 +15,9 @@ import {
   youtubeWatchUrl,
 } from '@/lib/video-hub';
 import { getVideoWithRelated, isVideoHubEnabled } from '@/server/services/video-hub';
+import { getStickerForVideo } from '@/server/services/shop/video-products';
+import { getSessionUser } from '@/server/auth';
+import { VideoProductSticker, VideoProductStrip } from '@/components/shop/video-product-sticker';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,6 +38,13 @@ export default async function WatchPage({ params }: { params: Promise<{ id: stri
   if (!data?.item) notFound();
   const { item, related, now } = data;
   const meta = [formatViews(item.views), timeAgo(item.publishedAt, now)].filter(Boolean).join(' · ');
+  // 도네이도 가입 크리에이터의 유튜브 영상이면 크리에이터가 연결한 상품 스티커를 띄운다
+  const [sticker, viewer] = item.creator && item.source === 'youtube'
+    ? await Promise.all([getStickerForVideo(item.creator.code, 'YOUTUBE', item.id), getSessionUser().catch(() => null)])
+    : [null, null];
+  const shopCode = item.creator?.code ?? '';
+  const loggedIn = Boolean(viewer && viewer.role !== 'ADMIN');
+  const loginHref = `/c/${encodeURIComponent(shopCode)}/login?next=${encodeURIComponent(`/watch/${item.id}`)}`;
 
   return (
     <PublicShell>
@@ -43,7 +53,11 @@ export default async function WatchPage({ params }: { params: Promise<{ id: stri
       </Link>
       <div className="mt-2 space-y-6">
         <div className="min-w-0 flex-1">
-          <VideoPlayer item={item} />
+          <VideoPlayer
+            item={item}
+            overlay={sticker ? <VideoProductSticker sticker={sticker} platform="YOUTUBE" shopCode={shopCode} loggedIn={loggedIn} loginHref={loginHref} /> : null}
+          />
+          {sticker ? <VideoProductStrip sticker={sticker} shopCode={shopCode} loggedIn={loggedIn} loginHref={loginHref} className="mt-3" /> : null}
 
           <h1 className="mt-3 text-[18px] font-black leading-snug tracking-[-0.02em] text-ink-900 sm:text-[20px]">{item.title}</h1>
 

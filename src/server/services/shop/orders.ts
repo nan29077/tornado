@@ -17,6 +17,7 @@ import { appendLedger } from '@/server/services/settlement';
 import { notifySuperAdmins, notifyUser } from '@/server/services/notifications';
 import { applyRate, getShopConfig } from './config';
 import { resolveReferralRate } from './commission';
+import { resolveSourceVideoKey } from './video-products';
 import { getShopProduct } from './catalog';
 import { sealAddress, validateAddress, type AddressInput } from './address';
 
@@ -42,7 +43,14 @@ function stamp(prefix: string): string {
 
 // =========================================================================== 장바구니
 
-export async function addToCart(userId: string, shopCreatorId: string, productId: string, variantId: string, quantity: number) {
+export async function addToCart(
+  userId: string,
+  shopCreatorId: string,
+  productId: string,
+  variantId: string,
+  quantity: number,
+  opts: { sourceVideoKey?: string | null } = {},
+) {
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) throw new Error('수량은 1~99개로 선택해 주세요.');
   const product = await getShopProduct(shopCreatorId, productId);
   if (!product) throw new Error('이 샵에서 판매하지 않는 상품입니다.');
@@ -52,11 +60,13 @@ export async function addToCart(userId: string, shopCreatorId: string, productId
   const existing = await prisma.cartItem.findUnique({ where: { userId_shopCreatorId_variantId: { userId, shopCreatorId, variantId } } });
   const next = Math.min(99, (existing?.quantity ?? 0) + quantity);
   if (next > variant.stock) throw new Error(`재고가 부족합니다. (남은 수량 ${variant.stock}개)`);
-  if (existing) await prisma.cartItem.update({ where: { id: existing.id }, data: { quantity: next } });
+  // 영상 상품 스티커로 담았으면 그 영상을 기록한다(마지막으로 담은 영상 기준). 검증되지 않은 값은 버린다
+  const sourceVideoKey = opts.sourceVideoKey ? await resolveSourceVideoKey(shopCreatorId, productId, opts.sourceVideoKey) : null;
+  if (existing) await prisma.cartItem.update({ where: { id: existing.id }, data: { quantity: next, ...(sourceVideoKey ? { sourceVideoKey } : {}) } });
   else {
     const count = await prisma.cartItem.count({ where: { userId } });
     if (count >= 50) throw new Error('장바구니에는 50개까지 담을 수 있습니다.');
-    await prisma.cartItem.create({ data: { id: newId(), userId, shopCreatorId, productId, variantId, quantity: next } });
+    await prisma.cartItem.create({ data: { id: newId(), userId, shopCreatorId, productId, variantId, quantity: next, sourceVideoKey } });
   }
 }
 
@@ -109,6 +119,7 @@ interface Line {
   referralRate: string;
   shippingFee: bigint;
   freeShippingOver: bigint | null;
+  sourceVideoKey: string | null;
 }
 
 /** 판매자 묶음의 배송비: 묶음 금액이 상품의 무료배송 기준 이상이면 0, 아니면 상품 배송비 중 최댓값 */
@@ -173,6 +184,7 @@ export async function placeOrder(
       referralRate: rate,
       shippingFee: product.shippingFee,
       freeShippingOver: product.freeShippingOver,
+      sourceVideoKey: c.sourceVideoKey ?? null,
     });
   }
 
@@ -241,6 +253,7 @@ export async function placeOrder(
               referralRate: l.referralRate,
               referralAmount: l.ownerType === 'ADMIN' ? applyRate(l.amount, l.referralRate) : 0n,
               brokerFeeRate: l.ownerType === 'CREATOR' ? cfg.brokerFeeRate.toFixed(6) : '0',
+              sourceVideoKey: l.sourceVideoKey,
             },
           });
         }

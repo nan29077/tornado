@@ -8,6 +8,7 @@ import { VIDEO_CATEGORIES, VIDEO_ORDERS, sortVideos, videoPlatformOf, videosHref
 import { HubChipGrid, HubChipLink, PlatformSelect, type HubChip } from './hub-chip-grid';
 import { VideoCard, VideoProfile } from './video-card';
 import { VideoPlayer } from './video-player';
+import { RemoteVideoSticker } from '@/components/shop/video-product-sticker';
 
 /** PC와 모바일에서 같은 탭·스와이프 탐색을 제공하는 작은 미리보기. */
 export function HomeVideoPane({
@@ -116,7 +117,12 @@ export function HomeVideoPane({
                 <X size={16} />
               </button>
             </div>
-            <VideoPlayer item={playing} autoplay rounded="rounded-lg" />
+            <VideoPlayer
+              item={playing}
+              autoplay
+              rounded="rounded-lg"
+              overlay={playing.creator ? <RemoteVideoSticker key={playing.id} creatorCode={playing.creator.code} videoId={playing.id} /> : null}
+            />
             <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2">
               <VideoProfile item={playing} />
               <a href={youtubeWatchUrl(playing.id)} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-9 items-center gap-1 text-xs font-bold text-brand-800">

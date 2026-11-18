@@ -14,6 +14,8 @@ import { parseProductForm, saveProduct, sellerInfoMissing } from '@/server/servi
 import { markDelivered, markPreparing, markShipped, processClaim } from '@/server/services/shop/orders';
 import { notifySuperAdmins } from '@/server/services/notifications';
 import { openAddress } from '@/server/services/shop/address';
+import { removeVideoProductTag, saveVideoProductTag } from '@/server/services/shop/video-products';
+import { parseTagTime } from '@/lib/video-product-time';
 import type { StudioActionState } from './studio';
 
 /**
@@ -290,5 +292,33 @@ export async function revealShippingAddressAction(_p: StudioActionState, fd: For
       secretLabel: `${order.orderNo} 배송지`,
       secretHint: '개인정보입니다. 발송에만 사용해 주세요.',
     };
+  });
+}
+
+// ------------------------------------------------------------------ 영상 상품 스티커 (2026-11-18)
+
+/** 영상(또는 라이브)에 상품 1개 연결. 유튜브는 표시 시간대를 정할 수 있다 */
+export async function saveVideoTagAction(_p: StudioActionState, fd: FormData): Promise<StudioActionState> {
+  return withShop(async ({ creatorId, code }) => {
+    const platform = text(fd, 'platform');
+    const externalId = text(fd, 'externalId');
+    const productId = text(fd, 'productId');
+    if (!productId) throw new Error('영상에 띄울 상품을 골라 주세요.');
+    const timed = text(fd, 'timing') === 'range';
+    const startSec = timed ? parseTagTime(text(fd, 'start'), '시작 시간') : null;
+    const endSec = timed ? parseTagTime(text(fd, 'end'), '끝 시간') : null;
+    if (timed && startSec == null && endSec == null) throw new Error('시간을 지정하려면 시작이나 끝 시간을 입력해 주세요. (영상 내내 띄우려면 [영상 내내]를 고르세요)');
+    await saveVideoProductTag(creatorId, { platform, externalId, productId, videoTitle: text(fd, 'videoTitle') || null, startSec, endSec });
+    refreshShop(code);
+    return { ok: true, message: platform === 'LIVE' ? '라이브 방송에 상품을 연결했습니다.' : '영상에 상품을 연결했습니다.' };
+  });
+}
+
+export async function removeVideoTagAction(_p: StudioActionState, fd: FormData): Promise<StudioActionState> {
+  return withShop(async ({ creatorId, code }) => {
+    const removed = await removeVideoProductTag(creatorId, text(fd, 'platform'), text(fd, 'externalId'));
+    if (!removed) throw new Error('연결된 상품이 없습니다.');
+    refreshShop(code);
+    return { ok: true, message: '상품 연결을 해제했습니다.' };
   });
 }

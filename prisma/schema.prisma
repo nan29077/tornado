@@ -757,6 +757,7 @@ model CreatorProfile {
   channels           CreatorChannel[]
   followers          MemberFollow[]
   shopVideos         ShopVideo[]
+  videoProductTags   VideoProductTag[]
   ownProducts        Product[]                  @relation("CreatorOwnProducts")
   displayedProducts  CreatorProduct[]
   commission         CreatorCommission?
@@ -2171,6 +2172,7 @@ model Product {
   commissions  CreatorProductCommission[]
   wishes       ProductWish[]
   cartItems    CartItem[]
+  videoTags    VideoProductTag[]
 
   @@index([ownerType, status])
   @@index([creatorId])
@@ -2297,6 +2299,8 @@ model CartItem {
   productId     String   @map("product_id")
   variantId     String   @map("variant_id")
   quantity      Int      @default(1)
+  /// 영상 상품 스티커로 담은 경우 그 영상 (platform:externalId, 라이브는 LIVE:LIVE). 마지막으로 담은 영상 기준
+  sourceVideoKey String?  @map("source_video_key")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -2407,6 +2411,8 @@ model ShopOrderItem {
   referralRate   Decimal  @default(0) @map("referral_rate") @db.Decimal(10, 6)
   referralAmount BigInt   @default(0) @map("referral_amount")
   brokerFeeRate  Decimal  @default(0) @map("broker_fee_rate") @db.Decimal(10, 6)
+  /// 영상 상품 스티커에서 담아 산 상품이면 그 영상 (platform:externalId, 라이브는 LIVE:LIVE)
+  sourceVideoKey String?  @map("source_video_key")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   order             ShopOrder          @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -3247,4 +3253,76 @@ model CreatorAnniversary {
   @@unique([creatorId, kind, month, day])
   @@index([month, day])
   @@map("creator_anniversary")
+}
+
+/// 영상 상품 스티커 (2026-11-18). 도네이도 안에서 재생되는 영상 위에 띄우는 상품 1개.
+/// 유튜브 같은 외부 플랫폼 화면에는 적용되지 않는다. 라이브 방송은 platform=LIVE, externalId=LIVE
+model VideoProductTag {
+  id         String   @id
+  creatorId  String   @map("creator_id")
+  /// YOUTUBE | TIKTOK | INSTAGRAM | FACEBOOK | LIVE
+  platform   String
+  externalId String   @map("external_id")
+  productId  String   @map("product_id")
+  videoTitle String?  @map("video_title")
+  /// 표시 시작·끝(초). 둘 다 비면 영상 내내 표시. 시간 지정은 유튜브 영상만
+  startSec   Int?     @map("start_sec")
+  endSec     Int?     @map("end_sec")
+  active     Boolean  @default(true)
+  clickCount Int      @default(0) @map("click_count")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([creatorId, platform, externalId])
+  @@index([productId])
+  @@map("video_product_tag")
+}
+
+/// 최고관리자가 YouTube Data API 로 영상을 수집할 채널 (2026-11-18)
+model YouTubeApiChannel {
+  id                String    @id
+  channelId         String    @unique @map("channel_id")
+  title             String?
+  handle            String?
+  avatarUrl         String?   @map("avatar_url")
+  subscriberCount   Int?      @map("subscriber_count")
+  uploadsPlaylistId String?   @map("uploads_playlist_id")
+  /// 방송국 카테고리 slug
+  category          String
+  active            Boolean   @default(true)
+  lastFetchedAt     DateTime? @map("last_fetched_at") @db.Timestamptz(3)
+  lastError         String?   @map("last_error")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  videos YouTubeApiVideo[]
+
+  @@map("youtube_api_channel")
+}
+
+/// YouTube Data API 로 수집한 영상 (방송국·영상 허브에 합쳐 노출)
+model YouTubeApiVideo {
+  id           String   @id
+  videoId      String   @unique @map("video_id")
+  channelRowId String   @map("channel_row_id")
+  channelId    String   @map("channel_id")
+  title        String
+  thumbnail    String?
+  publishedAt  DateTime @map("published_at") @db.Timestamptz(3)
+  views        Int?
+  durationSec  Int?     @map("duration_sec")
+  isShort      Boolean  @default(false) @map("is_short")
+  /// none | live | upcoming
+  liveState    String   @default("none") @map("live_state")
+  hidden       Boolean  @default(false)
+  fetchedAt    DateTime @default(now()) @map("fetched_at") @db.Timestamptz(3)
+
+  channel YouTubeApiChannel @relation(fields: [channelRowId], references: [id], onDelete: Cascade)
+
+  @@index([channelRowId, publishedAt])
+  @@index([publishedAt])
+  @@map("youtube_api_video")
 }

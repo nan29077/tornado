@@ -35,6 +35,7 @@ import { ShopVideoTab } from '@/components/shop/shop-video-tab';
 import { ShopProductGrid } from '@/components/shop/shop-product-grid';
 import { followerCount, isFollowing } from '@/server/services/shop/follow';
 import { getShopVideos } from '@/server/services/shop/videos';
+import { getShopStickers } from '@/server/services/shop/video-products';
 import { listShopProducts } from '@/server/services/shop/catalog';
 import { parseDonationPresets } from '@/server/services/shop/video-donation';
 import { isShopPaymentMock, isShopPaymentOff } from '@/server/adapters/shop-payment';
@@ -242,7 +243,9 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
   const primaryLive = liveLinks[0] ?? null;
 
   // 영상 탭: 유튜브 자동 + 직접 등록 영상 / 라이브 플레이어(유튜브 채널 ID 를 알면 임베드)
-  const shopVideos = tab === 'video' ? await getShopVideos(creator.id).catch(() => []) : [];
+  const [shopVideos, videoStickers] = tab === 'video'
+    ? await Promise.all([getShopVideos(creator.id).catch(() => []), getShopStickers(creator.id)])
+    : [[], {}];
   const ytChannelId = tab === 'video'
     ? (await prisma.creatorChannel.findFirst({ where: { creatorId: creator.id, platform: 'YOUTUBE', externalId: { not: null }, verifiedAt: { not: null } }, orderBy: { isPrimary: 'desc' }, select: { externalId: true } }))?.externalId ?? null
     : null;
@@ -645,6 +648,7 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
           loggedIn={Boolean(shopViewer)}
           defaultNickname={viewerDonor?.displayName ?? shopViewer?.name ?? ''}
           paymentMock={isShopPaymentMock()}
+          stickers={videoStickers}
         />
       ) : null}
 

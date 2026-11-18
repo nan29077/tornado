@@ -20,6 +20,7 @@ import { CONTENT_CATEGORY_SLUGS, isVideoCategory, isYouTubeChannelId, platformSl
 import { SEED_CHANNELS, defaultChannelsEnabled } from './video-hub-channels';
 import { DEMO_CHANNELS, isDemoDataEnabled } from './demo-data';
 import { PUBLIC_VIDEOS } from './video-hub-public-videos';
+import { apiCategoryOf, loadApiVideosForHub } from './youtube-api';
 import {
   channelIdFromUrl,
   mergeVideos,
@@ -245,6 +246,36 @@ async function loadExternalVideos(): Promise<VideoItem[]> {
   });
 }
 
+/**
+ * 최고관리자가 [유튜브 연동 > 영상 수집]에서 등록한 채널의 수집 영상 (2026-11-18).
+ * 도네이도 가입 크리에이터 채널이면 후원·샵 연결을 그대로 붙인다. 실패해도 빈 목록.
+ */
+async function loadApiVideos(specs: ChannelSpec[]): Promise<{ items: VideoItem[]; hiddenIds: Set<string> }> {
+  const { rows, hiddenIds } = await loadApiVideosForHub().catch(() => ({ rows: [], hiddenIds: new Set<string>() }));
+  if (rows.length === 0) return { items: [], hiddenIds };
+  const creatorOf = new Map(specs.filter((s) => s.creator).map((s) => [s.channelId, s]));
+  const items = rows
+    .filter((r) => r.liveState !== 'upcoming')
+    .map((r): VideoItem => {
+      const spec = creatorOf.get(r.channelId);
+      return {
+        id: r.videoId,
+        source: 'youtube',
+        title: r.title,
+        channelId: r.channelId,
+        channelTitle: r.channel.title ?? spec?.creator?.displayName ?? 'YouTube 채널',
+        channelAvatarUrl: r.channel.avatarUrl,
+        thumbnail: r.thumbnail ?? `https://i.ytimg.com/vi/${r.videoId}/hqdefault.jpg`,
+        publishedAt: r.publishedAt.toISOString(),
+        views: r.views,
+        category: spec?.category ?? apiCategoryOf(r.channel.category),
+        isShort: r.isShort,
+        creator: spec?.creator ?? null,
+      };
+    });
+  return { items, hiddenIds };
+}
+
 export interface VideoFeed {
   items: VideoItem[];
   /** 연동 피드 대신 선별한 공개 영상을 사용했는가 */
@@ -280,8 +311,11 @@ export const getVideoFeed = requestCache(async function getVideoFeedUncached(): 
     await Promise.race([runLimited(cold), new Promise((r) => setTimeout(r, FIRST_LOAD_BUDGET_MS))]).catch(() => undefined);
   }
 
-  const external = await loadExternalVideos();
-  const real = mergeVideos(specs.map((s) => (cache.get(s.channelId)?.videos ?? []).map((v) => toVideoItem(v, s))));
+  const [external, api] = await Promise.all([loadExternalVideos(), loadApiVideos(specs)]);
+  // YouTube Data API 로 수집한 영상(조회수·채널 아바타 포함)을 공개 피드 영상보다 먼저 둔다 (같은 영상이면 API 쪽 정보 사용)
+  const real = mergeVideos([api.items, ...specs.map((s) => (cache.get(s.channelId)?.videos ?? []).map((v) => toVideoItem(v, s)))]).filter(
+    (v) => !api.hiddenIds.has(v.id),
+  );
   const curated = real.length === 0;
   return {
     items: mergeVideos([curated ? PUBLIC_VIDEOS : real, external]),

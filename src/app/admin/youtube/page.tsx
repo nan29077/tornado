@@ -12,6 +12,8 @@ import { formatKst, kstStartOfDay } from '@/lib/datetime';
 import { deliveryStatusLabel } from '@/lib/labels';
 import type { YouTubeConnectionStatus } from '@/generated/prisma/enums';
 import { requireAdminPage } from '@/server/admin-guard';
+import { YouTubeAdminTabs } from '@/components/admin/youtube-tabs';
+import { resolveYouTubeApiKey } from '@/server/services/youtube-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,7 +41,7 @@ export default async function AdminYouTubePage() {
 
   const todayStart = kstStartOfDay();
 
-  const [connections, connectionTotal, quota, recentFailures, todayDeliveries, broadcasts] = await Promise.all([
+  const [connections, connectionTotal, quota, recentFailures, todayDeliveries, broadcasts, apiKey] = await Promise.all([
     /**
      * [YT-LIST] 예전에는 전체 연결을 한 번에 읽었다. 크리에이터 수에 비례해 화면이 무거워지므로
      * 최근 갱신 순 CONNECTION_LIST_LIMIT 건만 보여 주고 전체 수를 함께 표시한다.
@@ -79,6 +81,7 @@ export default async function AdminYouTubePage() {
         creator: { select: { id: true, displayName: true } },
       },
     }),
+    resolveYouTubeApiKey().catch(() => ({ key: null, source: 'none' as const, masked: null })),
   ]);
 
   const failureByCreator = new Map<string, number>();
@@ -97,6 +100,7 @@ export default async function AdminYouTubePage() {
         title="유튜브 연동 관리"
         description="크리에이터별 채널 연결 상태와 채팅 전송 실패를 확인합니다. 유튜브 전송 실패는 결제 결과를 바꾸지 않습니다."
       />
+      <YouTubeAdminTabs active="connections" />
 
       <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
         <StatTile
@@ -136,17 +140,18 @@ export default async function AdminYouTubePage() {
           <div className="grid gap-x-6 sm:grid-cols-2">
             <ConfigRow label="어댑터 모드" value={env.youtube.provider} ok={env.youtube.provider !== 'mock'} />
             <ConfigRow
-              label="API 키 (YOUTUBE_API_KEY)"
-              value={env.youtube.apiKey ? '등록됨' : '미등록'}
-              ok={Boolean(env.youtube.apiKey)}
+              label="YouTube Data API 키"
+              value={apiKey.source === 'admin' ? `관리자 화면 ${apiKey.masked}` : apiKey.source === 'env' ? `환경변수 ${apiKey.masked}` : '미등록'}
+              ok={apiKey.source !== 'none'}
             />
             <ConfigRow label="일일 할당량" value={`${formatNumber(quota.total)} units`} ok />
             <ConfigRow label="전송 1건당 비용" value={`${formatNumber(quota.insertCost)} units`} ok />
           </div>
           <p className="mt-3 border-t border-ink-100 pt-3 text-[12px] leading-relaxed text-ink-400">
-            키와 클라이언트 정보는 화면에 저장하지 않고 서버 환경변수(<span className="font-mono">.env</span>)로만
-            관리합니다. 값을 바꾼 뒤에는 서버를 재시작해야 반영됩니다. 라이브 채팅 등록은 할당량 비용이 커서 증설 신청
-            전에는 하루 전송 건수가 제한됩니다.
+            YouTube Data API 키는 <Link href="/admin/youtube/api" className="font-bold text-brand-700 underline">API 키 관리</Link> 탭에서
+            입력하면 암호화해 저장하고 바로 반영됩니다(화면 키가 없으면 환경변수 <span className="font-mono">YOUTUBE_API_KEY</span> 사용).
+            OAuth 클라이언트 정보는 서버 환경변수(<span className="font-mono">.env</span>)로 관리하며, 바꾼 뒤에는 서버를 재시작해야 합니다.
+            라이브 채팅 등록은 할당량 비용이 커서 증설 신청 전에는 하루 전송 건수가 제한됩니다.
           </p>
         </div>
       </div>
