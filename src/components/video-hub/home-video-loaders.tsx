@@ -20,7 +20,7 @@ async function loadHomeVideos() {
   }
 }
 
-export async function HomeVideoPaneLoader({ inlinePlayback = false }: { inlinePlayback?: boolean }) {
+export async function HomeVideoPaneLoader({ inDialog = false }: { inDialog?: boolean }) {
   const { items, now, liveCount, categories, hasShorts } = await loadHomeVideos();
-  return <HomeVideoPane items={items} now={now} inlinePlayback={inlinePlayback} liveCount={liveCount} categories={categories} hasShorts={hasShorts} />;
+  return <HomeVideoPane items={items} now={now} inDialog={inDialog} liveCount={liveCount} categories={categories} hasShorts={hasShorts} />;
 }

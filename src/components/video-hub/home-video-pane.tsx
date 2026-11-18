@@ -13,14 +13,14 @@ import { VideoPlayer } from './video-player';
 export function HomeVideoPane({
   items,
   now,
-  inlinePlayback = false,
+  inDialog = false,
   liveCount = 0,
   categories = [],
   hasShorts = false,
 }: {
   items: VideoItem[];
   now: number;
-  inlinePlayback?: boolean;
+  inDialog?: boolean;
   /** 지금 방송 중인 도네이도 크리에이터 수 */
   liveCount?: number;
   /** (이전 버전 호환용) 영상이 있는 카테고리. 2026-11-17 부터 방송국 카테고리를 모두 보여 준다 */
@@ -47,6 +47,8 @@ export function HomeVideoPane({
   const rail = React.useRef<HTMLDivElement>(null);
   const id = React.useId();
   const shown = React.useMemo(() => sortVideos(pool, order).slice(0, 8), [pool, order]);
+  const moreHref = videosHref({ sort: order, p: platform });
+  const canBrowse = !playing && shown.length > 1;
 
   function choose(next: VideoOrder) {
     setOrder(next);
@@ -62,17 +64,19 @@ export function HomeVideoPane({
   }
 
   return (
-    <section aria-label="크리에이터 영상 미리보기" className="overflow-hidden rounded-[24px] border border-brand-200/75 bg-[linear-gradient(160deg,#fffae9_0%,#fffdf8_56%,#fff_100%)] p-3 shadow-[0_14px_36px_rgba(91,57,18,0.12)]">
-      <div className="flex items-center justify-between gap-2 px-0.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-400 text-ink-900 shadow-[0_4px_9px_rgba(191,125,0,0.20)]"><Clapperboard size={17} strokeWidth={1.8} aria-hidden /></span>
-          <h2 className="text-[15px] font-black leading-tight tracking-tight text-ink-900">크리에이터 영상</h2>
+    <section aria-label="크리에이터 영상 미리보기" className={inDialog ? undefined : 'overflow-hidden rounded-[24px] border border-brand-200/75 bg-[linear-gradient(160deg,#fffae9_0%,#fffdf8_56%,#fff_100%)] p-3 shadow-[0_14px_36px_rgba(91,57,18,0.12)]'}>
+      {inDialog ? null : (
+        <div className="flex items-center justify-between gap-2 px-0.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-400 text-ink-900 shadow-[0_4px_9px_rgba(191,125,0,0.20)]"><Clapperboard size={17} strokeWidth={1.8} aria-hidden /></span>
+            <h2 className="text-[15px] font-black leading-tight tracking-tight text-ink-900">크리에이터 영상</h2>
+          </div>
+          <Link href={moreHref} className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full border border-brand-200 bg-white px-2.5 text-[11px] font-extrabold text-brand-800 transition-colors hover:bg-brand-50">
+            더 보기 <ArrowRight size={13} aria-hidden />
+          </Link>
         </div>
-        <Link href={videosHref({ sort: order, p: platform })} className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full border border-brand-200 bg-white px-2.5 text-[11px] font-extrabold text-brand-800 transition-colors hover:bg-brand-50">
-          더 보기 <ArrowRight size={13} />
-        </Link>
-      </div>
-      <div className="mt-2.5 space-y-2">
+      )}
+      <div className={cx('space-y-2', !inDialog && 'mt-2.5')}>
         {/* 1차: 플랫폼 셀렉트 + 라이브 · 쇼츠 */}
         <div className="flex items-center gap-1.5">
           <PlatformSelect value={platform} counts={platformCounts} onChange={(next) => { setPlatform(next); setPlaying(null); setPosition(0); rail.current?.scrollTo({ left: 0 }); }} className="min-w-0 flex-1" />
@@ -82,7 +86,7 @@ export function HomeVideoPane({
         {/* 2차: 주제 카테고리 한 줄 (옆으로 넘김) */}
         <HubChipGrid chips={topicChips} label="방송국 카테고리" />
       </div>
-      <div className="mb-2.5 mt-3 grid grid-cols-3 gap-1 rounded-xl border border-brand-100 bg-brand-50 p-1" role="tablist" aria-label="영상 정렬">
+      <div className={cx('mb-2.5 mt-3 grid grid-cols-3 gap-1 rounded-xl p-1', inDialog ? 'bg-ink-50' : 'border border-brand-100 bg-brand-50')} role="tablist" aria-label="영상 정렬">
         {VIDEO_ORDERS.map((tab, index) => (
           <button key={tab.value} id={`${id}-${tab.value}`} type="button" role="tab" aria-selected={order === tab.value}
             aria-controls={`${id}-panel`} tabIndex={order === tab.value ? 0 : -1}
@@ -94,14 +98,18 @@ export function HomeVideoPane({
               choose(VIDEO_ORDERS[next].value);
               document.getElementById(`${id}-${VIDEO_ORDERS[next].value}`)?.focus();
             }}
-            className={cx('min-h-9 rounded-lg text-[11px] font-bold transition-colors focus-visible:outline-2 focus-visible:outline-brand-500', order === tab.value ? 'bg-brand-400 text-ink-900 shadow-sm' : 'text-ink-600 hover:bg-white hover:text-ink-900')}>
+            className={cx(
+              'min-h-9 rounded-lg text-[11px] font-bold transition-colors focus-visible:outline-2 focus-visible:outline-brand-500',
+              order !== tab.value && 'text-ink-600 hover:bg-white hover:text-ink-900',
+              order === tab.value && (inDialog ? 'bg-white text-brand-800 shadow-sm' : 'bg-brand-400 text-ink-900 shadow-sm'),
+            )}>
             {tab.label}
           </button>
         ))}
       </div>
       <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-${order}`}>
         {playing ? (
-          <div className="mb-3 rounded-xl border border-warm-200 bg-warm-50 p-2">
+          <div>
             <div className="mb-1 flex items-center justify-between gap-2">
               <p className="line-clamp-2 text-xs font-extrabold">{playing.title}</p>
               <button type="button" aria-label="영상 재생 닫기" onClick={() => setPlaying(null)} className="grid h-10 w-10 shrink-0 place-items-center rounded-full hover:bg-ink-100">
@@ -126,20 +134,28 @@ export function HomeVideoPane({
         }} className={playing ? 'hidden' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:none]'}>
           {shown.map((item) => (
             <div key={item.id} className="w-[92%] shrink-0 snap-start xl:w-full">
-              <VideoCard item={item} now={now} onSelect={inlinePlayback ? setPlaying : undefined} active={playing?.id === item.id} className="border border-warm-200 bg-white" />
+              <VideoCard item={item} now={now} onSelect={inDialog ? setPlaying : undefined} active={playing?.id === item.id} className={inDialog ? 'p-0!' : 'border border-warm-200 bg-white'} />
             </div>
           ))}
         </div>
         {!shown.length ? <p className="py-8 text-center text-sm text-ink-500">{platform === 'all' ? '아직 영상이 없어요.' : '이 플랫폼 영상은 아직 준비 중이에요.'}</p> : null}
       </div>
-      {!playing && shown.length > 1 ? <div className="mt-1.5 flex items-center justify-between border-t border-warm-100 pt-2">
-        <span className="text-[11px] font-medium text-ink-500">옆으로 넘겨 보기</span>
-        <div className="flex items-center gap-1">
-          <span className="mr-1 text-[11px] tabular-nums text-ink-500" aria-live="polite">{shown.length ? position + 1 : 0} / {shown.length}</span>
-          <button type="button" aria-label="이전 영상" disabled={position === 0} onClick={() => move(-1)} className="grid h-9 w-9 place-items-center rounded-full border border-ink-100 bg-white text-ink-700 hover:bg-ink-50 disabled:opacity-30"><ChevronLeft size={16} /></button>
-          <button type="button" aria-label="다음 영상" disabled={position >= shown.length - 1} onClick={() => move(1)} className="grid h-9 w-9 place-items-center rounded-full border border-ink-100 bg-white text-ink-700 hover:bg-ink-50 disabled:opacity-30"><ChevronRight size={16} /></button>
+      {inDialog || canBrowse ? (
+        <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-warm-100 pt-2">
+          {inDialog ? (
+            <Link href={moreHref} className="inline-flex min-h-10 items-center gap-1 rounded-lg text-[12px] font-bold text-brand-800 hover:text-brand-900 focus-visible:outline-2 focus-visible:outline-brand-500">
+              전체 영상 보기 <ArrowRight size={14} aria-hidden />
+            </Link>
+          ) : <span className="text-[11px] font-medium text-ink-500">옆으로 넘겨 보기</span>}
+          {canBrowse ? (
+            <div className="flex shrink-0 items-center gap-1">
+              <span className="mr-1 text-[11px] tabular-nums text-ink-500" aria-live="polite">{position + 1} / {shown.length}</span>
+              <button type="button" aria-label="이전 영상" disabled={position === 0} onClick={() => move(-1)} className={cx('grid place-items-center rounded-full border border-ink-100 bg-white text-ink-700 hover:bg-ink-50 disabled:opacity-30', inDialog ? 'size-10' : 'size-9')}><ChevronLeft size={16} aria-hidden /></button>
+              <button type="button" aria-label="다음 영상" disabled={position >= shown.length - 1} onClick={() => move(1)} className={cx('grid place-items-center rounded-full border border-ink-100 bg-white text-ink-700 hover:bg-ink-50 disabled:opacity-30', inDialog ? 'size-10' : 'size-9')}><ChevronRight size={16} aria-hidden /></button>
+            </div>
+          ) : null}
         </div>
-      </div> : null}
+      ) : null}
     </section>
   );
 }

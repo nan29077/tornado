@@ -4,7 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import {
   SmsDonation, ShieldCheck, Radio, Wallet, ArrowRight,
-  CreditCard, BellRing, ListChecks, PlayCircle, DonationOverlay, Volume2,
+  CreditCard, BellRing, ListChecks, PlayCircle, DonationOverlay, Volume2, Trophy, MessagesSquare,
 } from '@/components/brand/icons';
 import { PublicShell } from '@/components/layout/public-shell';
 import { MascotAccent } from '@/components/brand/mascot-decorations';
@@ -61,8 +61,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       }
       mobileVideoPreview={videoHub ? (
         <MobileVideoPreview>
-          <Suspense fallback={<HomeVideoPaneSkeleton />}>
-            <HomeVideoPaneLoader inlinePlayback />
+          <Suspense fallback={<HomeVideoPaneSkeleton inDialog />}>
+            <HomeVideoPaneLoader inDialog />
           </Suspense>
         </MobileVideoPreview>
       ) : undefined}
@@ -85,7 +85,40 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       {/* 관리자 등록 배너 (HOME_TOP) */}
       <BannerStrip position="HOME_TOP" className="mt-4" />
 
-      {/* (2026-11-17) 3. 크리에이터 찾기는 [구독자 전용] 탭 맨 위로 옮겼다 */}
+      <section className="mt-8" aria-label="투표와 소통 안내">
+        <SectionTitle title="팬과 함께하는 투표와 소통" />
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          <Card className="flex flex-col items-start">
+            <span className="mb-3 grid h-10 w-10 place-items-center rounded-xl bg-brand-50 text-brand-800">
+              <Trophy size={20} strokeWidth={1.7} aria-hidden />
+            </span>
+            <CardTitle>크리에이터 투표</CardTitle>
+            <p className="mt-1.5 flex-1 text-[13px] leading-relaxed text-ink-600">
+              방송이나 SNS에 내 투표 링크를 공유해 보세요. 팬이 보내 준 표와 실시간·일간·주간·월간 순위를 확인할 수 있어요.
+            </p>
+            <LinkButton href="/vote" variant="secondary" size="sm" className="mt-4">
+              투표 랭킹 보기
+              <ArrowRight size={14} aria-hidden />
+            </LinkButton>
+          </Card>
+          <Card className="flex flex-col items-start">
+            <span className="mb-3 grid h-10 w-10 place-items-center rounded-xl bg-brand-50 text-brand-800">
+              <MessagesSquare size={20} strokeWidth={1.7} aria-hidden />
+            </span>
+            <CardTitle>팬 소통방</CardTitle>
+            <p className="mt-1.5 flex-1 text-[13px] leading-relaxed text-ink-600">
+              내 소통방을 열고 구독자에게 사진과 근황을 보내거나 팬의 메시지에 답장해 보세요. 1:1 채팅을 열면 팬이 시간을 예약할 수 있어요.
+            </p>
+            <LinkButton href="/talk" variant="secondary" size="sm" className="mt-4">
+              소통방 둘러보기
+              <ArrowRight size={14} aria-hidden />
+            </LinkButton>
+          </Card>
+        </div>
+        <p className="mt-2.5 text-[12px] leading-relaxed text-ink-600">
+          유료 투표권 배분액과 소통방 구독 정산액이 발생하면 스튜디오의 정산 관리에서 확인할 수 있어요.
+        </p>
+      </section>
 
       {/* 4. 문자 한 통으로 후원하는 방법 */}
       <section className="mt-8">

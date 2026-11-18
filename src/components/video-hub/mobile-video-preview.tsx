@@ -38,10 +38,15 @@ export function MobileVideoPreview({ children }: { children: ReactNode }) {
         id={id}
         aria-labelledby={`${id}-title`}
         onClose={() => setOpen(false)}
-        className="pointer-events-auto fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom))] top-auto mx-auto mb-0 max-h-[calc(100dvh-92px-env(safe-area-inset-bottom))] w-[min(24rem,calc(100%-24px))] max-w-none overflow-y-auto overscroll-contain rounded-[24px] border border-warm-200 bg-warm-50 text-ink-900 shadow-2xl backdrop:bg-ink-900/35"
+        className="pointer-events-auto fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom))] top-auto mx-auto mb-0 max-h-[calc(100dvh-92px-env(safe-area-inset-bottom))] w-[min(24rem,calc(100%-24px))] max-w-none overflow-y-auto overscroll-contain rounded-[24px] border border-warm-200 bg-white text-ink-900 shadow-lift backdrop:bg-ink-900/40"
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between bg-warm-50 px-4 pb-1 pt-2">
-          <h2 id={`${id}-title`} className="text-sm font-extrabold">방송국 미리보기</h2>
+        <div className="sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-warm-100 bg-white px-3.5 py-1.5">
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand-100 text-brand-800">
+              <Clapperboard size={17} aria-hidden />
+            </span>
+            <h2 id={`${id}-title`} className="text-[15px] font-extrabold tracking-tight">방송국 미리보기</h2>
+          </div>
           <button
             type="button"
             onClick={() => {
@@ -49,12 +54,12 @@ export function MobileVideoPreview({ children }: { children: ReactNode }) {
               setOpen(false);
             }}
             aria-label="방송국 미리보기 닫기"
-            className="grid h-10 w-10 place-items-center rounded-full text-ink-600 outline-none hover:bg-ink-100 focus:outline-none focus-visible:bg-ink-100"
+            className="grid size-11 shrink-0 place-items-center rounded-full text-ink-600 hover:bg-ink-50 focus-visible:outline-2 focus-visible:outline-brand-500"
           >
-            <X size={20} />
+            <X size={19} aria-hidden />
           </button>
         </div>
-        {open ? <div className="px-2 pb-2">{children}</div> : null}
+        {open ? <div className="px-3.5 pb-3 pt-3">{children}</div> : null}
       </dialog>
     </div>
   );
