@@ -10,10 +10,12 @@ import { prisma } from '@/server/db';
 import { getVoteConfig } from '@/server/services/engagement/config';
 import { BUCKET_LABEL, LEDGER_TYPE_LABEL, getBalance, type TicketBucket } from '@/server/services/vote/wallet';
 import { PAY_METHOD_LABEL, checkTicketRefund, type PayMethod } from '@/server/services/vote/purchase';
+import { getFanCard } from '@/server/services/vote/fan';
+import { FanCard } from '@/components/vote/fan-card';
 
 export const dynamic = 'force-dynamic';
 
-/** 마이페이지 > 투표 (남은 투표권 · 충전 · 획득 · 사용 내역 · 환불) */
+/** 마이페이지 > 팬투표 (남은 팬투표권 · 충전 · 획득 · 사용 내역 · 환불) */
 export default async function MyVotesPage({ searchParams }: { searchParams: Promise<{ v?: string }> }) {
   const sp = await searchParams;
   const user = await requireUser();
@@ -35,15 +37,24 @@ export default async function MyVotesPage({ searchParams }: { searchParams: Prom
     where: { id: { in: topCreators.map((t) => t.creatorId) } },
     select: { id: true, code: true, displayName: true, avatarUrl: true, user: { select: { avatarIndex: true } } },
   });
+  const fanCard = await getFanCard(user.id);
   const refundable = new Map<string, boolean>();
   for (const o of orders.filter((x) => x.status === 'PAID')) refundable.set(o.id, (await checkTicketRefund(o.id)).refundable);
 
   return (
     <div className="space-y-4">
+      <FanCard
+        card={{
+          level: { level: fanCard.level.level, name: fanCard.level.name, xpTotal: fanCard.level.xpTotal, progress: fanCard.level.progress, next: fanCard.level.next },
+          featuredBadge: fanCard.featuredBadge,
+          badges: fanCard.badges.map((b) => ({ key: b.key, title: b.title, desc: b.desc, earned: Boolean(b.earnedAt) })),
+          stats: fanCard.stats,
+        }}
+      />
       <Card className="relative overflow-hidden border border-brand-100 bg-[linear-gradient(135deg,#fff9e8,#fff)]">
         <div className="flex items-center gap-2">
           <Ticket size={18} className="text-brand-700" aria-hidden />
-          <CardTitle>내 투표권</CardTitle>
+          <CardTitle>내 팬투표권</CardTitle>
         </div>
         <p className="mt-2 text-[30px] font-black tabular-nums tracking-[-0.04em] text-ink-900">
           {balance.total.toLocaleString('ko-KR')}<span className="ml-1 text-[15px]">개</span>
@@ -56,14 +67,14 @@ export default async function MyVotesPage({ searchParams }: { searchParams: Prom
             </div>
           ))}
         </div>
-        {balance.expiringSoon > 0 ? <p className="mt-2 text-[12px] font-bold text-danger-600">7일 안에 만료되는 투표권 {balance.expiringSoon.toLocaleString('ko-KR')}개</p> : null}
+        {balance.expiringSoon > 0 ? <p className="mt-2 text-[12px] font-bold text-danger-600">7일 안에 만료되는 팬투표권 {balance.expiringSoon.toLocaleString('ko-KR')}개</p> : null}
         <div className="mt-3 grid grid-cols-3 gap-2">
           <Link href="/vote/charge?t=free" className="flex h-10 items-center justify-center gap-1 rounded-xl bg-brand-400 text-[12.5px] font-black text-ink-900"><Gift size={14} aria-hidden />무료로 받기</Link>
           <Link href="/vote/charge?t=buy" className="flex h-10 items-center justify-center gap-1 rounded-xl bg-ink-900 text-[12.5px] font-black text-white"><ShoppingBag size={14} aria-hidden />충전하기</Link>
-          <Link href="/vote" className="flex h-10 items-center justify-center gap-1 rounded-xl border border-ink-200 bg-white text-[12.5px] font-black text-ink-800"><Trophy size={14} aria-hidden />투표하기</Link>
+          <Link href="/vote" className="flex h-10 items-center justify-center gap-1 rounded-xl border border-ink-200 bg-white text-[12.5px] font-black text-ink-800"><Trophy size={14} aria-hidden />팬투표하기</Link>
         </div>
         <p className="mt-3 text-[11.5px] leading-relaxed text-ink-400">
-          무료 {cfg.freeExpiryDays > 0 ? `${cfg.freeExpiryDays}일` : '기한 없음'} · 보너스 {cfg.bonusExpiryDays > 0 ? `${cfg.bonusExpiryDays}일` : '기한 없음'} · 유료 {cfg.paidExpiryDays > 0 ? `${cfg.paidExpiryDays}일` : '기한 없음'} 동안 쓸 수 있어요. 투표할 때는 {cfg.spendOrder === 'FREE_FIRST' ? '무료 → 보너스 → 유료' : '유료 → 보너스 → 무료'} 순서로, 같은 종류는 만료가 가까운 것부터 쓰여요.
+          무료 {cfg.freeExpiryDays > 0 ? `${cfg.freeExpiryDays}일` : '기한 없음'} · 보너스 {cfg.bonusExpiryDays > 0 ? `${cfg.bonusExpiryDays}일` : '기한 없음'} · 유료 {cfg.paidExpiryDays > 0 ? `${cfg.paidExpiryDays}일` : '기한 없음'} 동안 쓸 수 있어요. 팬투표할 때는 {cfg.spendOrder === 'FREE_FIRST' ? '무료 → 보너스 → 유료' : '유료 → 보너스 → 무료'} 순서로, 같은 종류는 만료가 가까운 것부터 쓰여요.
         </p>
       </Card>
 
@@ -90,8 +101,8 @@ export default async function MyVotesPage({ searchParams }: { searchParams: Prom
 
       <nav className="flex gap-1 rounded-2xl bg-ink-100 p-1">
         {[
-          { k: 'history', l: '투표권 내역' },
-          { k: 'casts', l: '투표 내역' },
+          { k: 'history', l: '팬투표권 내역' },
+          { k: 'casts', l: '팬투표 내역' },
           { k: 'orders', l: '충전 · 환불' },
         ].map((t) => (
           <Link key={t.k} href={`/my/votes?v=${t.k}`} aria-current={view === t.k ? 'page' : undefined} className={cx('flex h-9 flex-1 items-center justify-center rounded-xl text-[12.5px] font-bold', view === t.k ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500')}>
@@ -101,7 +112,7 @@ export default async function MyVotesPage({ searchParams }: { searchParams: Prom
       </nav>
 
       {view === 'history' ? (
-        ledger.length === 0 ? <EmptyState title="아직 투표권 내역이 없어요" description="광고를 보거나 충전하면 여기에 기록돼요." /> : (
+        ledger.length === 0 ? <EmptyState title="아직 팬투표권 내역이 없어요" description="광고를 보거나 충전하면 여기에 기록돼요." /> : (
           <Card padded={false} className="divide-y divide-ink-100">
             {ledger.map((l) => (
               <div key={l.id} className="flex items-center gap-3 px-4 py-3">
@@ -117,13 +128,13 @@ export default async function MyVotesPage({ searchParams }: { searchParams: Prom
       ) : null}
 
       {view === 'casts' ? (
-        casts.length === 0 ? <EmptyState title="아직 투표하지 않았어요" action={<Link href="/vote" className="text-[13px] font-bold text-brand-800">투표하러 가기</Link>} /> : (
+        casts.length === 0 ? <EmptyState title="아직 팬투표하지 않았어요" action={<Link href="/vote" className="text-[13px] font-bold text-brand-800">팬투표하러 가기</Link>} /> : (
           <Card padded={false} className="divide-y divide-ink-100">
             {casts.map((c) => (
               <div key={c.id} className="flex items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] font-bold text-ink-800">{c.creator.displayName} {c.roundId ? <Badge tone="brand">왕중왕전</Badge> : null} {c.voidedAt ? <Badge tone="danger">무효</Badge> : null}</p>
-                  <p className="text-[11.5px] text-ink-400">{formatKst(c.createdAt, false)} · 투표권 {c.tickets.toLocaleString('ko-KR')}개 사용</p>
+                  <p className="text-[11.5px] text-ink-400">{formatKst(c.createdAt, false)} · 팬투표권 {c.tickets.toLocaleString('ko-KR')}개 사용</p>
                 </div>
                 <span className="text-[14px] font-black tabular-nums text-ink-800">{c.votes.toLocaleString('ko-KR')}표</span>
               </div>
@@ -146,7 +157,7 @@ export default async function MyVotesPage({ searchParams }: { searchParams: Prom
                 </div>
                 {o.status === 'PAID' ? (
                   refundable.get(o.id) ? (
-                    <MiniAction action={refundTicketOrderAction} fields={{ orderId: o.id }} label="환불 요청" variant="light" className="mt-2" confirm="이 결제로 받은 투표권(보너스 포함)이 회수되고 결제가 취소됩니다. 환불할까요?" />
+                    <MiniAction action={refundTicketOrderAction} fields={{ orderId: o.id }} label="환불 요청" variant="light" className="mt-2" confirm="이 결제로 받은 팬투표권(보너스 포함)이 회수되고 결제가 취소됩니다. 환불할까요?" />
                   ) : (
                     <p className="mt-1.5 text-[11.5px] text-ink-400">사용했거나 환불 기간({cfg.refundDays}일)이 지나 환불할 수 없어요.</p>
                   )

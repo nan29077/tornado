@@ -77,7 +77,7 @@ describe('[P1-1] 샵 결제 off 모드 — 유료 결제를 "준비 중"으로 �
     expect(assertProductionSafety().some((p) => p.includes('SHOP_PAYMENT_PROVIDER'))).toBe(false);
   });
 
-  it('off 에서는 투표권·후원·소통 구독·1:1 예약이 결제 행을 만들지 않고 거절된다', async () => {
+  it('off 에서는 팬투표권·후원·팬챗 구독·1:1 예약이 결제 행을 만들지 않고 거절된다', async () => {
     await setupRoom();
     const pid = newId();
     await prisma.voteTicketProduct.create({ data: { id: pid, name: '팩', price: 5500n, tickets: 500, bonus: 0 } });
@@ -123,7 +123,7 @@ describe('[P1-2] 활동 카테고리 — 스튜디오에서 정하고 30일에 �
 });
 
 describe('[P1-3] 회원 탈퇴 — 진행 중인 일은 막고, 개인 데이터는 지운다', () => {
-  it('진행 중 주문·예약은 탈퇴를 막고, 유료 투표권·구독은 동의 대상으로 센다', async () => {
+  it('진행 중 주문·예약은 탈퇴를 막고, 유료 팬투표권·구독은 동의 대상으로 센다', async () => {
     const u = await member();
     expect((await getWithdrawSummary(u.id)).blockers).toEqual([]);
 
@@ -146,7 +146,7 @@ describe('[P1-3] 회원 탈퇴 — 진행 중인 일은 막고, 개인 데이터
     expect(s.activeSubs).toBe(1);
   });
 
-  it('정리: 배송지·팔로우를 지우고, 남은 투표권은 원장에 기록하며 0 으로, 구독은 지금 끝낸다', async () => {
+  it('정리: 배송지·팔로우를 지우고, 남은 팬투표권은 원장에 기록하며 0 으로, 구독은 지금 끝낸다', async () => {
     const u = await member();
     await prisma.memberAddress.create({ data: { id: newId(), userId: u.id, recipientMasked: '홍*동', recipientEnc: 'x', phoneMasked: '010', phoneEnc: 'x', zipcode: '06236', addressMasked: '서울', addressEnc: 'x' } });
     await prisma.memberFollow.create({ data: { id: newId(), userId: u.id, creatorId: fx.creatorId } });
@@ -224,9 +224,9 @@ describe('[P2-1] 후원 외 수익 보류 — 환불된 건은 보류에서 빠�
   it('3일 전 적립 + 오늘 환불 반대분개(같은 #id) → 보류 0', async () => {
     const subId = newId();
     const d3 = new Date(Date.now() - 3 * 86_400_000);
-    await appendLedger([{ creatorId: fx.creatorId, entryType: 'TALK_SUBSCRIPTION_PROCEEDS', amount: 3430n, memo: `소통 구독 TSX (4900원 - 수수료 1470원) #${subId}`, occurredAt: d3 }]);
+    await appendLedger([{ creatorId: fx.creatorId, entryType: 'TALK_SUBSCRIPTION_PROCEEDS', amount: 3430n, memo: `팬챗 구독 TSX (4900원 - 수수료 1470원) #${subId}`, occurredAt: d3 }]);
     expect(await computeHoldingAmount(fx.creatorId)).toBe(3430n);
-    await appendLedger([{ creatorId: fx.creatorId, entryType: 'TALK_SUBSCRIPTION_PROCEEDS', amount: -3430n, memo: `소통 구독 환불 반대분개 (관리자 a: 테스트) #${subId}`, occurredAt: new Date() }]);
+    await appendLedger([{ creatorId: fx.creatorId, entryType: 'TALK_SUBSCRIPTION_PROCEEDS', amount: -3430n, memo: `팬챗 구독 환불 반대분개 (관리자 a: 테스트) #${subId}`, occurredAt: new Date() }]);
     expect(await computeHoldingAmount(fx.creatorId)).toBe(0n);
   });
 
@@ -234,7 +234,7 @@ describe('[P2-1] 후원 외 수익 보류 — 환불된 건은 보류에서 빠�
     const now = new Date();
     const d2 = new Date(Date.now() - 2 * 86_400_000);
     await appendLedger([
-      { creatorId: fx.creatorId, entryType: 'TALK_SUBSCRIPTION_PROCEEDS', amount: 3000n, memo: `소통 구독 A #${newId()}`, occurredAt: now },
+      { creatorId: fx.creatorId, entryType: 'TALK_SUBSCRIPTION_PROCEEDS', amount: 3000n, memo: `팬챗 구독 A #${newId()}`, occurredAt: now },
       { creatorId: fx.creatorId, entryType: 'TALK_SESSION_PROCEEDS', amount: 21000n, memo: '1:1 채팅 TCABCDEFGH123456 (30000원 - 수수료 9000원)', occurredAt: d2 },
     ]);
     expect(await computeHoldingAmount(fx.creatorId)).toBe(24000n);

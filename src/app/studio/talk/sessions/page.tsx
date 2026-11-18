@@ -12,7 +12,7 @@ import { SESSION_STATUS_LABEL, formatKstShort, formatRule, onlyPaidSessions, swe
 
 export const dynamic = 'force-dynamic';
 
-/** 크리에이터 관리자 > 팬 소통 > 1:1 채팅 (최고관리자가 1:1 을 켰을 때만 메뉴에 보인다) */
+/** 크리에이터 관리자 > 팬챗 > 1:1 채팅 (최고관리자가 1:1 을 켰을 때만 메뉴에 보인다) */
 export default async function StudioSessionsPage() {
   const { creatorId } = await requireCreator();
   const talk = await getTalkConfig();

@@ -602,17 +602,17 @@ export function assertProductionSafety(): string[] {
   if (!env.payment.pinCallbackSecret) problems.push('PAYMENT_PIN_CALLBACK_SECRET 이 비어 있습니다.');
   if (env.payment.provider === 'mock') problems.push('PAYMENT_PROVIDER 가 mock 입니다.');
   /**
-   * [5차 P0-1] 도네이도 샵 결제(주문·영상/카드 후원·투표권·소통 구독·1:1 채팅)도 mock 이면 막는다.
+   * [5차 P0-1] 도네이도 샵 결제(주문·영상/카드 후원·팬투표권·팬챗 구독·1:1 채팅)도 mock 이면 막는다.
    * mock 은 금액 끝자리 999 외에는 모두 승인하므로, 돈이 들어오지 않았는데 정산 원장에 수익이 쌓여
    * 실제 돈으로 출금될 수 있다. 실 PG 를 붙이기 전에는 운영 기동 자체를 막는다.
    * [6차 P1-1] 단, off 는 허용한다 — 유료 결제를 "준비 중"으로 닫고 문자 후원만으로 먼저 열 수 있다.
    */
   const shopPayment = (process.env.SHOP_PAYMENT_PROVIDER ?? 'mock').trim().toLowerCase() || 'mock';
   if (shopPayment === 'mock') {
-    problems.push('SHOP_PAYMENT_PROVIDER 가 mock 입니다. (샵 주문·영상/카드 후원·투표권·소통 결제가 실제 결제 없이 승인됩니다)');
+    problems.push('SHOP_PAYMENT_PROVIDER 가 mock 입니다. (샵 주문·영상/카드 후원·팬투표권·팬챗 결제가 실제 결제 없이 승인됩니다)');
   }
   if ((process.env.OFFERWALL_MOCK_ALLOW ?? '').trim().toLowerCase() === 'true') {
-    problems.push('운영에서는 OFFERWALL_MOCK_ALLOW 를 켤 수 없습니다. (테스트 광고로 무료 투표권이 지급됩니다)');
+    problems.push('운영에서는 OFFERWALL_MOCK_ALLOW 를 켤 수 없습니다. (테스트 광고로 무료 팬투표권이 지급됩니다)');
   }
   // SAFE_MODE 는 기본값이 true 다. 실키를 모두 넣고 이 값만 빠뜨리면 결제 어댑터가
   // mock 으로 대체되어(adapters/payment/index.ts) "돈은 안 나갔는데 승인 성공"이 되고,

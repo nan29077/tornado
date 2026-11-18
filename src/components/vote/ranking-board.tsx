@@ -6,8 +6,8 @@ import { categoryLabel } from '@/lib/video-hub';
 import { VoteButton, type VoteButtonProps } from './vote-button';
 
 /**
- * 투표 랭킹 보드 (2026-11-17). 1~3위는 시상대, 4위부터는 목록.
- * 서버 컴포넌트 — 투표 버튼만 클라이언트.
+ * 팬투표 랭킹 보드 (2026-11-17). 1~3위는 시상대, 4위부터는 목록.
+ * 서버 컴포넌트 — 팬투표 버튼만 클라이언트.
  */
 
 export interface BoardRow {
@@ -28,7 +28,7 @@ const nf = (n: number) => n.toLocaleString('ko-KR');
 
 export function RankChange({ rank, prevRank, showNew = true }: { rank: number; prevRank: number | null; showNew?: boolean }) {
   if (prevRank == null) {
-    return showNew ? <span className="rounded-full bg-accent-500/15 px-1.5 py-0.5 text-[10px] font-black text-accent-600">NEW</span> : null;
+    return showNew ? <span className="rounded-full bg-warning-500/15 px-1.5 py-0.5 text-[10px] font-black text-accent-600">NEW</span> : null;
   }
   const diff = prevRank - rank;
   if (diff > 0) {
@@ -56,7 +56,8 @@ const PODIUM = [
   { place: 3, ring: 'ring-[#e3b48a]', badge: 'bg-[#f3dcc6] text-[#7a4a1e]', height: 'h-12 sm:h-14', size: 'h-14 w-14 sm:h-[4.5rem] sm:w-[4.5rem]' },
 ];
 
-export function Podium({ rows, vote }: { rows: BoardRow[]; vote?: VoteContext | null }) {
+/** hideChange: 이벤트 · 왕중왕전처럼 직전 순위가 없는 회차는 순위 변동(NEW) 표시를 숨긴다 */
+export function Podium({ rows, vote, hideChange = false }: { rows: BoardRow[]; vote?: VoteContext | null; hideChange?: boolean }) {
   const byRank = new Map(rows.slice(0, 3).map((r, i) => [i + 1, r]));
   return (
     <div className="relative overflow-hidden rounded-[26px] bg-[radial-gradient(120%_90%_at_50%_0%,#fff3cf_0%,#fff9ec_45%,#ffffff_100%)] px-3 pb-4 pt-5 shadow-[0_14px_34px_rgba(160,106,0,0.12)] ring-1 ring-brand-100 sm:px-6">
@@ -70,14 +71,14 @@ export function Podium({ rows, vote }: { rows: BoardRow[]; vote?: VoteContext | 
               {r ? (
                 <>
                   {p.place === 1 ? <Crown size={22} strokeWidth={1.8} className="mb-1 text-brand-600" aria-hidden /> : <span className="mb-1 h-[22px]" aria-hidden />}
-                  <Link href={`/c/${r.code}`} target="_blank" rel="noopener" className="group flex min-w-0 flex-col items-center" prefetch={false}>
+                  <Link href={`/vote/creator/${r.code}`} className="group flex min-w-0 flex-col items-center" prefetch={false}>
                     <span className={cx('rounded-full bg-white p-0.5 ring-[3px] transition-transform group-hover:-translate-y-0.5', p.ring)}>
                       <ProfileAvatar seed={r.code} avatarIndex={r.avatarIndex} name={r.displayName} imageUrl={r.avatarUrl} className={p.size} />
                     </span>
                     <span className="mt-2 w-full truncate text-center text-[13px] font-black tracking-[-0.02em] text-ink-900 sm:text-[14px]">{r.displayName}</span>
                   </Link>
                   <span className="mt-0.5 text-[12px] font-extrabold tabular-nums text-brand-800">{nf(r.votes)}표</span>
-                  <span className="mt-0.5 h-4"><RankChange rank={r.rank} prevRank={r.prevRank} /></span>
+                  <span className="mt-0.5 h-4">{hideChange ? null : <RankChange rank={r.rank} prevRank={r.prevRank} />}</span>
                   {vote ? <VoteButton {...vote} creator={{ id: r.creatorId, name: r.displayName, code: r.code, avatarUrl: r.avatarUrl, avatarIndex: r.avatarIndex, category: r.category }} size="xs" className="mt-1.5" /> : null}
                 </>
               ) : (
@@ -94,7 +95,7 @@ export function Podium({ rows, vote }: { rows: BoardRow[]; vote?: VoteContext | 
   );
 }
 
-export function RankList({ rows, vote, startAt = 4, compact = false }: { rows: BoardRow[]; vote?: VoteContext | null; startAt?: number; compact?: boolean }) {
+export function RankList({ rows, vote, startAt = 4, compact = false, hideChange = false }: { rows: BoardRow[]; vote?: VoteContext | null; startAt?: number; compact?: boolean; hideChange?: boolean }) {
   const list = rows.filter((r) => r.rank >= startAt);
   if (list.length === 0) return null;
   const max = Math.max(...rows.map((r) => r.votes), 1);
@@ -104,13 +105,13 @@ export function RankList({ rows, vote, startAt = 4, compact = false }: { rows: B
         <li key={r.creatorId} className="relative flex items-center gap-3 px-3.5 py-3 sm:px-4">
           <span className="w-7 shrink-0 text-center">
             <span className="block text-[15px] font-black tabular-nums text-ink-800">{r.rank}</span>
-            <span className="flex h-3.5 justify-center"><RankChange rank={r.rank} prevRank={r.prevRank} showNew={!compact} /></span>
+            <span className="flex h-3.5 justify-center">{hideChange ? null : <RankChange rank={r.rank} prevRank={r.prevRank} showNew={!compact} />}</span>
           </span>
-          <Link href={`/c/${r.code}`} target="_blank" rel="noopener" prefetch={false} className="shrink-0">
+          <Link href={`/vote/creator/${r.code}`} prefetch={false} className="shrink-0">
             <ProfileAvatar seed={r.code} avatarIndex={r.avatarIndex} name={r.displayName} imageUrl={r.avatarUrl} className="h-11 w-11" />
           </Link>
           <div className="min-w-0 flex-1">
-            <Link href={`/c/${r.code}`} target="_blank" rel="noopener" prefetch={false} className="block truncate text-[14px] font-extrabold text-ink-900 hover:text-brand-800">
+            <Link href={`/vote/creator/${r.code}`} prefetch={false} className="block truncate text-[14px] font-extrabold text-ink-900 hover:text-brand-800">
               {r.displayName}
             </Link>
             <div className="mt-1 flex items-center gap-2">
@@ -128,7 +129,7 @@ export function RankList({ rows, vote, startAt = 4, compact = false }: { rows: B
   );
 }
 
-export function EmptyRanking({ title = '아직 투표가 없어요', description = '첫 표를 보내 순위를 만들어 주세요.' }: { title?: string; description?: string }) {
+export function EmptyRanking({ title = '아직 팬투표가 없어요', description = '첫 표를 보내 순위를 만들어 주세요.' }: { title?: string; description?: string }) {
   return (
     <div className="flex flex-col items-center rounded-[22px] border border-dashed border-brand-200 bg-brand-50/50 px-6 py-10 text-center">
       <span className="grid h-12 w-12 place-items-center rounded-full bg-white text-brand-600 shadow-card">

@@ -144,7 +144,7 @@ export default async function AdminCreatorDetailPage({ params }: { params: Promi
                 value={
                   <span className="flex flex-col items-end gap-1">
                     <span>{creator.contentCategory ? categoryLabel(creator.contentCategory) : '정하지 않음'}</span>
-                    {/* 카테고리별 투표 랭킹에 쓰인다. 크리에이터는 30일에 한 번, 관리자는 바로 바꾼다 */}
+                    {/* 카테고리별 팬투표 랭킹에 쓰인다. 크리에이터는 30일에 한 번, 관리자는 바로 바꾼다 */}
                     <ActionForm action={updateCreatorCategoryAction} submitLabel="변경" compact>
                       <input type="hidden" name="creatorId" value={creator.id} />
                       <AdminSelect name="contentCategory" defaultValue={creator.contentCategory ?? ''} aria-label="활동 카테고리">

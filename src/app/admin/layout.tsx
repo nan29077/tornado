@@ -133,24 +133,28 @@ function buildGroups(c: Awaited<ReturnType<typeof loadPendingCounts>>): NavGroup
       ],
     },
     {
-      // 2026-11-17 크리에이터 투표 · 투표권
-      title: '투표 관리',
+      // 2026-11-17 크리에이터 팬투표 · 팬투표권
+      title: '팬투표 관리',
       items: [
-        { href: '/admin/vote', label: '투표 설정', icon: 'vote' },
-        { href: '/admin/vote/products', label: '투표권 상품', icon: 'ticket' },
+        { href: '/admin/vote', label: '팬투표 설정', icon: 'vote' },
+        { href: '/admin/vote/products', label: '팬투표권 상품', icon: 'ticket' },
         { href: '/admin/vote/offerwall', label: '오퍼월 연동', icon: 'gift' },
         { href: '/admin/vote/rounds', label: '왕중왕전 · 이벤트', icon: 'effects' },
-        { href: '/admin/vote/casts', label: '투표 내역 · 이상 투표', icon: 'risk' },
-        { href: '/admin/vote/tickets', label: '투표권 지급·회수', icon: 'payments' },
+        { href: '/admin/vote/activity', label: '출석 · 미션 · 초대 · 응원', icon: 'gift' },
+        { href: '/admin/vote/rewards', label: '순위 보상 (신문 광고 등)', icon: 'award' },
+        { href: '/admin/vote/support', label: '서포트', icon: 'megaphone' },
+        { href: '/admin/vote/casts', label: '팬투표 내역 · 이상 팬투표', icon: 'risk' },
+        { href: '/admin/vote/tickets', label: '팬투표권 지급·회수', icon: 'payments' },
       ],
     },
     {
-      // 2026-11-17 소통방(월 구독) · 1:1 예약 채팅
-      title: '소통 관리',
+      // 2026-11-17 팬챗방(월 구독) · 1:1 예약 채팅
+      title: '팬챗 관리',
       items: [
-        { href: '/admin/talk', label: '소통 설정 · 1:1 스위치', icon: 'talk' },
+        { href: '/admin/talk', label: '팬챗 설정 · 1:1 스위치', icon: 'talk' },
+        { href: '/admin/talk/advanced', label: '버블형 · 팬레터 · 묶음 구독', icon: 'letter' },
         { href: '/admin/talk/creators', label: '크리에이터별 요율·권한', icon: 'policy' },
-        { href: '/admin/talk/subscriptions', label: '소통방 · 구독 현황', icon: 'users' },
+        { href: '/admin/talk/subscriptions', label: '팬챗방 · 구독 현황', icon: 'users' },
         { href: '/admin/talk/sessions', label: '1:1 예약 관리', icon: 'calendar' },
         { href: '/admin/talk/reports', label: '신고 메시지', icon: 'flag', badge: c.talkReports, badgeTone: 'danger' },
       ],

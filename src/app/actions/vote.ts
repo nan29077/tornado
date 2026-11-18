@@ -1,7 +1,7 @@
 'use server';
 
 /**
- * 투표 · 투표권 충전 — 회원 서버 액션 (2026-11-17)
+ * 팬투표 · 팬투표권 충전 — 회원 서버 액션 (2026-11-17)
  */
 import { revalidatePath } from 'next/cache';
 import { getSessionUser } from '@/server/auth';
@@ -15,7 +15,7 @@ import { completeMockMission } from '@/server/services/vote/offerwall';
 export interface VoteActionState {
   ok: boolean;
   message?: string;
-  /** 처리 후 남은 투표권 */
+  /** 처리 후 남은 팬투표권 */
   balance?: number;
   /** 화면을 다시 그릴 때 쓰는 증가값 */
   nonce?: number;
@@ -37,10 +37,10 @@ function friendly(e: unknown, scope: string): VoteActionState {
 
 export async function castVoteAction(_p: VoteActionState, fd: FormData): Promise<VoteActionState> {
   const user = await getSessionUser().catch(() => null);
-  if (!user) return initialFail('로그인 후 투표할 수 있어요.');
+  if (!user) return initialFail('로그인 후 팬투표할 수 있어요.');
   const ip = await clientIpFromHeaders();
   const rl = await consumeRateLimit('vote:cast', user.id, 30, 60);
-  if (!rl.ok) return initialFail('잠시 후 다시 투표해 주세요. (1분에 30번까지)');
+  if (!rl.ok) return initialFail('잠시 후 다시 팬투표해 주세요. (1분에 30번까지)');
   try {
     const r = await castVote(user, { creatorId: text(fd, 'creatorId'), votes: Number(text(fd, 'votes')), roundId: text(fd, 'roundId') || null, ip });
     const balance = (await getBalance(user.id)).total;
@@ -50,7 +50,7 @@ export async function castVoteAction(_p: VoteActionState, fd: FormData): Promise
     }
     return { ok: r.ok, message: r.message, balance, nonce: Date.now() };
   } catch (e) {
-    return friendly(e, '투표');
+    return friendly(e, '팬투표');
   }
 }
 
@@ -59,7 +59,7 @@ export async function purchaseTicketsAction(_p: VoteActionState, fd: FormData): 
   if (!user) return initialFail('로그인 후 충전할 수 있어요.');
   const method = parsePayMethod(text(fd, 'method'));
   if (!method) return initialFail('결제 수단을 골라 주세요.');
-  if (text(fd, 'agree') !== 'on') return initialFail('투표권 이용 안내에 동의해 주세요.');
+  if (text(fd, 'agree') !== 'on') return initialFail('팬투표권 이용 안내에 동의해 주세요.');
   const rl = await consumeRateLimit('vote:purchase', user.id, 10, 60);
   if (!rl.ok) return initialFail('잠시 후 다시 시도해 주세요.');
   try {
@@ -68,7 +68,7 @@ export async function purchaseTicketsAction(_p: VoteActionState, fd: FormData): 
     if (r.ok) revalidatePath('/my/votes');
     return { ok: r.ok, message: r.message, balance, nonce: Date.now() };
   } catch (e) {
-    return friendly(e, '투표권 충전');
+    return friendly(e, '팬투표권 충전');
   }
 }
 
@@ -80,7 +80,7 @@ export async function refundTicketOrderAction(_p: VoteActionState, fd: FormData)
     if (r.ok) revalidatePath('/my/votes');
     return { ok: r.ok, message: r.message, nonce: Date.now() };
   } catch (e) {
-    return friendly(e, '투표권 환불');
+    return friendly(e, '팬투표권 환불');
   }
 }
 
@@ -94,7 +94,7 @@ export async function completeMockMissionAction(_p: VoteActionState, fd: FormDat
     const balance = (await getBalance(user.id)).total;
     if (!r.ok) return { ok: false, message: r.reason, balance, nonce: Date.now() };
     revalidatePath('/vote/charge');
-    return { ok: true, message: r.duplicate ? '오늘은 이미 받은 광고예요. 내일 다시 참여해 주세요.' : `투표권 ${r.tickets.toLocaleString('ko-KR')}개를 받았어요.`, balance, nonce: Date.now() };
+    return { ok: true, message: r.duplicate ? '오늘은 이미 받은 광고예요. 내일 다시 참여해 주세요.' : `팬투표권 ${r.tickets.toLocaleString('ko-KR')}개를 받았어요.`, balance, nonce: Date.now() };
   } catch (e) {
     return friendly(e, '무료 충전');
   }

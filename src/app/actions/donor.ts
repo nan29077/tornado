@@ -350,8 +350,8 @@ export async function withdrawAccount(_prev: DonorActionState, formData: FormDat
   if (summary.blockers.length > 0) return { ok: false, message: summary.blockers.join(' ') };
   if ((summary.paidTickets > 0 || summary.activeSubs > 0) && formData.get('forfeit') !== 'on') {
     const parts = [
-      summary.paidTickets > 0 ? `유료 투표권 ${summary.paidTickets.toLocaleString('ko-KR')}장` : '',
-      summary.activeSubs > 0 ? `이용 중인 소통 구독 ${summary.activeSubs}건` : '',
+      summary.paidTickets > 0 ? `유료 팬투표권 ${summary.paidTickets.toLocaleString('ko-KR')}장` : '',
+      summary.activeSubs > 0 ? `이용 중인 팬챗 구독 ${summary.activeSubs}건` : '',
     ].filter(Boolean);
     return { ok: false, message: `${parts.join(', ')}이(가) 남아 있습니다. 탈퇴하면 환불 없이 사라집니다. 아래 동의에 체크한 뒤 다시 진행해 주세요.` };
   }

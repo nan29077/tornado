@@ -11,7 +11,7 @@ import { SESSION_STATUS_LABEL, formatKstShort } from '@/server/services/talk/ses
 
 export const dynamic = 'force-dynamic';
 
-/** 최고관리자 > 소통 관리 > 1:1 예약 관리 */
+/** 최고관리자 > 팬챗 관리 > 1:1 예약 관리 */
 export default async function AdminTalkSessionsPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
   await requireAdminPage('/admin/talk/sessions');
   const status = (await searchParams).status ?? '';
@@ -27,7 +27,7 @@ export default async function AdminTalkSessionsPage({ searchParams }: { searchPa
   return (
     <div>
       <PageHeader title="1:1 예약 관리" description="기한이 지난 신청은 자동 만료 · 환불, 끝난 예약은 자동 완료 · 정산됩니다(화면을 열 때). 분쟁 · 신고 건은 여기서 환불할 수 있습니다." />
-      {!cfg.sessionEnabled ? <div className="mb-3"><Notice tone="warning" title="1:1 채팅이 꺼져 있습니다">소통 설정에서 켤 수 있습니다. 꺼진 동안에도 남아 있는 예약은 여기서 처리할 수 있습니다.</Notice></div> : null}
+      {!cfg.sessionEnabled ? <div className="mb-3"><Notice tone="warning" title="1:1 채팅이 꺼져 있습니다">팬챗 설정에서 켤 수 있습니다. 꺼진 동안에도 남아 있는 예약은 여기서 처리할 수 있습니다.</Notice></div> : null}
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <FilterBar action="/admin/talk/sessions">
           <AdminSelect name="status" defaultValue={status}>

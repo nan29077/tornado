@@ -1,9 +1,9 @@
 import Link from 'next/link';
-import { ExternalLink, Heart } from '@/components/brand/icons';
+import { Clock3, ExternalLink, Eye, Heart, Mail, MessageCircle, Mic, Search, Video } from '@/components/brand/icons';
+import { BroadcastComposer } from '@/components/talk/broadcast-composer';
 import { PageHeader } from '@/components/layout/console-shell';
 import { Badge, Card, CardTitle, Checkbox, EmptyState, Field, Input, Notice, StatTile, Textarea, cx } from '@/components/ui';
 import { ActionForm } from '@/components/studio/action-form';
-import { ImageUploadField } from '@/components/studio/image-upload-field';
 import { GuideCard } from '@/components/engage/guide-card';
 import { ProfileAvatar } from '@/components/profile/generated-avatar';
 import {
@@ -13,42 +13,47 @@ import { formatKst } from '@/lib/datetime';
 import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { getCreatorEngagement, getTalkConfig } from '@/server/services/engagement/config';
-import { getCreatorInbox, getCreatorTalkStats } from '@/server/services/talk/talk';
+import { dispatchDueTalkNotifications, getCreatorInbox, getCreatorTalkStats, getCreatorTimeline } from '@/server/services/talk/talk';
 
 export const dynamic = 'force-dynamic';
 
-/** 크리에이터 관리자 > 팬 소통 > 소통 관리 (소통방 설정 · 메시지 보내기 · 대화 · 구독자) */
-export default async function StudioTalkPage({ searchParams }: { searchParams: Promise<{ f?: string; fan?: string }> }) {
+/** 크리에이터 관리자 > 팬챗 > 팬챗 관리 (팬챗방 설정 · 메시지 보내기 · 대화 · 구독자) */
+export default async function StudioTalkPage({ searchParams }: { searchParams: Promise<{ f?: string; fan?: string; re?: string; q?: string }> }) {
   const sp = await searchParams;
   const { creatorId } = await requireCreator();
   const talk = await getTalkConfig();
   const filter = sp.f === 'unread' || sp.f === 'hearted' ? sp.f : 'all';
-  const [creator, eng, inbox, stats, timeline, blocks] = await Promise.all([
+  const q = (sp.q ?? '').trim().slice(0, 40);
+  await dispatchDueTalkNotifications(new Date(), { creatorId }).catch(() => 0);
+  const [creator, eng, inbox, stats, tl, blocks, unreadLetters] = await Promise.all([
     prisma.creatorProfile.findUniqueOrThrow({ where: { id: creatorId }, select: { code: true, displayName: true, avatarUrl: true, user: { select: { avatarIndex: true } } } }),
     getCreatorEngagement(creatorId, prisma, { talk }),
-    getCreatorInbox(creatorId, { filter, fanUserId: sp.fan ?? null }),
+    getCreatorInbox(creatorId, { filter, fanUserId: sp.fan ?? null, replyToId: sp.re ?? null, q }),
     getCreatorTalkStats(creatorId),
-    prisma.talkMessage.findMany({ where: { creatorId, deletedAt: null, kind: { in: ['BROADCAST', 'DIRECT'] } }, orderBy: { createdAt: 'desc' }, take: 15 }),
+    getCreatorTimeline(creatorId),
     prisma.talkBlock.findMany({ where: { creatorId }, include: { user: { select: { name: true } } }, orderBy: { createdAt: 'desc' } }),
+    prisma.talkLetter.count({ where: { creatorId, deletedAt: null, readAt: null } }),
   ]);
+  const timeline = tl.sent;
+  const replyTarget = sp.re ? timeline.find((m) => m.id === sp.re) ?? null : null;
   const room = inbox.room;
   const group = talk.roomMode === 'GROUP';
 
   return (
     <div>
       <PageHeader
-        title="소통 관리"
-        description="구독자와 대화하는 소통방을 관리합니다."
-        action={<Link href={`/c/${creator.code}?tab=talk`} target="_blank" className="inline-flex items-center gap-1 text-[13px] font-bold text-brand-800">내 소통 탭 보기 <ExternalLink size={13} aria-hidden /></Link>}
+        title="팬챗 관리"
+        description="구독자와 대화하는 팬챗방을 관리합니다."
+        action={<Link href={`/c/${creator.code}?tab=talk`} target="_blank" className="inline-flex items-center gap-1 text-[13px] font-bold text-brand-800">내 팬챗 탭 보기 <ExternalLink size={13} aria-hidden /></Link>}
       />
 
       <GuideCard
-        title="소통 기능 안내"
+        title="팬챗 기능 안내"
         items={[
-          { head: '구독자만 들어와요 (월 구독)', body: `팬이 도네이도 샵 [소통] 탭에서 ${talk.subPeriodDays}일 이용권(${eng.talkSub.price.toLocaleString('ko-KR')}원)을 결제하면 소통방에 들어와요.` },
-          { head: group ? '1:N 단체방' : '버블형 대화', body: group ? '내가 보낸 메시지와 구독자 메시지가 소통방의 모든 구독자에게 함께 보여요. 크리에이터와 팬 여러 명이 함께 대화해요.' : '내가 보낸 메시지는 모든 구독자에게, 구독자 메시지는 나에게만 보여요.' },
+          { head: '구독자만 들어와요 (월 구독)', body: `팬이 도네이도 샵 [팬챗] 탭에서 ${talk.subPeriodDays}일 이용권(${eng.talkSub.price.toLocaleString('ko-KR')}원)을 결제하면 팬챗방에 들어와요.` },
+          { head: group ? '1:N 단체방' : '버블형 대화', body: group ? '내가 보낸 메시지와 구독자 메시지가 팬챗방의 모든 구독자에게 함께 보여요. 크리에이터와 팬 여러 명이 함께 대화해요.' : `내가 보낸 메시지는 구독자마다 1:1 대화처럼 보이고, 구독자 답장은 나에게만 보여요.${talk.replyPerMessage > 0 ? ` 팬은 내 메시지 하나에 ${talk.replyPerMessage}번까지 답장할 수 있어서, 메시지를 보낼수록 대화가 이어져요.` : ''}` },
           { head: '{닉네임} 을 넣어 보세요', body: '메시지에 {닉네임} 을 넣으면 받는 팬마다 그 팬의 이름으로 바뀌어 보여요. 예) {닉네임}님 오늘 방송 와 줘서 고마워요!' },
-          { head: '정산', body: `구독료에서 플랫폼 수수료 ${(eng.talkSub.feeRate * 100).toFixed(1).replace(/\.0$/, '')}%를 뺀 금액이 정산 관리의 [소통 구독 정산]으로 바로 적립돼요.${talk.sessionEnabled ? ' 1:1 채팅은 대화가 끝나면 적립돼요.' : ''}` },
+          { head: '정산', body: `구독료에서 플랫폼 수수료 ${(eng.talkSub.feeRate * 100).toFixed(1).replace(/\.0$/, '')}%를 뺀 금액이 정산 관리의 [팬챗 구독 정산]으로 바로 적립돼요.${talk.sessionEnabled ? ' 1:1 채팅은 대화가 끝나면 적립돼요.' : ''}` },
         ]}
         footer="연락처 · 계좌 · 외부 메신저 아이디 · 링크는 팬 메시지에서 자동으로 가려져요. 불편한 팬은 차단할 수 있고, 운영 정책 위반 메시지는 신고하면 운영팀이 처리해요."
       />
@@ -60,25 +65,49 @@ export default async function StudioTalkPage({ searchParams }: { searchParams: P
         <StatTile label="안 읽은 팬 메시지" value={`${inbox.unread.toLocaleString('ko-KR')}개`} tone={inbox.unread > 0 ? 'warning' : 'neutral'} />
       </div>
 
-      {!talk.enabled ? <div className="mt-4"><Notice tone="warning" title="소통 기능이 꺼져 있습니다">최고관리자가 소통 기능을 잠시 껐습니다. 설정은 저장할 수 있지만 팬에게는 보이지 않아요.</Notice></div> : null}
+      {!talk.enabled ? <div className="mt-4"><Notice tone="warning" title="팬챗 기능이 꺼져 있습니다">최고관리자가 팬챗 기능을 잠시 껐습니다. 설정은 저장할 수 있지만 팬에게는 보이지 않아요.</Notice></div> : null}
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_1.15fr]">
         <div className="space-y-4">
           <Card>
             <CardTitle>메시지 보내기</CardTitle>
-            <p className="mt-1 text-[12.5px] text-ink-500">구독 중인 팬 {stats.subscribers.toLocaleString('ko-KR')}명 모두에게 보내져요.</p>
-            {!room.open ? <p className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-[12px] font-bold text-warning-600">소통방이 닫혀 있어요. 아래 설정에서 소통방을 열어 주세요.</p> : null}
-            <ActionForm action={sendBroadcastAction} submitLabel="보내기" className="mt-3" scrollToId="talk-timeline">
-              <Textarea name="body" rows={4} maxLength={1000} placeholder="{닉네임}님, 오늘 방송 와 줘서 고마워요!" required />
-              <ImageUploadField name="imageUrl" label="사진 (선택)" aspect="wide" uploadOnly />
-            </ActionForm>
+            <p className="mt-1 text-[12.5px] text-ink-500">구독 중인 팬 모두에게 1:1 대화처럼 보내져요. 사진 · 음성 · 영상을 붙이거나 예약할 수 있어요.</p>
+            <BroadcastComposer subscribers={stats.subscribers} roomOpen={room.open} voiceMaxSeconds={talk.voiceMaxSeconds} />
           </Card>
 
+          {tl.scheduled.length > 0 ? (
+            <Card>
+              <CardTitle>예약된 메시지 ({tl.scheduled.length})</CardTitle>
+              <ul className="mt-2 space-y-2">
+                {tl.scheduled.map((m) => (
+                  <li key={m.id} className="flex items-start gap-2 rounded-xl bg-warning-50 px-3 py-2">
+                    <Clock3 size={15} className="mt-0.5 shrink-0 text-accent-600" aria-hidden />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11.5px] font-bold text-accent-600">{formatKst(m.createdAt, false).slice(0, 16)} 발송 예정</p>
+                      <p className="line-clamp-2 whitespace-pre-wrap break-words text-[13px] text-ink-800">{m.body || (m.mediaType === 'VOICE' ? '음성 메시지' : m.mediaType === 'VIDEO' ? '영상' : m.imageUrl ? '사진' : '')}</p>
+                    </div>
+                    <ActionForm action={deleteTalkMessageAction} submitLabel="예약 취소" variant="ghost" size="sm" confirmMessage="이 예약 메시지를 취소할까요?" confirmVariant="danger">
+                      <input type="hidden" name="messageId" value={m.id} />
+                    </ActionForm>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+
+          {talk.letterEnabled ? (
+            <Link href="/studio/talk/letters" className="flex items-center gap-3 rounded-2xl border border-ink-100 bg-white px-4 py-3 shadow-card">
+              <Mail size={18} className="text-brand-700" aria-hidden />
+              <span className="min-w-0 flex-1 text-[13.5px] font-extrabold text-ink-900">팬레터함</span>
+              {unreadLetters > 0 ? <Badge tone="brand">안 읽은 편지 {unreadLetters}</Badge> : <span className="text-[12px] text-ink-400">새 편지 없음</span>}
+            </Link>
+          ) : null}
+
           <Card>
-            <CardTitle>소통방 설정</CardTitle>
+            <CardTitle>팬챗방 설정</CardTitle>
             <ActionForm action={saveTalkRoomAction} submitLabel="저장" className="mt-3">
-              <Checkbox name="open" defaultChecked={room.open} label="소통방 열기" description="열면 내 샵 [소통] 탭에서 팬이 구독할 수 있어요." />
-              <Field label="소통방 안내 문구">
+              <Checkbox name="open" defaultChecked={room.open} label="팬챗방 열기" description="열면 내 샵 [팬챗] 탭에서 팬이 구독할 수 있어요." />
+              <Field label="팬챗방 안내 문구">
                 <Input name="welcomeMessage" defaultValue={room.welcomeMessage ?? ''} maxLength={300} placeholder="예) 매일 밤 10시에 들를게요!" />
               </Field>
               <Field label="팬 호칭" hint="예) 민트즈 · 소라단">
@@ -115,7 +144,7 @@ export default async function StudioTalkPage({ searchParams }: { searchParams: P
         <div className="space-y-4">
           <Card id="talk-inbox">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle>팬 메시지 {sp.fan ? <Link href="/studio/talk" className="ml-1 text-[12px] font-bold text-brand-800">전체 보기</Link> : null}</CardTitle>
+              <CardTitle>팬 답장 {sp.fan || sp.re || q ? <Link href="/studio/talk" className="ml-1 text-[12px] font-bold text-brand-800">전체 보기</Link> : null}</CardTitle>
               <div className="flex items-center gap-1">
                 <div className="flex gap-1 rounded-lg bg-ink-100 p-0.5 text-[12px] font-bold">
                   {[{ k: 'all', l: '전체' }, { k: 'unread', l: '안 읽음' }, { k: 'hearted', l: '하트' }].map((x) => (
@@ -125,8 +154,18 @@ export default async function StudioTalkPage({ searchParams }: { searchParams: P
                 <ActionForm action={markInboxReadAction} submitLabel="모두 읽음" variant="ghost" size="sm" />
               </div>
             </div>
+            <form action="/studio/talk" className="mt-3 flex h-10 items-center gap-1.5 rounded-xl border border-ink-200 bg-white px-3">
+              {sp.re ? <input type="hidden" name="re" value={sp.re} /> : null}
+              <Search size={15} className="text-ink-400" aria-hidden />
+              <input name="q" defaultValue={q} placeholder="답장 내용 검색" className="min-w-0 flex-1 bg-transparent text-[13px] outline-none" />
+            </form>
+            {replyTarget ? (
+              <p className="mt-2 rounded-xl bg-brand-50 px-3 py-2 text-[12.5px] text-ink-700">
+                <b>이 메시지에 온 답장</b> · {replyTarget.body ? replyTarget.body.slice(0, 40) : '첨부 메시지'}
+              </p>
+            ) : null}
             {inbox.messages.length === 0 ? (
-              <div className="mt-3"><EmptyState title="아직 팬 메시지가 없어요" description="메시지를 보내면 구독 중인 팬들이 답장할 수 있어요." /></div>
+              <div className="mt-3"><EmptyState title="아직 팬 답장이 없어요" description="메시지를 보내면 구독 중인 팬들이 답장할 수 있어요." /></div>
             ) : (
               <ul className="mt-3 space-y-2.5">
                 {inbox.messages.map((m) => (
@@ -136,6 +175,7 @@ export default async function StudioTalkPage({ searchParams }: { searchParams: P
                       <div className="min-w-0 flex-1">
                         <p className="flex flex-wrap items-center gap-1.5 text-[12.5px]">
                           <Link href={`/studio/talk?fan=${m.fanUserId}`} className="font-extrabold text-ink-900 hover:text-brand-800">{m.fanName}</Link>
+                          {m.days > 0 ? <span className="rounded-full bg-ink-900 px-1.5 text-[10px] font-black leading-[17px] tabular-nums text-brand-200">D+{m.days}</span> : null}
                           <span className="text-ink-400">{formatKst(m.createdAt, false).slice(5, 16)}</span>
                           {m.isNew ? <Badge tone="brand">새 메시지</Badge> : null}
                           {m.blocked ? <Badge tone="danger">차단됨</Badge> : null}
@@ -145,11 +185,11 @@ export default async function StudioTalkPage({ searchParams }: { searchParams: P
                           <ActionForm action={toggleHeartAction} submitLabel={m.hearted ? '하트 취소' : '하트'} variant={m.hearted ? 'accent' : 'secondary'} size="sm">
                             <input type="hidden" name="messageId" value={m.id} />
                           </ActionForm>
-                          <ActionForm action={deleteTalkMessageAction} submitLabel="지우기" variant="ghost" size="sm" confirmMessage="이 메시지를 지울까요? 소통방에서 사라집니다." confirmVariant="danger">
+                          <ActionForm action={deleteTalkMessageAction} submitLabel="지우기" variant="ghost" size="sm" confirmMessage="이 메시지를 지울까요? 팬챗방에서 사라집니다." confirmVariant="danger">
                             <input type="hidden" name="messageId" value={m.id} />
                           </ActionForm>
                           {m.fanUserId && !m.blocked ? (
-                            <ActionForm action={setTalkBlockAction} submitLabel="차단" variant="ghost" size="sm" confirmMessage={`${m.fanName} 님을 차단할까요? 이 소통방에 메시지를 보낼 수 없게 됩니다.`} confirmVariant="danger">
+                            <ActionForm action={setTalkBlockAction} submitLabel="차단" variant="ghost" size="sm" confirmMessage={`${m.fanName} 님을 차단할까요? 이 팬챗방에 메시지를 보낼 수 없게 됩니다.`} confirmVariant="danger">
                               <input type="hidden" name="userId" value={m.fanUserId} />
                               <input type="hidden" name="block" value="1" />
                             </ActionForm>
@@ -186,7 +226,14 @@ export default async function StudioTalkPage({ searchParams }: { searchParams: P
                       <p className="text-[11px] text-ink-400">{formatKst(m.createdAt, false).slice(5, 16)} {m.kind === 'DIRECT' ? <Badge>한 팬에게만</Badge> : null}</p>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       {m.imageUrl ? <img src={m.imageUrl} alt="" className="my-1 max-h-40 rounded-lg" /> : null}
-                      <p className="whitespace-pre-wrap break-words text-[13px] text-ink-800">{m.body}</p>
+                      {m.mediaType === 'VOICE' && m.mediaUrl ? <p className="my-1 inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[12px] font-bold text-ink-600"><Mic size={13} aria-hidden />음성 {m.mediaDuration ? `${Math.floor(m.mediaDuration / 60)}:${String(m.mediaDuration % 60).padStart(2, '0')}` : ''}</p> : null}
+                      {m.mediaType === 'VIDEO' && m.mediaUrl ? <p className="my-1 inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[12px] font-bold text-ink-600"><Video size={13} aria-hidden />영상</p> : null}
+                      {m.body ? <p className="whitespace-pre-wrap break-words text-[13px] text-ink-800">{m.body}</p> : null}
+                      <p className="mt-1.5 flex flex-wrap items-center gap-2.5 text-[11px] font-bold text-ink-500">
+                        {m.readCount != null ? <span className="inline-flex items-center gap-0.5"><Eye size={12} aria-hidden />읽음 {m.readCount}/{tl.subscribers}</span> : null}
+                        <Link href={`/studio/talk?re=${m.id}#talk-inbox`} className="inline-flex items-center gap-0.5 hover:text-brand-800"><MessageCircle size={12} aria-hidden />답장 {m.replyCount}</Link>
+                        <span className="inline-flex items-center gap-0.5"><Heart size={12} aria-hidden />{m.heartCount}</span>
+                      </p>
                     </div>
                     <ActionForm action={deleteTalkMessageAction} submitLabel="지우기" variant="ghost" size="sm" confirmMessage="이 메시지를 지울까요?" confirmVariant="danger">
                       <input type="hidden" name="messageId" value={m.id} />

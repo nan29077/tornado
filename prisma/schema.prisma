@@ -2665,6 +2665,11 @@ model VoteRound {
   endsAt      DateTime @map("ends_at") @db.Timestamptz(3)
   /// DRAFT | OPEN | CLOSED
   status      String   @default("DRAFT")
+  /// (2026-11-18 팬투표) 이벤트 배너 이미지 · 보상 안내 · 회원 1명 하루 최대 표(0 = 제한 없음) · 결과 한마디
+  bannerUrl     String? @map("banner_url")
+  rewardText    String? @map("reward_text")
+  dailyMaxVotes Int     @default(0) @map("daily_max_votes")
+  resultNote    String? @map("result_note")
   createdBy   String?  @map("created_by")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -2798,6 +2803,9 @@ model TalkSubscription {
   netAmount    BigInt    @default(0) @map("net_amount")
   method       String
   paymentId    String?   @unique @map("payment_id")
+  /// (2026-11-18) 여러 크리에이터 묶음 구독: 결제 1건을 여러 구독이 나눠 쓴다 (환불은 이 구독 금액만 부분 취소)
+  bundleOrderId   String? @map("bundle_order_id")
+  bundlePaymentId String? @map("bundle_payment_id")
   refundAmount BigInt    @default(0) @map("refund_amount")
   refundedAt   DateTime? @map("refunded_at") @db.Timestamptz(3)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -2805,6 +2813,7 @@ model TalkSubscription {
   user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
 
+  @@index([bundleOrderId])
   @@index([userId, creatorId, endsAt])
   @@index([creatorId, endsAt])
   @@map("talk_subscription")
@@ -2823,12 +2832,24 @@ model TalkMessage {
   hearted   Boolean   @default(false)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
   deletedBy String?   @map("deleted_by")
+  /// (2026-11-18 팬챗) 음성 · 영상 첨부. mediaType = VOICE | VIDEO (사진은 imageUrl)
+  mediaType     String?   @map("media_type")
+  mediaUrl      String?   @map("media_url")
+  /// 음성 · 영상 길이(초)
+  mediaDuration Int?      @map("media_duration")
+  /// 팬 답장(FAN_REPLY)이 어느 크리에이터 메시지(BROADCAST)에 대한 답장인가 — 답장 횟수 제한·모아보기
+  replyToId     String?   @map("reply_to_id")
+  /// 예약 발송으로 만든 메시지면 예약한 시각(만든 때). createdAt 이 실제 공개 시각이다
+  scheduledAt   DateTime? @map("scheduled_at") @db.Timestamptz(3)
+  /// 구독자 알림을 보낸 시각 (예약 메시지는 공개 시각이 지난 뒤 보낸다)
+  notifiedAt    DateTime? @map("notified_at") @db.Timestamptz(3)
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
 
   @@index([creatorId, kind, createdAt])
   @@index([creatorId, fanUserId, createdAt])
+  @@index([replyToId])
   @@map("talk_message")
 }
 
@@ -2837,6 +2858,10 @@ model TalkReadState {
   userId     String   @map("user_id")
   creatorId  String   @map("creator_id")
   lastReadAt DateTime @map("last_read_at") @db.Timestamptz(3)
+  /// (2026-11-18 팬챗) 이 팬챗방에서 크리에이터가 부를 내 이름. 메시지의 {닉네임} 이 이 이름으로 바뀐다
+  nickname   String?
+  /// 새 메시지 알림 끄기
+  muted      Boolean  @default(false)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -2948,4 +2973,278 @@ model TalkSessionMessage {
 
   @@index([sessionId, createdAt])
   @@map("talk_session_message")
+}
+
+// ===========================================================================
+// 팬챗 고도화 (2026-11-18) — 버블형 기본 · 반응 · 팬레터 · 묶음 구독
+// ===========================================================================
+
+/// 팬이 크리에이터 메시지에 누른 하트 (크리에이터는 하트 수만 본다)
+model TalkReaction {
+  id        String   @id
+  messageId String   @map("message_id")
+  creatorId String   @map("creator_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([messageId, userId])
+  @@index([creatorId, createdAt])
+  @@map("talk_reaction")
+}
+
+/// 팬레터 — 구독자가 크리에이터에게 보내는 긴 편지. 크리에이터만 읽는다
+model TalkLetter {
+  id           String    @id
+  creatorId    String    @map("creator_id")
+  userId       String    @map("user_id")
+  /// 편지지 테마 CREAM | MINT | PINK | NIGHT
+  theme        String    @default("CREAM")
+  title        String?
+  body         String
+  hearted      Boolean   @default(false)
+  readAt       DateTime? @map("read_at") @db.Timestamptz(3)
+  /// 크리에이터 답장(선택) — 그 팬에게만 보인다
+  replyBody    String?   @map("reply_body")
+  repliedAt    DateTime? @map("replied_at") @db.Timestamptz(3)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([creatorId, createdAt])
+  @@index([userId, createdAt])
+  @@map("talk_letter")
+}
+
+/// 여러 크리에이터 팬챗 묶음 구독 결제 (구독 행은 크리에이터별로 talk_subscription 에 따로 생긴다)
+model TalkBundleOrder {
+  id           String   @id
+  orderNo      String   @unique @map("order_no")
+  userId       String   @map("user_id")
+  creatorIds   String[] @map("creator_ids")
+  /// 할인 전 합계 · 할인율 · 결제 금액
+  listPrice    BigInt   @map("list_price")
+  discountRate Decimal  @default(0) @map("discount_rate") @db.Decimal(10, 6)
+  price        BigInt
+  method       String
+  paymentId    String?  @unique @map("payment_id")
+  /// READY | PAID | FAILED
+  status       String   @default("READY")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+  @@map("talk_bundle_order")
+}
+
+// ===========================================================================
+// 팬투표 고도화 (2026-11-18) — 출석 · 미션 · 친구 초대 · 레벨/배지 · 응원 · 보상 · 서포트 · 기념일
+// ===========================================================================
+
+/// 팬 프로필 (팬투표용). 친구 초대 코드 · 대표 배지
+model FanProfile {
+  id           String   @id
+  userId       String   @unique @map("user_id")
+  referralCode String   @unique @map("referral_code")
+  /// 화면에 함께 보여 줄 대표 배지 키
+  featuredBadge String? @map("featured_badge")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("fan_profile")
+}
+
+/// 출석 체크 (하루 1번, KST 날짜)
+model VoteAttendance {
+  id        String   @id
+  userId    String   @map("user_id")
+  dayKey    String   @map("day_key")
+  /// 이날까지 연속 출석 일수
+  streak    Int
+  tickets   Int
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([userId, dayKey])
+  @@index([userId, createdAt])
+  @@map("vote_attendance")
+}
+
+/// 일일 미션 보상 수령 (회원 · 미션 · 날짜당 1번)
+model VoteMissionClaim {
+  id         String   @id
+  userId     String   @map("user_id")
+  missionKey String   @map("mission_key")
+  dayKey     String   @map("day_key")
+  tickets    Int
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([userId, missionKey, dayKey])
+  @@index([userId, createdAt])
+  @@map("vote_mission_claim")
+}
+
+/// 공유 기록 (미션 확인용)
+model VoteShareLog {
+  id        String   @id
+  userId    String   @map("user_id")
+  creatorId String?  @map("creator_id")
+  channel   String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+  @@map("vote_share_log")
+}
+
+/// 친구 초대. 초대받은 회원은 한 번만 코드를 입력할 수 있고, 첫 팬투표를 하면 초대한 회원에게 보상이 간다
+model VoteReferral {
+  id         String    @id
+  inviterId  String    @map("inviter_id")
+  inviteeId  String    @unique @map("invitee_id")
+  /// PENDING(첫 팬투표 전) | REWARDED
+  status     String    @default("PENDING")
+  rewardedAt DateTime? @map("rewarded_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([inviterId, createdAt])
+  @@map("vote_referral")
+}
+
+/// 팬 배지 (업적)
+model FanBadge {
+  id       String   @id
+  userId   String   @map("user_id")
+  badgeKey String   @map("badge_key")
+  earnedAt DateTime @default(now()) @map("earned_at") @db.Timestamptz(3)
+
+  @@unique([userId, badgeKey])
+  @@index([userId])
+  @@map("fan_badge")
+}
+
+/// 응원 댓글 (크리에이터 · 이벤트별)
+model VoteCheer {
+  id        String    @id
+  creatorId String    @map("creator_id")
+  userId    String    @map("user_id")
+  roundId   String?   @map("round_id")
+  body      String
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+  deletedBy String?   @map("deleted_by")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([creatorId, createdAt])
+  @@index([roundId, createdAt])
+  @@index([userId, createdAt])
+  @@map("vote_cheer")
+}
+
+/// 순위 보상 정책 (최고관리자). 예) 월간 1위 → 신문 광고, 주간 1위 → 메인 배너
+model VoteRewardPolicy {
+  id          String   @id
+  /// PERIOD(일·주·월 확정 순위) | ROUND(이벤트·왕중왕전 결과)
+  scope       String
+  /// scope = PERIOD 일 때 DAY | WEEK | MONTH
+  periodType  String?  @map("period_type")
+  /// scope = ROUND 일 때 특정 회차(비우면 모든 회차)
+  roundId     String?  @map("round_id")
+  rankFrom    Int      @default(1) @map("rank_from")
+  rankTo      Int      @default(1) @map("rank_to")
+  /// NEWSPAPER | SUBWAY | BILLBOARD | BUS | ONLINE_AD | BANNER | BIRTHDAY_AD | GOODS | ETC
+  rewardType  String   @map("reward_type")
+  title       String
+  description String?
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([scope, active])
+  @@map("vote_reward_policy")
+}
+
+/// 보상 집행 (확정 순위 · 이벤트 결과 · 서포트 성공마다 생긴다). 진행 상황과 인증 사진을 공개한다
+model VoteRewardGrant {
+  id            String    @id
+  policyId      String?   @map("policy_id")
+  creatorId     String    @map("creator_id")
+  /// PERIOD | ROUND | SUPPORT | MANUAL
+  sourceType    String    @map("source_type")
+  /// PERIOD: "MONTH:2026-10" · ROUND: 회차 ID · SUPPORT: 서포트 ID · MANUAL: 임의
+  sourceKey     String    @map("source_key")
+  sourceLabel   String    @map("source_label")
+  rank          Int?
+  rewardType    String    @map("reward_type")
+  title         String
+  /// PENDING(준비) | SCHEDULED(집행 예정) | PUBLISHED(집행 완료) | CANCELLED
+  status        String    @default("PENDING")
+  /// 신문사 · 매체 · 장소 이름
+  mediaName     String?   @map("media_name")
+  scheduledAt   DateTime? @map("scheduled_at") @db.Timestamptz(3)
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(3)
+  proofImageUrl String?   @map("proof_image_url")
+  note          String?
+  updatedBy     String?   @map("updated_by")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([sourceType, sourceKey, creatorId, rewardType])
+  @@index([status, createdAt])
+  @@index([creatorId, createdAt])
+  @@map("vote_reward_grant")
+}
+
+/// 서포트 — 팬들이 팬투표권을 모아 크리에이터 광고(신문 · 전광판 등)를 연다
+model VoteSupport {
+  id               String    @id
+  creatorId        String    @map("creator_id")
+  title            String
+  description      String?
+  rewardType       String    @map("reward_type")
+  bannerUrl        String?   @map("banner_url")
+  goalTickets      Int       @map("goal_tickets")
+  raisedTickets    Int       @default(0) @map("raised_tickets")
+  participantCount Int       @default(0) @map("participant_count")
+  startsAt         DateTime  @map("starts_at") @db.Timestamptz(3)
+  endsAt           DateTime  @map("ends_at") @db.Timestamptz(3)
+  /// OPEN | SUCCESS | FAILED | CANCELLED
+  status           String    @default("OPEN")
+  closedAt         DateTime? @map("closed_at") @db.Timestamptz(3)
+  createdBy        String?   @map("created_by")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([status, endsAt])
+  @@index([creatorId, createdAt])
+  @@map("vote_support")
+}
+
+/// 서포트 참여 (팬투표권 사용). 실패 · 취소되면 쓴 만큼 같은 종류로 돌려준다
+model VoteSupportContribution {
+  id         String    @id
+  supportId  String    @map("support_id")
+  userId     String    @map("user_id")
+  tickets    Int
+  fromFree   Int       @default(0) @map("from_free")
+  fromPaid   Int       @default(0) @map("from_paid")
+  fromBonus  Int       @default(0) @map("from_bonus")
+  paidValue  BigInt    @default(0) @map("paid_value")
+  refundedAt DateTime? @map("refunded_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([supportId, createdAt])
+  @@index([userId, createdAt])
+  @@map("vote_support_contribution")
+}
+
+/// 크리에이터 기념일 (생일 · 데뷔일 등) — 팬투표 캘린더
+model CreatorAnniversary {
+  id        String   @id
+  creatorId String   @map("creator_id")
+  /// BIRTHDAY | DEBUT | CUSTOM
+  kind      String
+  title     String
+  month     Int
+  day       Int
+  year      Int?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([creatorId, kind, month, day])
+  @@index([month, day])
+  @@map("creator_anniversary")
 }

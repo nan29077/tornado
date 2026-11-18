@@ -121,13 +121,14 @@ export default async function StudioLayout({ children }: { children: React.React
   const user = await requireCreator().catch(() => null);
   if (!user) redirect('/login?next=/studio');
 
-  // 팬 소통 메뉴 (2026-11-17). 1:1 채팅은 최고관리자가 켰을 때만 보인다.
+  // 팬챗 메뉴 (2026-11-17). 1:1 채팅은 최고관리자가 켰을 때만 보인다.
   const talk = await getTalkConfig().catch(() => null);
   const fanGroup: NavGroup = {
-    title: '팬 소통',
+    title: '팬챗 · 팬투표',
     items: [
-      { href: '/studio/vote', label: '투표·랭킹', icon: 'vote' },
-      ...(talk?.enabled !== false ? [{ href: '/studio/talk', label: '소통 관리', icon: 'talk' as const }] : []),
+      { href: '/studio/vote', label: '팬투표·랭킹', icon: 'vote' },
+      ...(talk?.enabled !== false ? [{ href: '/studio/talk', label: '팬챗 관리', icon: 'talk' as const }] : []),
+      ...(talk?.enabled !== false && talk?.letterEnabled !== false ? [{ href: '/studio/talk/letters', label: '팬레터', icon: 'letter' as const }] : []),
       ...(talk?.enabled && talk.sessionEnabled ? [{ href: '/studio/talk/sessions', label: '1:1 채팅', icon: 'calendar' as const }] : []),
     ],
   };

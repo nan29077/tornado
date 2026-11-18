@@ -1,7 +1,7 @@
 'use server';
 
 /**
- * 크리에이터 관리자 > 팬 소통(소통 관리 · 1:1 채팅) 서버 액션 (2026-11-17).
+ * 크리에이터 관리자 > 팬챗(팬챗 관리 · 1:1 채팅) 서버 액션 (2026-11-17).
  * 모든 액션은 requireCreator() 후 본인 creatorId 범위에서만 변경한다.
  * 가격은 최고관리자가 "크리에이터가 정함(CREATOR)" 권한을 준 경우에만, 관리자가 정한 범위 안에서 바꿀 수 있다.
  */
@@ -9,10 +9,12 @@ import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/server/db';
 import { requireCreator } from '@/server/auth';
-import { isOwnUploadUrl } from '@/server/uploads';
+import { isOwnTalkMediaUrl, isOwnUploadUrl } from '@/server/uploads';
+import { saveAnniversary, deleteAnniversary } from '@/server/services/vote/anniversary';
+import { deleteCheer } from '@/server/services/vote/fan';
 import { getCreatorEngagement, getTalkConfig } from '@/server/services/engagement/config';
 import {
-  deleteTalkMessage, getOrCreateRoom, markCreatorRead, sendBroadcast, sendDirect, setTalkBlock, toggleHeart,
+  deleteLetter, deleteTalkMessage, getOrCreateRoom, markCreatorRead, markLetterRead, replyLetter, sendBroadcast, sendDirect, setTalkBlock, toggleHeart, toggleLetterHeart,
 } from '@/server/services/talk/talk';
 import { acceptSession, parseRuleLines, rejectSession, replaceSlotRules } from '@/server/services/talk/sessions';
 import type { StudioActionState } from './studio';
@@ -33,7 +35,7 @@ async function withCreatorCtx(fn: (c: Ctx) => Promise<StudioActionState>): Promi
     if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e;
     const message = (e as Error)?.message ?? '';
     if (!message || /prisma|invocation|ECONNREFUSED|ETIMEDOUT/i.test(message) || !/[가-힣]/.test(message)) {
-      logger.error('팬 소통 관리 액션 오류', { message });
+      logger.error('팬챗 관리 액션 오류', { message });
       return { ok: false, message: '처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.' };
     }
     return { ok: false, message };
@@ -57,7 +59,7 @@ function refresh() {
   revalidatePath('/studio/talk/sessions');
 }
 
-/** 소통방 설정 (열기·안내 문구·호칭·가격(허용 시)·1:1 받기·1회 시간·쉬는 날) */
+/** 팬챗방 설정 (열기·안내 문구·호칭·가격(허용 시)·1:1 받기·1회 시간·쉬는 날) */
 export async function saveTalkRoomAction(_p: StudioActionState, fd: FormData): Promise<StudioActionState> {
   return withCreatorCtx(async ({ creatorId }) => {
     const talk = await getTalkConfig();
@@ -96,7 +98,7 @@ export async function saveTalkRoomAction(_p: StudioActionState, fd: FormData): P
     }
     await prisma.talkRoom.update({ where: { creatorId }, data });
     refresh();
-    return { ok: true, message: '소통방 설정을 저장했습니다.' };
+    return { ok: true, message: '팬챗방 설정을 저장했습니다.' };
   });
 }
 
@@ -105,8 +107,89 @@ export async function sendBroadcastAction(_p: StudioActionState, fd: FormData): 
     const image = text(fd, 'imageUrl');
     // 외부 주소·//주소는 받지 않는다. 업로드한 사진(도네이도 저장소)만 쓴다 (5차 P2-12)
     if (image && !isOwnUploadUrl(image)) throw new Error('사진은 [사진 올리기]로 올린 이미지만 쓸 수 있습니다.');
-    const r = await sendBroadcast(creatorId, text(fd, 'body'), image || null);
+    // (2026-11-18) 음성 · 영상 · 예약 발송
+    const mediaType = text(fd, 'mediaType') === 'VOICE' ? 'VOICE' : text(fd, 'mediaType') === 'VIDEO' ? 'VIDEO' : null;
+    const mediaUrl = text(fd, 'mediaUrl');
+    if (mediaType && (!mediaUrl || !isOwnTalkMediaUrl(mediaUrl, mediaType))) throw new Error('음성·영상은 [올리기]나 [녹음]으로 올린 파일만 보낼 수 있습니다.');
+    const durationRaw = Number(text(fd, 'mediaDuration'));
+    let scheduledAt: Date | null = null;
+    if (text(fd, 'scheduleOn') === 'on') {
+      const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(text(fd, 'scheduledAt'));
+      if (!m) throw new Error('예약 시각을 입력해 주세요.');
+      scheduledAt = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])) - 9 * 3600_000);
+      if (scheduledAt.getTime() <= Date.now() + 60_000) throw new Error('예약 시각은 지금보다 1분 이상 뒤로 정해 주세요.');
+    }
+    const r = await sendBroadcast(creatorId, text(fd, 'body'), {
+      imageUrl: mediaType ? null : image || null,
+      mediaType,
+      mediaUrl: mediaType ? mediaUrl : null,
+      mediaDuration: mediaType && Number.isFinite(durationRaw) && durationRaw > 0 ? durationRaw : null,
+      scheduledAt,
+    });
     if (r.ok) refresh();
+    return { ok: r.ok, message: r.message };
+  });
+}
+
+// ---------------------------------------------------------------------- 팬레터 (2026-11-18)
+
+export async function letterOpAction(_p: StudioActionState, fd: FormData): Promise<StudioActionState> {
+  return withCreatorCtx(async ({ creatorId }) => {
+    const id = text(fd, 'letterId');
+    const op = text(fd, 'op');
+    let message = '처리했어요.';
+    if (op === 'read') {
+      await markLetterRead(creatorId, id);
+      message = '읽음으로 표시했어요.';
+    } else if (op === 'heart') {
+      message = (await toggleLetterHeart(creatorId, id)) ? '하트를 보냈어요.' : '하트를 거뒀어요.';
+    } else if (op === 'reply') {
+      const r = await replyLetter(creatorId, id, text(fd, 'body'));
+      if (!r.ok) return { ok: false, message: r.message };
+      message = r.message;
+    } else if (op === 'delete') {
+      await deleteLetter(id, { type: 'CREATOR', creatorId });
+      message = '편지를 지웠어요.';
+    } else throw new Error('알 수 없는 요청입니다.');
+    revalidatePath('/studio/talk/letters');
+    return { ok: true, message };
+  });
+}
+
+export async function markAllLettersReadAction(_p: StudioActionState): Promise<StudioActionState> {
+  return withCreatorCtx(async ({ creatorId }) => {
+    await prisma.talkLetter.updateMany({ where: { creatorId, readAt: null, deletedAt: null }, data: { readAt: new Date() } });
+    revalidatePath('/studio/talk/letters');
+    return { ok: true, message: '모두 읽음으로 표시했어요.' };
+  });
+}
+
+// ---------------------------------------------------------------------- 팬투표: 기념일 · 응원 댓글 (2026-11-18)
+
+export async function saveAnniversaryAction(_p: StudioActionState, fd: FormData): Promise<StudioActionState> {
+  return withCreatorCtx(async ({ creatorId }) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text(fd, 'date'));
+    if (!m) throw new Error('날짜를 골라 주세요.');
+    await saveAnniversary(creatorId, { kind: text(fd, 'kind'), month: Number(m[2]), day: Number(m[3]), year: text(fd, 'withYear') === 'on' ? Number(m[1]) : null, title: text(fd, 'title') });
+    revalidatePath('/studio/vote');
+    revalidatePath('/vote/calendar');
+    return { ok: true, message: '기념일을 저장했어요. 팬투표 캘린더에 표시돼요.' };
+  });
+}
+
+export async function deleteAnniversaryAction(_p: StudioActionState, fd: FormData): Promise<StudioActionState> {
+  return withCreatorCtx(async ({ creatorId }) => {
+    await deleteAnniversary(creatorId, text(fd, 'id'));
+    revalidatePath('/studio/vote');
+    revalidatePath('/vote/calendar');
+    return { ok: true, message: '기념일을 지웠어요.' };
+  });
+}
+
+export async function deleteCheerByCreatorAction(_p: StudioActionState, fd: FormData): Promise<StudioActionState> {
+  return withCreatorCtx(async ({ creatorId }) => {
+    const r = await deleteCheer(text(fd, 'cheerId'), { type: 'CREATOR', creatorId });
+    revalidatePath('/studio/vote');
     return { ok: r.ok, message: r.message };
   });
 }

@@ -119,7 +119,7 @@ export function parseYouTubeFeed(xml: string, expectedChannelId?: string): RawFe
 
 /**
  * VIDEO_HUB_CHANNELS="UCxxxx:mukbang,UCyyyy:humor" 형식.
- * 카테고리를 생략하거나 잘못 쓰면 'talk'(소통)으로 둔다. 형식이 틀린 채널 ID 는 버린다.
+ * 카테고리를 생략하거나 잘못 쓰면 'talk'(팬챗)으로 둔다. 형식이 틀린 채널 ID 는 버린다.
  */
 export function parseChannelSpecs(raw: string | undefined | null): Array<{ channelId: string; category: VideoCategorySlug }> {
   if (!raw) return [];

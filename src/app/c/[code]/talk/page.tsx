@@ -8,12 +8,12 @@ import { getSessionUser } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { loadCreatorDonateProfile } from '@/server/services/creator-donate-profile';
 import { getTalkConfig } from '@/server/services/engagement/config';
-import { getFanThread, getSubscriptionStatus, markFanRead } from '@/server/services/talk/talk';
+import { dispatchDueTalkNotifications, getComposerState, getFanThread, getSubscriptionStatus, markFanRead } from '@/server/services/talk/talk';
 
 export const dynamic = 'force-dynamic';
-export const metadata = { title: '소통방 | 도네이도', robots: { index: false, follow: false } };
+export const metadata = { title: '팬챗방 | 도네이도', robots: { index: false, follow: false } };
 
-/** 구독자 소통방 (버블형). 구독 중이 아니면 샵 [소통] 탭으로 돌려보낸다 */
+/** 구독자 팬챗방 (버블형). 구독 중이 아니면 샵 [팬챗] 탭으로 돌려보낸다 */
 export default async function CreatorTalkRoomPage({ params }: { params: Promise<{ code: string }> }) {
   const creator = await loadCreatorDonateProfile((await params).code);
   const path = `/c/${creator.code}/talk`;
@@ -23,7 +23,14 @@ export default async function CreatorTalkRoomPage({ params }: { params: Promise<
   if (!talk.enabled) redirect(`/c/${creator.code}`);
   const status = await getSubscriptionStatus(user.id, creator.id);
   if (!status.active) redirect(`/c/${creator.code}?tab=talk`);
-  const [thread, room] = await Promise.all([getFanThread(user, creator.id), prisma.talkRoom.findUnique({ where: { creatorId: creator.id } })]);
+  // 공개 시각이 지난 예약 메시지 알림 (배치가 없어도 누락이 없게)
+  await dispatchDueTalkNotifications(new Date(), { creatorId: creator.id }).catch(() => 0);
+  const [thread, room, composer] = await Promise.all([
+    getFanThread(user, creator.id),
+    prisma.talkRoom.findUnique({ where: { creatorId: creator.id } }),
+    getComposerState(user.id, creator.id),
+  ]);
+  if (!composer) redirect(`/c/${creator.code}?tab=talk`);
   await markFanRead(user.id, creator.id).catch(() => undefined);
 
   return (
@@ -36,16 +43,22 @@ export default async function CreatorTalkRoomPage({ params }: { params: Promise<
           </Link>
           <span className="text-[11.5px] text-ink-400">이용 기간 {status.endsAt ? formatKst(status.endsAt, false).slice(0, 10) : ''} 까지</span>
         </div>
-        <h1 className="mb-3 text-[20px] font-black tracking-[-0.03em] text-ink-900">{creator.displayName} 소통방</h1>
+        <h1 className="sr-only">{creator.displayName} 팬챗방</h1>
         <FanChat
           creatorId={creator.id}
           creator={{ name: creator.displayName, code: creator.code, avatarUrl: creator.avatarUrl, avatarIndex: creator.avatarIndex ?? 0 }}
           initial={thread.messages}
-          maxLength={talk.fanReplyMaxLength}
+          initialHasMore={thread.hasMore}
+          composer={composer}
           welcome={room?.welcomeMessage ?? null}
           groupMode={talk.roomMode === 'GROUP'}
+          archiveHref={`${path}/archive`}
+          lettersHref={`${path}/letters`}
         />
-        <p className="mt-2 text-center text-[11.5px] text-ink-400">하루 {talk.fanReplyDailyLimit > 0 ? `${talk.fanReplyDailyLimit}번까지` : '제한 없이'} 메시지를 보낼 수 있어요.</p>
+        <p className="mt-2 text-center text-[11.5px] text-ink-400">
+          {talk.replyPerMessage > 0 ? `크리에이터 메시지 하나에 ${talk.replyPerMessage}번까지 답장할 수 있어요. ` : ''}
+          {talk.fanReplyDailyLimit > 0 ? `하루 최대 ${talk.fanReplyDailyLimit}번.` : ''}
+        </p>
       </div>
     </CreatorDonateShell>
   );

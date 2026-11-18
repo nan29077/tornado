@@ -26,7 +26,7 @@ export function isDemoDataEnabled(): boolean {
 }
 
 let job: Promise<void> | null = null;
-/** 마지막으로 더미를 넣은 날(KST). 날이 바뀌면 오늘 · 이번 주 투표 집계를 새로 채우려고 다시 넣는다. */
+/** 마지막으로 더미를 넣은 날(KST). 날이 바뀌면 오늘 · 이번 주 팬투표 집계를 새로 채우려고 다시 넣는다. */
 let jobDay = '';
 
 function kstDay(): string {

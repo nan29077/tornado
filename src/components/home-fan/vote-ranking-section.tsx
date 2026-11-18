@@ -9,9 +9,9 @@ import { getVoteViewer, voteContextOf } from '@/server/services/vote/view';
 import { ensureDemoData } from '@/server/services/demo-data';
 
 /**
- * 메인 [구독자 전용] — 크리에이터 투표 랭킹 섹션 (2026-11-17)
- * 실시간 / 주간 / 월간 / 왕중왕 탭, 1~3위 시상대 + 4~10위 목록, 마감 카운트다운, 내 투표권, 충전 바로가기.
- * 투표 기능이 꺼져 있거나 랭킹 비공개면 섹션을 숨긴다.
+ * 메인 [구독자 전용] — 크리에이터 팬투표 랭킹 섹션 (2026-11-17)
+ * 실시간 / 주간 / 월간 / 왕중왕 탭, 1~3위 시상대 + 4~10위 목록, 마감 카운트다운, 내 팬투표권, 충전 바로가기.
+ * 팬투표 기능이 꺼져 있거나 랭킹 비공개면 섹션을 숨긴다.
  */
 export async function VoteRankingSection({ viewerId }: { viewerId: string | null }) {
   await ensureDemoData();
@@ -33,9 +33,9 @@ export async function VoteRankingSection({ viewerId }: { viewerId: string | null
         <div className="min-w-0">
           <h2 id="fan-vote" className="flex items-center gap-1.5 text-[18px] font-black tracking-[-0.025em] text-ink-900 sm:text-[19px]">
             <Trophy size={19} strokeWidth={1.8} className="text-brand-600" aria-hidden />
-            크리에이터 투표 랭킹
+            크리에이터 팬투표 랭킹
           </h2>
-          <p className="mt-1 text-[13px] leading-relaxed text-ink-500">내 최애에게 투표하고 1위로 만들어 주세요.</p>
+          <p className="mt-1 text-[13px] leading-relaxed text-ink-500">내 최애에게 팬투표하고 1위로 만들어 주세요.</p>
         </div>
         <Link href="/vote" prefetch={false} className="inline-flex h-8 shrink-0 items-center gap-0.5 rounded-full border border-ink-200 bg-white pl-3 pr-2 text-[12.5px] font-bold text-ink-700 hover:border-brand-300 hover:bg-brand-50">
           전체 랭킹
@@ -47,9 +47,9 @@ export async function VoteRankingSection({ viewerId }: { viewerId: string | null
         <Ticket size={17} className="shrink-0 text-brand-300" aria-hidden />
         <p className="min-w-0 flex-1 truncate text-[12.5px] font-bold">
           {viewer.loggedIn ? (
-            <>내 투표권 <b className="tabular-nums text-brand-200">{viewer.balance.toLocaleString('ko-KR')}</b>개</>
+            <>내 팬투표권 <b className="tabular-nums text-brand-200">{viewer.balance.toLocaleString('ko-KR')}</b>개</>
           ) : (
-            '광고만 봐도 투표권을 무료로 받아요'
+            '광고만 봐도 팬투표권을 무료로 받아요'
           )}
         </p>
         <Link href="/vote/charge" className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full bg-brand-400 px-3 text-[12px] font-black text-ink-900">
@@ -69,8 +69,8 @@ export async function VoteRankingSection({ viewerId }: { viewerId: string | null
             badge: t.key === 'champion' && v?.round?.status === 'OPEN' ? '진행 중' : null,
             panel: !v || v.rows.length === 0 ? (
               <EmptyRanking
-                title={t.key === 'champion' ? '열린 왕중왕전이 없어요' : '아직 투표가 없어요'}
-                description={t.key === 'champion' ? '왕중왕전이 열리면 여기에서 투표할 수 있어요.' : '첫 표를 보내 순위를 만들어 주세요.'}
+                title={t.key === 'champion' ? '열린 왕중왕전이 없어요' : '아직 팬투표가 없어요'}
+                description={t.key === 'champion' ? '왕중왕전이 열리면 여기에서 팬투표할 수 있어요.' : '첫 표를 보내 순위를 만들어 주세요.'}
               />
             ) : (
               <div className="space-y-2.5">

@@ -13,9 +13,9 @@ import { BellRing, Heart, HeartHandshake, MessagesSquare, Package, ReceiptText, 
 const TABS = [
   { href: '/my', label: '후원', icon: HeartHandshake, match: ['/my'] },
   { href: '/my/following', label: '구독', icon: BellRing, match: ['/my/following'] },
-  // 2026-11-17 투표권 · 소통
-  { href: '/my/votes', label: '투표', icon: Trophy, match: ['/my/votes'] },
-  { href: '/talk', label: '소통', icon: MessagesSquare, match: ['/my/talk'] },
+  // 2026-11-17 팬투표권 · 팬챗
+  { href: '/my/votes', label: '팬투표', icon: Trophy, match: ['/my/votes'] },
+  { href: '/talk', label: '팬챗', icon: MessagesSquare, match: ['/my/talk'] },
   { href: '/my/orders', label: '주문·배송', icon: Package, match: ['/my/orders'] },
   { href: '/my/wishlist', label: '찜', icon: Heart, match: ['/my/wishlist'] },
   { href: '/my/payments', label: '결제', icon: ReceiptText, match: ['/my/payments'] },

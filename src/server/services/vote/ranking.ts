@@ -1,8 +1,8 @@
 /**
- * 투표 랭킹 조회 · 기간 마감 확정 (2026-11-17).
+ * 팬투표 랭킹 조회 · 기간 마감 확정 (2026-11-17).
  *
  * 랭킹 탭
- *   실시간  오늘(KST) 누적 — 투표하면 바로 바뀐다
+ *   실시간  오늘(KST) 누적 — 팬투표하면 바로 바뀐다
  *   일간    어제 확정 순위
  *   주간    이번 주(월~일) 누적 · 마감까지 남은 시간
  *   월간    이번 달 누적
@@ -13,6 +13,7 @@
  * 기간이 끝나면 그 기간 집계에는 더 이상 표가 들어오지 않으므로 늦게 확정해도 결과는 같다.
  */
 import { prisma } from '@/server/db';
+import { issuePeriodRewards, issueRoundRewards } from './rewards';
 import { newId } from '@/lib/id';
 import { periodKey, periodRange, previousPeriodKey, type VotePeriodType } from '@/lib/vote-period';
 import { categoryLabel, isVideoCategory } from '@/lib/video-hub';
@@ -127,6 +128,11 @@ export async function finalizePeriod(periodType: string, key: string): Promise<n
     data: rows.map((x) => ({ id: newId(), periodType, periodKey: key, creatorId: x.creator_id, rank: Number(x.rank), votes: BigInt(x.votes), finalizedAt: now })),
     skipDuplicates: true,
   });
+  // (2026-11-18) 확정된 순위에 맞는 보상(신문 광고 · 메인 배너 등) 집행 행을 만든다. 실패해도 확정은 그대로 둔다
+  if (r.count > 0) {
+    if (periodType === 'ROUND') await issueRoundRewards(key).catch(() => 0);
+    else await issuePeriodRewards(periodType, key).catch(() => 0);
+  }
   return r.count;
 }
 
@@ -280,7 +286,7 @@ export async function getCreatorDailyTrend(creatorId: string, days = 30, now: Da
   return keys.map((k) => ({ key: k, votes: map.get(k) ?? 0, rank: rmap.get(k) ?? null }));
 }
 
-/** 나에게 투표한 팬 순위 (기간 내, 무효 제외). 이름은 닉네임만, 개인정보 없음 */
+/** 나에게 팬투표한 팬 순위 (기간 내, 무효 제외). 이름은 닉네임만, 개인정보 없음 */
 export async function getTopVoters(creatorId: string, since: Date | null, limit = 20) {
   const grouped = await prisma.voteCast.groupBy({
     by: ['userId'],
@@ -297,7 +303,7 @@ export async function getTopVoters(creatorId: string, since: Date | null, limit 
   });
 }
 
-function maskNick(name: string | null): string {
+export function maskNick(name: string | null): string {
   const n = (name ?? '').trim();
   if (!n) return '익명 팬';
   if (n.length <= 2) return `${n[0]}*`;

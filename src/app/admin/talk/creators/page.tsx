@@ -19,7 +19,7 @@ function PolicyFields({ p, code }: { p: Row; code?: string }) {
     <>
       <div className="grid gap-2 sm:grid-cols-4">
         <AdminField label="크리에이터 코드"><AdminInput name="creatorCode" defaultValue={code ?? ''} required readOnly={Boolean(code)} placeholder="TOR-XXXX" /></AdminField>
-        <AdminField label="투표 수익 크리에이터 몫(%)"><AdminInput name="voteShareRate" inputMode="decimal" defaultValue={r(p?.voteShareRate)} placeholder="전역" /></AdminField>
+        <AdminField label="팬투표 수익 크리에이터 몫(%)"><AdminInput name="voteShareRate" inputMode="decimal" defaultValue={r(p?.voteShareRate)} placeholder="전역" /></AdminField>
         <AdminField label="1:1 채팅 허용">
           <AdminSelect name="sessionAllowed" defaultValue={p?.sessionAllowed == null ? '' : p.sessionAllowed ? 'allow' : 'deny'}>
             <option value="">전역 그대로</option><option value="allow">허용</option><option value="deny">이 크리에이터만 막기</option>
@@ -27,7 +27,7 @@ function PolicyFields({ p, code }: { p: Row; code?: string }) {
         </AdminField>
         <AdminField label="메모"><AdminInput name="memo" defaultValue={p?.memo ?? ''} maxLength={200} /></AdminField>
       </div>
-      <p className="mt-2 text-[11.5px] font-bold text-ink-600">소통 월 구독</p>
+      <p className="mt-2 text-[11.5px] font-bold text-ink-600">팬챗 월 구독</p>
       <div className="grid gap-2 sm:grid-cols-5">
         <AdminField label="가격 방식(권한)">
           <AdminSelect name="talkSubPriceMode" defaultValue={p?.talkSubPriceMode ?? ''}><option value="">전역</option><option value="FIXED">관리자 고정</option><option value="CREATOR">크리에이터가 정함</option></AdminSelect>
@@ -51,7 +51,7 @@ function PolicyFields({ p, code }: { p: Row; code?: string }) {
   );
 }
 
-/** 최고관리자 > 소통 관리 > 크리에이터별 요율·권한 (투표 수익 몫 · 소통/1:1 가격·수수료·가격 권한 · 1:1 허용) */
+/** 최고관리자 > 팬챗 관리 > 크리에이터별 요율·권한 (팬투표 수익 몫 · 팬챗/1:1 가격·수수료·가격 권한 · 1:1 허용) */
 export default async function AdminCreatorPolicyPage({ searchParams }: { searchParams: Promise<{ code?: string }> }) {
   await requireAdminPage('/admin/talk/creators');
   const code = ((await searchParams).code ?? '').trim().toUpperCase();
@@ -63,11 +63,11 @@ export default async function AdminCreatorPolicyPage({ searchParams }: { searchP
   ]);
   return (
     <div>
-      <PageHeader title="크리에이터별 요율·권한" description="여기서 지정한 값이 전역 설정보다 항상 우선합니다. 비워 둔 칸은 전역 값을 따릅니다. 바꾼 값은 이후 결제·투표부터 적용됩니다." />
+      <PageHeader title="크리에이터별 요율·권한" description="여기서 지정한 값이 전역 설정보다 항상 우선합니다. 비워 둔 칸은 전역 값을 따릅니다. 바꾼 값은 이후 결제·팬투표부터 적용됩니다." />
       <Card className="mb-4">
         <CardTitle>전역 기본값</CardTitle>
         <p className="mt-1 text-[12.5px] text-ink-600">
-          투표 수익 몫 {pctLabel(vote.shareRate)} · 소통 구독 {talk.subPriceMode === 'FIXED' ? '관리자 고정' : '크리에이터가 정함'} {won(talk.subPrice)} (범위 {won(talk.subPriceMin)}~{won(talk.subPriceMax)}) 수수료 {pctLabel(talk.subFeeRate)} · 1:1 {talk.sessionPriceMode === 'FIXED' ? '관리자 고정' : '크리에이터가 정함'} {won(talk.sessionPrice)} 수수료 {pctLabel(talk.sessionFeeRate)}
+          팬투표 수익 몫 {pctLabel(vote.shareRate)} · 팬챗 구독 {talk.subPriceMode === 'FIXED' ? '관리자 고정' : '크리에이터가 정함'} {won(talk.subPrice)} (범위 {won(talk.subPriceMin)}~{won(talk.subPriceMax)}) 수수료 {pctLabel(talk.subFeeRate)} · 1:1 {talk.sessionPriceMode === 'FIXED' ? '관리자 고정' : '크리에이터가 정함'} {won(talk.sessionPrice)} 수수료 {pctLabel(talk.sessionFeeRate)}
         </p>
       </Card>
       <Card className="mb-4">
@@ -80,7 +80,7 @@ export default async function AdminCreatorPolicyPage({ searchParams }: { searchP
       </Card>
       <h2 className="mb-2 text-[14px] font-bold text-ink-900">지정된 크리에이터 ({policies.length})</h2>
       <Table>
-        <thead><tr><Th>크리에이터</Th><Th>투표 몫</Th><Th>소통 구독 (실제 판매가)</Th><Th>1:1 (실제 판매가)</Th><Th>1:1 허용</Th><Th>메모</Th><Th>{''}</Th></tr></thead>
+        <thead><tr><Th>크리에이터</Th><Th>팬투표 몫</Th><Th>팬챗 구독 (실제 판매가)</Th><Th>1:1 (실제 판매가)</Th><Th>1:1 허용</Th><Th>메모</Th><Th>{''}</Th></tr></thead>
         <tbody>
           {policies.map((p) => {
             const e = resolveEngagement(vote, talk, p, p.creator.talkRoom);

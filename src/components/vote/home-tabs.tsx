@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { cx } from '@/components/ui';
 
-/** 메인 [구독자 전용] 투표 랭킹 섹션의 기간 탭 (페이지 이동 없이 전환) */
+/** 메인 [구독자 전용] 팬투표 랭킹 섹션의 기간 탭 (페이지 이동 없이 전환) */
 export function VoteHomeTabs({ tabs }: { tabs: Array<{ key: string; label: string; panel: React.ReactNode; badge?: string | null }> }) {
   const [active, setActive] = React.useState(tabs[0]?.key ?? '');
   return (

@@ -34,7 +34,7 @@ export default async function MySessionPage({ params }: { params: Promise<{ id: 
     <div className="space-y-3">
       <Link href="/my/talk" className="inline-flex items-center gap-0.5 text-[13px] font-bold text-ink-500 hover:text-brand-800">
         <ChevronLeft size={15} aria-hidden />
-        내 소통으로
+        내 팬챗으로
       </Link>
       <Card>
         <div className="flex items-start justify-between gap-2">

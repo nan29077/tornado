@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { ShieldCheck, UserCog, Radio, Heart } from '@/components/brand/icons';
+import { ShieldCheck, UserCog, Radio, Heart, Loader2 } from '@/components/brand/icons';
 import { Card, CardTitle, Notice, cx } from '@/components/ui';
 import { testLogin, type TestLoginState } from '@/app/actions/auth';
 
@@ -13,6 +13,13 @@ const initial: TestLoginState = {};
  */
 export function TestLoginPanel({ seedAccounts }: { seedAccounts: { email: string; password: string }[] }) {
   const [state, formAction, pending] = React.useActionState(testLogin, initial);
+  /**
+   * (2026-11-18) 누른 버튼만 "로그인 중" 으로 보인다.
+   * 예전에는 세 버튼이 pending 하나를 같이 써서, 하나만 눌러도 세 버튼이 모두 흐려져 전부 눌린 것처럼 보였다.
+   * 다른 버튼은 모양은 그대로 두고 처리 중에만 눌리지 않게 막는다(두 번 로그인 방지).
+   */
+  const [clicked, setClicked] = React.useState<string | null>(null);
+  const active = pending ? clicked : null;
 
   const buttons = [
     {
@@ -53,20 +60,22 @@ export function TestLoginPanel({ seedAccounts }: { seedAccounts: { email: string
 
           <div className="mt-3 space-y-2">
             {buttons.map((b) => (
-              <form action={formAction} key={b.account}>
+              <form action={formAction} key={b.account} onSubmit={() => setClicked(b.account)}>
                 <input type="hidden" name="account" value={b.account} />
                 <button
                   type="submit"
                   disabled={pending}
+                  aria-busy={active === b.account}
                   className={cx(
                     'flex h-12 w-full items-center justify-between gap-2 rounded-xl px-4 text-[14px] font-bold transition-colors',
-                    'disabled:opacity-50',
+                    'disabled:cursor-wait',
+                    active === b.account && 'ring-2 ring-ink-900/30 ring-offset-1',
                     b.className,
                   )}
                 >
                   <span className="flex items-center gap-2 whitespace-nowrap">
-                    {b.icon}
-                    {b.label}
+                    {active === b.account ? <Loader2 size={17} strokeWidth={1.7} className="animate-spin" aria-hidden /> : b.icon}
+                    {active === b.account ? '로그인 중…' : b.label}
                   </span>
                   <span className="hidden whitespace-nowrap text-[11.5px] font-medium opacity-80 sm:inline">
                     {b.hint}

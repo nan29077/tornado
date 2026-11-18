@@ -21,9 +21,9 @@ import {
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 
 /**
- * 투표·투표권·소통·1:1 (2026-11-17)
- * 투표권 초과 사용 방지, 무료→유료 사용 순서, 한도, 크리에이터별 요율 우선, 미사용 환불, 오퍼월 중복 지급 방지,
- * 랭킹·마감 확정·동점 규칙, 무효 처리, 소통 구독 정산·팬 답장 권한·연락처 가림, 1:1 전역 스위치·중복 예약 방지·환불 규칙
+ * 팬투표·팬투표권·팬챗·1:1 (2026-11-17)
+ * 팬투표권 초과 사용 방지, 무료→유료 사용 순서, 한도, 크리에이터별 요율 우선, 미사용 환불, 오퍼월 중복 지급 방지,
+ * 랭킹·마감 확정·동점 규칙, 무효 처리, 팬챗 구독 정산·팬 답장 권한·연락처 가림, 1:1 전역 스위치·중복 예약 방지·환불 규칙
  */
 
 let fx: Fixture;
@@ -35,7 +35,7 @@ async function member(name = '팬') {
 
 async function product(price = 1100n, tickets = 100, bonus = 10) {
   const id = newId();
-  await prisma.voteTicketProduct.create({ data: { id, name: `투표권 ${tickets}`, price, tickets, bonus } });
+  await prisma.voteTicketProduct.create({ data: { id, name: `팬투표권 ${tickets}`, price, tickets, bonus } });
   return id;
 }
 
@@ -99,7 +99,7 @@ describe('설정 우선순위 (크리에이터별 지정 > 전역)', () => {
   });
 });
 
-describe('투표권 지갑 · 충전 · 투표', () => {
+describe('팬투표권 지갑 · 충전 · 팬투표', () => {
   it('충전 → 무료부터 사용 → 잔액 부족 거절, 묶음 잔량은 음수가 되지 않는다', async () => {
     const u = await member();
     const pid = await product(1100n, 100, 10);
@@ -118,7 +118,7 @@ describe('투표권 지갑 · 충전 · 투표', () => {
     expect((await getBalance(u.id)).total).toBe(105);
   });
 
-  it('동시에 여러 번 투표해도 보유량을 넘지 않는다', async () => {
+  it('동시에 여러 번 팬투표해도 보유량을 넘지 않는다', async () => {
     const u = await member();
     await prisma.$transaction((tx) => grantTickets(tx, { userId: u.id, bucket: 'FREE', amount: 3, source: 'ADMIN', ledgerType: 'ADMIN_GRANT' }));
     const results = await Promise.all(Array.from({ length: 6 }, () => castVote(u, { creatorId: fx.creatorId, votes: 1 })));
@@ -152,7 +152,7 @@ describe('투표권 지갑 · 충전 · 투표', () => {
     expect(led.map((l) => l.amount)).toEqual([200n]);
 
     const cast = await prisma.voteCast.findFirstOrThrow({ where: { shareAmount: 200n } });
-    await voidVoteCast(cast.id, 'admin', '부정 투표');
+    await voidVoteCast(cast.id, 'admin', '부정 팬투표');
     const after = await prisma.settlementLedger.aggregate({ where: { creatorId: fx.creatorId, entryType: 'VOTE_REVENUE_SHARE' }, _sum: { amount: true } });
     expect(after._sum.amount).toBe(0n);
     const tally = await prisma.voteTally.findFirstOrThrow({ where: { periodType: 'ALL', creatorId: fx.creatorId } });
@@ -178,7 +178,7 @@ describe('투표권 지갑 · 충전 · 투표', () => {
     expect(r2.ok).toBe(false);
   });
 
-  it('결제 실패(끝자리 999)면 투표권이 생기지 않는다', async () => {
+  it('결제 실패(끝자리 999)면 팬투표권이 생기지 않는다', async () => {
     const u = await member();
     const pid = await product(1999n, 100, 0);
     const r = await purchaseTickets(u, pid, 'CARD');
@@ -186,7 +186,7 @@ describe('투표권 지갑 · 충전 · 투표', () => {
     expect((await getBalance(u.id)).total).toBe(0);
   });
 
-  it('유효기간이 지난 무료 투표권은 쓸 수 없고 만료 처리된다', async () => {
+  it('유효기간이 지난 무료 팬투표권은 쓸 수 없고 만료 처리된다', async () => {
     const u = await member();
     const past = new Date(Date.now() - 100 * 86_400_000);
     await prisma.$transaction((tx) => grantTickets(tx, { userId: u.id, bucket: 'FREE', amount: 5, source: 'OFFERWALL', ledgerType: 'OFFERWALL_EARN', expiresInDays: 90 }, past));
@@ -197,7 +197,7 @@ describe('투표권 지갑 · 충전 · 투표', () => {
     expect(sorted[0].bucket).toBe('FREE');
   });
 
-  it('내 채널에는 투표할 수 없다', async () => {
+  it('내 채널에는 팬투표할 수 없다', async () => {
     const creatorUser = await prisma.user.findUniqueOrThrow({ where: { id: fx.creatorUserId } });
     const r = await castVote({ id: creatorUser.id }, { creatorId: fx.creatorId, votes: 1 });
     expect(r.ok).toBe(false);
@@ -252,7 +252,7 @@ describe('랭킹 · 마감 확정', () => {
     expect(ranks.all).toEqual({ rank: 1, votes: 8 });
   });
 
-  it('왕중왕전 회차 투표는 회차 집계에만 들어간다', async () => {
+  it('왕중왕전 회차 팬투표는 회차 집계에만 들어간다', async () => {
     const c2user = await prisma.user.create({ data: { id: newId(), email: `c3-${newId()}@t.kr`, role: 'CREATOR', name: '셋째' } });
     const c2 = await prisma.creatorProfile.create({ data: { id: newId(), userId: c2user.id, code: `TOR-${newId().slice(-4)}`, displayName: '셋째', status: 'APPROVED' } });
     const roundId = await createRound({ kind: 'CHAMPION', title: '11월 왕중왕전', startsAt: new Date(Date.now() - 1000), endsAt: new Date(Date.now() + 86_400_000), creatorIds: [fx.creatorId, c2.id], status: 'OPEN' }, 'admin');
@@ -266,7 +266,7 @@ describe('랭킹 · 마감 확정', () => {
   });
 });
 
-describe('소통 (버블형 월 구독)', () => {
+describe('팬챗 (버블형 월 구독)', () => {
   async function openRoom() {
     await prisma.talkRoom.create({ data: { id: newId(), creatorId: fx.creatorId, open: true } });
   }
@@ -274,7 +274,7 @@ describe('소통 (버블형 월 구독)', () => {
   it('구독 → 정산 원장(수수료 차감 후) · 팬 답장 권한 · 연락처 가림 · 닉네임 치환 · 환불 반대분개', async () => {
     const u = await member('민수');
     expect((await sendFanReply(u, fx.creatorId, '안녕')).ok).toBe(false);
-    expect((await subscribeTalk(u, fx.creatorId, 'CARD')).ok).toBe(false); // 소통방이 닫혀 있다
+    expect((await subscribeTalk(u, fx.creatorId, 'CARD')).ok).toBe(false); // 팬챗방이 닫혀 있다
     await openRoom();
     const sub = await subscribeTalk(u, fx.creatorId, 'CARD');
     expect(sub.ok).toBe(true);
@@ -290,7 +290,8 @@ describe('소통 (버블형 월 구독)', () => {
     expect(thread.messages.find((m) => m.kind === 'BROADCAST')?.body).toBe('민수님 오늘도 고마워요');
     expect(thread.messages.find((m) => m.mine)?.body).not.toContain('010');
 
-    // 단체방(기본): 다른 구독자도 내 메시지를 작성자 이름과 함께 본다
+    // 단체방: 다른 구독자도 내 메시지를 작성자 이름과 함께 본다 (2026-11-18 부터 기본은 버블형이라 단체방으로 바꿔서 확인)
+    await saveTalkConfig({ ...DEFAULT_TALK_CONFIG, roomMode: 'GROUP' });
     const other = await member('지수');
     await subscribeTalk(other, fx.creatorId, 'TRANSFER');
     const t2 = await getFanThread(other, fx.creatorId);

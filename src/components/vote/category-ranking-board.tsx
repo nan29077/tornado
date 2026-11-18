@@ -8,9 +8,9 @@ import { VoteHomeTabs } from './home-tabs';
 import { getCategoryLeaders, type CategoryLeaders } from '@/server/services/vote/ranking';
 
 /**
- * 카테고리별 투표 랭킹 (2026-11-18).
+ * 카테고리별 팬투표 랭킹 (2026-11-18).
  *
- * - 한 표가 전체 랭킹과 그 크리에이터의 카테고리 랭킹에 동시에 들어간다. 투표하는 사람이 카테고리를 고를 필요가 없다.
+ * - 한 표가 전체 랭킹과 그 크리에이터의 카테고리 랭킹에 동시에 들어간다. 팬투표하는 사람이 카테고리를 고를 필요가 없다.
  * - 표를 많이 받은 카테고리부터, 카테고리마다 1~3위를 카드로 보여 준다.
  * - 모바일은 카드가 한 줄 가로 넘김, PC 는 3열 그리드.
  */
@@ -30,7 +30,7 @@ export async function CategoryRankingBoard({ vote, perCategory = 3, maxCategorie
             <LayoutGrid size={17} strokeWidth={1.8} className="text-brand-600" aria-hidden />
             카테고리별 랭킹
           </h3>
-          <p className="mt-0.5 text-[12px] text-ink-500">투표하면 전체 랭킹과 크리에이터의 카테고리 랭킹에 함께 반영돼요.</p>
+          <p className="mt-0.5 text-[12px] text-ink-500">팬투표하면 전체 랭킹과 크리에이터의 카테고리 랭킹에 함께 반영돼요.</p>
         </div>
       </div>
       <VoteHomeTabs
@@ -42,7 +42,7 @@ export async function CategoryRankingBoard({ vote, perCategory = 3, maxCategorie
               <p className="rounded-2xl bg-white px-4 py-6 text-center text-[12.5px] text-ink-500 shadow-card">{t.label} 카테고리 랭킹이 아직 없어요.</p>
             ) : (
               // PC 는 화면 폭이 아니라 이 영역의 폭에 맞춰 열 수를 정한다 (메인 가운데 패널은 화면보다 훨씬 좁다 —
-              // 예전에는 화면 폭 기준 3열이라 카드가 200px 로 좁아져 투표 버튼이 이름을 가렸다)
+              // 예전에는 화면 폭 기준 3열이라 카드가 200px 로 좁아져 팬투표 버튼이 이름을 가렸다)
               <div className="@container">
                 <div className="-mx-4 flex snap-x snap-mandatory gap-2.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:grid sm:grid-cols-1 sm:gap-3 sm:overflow-visible sm:px-0 sm:@[32rem]:grid-cols-2 sm:@[54rem]:grid-cols-3">
                   {lists[i].map((c) => (

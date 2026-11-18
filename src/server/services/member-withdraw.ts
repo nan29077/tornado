@@ -9,9 +9,9 @@ import { revokeLot } from '@/server/services/vote/wallet';
  *  - 진행 중인 샵 주문(결제 대기 ~ 배송 중)과 처리 중인 취소·반품 요청
  *  - 아직 끝나지 않은 1:1 채팅 예약(신청·수락)
  * 동의가 필요한 것 (탈퇴하면 사라지는 유료 자산)
- *  - 남은 유료 투표권, 이용 기간이 남은 소통 구독
+ *  - 남은 유료 팬투표권, 이용 기간이 남은 팬챗 구독
  * 탈퇴와 함께 지우는 것 (개인정보·개인 설정)
- *  - 배송지, 장바구니, 찜, 팔로우, 남은 투표권(이력은 원장에 남긴다), 소통 구독
+ *  - 배송지, 장바구니, 찜, 팔로우, 남은 팬투표권(이력은 원장에 남긴다), 팬챗 구독
  */
 type Tx = Prisma.TransactionClient;
 
@@ -20,9 +20,9 @@ const OPEN_ORDER = ['PENDING_PAYMENT', 'PAID', 'PREPARING', 'SHIPPED'];
 export interface WithdrawSummary {
   /** 탈퇴를 막는 사유 (비어 있으면 진행 가능) */
   blockers: string[];
-  /** 남은 유료 투표권 수 */
+  /** 남은 유료 팬투표권 수 */
   paidTickets: number;
-  /** 이용 기간이 남은 소통 구독 수 */
+  /** 이용 기간이 남은 팬챗 구독 수 */
   activeSubs: number;
 }
 
@@ -56,4 +56,11 @@ export async function cleanupMemberOnWithdraw(tx: Tx, userId: string, now: Date 
   }
   // 상태는 그대로 두고 이용 기간만 지금으로 끝낸다 (환불이 아니므로 크리에이터 수익 집계는 바뀌지 않는다)
   await tx.talkSubscription.updateMany({ where: { userId, status: 'ACTIVE', endsAt: { gt: now } }, data: { endsAt: now } });
+  // (2026-11-18) 팬챗 닉네임 · 하트 · 팬레터 · 응원 댓글 · 팬 프로필(초대 코드) · 배지 정리 (작성한 글은 지운 것으로 표시)
+  await tx.talkReadState.updateMany({ where: { userId }, data: { nickname: null } });
+  await tx.talkReaction.deleteMany({ where: { userId } });
+  await tx.talkLetter.updateMany({ where: { userId, deletedAt: null }, data: { deletedAt: now } });
+  await tx.voteCheer.updateMany({ where: { userId, deletedAt: null }, data: { deletedAt: now, deletedBy: 'WITHDRAW' } });
+  await tx.fanBadge.deleteMany({ where: { userId } });
+  await tx.fanProfile.deleteMany({ where: { userId } });
 }

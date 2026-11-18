@@ -10,7 +10,7 @@ import { prisma } from '@/server/db';
 
 export const dynamic = 'force-dynamic';
 
-/** 최고관리자 > 소통 관리 > 소통방 · 구독 현황 */
+/** 최고관리자 > 팬챗 관리 > 팬챗방 · 구독 현황 */
 export default async function AdminTalkSubscriptionsPage({ searchParams }: { searchParams: Promise<{ code?: string }> }) {
   await requireAdminPage('/admin/talk/subscriptions');
   const code = ((await searchParams).code ?? '').trim().toUpperCase();
@@ -27,9 +27,9 @@ export default async function AdminTalkSubscriptionsPage({ searchParams }: { sea
   const counts = await Promise.all(rooms.map((r) => prisma.talkSubscription.findMany({ where: { creatorId: r.creatorId, status: 'ACTIVE', startsAt: { lte: now }, endsAt: { gt: now } }, distinct: ['userId'], select: { id: true } })));
   return (
     <div>
-      <PageHeader title="소통방 · 구독 현황" description="구독 결제는 승인 즉시 크리에이터 정산 원장(소통 구독 정산)에 적립됩니다. 환불하면 이용이 끝나고 정산액이 반대분개됩니다." />
+      <PageHeader title="팬챗방 · 구독 현황" description="구독 결제는 승인 즉시 크리에이터 정산 원장(팬챗 구독 정산)에 적립됩니다. 환불하면 이용이 끝나고 정산액이 반대분개됩니다." />
       <Card className="mb-4">
-        <CardTitle>열린 소통방 ({rooms.length})</CardTitle>
+        <CardTitle>열린 팬챗방 ({rooms.length})</CardTitle>
         <div className="mt-2 flex flex-wrap gap-2">
           {rooms.map((r, i) => (
             <a key={r.id} href={`/admin/talk/subscriptions?code=${r.creator.code}`} className="rounded-xl border border-ink-100 px-3 py-2 text-[12.5px] hover:bg-ink-50">

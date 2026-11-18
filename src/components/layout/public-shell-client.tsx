@@ -59,10 +59,10 @@ interface NavItem {
 function buildNav(myHref: string, videoHubEnabled: boolean): NavItem[] {
   return [
     { href: '/', label: '홈', icon: House },
-    // (2026-11-17) 모바일 하단 탭바: 홈 · 투표 · 소통 · 후원확인 · 마이페이지.
+    // (2026-11-17) 모바일 하단 탭바: 홈 · 팬투표 · 팬챗 · 후원확인 · 마이페이지.
     // 방송국(문의 버튼 위 떠 있는 버튼으로 이동 가능)과 이용방법은 하단에서 빼고 우측 메뉴·PC 레일에만 둔다.
-    { href: '/vote', label: '투표', icon: Trophy },
-    { href: '/talk', label: '소통', icon: MessagesSquare },
+    { href: '/vote', label: '팬투표', icon: Trophy },
+    { href: '/talk', label: '팬챗', icon: MessagesSquare },
     ...(videoHubEnabled ? [{ href: '/videos', label: '방송국', icon: Clapperboard, bottom: false }] : []),
     { href: '/how-it-works', label: '이용방법', icon: Compass, bottom: false },
     { href: '#lookup', label: '후원확인', icon: HeartHandshake, sheet: true },
@@ -241,9 +241,11 @@ export function PublicShellClient({
       <Footer mockMode={mockMode} business={business} />
         </div>
 
-        {/* PC 우측 메뉴: 화면 세로 중앙에 붙는다 */}
+        {/* PC 우측 메뉴: 화면 세로 중앙 근처에 붙는다.
+            (2026-11-18) 오른쪽 아래 문의 버튼(바닥에서 24px + 52px)과 겹치지 않게 아래쪽 92px 를 비우고,
+            남은 영역(위 16px ~ 아래 92px)의 가운데에 둔다. 화면이 낮으면 메뉴 안에서 스크롤된다. */}
         <aside
-          className="sticky top-1/2 hidden max-h-[calc(100dvh-2rem)] w-[96px] shrink-0 -translate-y-1/2 self-start overflow-y-auto pl-2 lg:block"
+          className="sticky top-[calc(50%-38px)] hidden max-h-[calc(100dvh-108px)] w-[96px] shrink-0 -translate-y-1/2 self-start overflow-y-auto pl-2 lg:block"
           aria-label="PC 메뉴"
         >
           <nav className="public-side-nav flex w-full flex-col items-center gap-0.5 rounded-[24px] border px-2 py-3 backdrop-blur-xl">

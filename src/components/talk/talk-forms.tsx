@@ -30,7 +30,7 @@ function MethodPicker({ value, onChange }: { value: 'CARD' | 'TRANSFER'; onChang
   );
 }
 
-/** 소통 월 구독 결제 */
+/** 팬챗 월 구독 결제 */
 export function SubscribeForm({ creatorId, code, price, periodDays, mock, renew }: { creatorId: string; code: string; price: number; periodDays: number; mock: boolean; renew?: boolean }) {
   const router = useRouter();
   const [state, action, pending] = React.useActionState(subscribeTalkAction, initial);
@@ -52,7 +52,7 @@ export function SubscribeForm({ creatorId, code, price, periodDays, mock, renew 
       {state.message ? <p className={cx('rounded-xl px-3 py-2 text-[12.5px] font-bold', state.ok ? 'bg-success-50 text-success-600' : 'bg-danger-50 text-danger-600')}>{state.message}</p> : null}
       <button type="submit" disabled={pending} className="flex h-12 w-full items-center justify-center gap-1.5 rounded-2xl bg-ink-900 text-[15px] font-black text-white disabled:opacity-60">
         {pending ? <Loader2 size={18} className="animate-spin" aria-hidden /> : null}
-        {price.toLocaleString('ko-KR')}원 · {renew ? '이용 기간 연장하기' : '소통 시작하기'}
+        {price.toLocaleString('ko-KR')}원 · {renew ? '이용 기간 연장하기' : '팬챗 시작하기'}
       </button>
     </form>
   );

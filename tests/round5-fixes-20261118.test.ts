@@ -21,7 +21,7 @@ import { getShopPaymentAdapter } from '@/server/adapters/shop-payment';
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 
 /**
- * 2026-11-18 5차 점검 수정 + 카테고리별 투표 회귀 테스트
+ * 2026-11-18 5차 점검 수정 + 카테고리별 팬투표 회귀 테스트
  */
 
 let fx: Fixture;
@@ -59,7 +59,7 @@ describe('[P0-1] 운영에서 샵 결제 mock 이면 기동을 막는다', () =>
   });
 });
 
-describe('[PAY-B] 투표권 보너스를 쓰면 환불할 수 없다', () => {
+describe('[PAY-B] 팬투표권 보너스를 쓰면 환불할 수 없다', () => {
   it('보너스만 써도 환불 거절, 아무것도 안 쓰면 환불, 보너스가 만료로 사라진 것은 사용이 아니다', async () => {
     const pid = newId();
     await prisma.voteTicketProduct.create({ data: { id: pid, name: '팩', price: 5500n, tickets: 500, bonus: 30 } });
@@ -122,7 +122,7 @@ describe('[PAY-A·C] 영상·카드 후원: 자기 후원 차단 · 한도 · �
 });
 
 describe('[SET-A] 후원이 아닌 수익도 정산 보류 기간을 지킨다', () => {
-  it('오늘 적립한 소통 구독 정산은 보류, 40일 전 적립은 출금 가능', async () => {
+  it('오늘 적립한 팬챗 구독 정산은 보류, 40일 전 적립은 출금 가능', async () => {
     await appendLedger([{ creatorId: fx.creatorId, entryType: 'TALK_SUBSCRIPTION_PROCEEDS', amount: 3430n, memo: '테스트', occurredAt: new Date() }]);
     expect(await computeHoldingAmount(fx.creatorId)).toBe(3430n);
     await resetDb();
@@ -171,7 +171,7 @@ describe('[TALK-A·B · P2-10] 1:1 채팅', () => {
   });
 });
 
-describe('[P2-13] 소통 신고 권한 · 차단된 구독자', () => {
+describe('[P2-13] 팬챗 신고 권한 · 차단된 구독자', () => {
   it('구독한 적 없는 회원은 신고할 수 없고, 차단된 구독자는 다른 구독자 메시지를 보지 않는다', async () => {
     await saveTalkConfig({ ...DEFAULT_TALK_CONFIG });
     await prisma.talkRoom.create({ data: { id: newId(), creatorId: fx.creatorId, open: true } });
@@ -222,7 +222,7 @@ describe('[P2-1·2·3] 멈춘 결제 정리 · 취소 재시도', () => {
   });
 });
 
-describe('[P2-7·12] 발주서 CSV 텍스트 열 · 소통 사진 주소', () => {
+describe('[P2-7·12] 발주서 CSV 텍스트 열 · 팬챗 사진 주소', () => {
   it('연락처·우편번호는 앞자리 0 을 지킨다', () => {
     expect(csvRow(['010-1234-5678', '04524'], ['text', 'text'])).toBe('"=""010-1234-5678""","=""04524"""');
   });
@@ -234,7 +234,7 @@ describe('[P2-7·12] 발주서 CSV 텍스트 열 · 소통 사진 주소', () =>
   });
 });
 
-describe('카테고리별 투표 · 랭킹 (2026-11-18)', () => {
+describe('카테고리별 팬투표 · 랭킹 (2026-11-18)', () => {
   it('한 표가 전체·카테고리 랭킹에 함께 들어가고, 카테고리 순위는 카테고리 안에서 매긴다', async () => {
     const g1 = await creator('게임1', 'game');
     const g2 = await creator('게임2', 'game');

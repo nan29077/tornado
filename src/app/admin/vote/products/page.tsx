@@ -16,7 +16,7 @@ function Fields({ p }: { p?: { id: string; name: string; price: bigint; tickets:
       <div className="grid gap-2 sm:grid-cols-3">
         <AdminField label="상품 이름" className="sm:col-span-2"><AdminInput name="name" defaultValue={p?.name} required maxLength={40} /></AdminField>
         <AdminField label="가격(원)"><AdminInput name="price" inputMode="numeric" defaultValue={p ? p.price.toString() : ''} required /></AdminField>
-        <AdminField label="투표권(유료)"><AdminInput name="tickets" inputMode="numeric" defaultValue={p?.tickets} required /></AdminField>
+        <AdminField label="팬투표권(유료)"><AdminInput name="tickets" inputMode="numeric" defaultValue={p?.tickets} required /></AdminField>
         <AdminField label="보너스" hint="환불 시 회수"><AdminInput name="bonus" inputMode="numeric" defaultValue={p?.bonus ?? 0} /></AdminField>
         <AdminField label="배지 (BEST · 인기)"><AdminInput name="badge" defaultValue={p?.badge ?? ''} maxLength={10} /></AdminField>
         <AdminField label="노출 순서"><AdminInput name="sortOrder" inputMode="numeric" defaultValue={p?.sortOrder ?? 0} /></AdminField>
@@ -26,13 +26,13 @@ function Fields({ p }: { p?: { id: string; name: string; price: bigint; tickets:
   );
 }
 
-/** 최고관리자 > 투표 관리 > 투표권 상품 */
+/** 최고관리자 > 팬투표 관리 > 팬투표권 상품 */
 export default async function AdminVoteProductsPage() {
   await requireAdminPage('/admin/vote/products');
   const products = await listTicketProducts(true);
   return (
     <div>
-      <PageHeader title="투표권 상품" description="충전소 [구매하기]에 보이는 투표권 팩입니다. 결제는 신용카드 · 간편계좌이체 (실 PG 계약 전에는 테스트 결제)." />
+      <PageHeader title="팬투표권 상품" description="충전소 [구매하기]에 보이는 팬투표권 팩입니다. 결제는 신용카드 · 간편계좌이체 (실 PG 계약 전에는 테스트 결제)." />
       {products.length === 0 ? (
         <Card className="mb-4">
           <CardTitle>상품이 없습니다</CardTitle>

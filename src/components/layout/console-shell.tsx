@@ -4,6 +4,9 @@ import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
+  Award,
+  Mail,
+  Megaphone,
   Activity, BadgeCheck, BookOpenText, CalendarDays, ClipboardList, CreditCard, FlaskConical,
   BarChart3, FilePen, Gamepad2, Gauge, HeartHandshake, Home, Images, KeyRound, LayoutDashboard, LogOut,
   DonationOverlay, Menu, MessageCircleQuestion, Percent, SmsDonation, Sparkles, PhoneCall,
@@ -54,7 +57,7 @@ export type ConsoleIconName =
   | 'refunds' | 'reports' | 'risk' | 'settlement' | 'simulator'
   | 'system' | 'tax' | 'templates' | 'terms' | 'tts' | 'users' | 'youtube' | 'settings' | 'send'
   | 'shop' | 'products' | 'orders' | 'truck'
-  | 'vote' | 'talk' | 'ticket' | 'calendar' | 'gift' | 'flag' | 'policy';
+  | 'vote' | 'talk' | 'ticket' | 'calendar' | 'gift' | 'flag' | 'policy' | 'letter' | 'award' | 'megaphone';
 
 const CONSOLE_ICONS = {
   activity: Activity,
@@ -104,6 +107,9 @@ const CONSOLE_ICONS = {
   gift: Gift,
   flag: Flag,
   policy: UserCheck,
+  letter: Mail,
+  award: Award,
+  megaphone: Megaphone,
 } satisfies Record<ConsoleIconName, typeof Home>;
 
 export function ConsoleShell({

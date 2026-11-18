@@ -10,6 +10,7 @@ import { prisma } from '@/server/db';
 import { ROUND_KIND_LABEL, ROUND_STATUS_LABEL } from '@/server/services/vote/rounds';
 import { roundRanking } from '@/server/services/vote/ranking';
 import { VIDEO_CATEGORIES } from '@/lib/video-hub';
+import { ImageUploadField } from '@/components/studio/image-upload-field';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,7 @@ function kstInput(d: Date) {
   return new Date(d.getTime() + 9 * 3600_000).toISOString().slice(0, 16);
 }
 
-/** 최고관리자 > 투표 관리 > 왕중왕전 · 이벤트 투표 */
+/** 최고관리자 > 팬투표 관리 > 왕중왕전 · 이벤트 팬투표 */
 export default async function AdminVoteRoundsPage() {
   await requireAdminPage('/admin/vote/rounds');
   const rounds = await prisma.voteRound.findMany({ orderBy: { createdAt: 'desc' }, take: 20, include: { _count: { select: { candidates: true } } } });
@@ -26,13 +27,13 @@ export default async function AdminVoteRoundsPage() {
   const now = new Date();
   return (
     <div>
-      <PageHeader title="왕중왕전 · 이벤트 투표" description="왕중왕전은 후보를 비워 두면 지난달 월간 TOP N 이 자동으로 들어갑니다. 회차 투표는 일·주·월 랭킹과 따로 집계됩니다." />
+      <PageHeader title="왕중왕전 · 이벤트 팬투표" description="왕중왕전은 후보를 비워 두면 지난달 월간 TOP N 이 자동으로 들어갑니다. 회차 팬투표는 일·주·월 랭킹과 따로 집계되고, 종료 시각이 지나면 자동으로 결과가 확정됩니다. 이벤트는 팬투표 [이벤트] 화면에 공개됩니다." />
       <Card className="mb-4">
         <CardTitle>회차 만들기</CardTitle>
         <ActionForm action={createRoundAction} submitLabel="만들기" className="mt-2">
           <div className="grid gap-2 sm:grid-cols-3">
             <AdminField label="종류">
-              <AdminSelect name="kind" defaultValue="CHAMPION"><option value="CHAMPION">왕중왕전</option><option value="EVENT">이벤트 투표</option></AdminSelect>
+              <AdminSelect name="kind" defaultValue="CHAMPION"><option value="CHAMPION">왕중왕전</option><option value="EVENT">이벤트 팬투표</option></AdminSelect>
             </AdminField>
             <AdminField label="제목" className="sm:col-span-2"><AdminInput name="title" required maxLength={60} placeholder="2026년 11월 왕중왕전" /></AdminField>
             <AdminField label="시작 (KST)"><AdminInput type="datetime-local" name="startsAt" defaultValue={kstInput(now)} required /></AdminField>
@@ -46,8 +47,11 @@ export default async function AdminVoteRoundsPage() {
                 ))}
               </AdminSelect>
             </AdminField>
-            <AdminField label="후보 코드 (쉼표 · 줄바꿈)" className="sm:col-span-3" hint="이벤트 투표는 반드시 입력"><AdminTextarea name="codes" rows={2} placeholder="TOR-ABCD, TOR-EFGH" /></AdminField>
+            <AdminField label="후보 코드 (쉼표 · 줄바꿈)" className="sm:col-span-3" hint="이벤트 팬투표는 반드시 입력"><AdminTextarea name="codes" rows={2} placeholder="TOR-ABCD, TOR-EFGH" /></AdminField>
             <AdminField label="설명" className="sm:col-span-2"><AdminInput name="description" maxLength={300} placeholder="우승자는 12월 메인 배너에 노출됩니다" /></AdminField>
+            <AdminField label="1인 하루 최대 표 (0=제한 없음)"><AdminInput name="dailyMaxVotes" inputMode="numeric" defaultValue={0} /></AdminField>
+            <AdminField label="보상 안내 (이벤트 화면에 크게 표시)" className="sm:col-span-2" hint="예) 1위 신문 광고 · 2~3위 메인 배너. 실제 보상 집행은 [순위 보상]의 이벤트 보상 정책으로 기록됩니다"><AdminInput name="rewardText" maxLength={120} /></AdminField>
+            <div className="sm:col-span-3"><ImageUploadField name="bannerUrl" label="이벤트 배너 (선택)" aspect="wide" uploadOnly /></div>
             <AdminField label="바로 열기">
               <OnOff name="openNow" value onLabel="바로 열기" offLabel="준비 상태로" />
             </AdminField>

@@ -1,12 +1,12 @@
 /**
- * 오퍼월(광고 시청·퀴즈 등 참여형 광고)로 무료 투표권 받기 (2026-11-17).
+ * 오퍼월(광고 시청·퀴즈 등 참여형 광고)로 무료 팬투표권 받기 (2026-11-17).
  *
  * 구조
  *  ① 회원이 충전소에서 광고·퀴즈에 참여
  *  ② 광고사 서버가 우리 서버로 "리워드 지급 요청"(콜백)을 보낸다
- *  ③ 서명·IP 확인 → (광고사, 거래 고유값) 중복 확인 → 무료(FREE) 투표권 지급
+ *  ③ 서명·IP 확인 → (광고사, 거래 고유값) 중복 확인 → 무료(FREE) 팬투표권 지급
  *  ④ 광고사가 부정 참여로 취소하면 남은 만큼 회수
- * 투표권은 반드시 ② 서버 콜백으로만 지급한다(화면의 "완료" 신호로 지급하지 않는다).
+ * 팬투표권은 반드시 ② 서버 콜백으로만 지급한다(화면의 "완료" 신호로 지급하지 않는다).
  *
  * 연동 상태 (CLAUDE.md 규칙 2: 실제 계약이 없는 외부 연동을 성공 처리하지 않는다)
  *  - mock      테스트용 가짜 광고 목록. 화면에 "테스트 광고"로 표시한다. 운영(APP_ENV=prod)에서는 꺼진다.
@@ -87,11 +87,11 @@ export interface MockMission {
 }
 
 export const MOCK_MISSIONS: MockMission[] = [
-  { id: 'mock-video-1', kind: 'VIDEO', title: '15초 광고 보고 투표권 받기', advertiser: '테스트 광고주 A', points: 10, seconds: 15 },
+  { id: 'mock-video-1', kind: 'VIDEO', title: '15초 광고 보고 팬투표권 받기', advertiser: '테스트 광고주 A', points: 10, seconds: 15 },
   { id: 'mock-video-2', kind: 'VIDEO', title: '신규 게임 트레일러 시청', advertiser: '테스트 광고주 B', points: 20, seconds: 30 },
   { id: 'mock-quiz-1', kind: 'QUIZ', title: '광고 퀴즈 풀기', advertiser: '테스트 광고주 C', points: 15, quiz: { question: '테스트 광고주 C 의 대표 색은 무엇일까요? (힌트: 꿀)', options: ['초록', '노랑', '파랑'], answer: 1 } },
   { id: 'mock-visit-1', kind: 'VISIT', title: '브랜드 페이지 10초 둘러보기', advertiser: '테스트 광고주 D', points: 8, seconds: 10 },
-  { id: 'mock-survey-1', kind: 'SURVEY', title: '1문항 설문 참여', advertiser: '테스트 광고주 E', points: 12, quiz: { question: '도네이도 투표 기능이 마음에 드시나요?', options: ['좋아요', '보통이에요', '아쉬워요'], answer: -1 } },
+  { id: 'mock-survey-1', kind: 'SURVEY', title: '1문항 설문 참여', advertiser: '테스트 광고주 E', points: 12, quiz: { question: '도네이도 팬투표 기능이 마음에 드시나요?', options: ['좋아요', '보통이에요', '아쉬워요'], answer: -1 } },
 ];
 
 /** 오늘 이미 참여한 테스트 광고 ID */
@@ -159,7 +159,7 @@ export async function grantOfferwallReward(input: RewardInput): Promise<RewardRe
   return { ok: true, duplicate: false, tickets };
 }
 
-/** 광고사 취소(부정 참여) — 남은 만큼 회수. 이미 투표에 쓴 만큼은 회수하지 못하고 사유에 남긴다 */
+/** 광고사 취소(부정 참여) — 남은 만큼 회수. 이미 팬투표에 쓴 만큼은 회수하지 못하고 사유에 남긴다 */
 export async function revokeOfferwallReward(provider: OfferwallProviderKey, rewardKey: string, reason: string): Promise<{ ok: boolean; revoked: number }> {
   const row = await prisma.offerwallReward.findUnique({ where: { provider_rewardKey: { provider, rewardKey } } });
   if (!row || row.status !== 'GRANTED') return { ok: false, revoked: 0 };

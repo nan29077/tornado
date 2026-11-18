@@ -9,10 +9,11 @@ import { ProfileAvatar } from '@/components/profile/generated-avatar';
 import { cx } from '@/components/ui';
 import { castVoteAction, type VoteActionState } from '@/app/actions/vote';
 import { categoryLabel, isVideoCategory } from '@/lib/video-hub';
+import { ShareCard } from './share-card';
 
 /**
- * [투표] 버튼 + 투표 창 (2026-11-17).
- * 표 수를 고르면 소진될 투표권을 미리 보여 주고, 보내면 화면을 새로 고친다.
+ * [팬투표] 버튼 + 팬투표 창 (2026-11-17).
+ * 표 수를 고르면 소진될 팬투표권을 미리 보여 주고, 보내면 화면을 새로 고친다.
  */
 
 export interface VoteButtonProps {
@@ -24,7 +25,7 @@ export interface VoteButtonProps {
   quickVotes: number[];
   maxVotesPerAction: number;
   roundId?: string | null;
-  /** 투표가 꺼져 있으면 사유 */
+  /** 팬투표가 꺼져 있으면 사유 */
   disabledReason?: string | null;
   size?: 'xs' | 'sm' | 'md' | 'lg';
   label?: string;
@@ -48,7 +49,7 @@ const SIZE: Record<NonNullable<VoteButtonProps['size']>, string> = {
 };
 
 export function VoteButton(props: VoteButtonProps) {
-  const { creator, size = 'sm', label = '투표', className, collapseNarrow = false } = props;
+  const { creator, size = 'sm', label = '팬투표', className, collapseNarrow = false } = props;
   const [open, setOpen] = React.useState(false);
   // /vote?vote=코드 로 들어오면 창을 바로 연다 (서버 렌더와 어긋나지 않도록 화면이 뜬 뒤에 연다)
   React.useEffect(() => {
@@ -67,7 +68,7 @@ export function VoteButton(props: VoteButtonProps) {
           collapseNarrow ? 'w-8 !px-0 @[13.5rem]:w-auto @[13.5rem]:!px-3' : '',
           className,
         )}
-        aria-label={`${creator.name} 에게 투표하기`}
+        aria-label={`${creator.name} 에게 팬투표하기`}
       >
         <Heart size={size === 'xs' ? 12 : 14} strokeWidth={2} aria-hidden />
         <span className={collapseNarrow ? 'hidden @[13.5rem]:inline' : undefined}>{label}</span>
@@ -104,7 +105,7 @@ function VoteSheet({ creator, loggedIn, balance, ticketsPerVote, quickVotes, max
   }, [state.ok, state.nonce, router]);
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-ink-900/45 backdrop-blur-[2px] sm:items-center" role="dialog" aria-modal="true" aria-label={`${creator.name} 투표`} onClick={onClose}>
+    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-ink-900/45 backdrop-blur-[2px] sm:items-center" role="dialog" aria-modal="true" aria-label={`${creator.name} 팬투표`} onClick={onClose}>
       <div className="w-full max-w-[440px] rounded-t-[28px] bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 shadow-2xl sm:rounded-[28px]" onClick={(e) => e.stopPropagation()}>
         <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-ink-100 sm:hidden" aria-hidden />
         <div className="flex items-center gap-3">
@@ -113,7 +114,7 @@ function VoteSheet({ creator, loggedIn, balance, ticketsPerVote, quickVotes, max
             <p className="truncate text-[16px] font-black tracking-[-0.02em] text-ink-900">{creator.name}</p>
             <p className="text-[12px] text-ink-400">
               {roundId ? (
-                '왕중왕전 투표'
+                '왕중왕전 팬투표'
               ) : creator.category && isVideoCategory(creator.category) && creator.category !== 'other' ? (
                 <>
                   전체 랭킹 + <b className="font-extrabold text-brand-700">{categoryLabel(creator.category)}</b> 카테고리 랭킹에 함께 반영돼요
@@ -129,23 +130,25 @@ function VoteSheet({ creator, loggedIn, balance, ticketsPerVote, quickVotes, max
         </div>
 
         {state.ok ? (
-          <div className="py-8 text-center">
+          <div className="max-h-[78dvh] overflow-y-auto py-5 text-center">
             <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-brand-100 text-brand-700">
               <Check size={26} strokeWidth={2.4} aria-hidden />
             </span>
             <p className="mt-3 text-[16px] font-black text-ink-900">{state.message}</p>
-            <p className="mt-1 text-[13px] text-ink-500">남은 투표권 {live.toLocaleString('ko-KR')}개</p>
-            <div className="mt-5 grid grid-cols-2 gap-2">
-              <button type="button" onClick={onClose} className="h-11 rounded-xl border border-ink-200 text-[13.5px] font-bold text-ink-700">닫기</button>
-              <Link href="/vote/charge" className="grid h-11 place-items-center rounded-xl bg-brand-400 text-[13.5px] font-extrabold text-ink-900">투표권 더 받기</Link>
+            <p className="mt-1 text-[13px] text-ink-500">남은 팬투표권 {live.toLocaleString('ko-KR')}개</p>
+            <ShareCard creatorId={creator.id} creatorName={creator.name} votes={votes} roundTitle={roundId ? '이벤트 팬투표' : null} />
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <button type="button" onClick={onClose} className="h-11 rounded-xl border border-ink-200 text-[13px] font-bold text-ink-700">닫기</button>
+              <Link href={`/vote/creator/${creator.code}#cheer`} className="grid h-11 place-items-center rounded-xl border border-ink-200 text-[13px] font-extrabold text-ink-800">응원 남기기</Link>
+              <Link href="/vote/charge" className="grid h-11 place-items-center rounded-xl bg-brand-400 text-[13px] font-extrabold text-ink-900">팬투표권 더 받기</Link>
             </div>
           </div>
         ) : !loggedIn ? (
           <div className="py-6 text-center">
-            <p className="text-[14px] font-bold text-ink-800">로그인하면 투표할 수 있어요</p>
-            <p className="mt-1 text-[12.5px] text-ink-500">광고를 보거나 퀴즈를 풀면 투표권을 무료로 받을 수 있어요.</p>
+            <p className="text-[14px] font-bold text-ink-800">로그인하면 팬투표할 수 있어요</p>
+            <p className="mt-1 text-[12.5px] text-ink-500">광고를 보거나 퀴즈를 풀면 팬투표권을 무료로 받을 수 있어요.</p>
             <Link href={`/login?next=${encodeURIComponent(`/vote?vote=${creator.code}`)}`} className="mt-4 inline-flex h-11 items-center justify-center rounded-xl bg-ink-900 px-6 text-[13.5px] font-extrabold text-white">
-              로그인하고 투표하기
+              로그인하고 팬투표하기
             </Link>
           </div>
         ) : disabledReason ? (
@@ -157,7 +160,7 @@ function VoteSheet({ creator, loggedIn, balance, ticketsPerVote, quickVotes, max
             <div className="flex items-center justify-between rounded-2xl bg-warm-100 px-4 py-3">
               <span className="inline-flex items-center gap-1.5 text-[13px] font-bold text-ink-700">
                 <Ticket size={16} strokeWidth={1.8} className="text-brand-700" aria-hidden />
-                내 투표권
+                내 팬투표권
               </span>
               <span className="text-[16px] font-black tabular-nums text-ink-900">{live.toLocaleString('ko-KR')}개</span>
             </div>
@@ -196,18 +199,18 @@ function VoteSheet({ creator, loggedIn, balance, ticketsPerVote, quickVotes, max
               <button type="button" className="h-11 w-11 rounded-xl border border-ink-200 text-[18px] font-black text-ink-700" onClick={() => setVotes((v) => Math.min(maxVotesPerAction, v + 1))} aria-label="한 표 늘리기">+</button>
             </div>
             <p className={cx('mt-2 text-[12px]', lack ? 'font-bold text-danger-600' : 'text-ink-500')}>
-              투표권 {need.toLocaleString('ko-KR')}개가 사용돼요{ticketsPerVote > 1 ? ` (1표 = 투표권 ${ticketsPerVote}개)` : ''}.{lack ? ' 투표권이 부족해요.' : ''}
+              팬투표권 {need.toLocaleString('ko-KR')}개가 사용돼요{ticketsPerVote > 1 ? ` (1표 = 팬투표권 ${ticketsPerVote}개)` : ''}.{lack ? ' 팬투표권이 부족해요.' : ''}
             </p>
             {state.message && !state.ok ? <p className="mt-2 rounded-xl bg-danger-50 px-3 py-2 text-[12.5px] font-bold text-danger-600">{state.message}</p> : null}
             {lack ? (
-              <Link href="/vote/charge" className="mt-4 grid h-12 place-items-center rounded-2xl bg-brand-400 text-[15px] font-black text-ink-900">투표권 충전하러 가기</Link>
+              <Link href="/vote/charge" className="mt-4 grid h-12 place-items-center rounded-2xl bg-brand-400 text-[15px] font-black text-ink-900">팬투표권 충전하러 가기</Link>
             ) : (
               <button type="submit" disabled={pending || votes < 1} className="mt-4 flex h-12 w-full items-center justify-center gap-1.5 rounded-2xl bg-ink-900 text-[15px] font-black text-white disabled:opacity-60">
                 {pending ? <Loader2 size={18} className="animate-spin" aria-hidden /> : <Heart size={18} strokeWidth={2} aria-hidden />}
                 {votes.toLocaleString('ko-KR')}표 보내기
               </button>
             )}
-            <p className="mt-2 text-center text-[11px] text-ink-400">투표권은 투표 전용이며 현금으로 바꾸거나 다른 회원에게 줄 수 없어요.</p>
+            <p className="mt-2 text-center text-[11px] text-ink-400">팬투표권은 팬투표 전용이며 현금으로 바꾸거나 다른 회원에게 줄 수 없어요.</p>
           </form>
         )}
       </div>

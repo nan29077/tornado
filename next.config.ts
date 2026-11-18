@@ -113,8 +113,8 @@ const nextConfig: NextConfig = {
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
       { key: 'X-Frame-Options', value: 'DENY' },
       { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
-      // 이 서비스는 위치·카메라·마이크를 쓰지 않는다. 확장 프로그램이 끼어드는 것도 막는다.
-      { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=()' },
+      // 위치·카메라는 쓰지 않는다. 마이크는 팬챗 음성 메시지 녹음(크리에이터 스튜디오)에서만 같은 출처로 허용한다 (2026-11-18).
+      { key: 'Permissions-Policy', value: 'camera=(), microphone=(self), geolocation=(), payment=()' },
     ];
 
     // HTTPS 로 서비스할 때만 HSTS 를 붙인다. 로컬(http) 에 붙이면 브라우저가

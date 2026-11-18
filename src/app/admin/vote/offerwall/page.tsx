@@ -12,7 +12,7 @@ import { OFFERWALL_PROVIDERS, getOfferwallSettings, mockOfferwallAllowed } from 
 
 export const dynamic = 'force-dynamic';
 
-/** 최고관리자 > 투표 관리 > 오퍼월 연동 */
+/** 최고관리자 > 팬투표 관리 > 오퍼월 연동 */
 export default async function AdminOfferwallPage() {
   await requireAdminPage('/admin/vote/offerwall');
   const since = new Date(requestNowMs() - 30 * 86_400_000);
@@ -23,7 +23,7 @@ export default async function AdminOfferwallPage() {
   ]);
   return (
     <div>
-      <PageHeader title="오퍼월 연동" description="광고 시청 · 퀴즈 등 참여형 광고로 무료 투표권을 지급합니다. 투표권은 광고사 서버 콜백으로만 지급되고, 같은 거래는 한 번만 지급됩니다." />
+      <PageHeader title="오퍼월 연동" description="광고 시청 · 퀴즈 등 참여형 광고로 무료 팬투표권을 지급합니다. 팬투표권은 광고사 서버 콜백으로만 지급되고, 같은 거래는 한 번만 지급됩니다." />
       <Notice tone="warning" title="실제 광고사는 계약 후 연동합니다">
         버즈빌 · 애드팝콘은 계약 전이라 꺼져 있습니다. 콜백 주소는 <code>/api/offerwall/광고사/callback</code> 로 준비되어 있으며, 연동 규격(서명 방식 · 파라미터)을 받으면 어댑터를 완성합니다. 그 전까지는 테스트 광고로 흐름을 확인할 수 있습니다{mockOfferwallAllowed() ? '' : ' (운영 환경이라 테스트 광고는 꺼져 있습니다)'}.
       </Notice>
@@ -52,7 +52,7 @@ export default async function AdminOfferwallPage() {
                       <span className="w-[72px] shrink-0">
                         <AdminInput id={`${p.key}_ratio`} name={`${p.key}_ratio`} inputMode="decimal" defaultValue={settings.providers[p.key].ratio} className="text-right" />
                       </span>
-                      투표권
+                      팬투표권
                     </span>
                   </div>
                 </div>
@@ -64,7 +64,7 @@ export default async function AdminOfferwallPage() {
           <CardTitle>최근 30일</CardTitle>
           <div className="mt-2">
             <Table className="min-w-0">
-              <thead><tr><Th>광고사</Th><Th>상태</Th><Th className="text-right">건수</Th><Th className="text-right">투표권</Th></tr></thead>
+              <thead><tr><Th>광고사</Th><Th>상태</Th><Th className="text-right">건수</Th><Th className="text-right">팬투표권</Th></tr></thead>
               <tbody>
                 {stats.length === 0 ? <tr><Td className="text-ink-400">기록 없음</Td><Td>{''}</Td><Td>{''}</Td><Td>{''}</Td></tr> : stats.map((s) => (
                   <tr key={`${s.provider}-${s.status}`}>
@@ -81,7 +81,7 @@ export default async function AdminOfferwallPage() {
       </div>
       <h2 className="mb-2 mt-6 text-[14px] font-bold text-ink-900">최근 지급 내역</h2>
       <Table>
-        <thead><tr><Th>시각</Th><Th>광고사</Th><Th>회원</Th><Th>캠페인</Th><Th className="text-right">투표권</Th><Th>상태</Th><Th>거래 고유값</Th></tr></thead>
+        <thead><tr><Th>시각</Th><Th>광고사</Th><Th>회원</Th><Th>캠페인</Th><Th className="text-right">팬투표권</Th><Th>상태</Th><Th>거래 고유값</Th></tr></thead>
         <tbody>
           {recent.map((r) => (
             <tr key={r.id}>

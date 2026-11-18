@@ -11,7 +11,7 @@ import { ensureDemoData } from '@/server/services/demo-data';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = { title: '명예의 전당 | 도네이도 투표' };
+export const metadata: Metadata = { title: '명예의 전당 | 도네이도 팬투표' };
 
 export default async function HallOfFamePage() {
   await ensureDemoData();
@@ -21,7 +21,7 @@ export default async function HallOfFamePage() {
     <PublicShell>
       <Link href="/vote" className="mb-3 inline-flex items-center gap-0.5 text-[13px] font-bold text-ink-500 hover:text-brand-800">
         <ChevronLeft size={15} aria-hidden />
-        투표 랭킹으로
+        팬투표 랭킹으로
       </Link>
       <PageHeader eyebrow="HALL OF FAME" title="명예의 전당" description="매달 1위 · 카테고리별 1위 · 왕중왕전 우승 크리에이터를 기록해요." />
 

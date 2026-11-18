@@ -24,8 +24,8 @@ const SHOP_KIND_LABEL: Record<string, string> = {
   ORDER: '샵 주문',
   VIDEO_DONATION: '영상 후원',
   CARD_DONATION: '카드 후원',
-  VOTE_TICKET: '투표권 충전',
-  TALK_SUBSCRIPTION: '소통 구독',
+  VOTE_TICKET: '팬투표권 충전',
+  TALK_SUBSCRIPTION: '팬챗 구독',
   TALK_SESSION: '1:1 채팅',
 };
 
@@ -306,7 +306,7 @@ export default async function AdminPaymentsPage({
       {pendingShopCancels.length > 0 ? (
         <section id="shop-cancel" className="mb-6">
           <Notice tone="danger" title={`결제 취소 재시도가 필요한 샵 결제 ${pendingShopCancels.length}건`}>
-            투표권·소통 구독·1:1 채팅 환불 때 결제사 취소가 실패한 건입니다. 회원의 투표권·이용권은 이미 회수·종료되었으니
+            팬투표권·팬챗 구독·1:1 채팅 환불 때 결제사 취소가 실패한 건입니다. 회원의 팬투표권·이용권은 이미 회수·종료되었으니
             결제사 취소만 다시 보내면 됩니다. [취소 재시도]는 두 번 눌러도 한 번만 나갑니다.
           </Notice>
           <div className="mt-3">

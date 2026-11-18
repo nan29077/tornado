@@ -1,5 +1,5 @@
 /**
- * 투표 화면 공통 — 보는 사람 기준 투표 버튼 정보 (2026-11-17)
+ * 팬투표 화면 공통 — 보는 사람 기준 팬투표 버튼 정보 (2026-11-17)
  */
 import { getVoteConfig } from '@/server/services/engagement/config';
 import { getBalance } from './wallet';
@@ -26,7 +26,7 @@ export async function getVoteViewer(userId: string | null | undefined): Promise<
     ticketsPerVote: cfg.ticketsPerVote,
     quickVotes: cfg.quickVotes,
     maxVotesPerAction: cfg.maxVotesPerAction,
-    disabledReason: cfg.enabled ? null : '지금은 투표를 받지 않습니다.',
+    disabledReason: cfg.enabled ? null : '지금은 팬투표를 받지 않습니다.',
   };
 }
 

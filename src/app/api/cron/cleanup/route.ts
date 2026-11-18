@@ -17,6 +17,9 @@ import { autoConfirmOrders } from '@/server/services/shop/orders';
 import { expireLots } from '@/server/services/vote/wallet';
 import { sweepSessions } from '@/server/services/talk/sessions';
 import { ensureRecentFinalized } from '@/server/services/vote/ranking';
+import { closeEndedRounds } from '@/server/services/vote/rounds';
+import { settleExpiredSupports } from '@/server/services/vote/support';
+import { dispatchDueTalkNotifications } from '@/server/services/talk/talk';
 import { retryAllPendingRefundRecoveries } from '@/server/services/refund';
 import {
   reconcileStuckPendingPayments,
@@ -157,24 +160,28 @@ export async function GET(req: Request) {
      */
     const mtQueueStuck = await step('EMMA 발송 큐 적체 확인', () => checkEmmaMtQueueBacklog(env.emma.enabled));
     /**
-     * [5차 P2-6] 도네이도 샵·투표·소통 정리. 예전에는 화면을 열거나 관리자 버튼을 눌러야만 돌았다.
+     * [5차 P2-6] 도네이도 샵·팬투표·팬챗 정리. 예전에는 화면을 열거나 관리자 버튼을 눌러야만 돌았다.
      *  - 멈춘 샵 결제(READY 30분) 정리 → 묶인 재고·1:1 자리 해제
      *  - 발송 후 N일 지난 주문 자동 구매 확정 → 판매 대금·레퍼럴 정산 적립
-     *  - 기한 지난 투표권 만료 처리
+     *  - 기한 지난 팬투표권 만료 처리
      *  - 1:1 예약 기한 정리(승인 기한 초과 환불, 종료 예약 완료·정산 또는 불참 환불)
-     *  - 지난 기간 투표 순위 확정
+     *  - 지난 기간 팬투표 순위 확정
      */
     const shopStalePayments = await step('멈춘 샵 결제 정리', async () => (await reconcileStaleShopPayments()).failed);
     const shopAutoConfirm = await step('샵 주문 자동 구매 확정', () => autoConfirmOrders());
-    const voteExpire = await step('기한 지난 투표권 만료', () => expireLots());
+    const voteExpire = await step('기한 지난 팬투표권 만료', () => expireLots());
     const talkSessions = await step('1:1 예약 기한 정리', async () => {
       const r = await sweepSessions();
       return r.expired + r.completed;
     });
-    const voteFinalize = await step('지난 기간 투표 순위 확정', async () => {
+    const voteFinalize = await step('지난 기간 팬투표 순위 확정', async () => {
       await ensureRecentFinalized(new Date(), true);
       return 0;
     });
+    // (2026-11-18) 팬투표 이벤트 종료 · 서포트 마감(목표 미달 반환) · 팬챗 예약 메시지 알림
+    const voteRoundsClosed = await step('끝난 팬투표 이벤트 종료', () => closeEndedRounds());
+    const voteSupports = await step('기간 끝난 서포트 마감', () => settleExpiredSupports());
+    const talkNotify = await step('팬챗 예약 메시지 알림', () => dispatchDueTalkNotifications(new Date(), { limit: 50 }));
 
     const steps = {
       pinSessions,
@@ -198,6 +205,9 @@ export async function GET(req: Request) {
       mtQueueStuck,
       shopStalePayments,
       shopAutoConfirm,
+      voteRoundsClosed,
+      voteSupports,
+      talkNotify,
       voteExpire,
       talkSessions,
       voteFinalize,

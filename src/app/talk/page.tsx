@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { CalendarClock, ChevronRight, MessageCircleHeart, MessagesSquare, UsersRound } from '@/components/brand/icons';
+import { BellOff, CalendarClock, ChevronRight, MessageCircleHeart, MessagesSquare, UsersRound } from '@/components/brand/icons';
+import { BundleBuilder } from '@/components/talk/bundle-builder';
+import { isShopPaymentMock, isShopPaymentOff } from '@/server/adapters/shop-payment';
+import { getCreatorEngagement } from '@/server/services/engagement/config';
 import { PublicShell } from '@/components/layout/public-shell';
 import { ProfileAvatar } from '@/components/profile/generated-avatar';
 import { Badge, cx } from '@/components/ui';
@@ -15,7 +18,7 @@ import { ensureDemoData } from '@/server/services/demo-data';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = { title: '소통 | 도네이도', robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: '팬챗 | 도네이도', robots: { index: false, follow: false } };
 
 function timeAgo(d: Date | null, now: number): string {
   if (!d) return '';
@@ -28,10 +31,10 @@ function timeAgo(d: Date | null, now: number): string {
 }
 
 /**
- * 하단 메뉴 [소통] (2026-11-17)
- *  - 크리에이터 소통방: 크리에이터별 1:N 채팅(크리에이터 + 구독자 여러 명) 목록
+ * 하단 메뉴 [팬챗] (2026-11-17)
+ *  - 크리에이터 팬챗방: 크리에이터별 1:N 채팅(크리에이터 + 구독자 여러 명) 목록
  *  - 1:1 채팅: 예약한 1:1 채팅 목록 (최고관리자가 1:1 을 켰을 때만 보인다)
- *  - 아래에는 소통방을 연 크리에이터를 추천한다.
+ *  - 아래에는 팬챗방을 연 크리에이터를 추천한다.
  */
 export default async function TalkHubPage({ searchParams }: { searchParams: Promise<{ t?: string }> }) {
   await ensureDemoData();
@@ -66,13 +69,30 @@ export default async function TalkHubPage({ searchParams }: { searchParams: Prom
   const upcoming = sessions.filter((s) => s.status === 'REQUESTED' || s.status === 'ACCEPTED');
   const past = sessions.filter((s) => s.status !== 'REQUESTED' && s.status !== 'ACCEPTED');
   const joined = new Set(rooms.map((r) => r.creator.id));
+  // 묶음 구독 후보: 팬챗방을 연 크리에이터 중 아직 구독 중이 아닌 곳 (기간이 끝난 곳은 다시 구독할 수 있다)
+  const activeJoined = new Set(rooms.filter((r) => r.active).map((r) => r.creator.id));
+  const bundleCandidates = user && talk.bundleEnabled
+    ? await Promise.all(
+        openRooms
+          .filter((o) => !activeJoined.has(o.creator.id) && o.creator.user && o.creatorId)
+          .slice(0, 12)
+          .map(async (o) => ({
+            id: o.creator.id,
+            code: o.creator.code,
+            name: o.creator.displayName,
+            avatarUrl: o.creator.avatarUrl,
+            avatarIndex: o.creator.user.avatarIndex,
+            price: (await getCreatorEngagement(o.creator.id, prisma, { talk })).talkSub.price,
+          })),
+      ).then((list) => list.filter((c) => c.price > 0 && c.id !== user.creatorId))
+    : [];
 
   return (
     <PublicShell>
       <header className="mb-4 flex items-end justify-between gap-3">
         <div>
-          <h1 className="text-[24px] font-black tracking-[-0.04em] text-ink-900">소통</h1>
-          <p className="mt-0.5 text-[13px] text-ink-500">크리에이터와 팬이 함께하는 소통방{sessionOn ? '과 1:1 채팅' : ''}을 한곳에서.</p>
+          <h1 className="text-[24px] font-black tracking-[-0.04em] text-ink-900">팬챗</h1>
+          <p className="mt-0.5 text-[13px] text-ink-500">크리에이터와 팬이 함께하는 팬챗방{sessionOn ? '과 1:1 채팅' : ''}을 한곳에서.</p>
         </div>
         {user ? null : (
           <Link href="/login?next=%2Ftalk" className="inline-flex h-9 items-center rounded-xl bg-ink-900 px-3.5 text-[12.5px] font-extrabold text-white">로그인</Link>
@@ -80,13 +100,13 @@ export default async function TalkHubPage({ searchParams }: { searchParams: Prom
       </header>
 
       {!talk.enabled ? (
-        <p className="rounded-2xl bg-white p-8 text-center text-[13.5px] font-bold text-ink-500 shadow-card">지금은 소통 기능을 쉬고 있어요.</p>
+        <p className="rounded-2xl bg-white p-8 text-center text-[13.5px] font-bold text-ink-500 shadow-card">지금은 팬챗 기능을 쉬고 있어요.</p>
       ) : (
         <>
-          <nav aria-label="소통 종류" className={cx('mb-4 grid gap-1 rounded-2xl bg-white p-1 shadow-card', sessionOn ? 'grid-cols-2' : 'grid-cols-1')}>
+          <nav aria-label="팬챗 종류" className={cx('mb-4 grid gap-1 rounded-2xl bg-white p-1 shadow-card', sessionOn ? 'grid-cols-2' : 'grid-cols-1')}>
             <Link href="/talk" aria-current={tab === 'rooms' ? 'page' : undefined} className={cx('relative flex h-11 items-center justify-center gap-1.5 rounded-xl text-[13.5px] font-extrabold', tab === 'rooms' ? 'bg-ink-900 text-white' : 'text-ink-600 hover:bg-warm-100')}>
               <UsersRound size={16} aria-hidden />
-              크리에이터 소통방
+              크리에이터 팬챗방
               {unreadTotal > 0 ? <span className="rounded-full bg-danger-500 px-1.5 text-[10.5px] font-black leading-[18px] text-white">{unreadTotal > 99 ? '99+' : unreadTotal}</span> : null}
             </Link>
             {sessionOn ? (
@@ -104,13 +124,13 @@ export default async function TalkHubPage({ searchParams }: { searchParams: Prom
                 <div className="rounded-[22px] bg-white p-6 text-center shadow-card">
                   <MessagesSquare size={28} className="mx-auto text-brand-600" aria-hidden />
                   <p className="mt-2 text-[15px] font-black text-ink-900">로그인하고 크리에이터와 대화해 보세요</p>
-                  <p className="mt-1 text-[12.5px] text-ink-500">구독한 크리에이터의 소통방이 여기에 모여요.</p>
+                  <p className="mt-1 text-[12.5px] text-ink-500">구독한 크리에이터의 팬챗방이 여기에 모여요.</p>
                   <Link href="/login?next=%2Ftalk" className="mt-4 inline-flex h-11 items-center rounded-xl bg-ink-900 px-6 text-[13.5px] font-extrabold text-white">로그인</Link>
                 </div>
               ) : rooms.length === 0 ? (
                 <div className="rounded-[22px] border border-dashed border-ink-200 bg-white px-5 py-8 text-center">
-                  <p className="text-[14px] font-extrabold text-ink-700">참여 중인 소통방이 없어요</p>
-                  <p className="mt-1 text-[12.5px] text-ink-400">아래에서 크리에이터 소통방에 들어가 보세요.</p>
+                  <p className="text-[14px] font-extrabold text-ink-700">참여 중인 팬챗방이 없어요</p>
+                  <p className="mt-1 text-[12.5px] text-ink-400">아래에서 크리에이터 팬챗방에 들어가 보세요.</p>
                 </div>
               ) : (
                 <ul className="divide-y divide-ink-100 overflow-hidden rounded-[22px] bg-white shadow-card">
@@ -124,7 +144,8 @@ export default async function TalkHubPage({ searchParams }: { searchParams: Prom
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-1.5">
                             <span className="truncate text-[14.5px] font-extrabold text-ink-900">{r.creator.displayName}</span>
-                            {!r.active ? <Badge>기간 만료</Badge> : null}
+                            {r.active ? <span className="rounded-full bg-ink-900 px-1.5 text-[10px] font-black leading-[17px] tabular-nums text-brand-200">D+{r.days}</span> : <Badge>기간 만료</Badge>}
+                            {r.muted ? <BellOff size={12} className="shrink-0 text-ink-300" aria-label="알림 꺼짐" /> : null}
                           </span>
                           <span className="mt-0.5 block truncate text-[12.5px] text-ink-500">{r.lastBody ?? '아직 메시지가 없어요'}</span>
                         </span>
@@ -138,15 +159,24 @@ export default async function TalkHubPage({ searchParams }: { searchParams: Prom
                 </ul>
               )}
 
+              {user && talk.bundleEnabled && !isShopPaymentOff() && bundleCandidates.length >= 2 ? (
+                <BundleBuilder
+                  candidates={bundleCandidates}
+                  tiers={talk.bundleDiscounts}
+                  periodDays={talk.subPeriodDays}
+                  mock={isShopPaymentMock()}
+                />
+              ) : null}
+
               {openRooms.filter((o) => !joined.has(o.creator.id)).length > 0 ? (
                 <div className="mt-6">
-                  <h2 className="mb-2 text-[15px] font-black text-ink-900">소통방이 열린 크리에이터</h2>
+                  <h2 className="mb-2 text-[15px] font-black text-ink-900">팬챗방이 열린 크리에이터</h2>
                   <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
                     {openRooms.filter((o) => !joined.has(o.creator.id)).map((o) => (
                       <Link key={o.id} href={`/c/${o.creator.code}?tab=talk`} className="flex flex-col items-center rounded-2xl bg-white p-3.5 text-center shadow-card hover:-translate-y-0.5 transition-transform">
                         <ProfileAvatar seed={o.creator.code} avatarIndex={o.creator.user.avatarIndex} name={o.creator.displayName} imageUrl={o.creator.avatarUrl} className="h-14 w-14" />
                         <span className="mt-2 w-full truncate text-[13.5px] font-extrabold text-ink-900">{o.creator.displayName}</span>
-                        <span className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-ink-400">{o.welcomeMessage ?? '소통방 열림'}</span>
+                        <span className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-ink-400">{o.welcomeMessage ?? '팬챗방 열림'}</span>
                         <span className="mt-2 inline-flex h-8 items-center gap-1 rounded-full bg-ink-900 px-3 text-[11.5px] font-extrabold text-white"><MessageCircleHeart size={12} aria-hidden />들어가기</span>
                       </Link>
                     ))}
@@ -162,7 +192,7 @@ export default async function TalkHubPage({ searchParams }: { searchParams: Prom
                 <div className="rounded-[22px] border border-dashed border-ink-200 bg-white px-5 py-8 text-center">
                   <CalendarClock size={26} className="mx-auto text-ink-300" aria-hidden />
                   <p className="mt-2 text-[14px] font-extrabold text-ink-700">예약한 1:1 채팅이 없어요</p>
-                  <p className="mt-1 text-[12.5px] text-ink-400">크리에이터 샵 [소통] 탭에서 날짜와 시간을 골라 신청할 수 있어요.</p>
+                  <p className="mt-1 text-[12.5px] text-ink-400">크리에이터 샵 [팬챗] 탭에서 날짜와 시간을 골라 신청할 수 있어요.</p>
                 </div>
               ) : (
                 <>

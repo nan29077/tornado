@@ -109,7 +109,7 @@ export function storageWarnings(): string[] {
 
 /**
  * 우리 업로드 저장소가 돌려준 이미지 주소인가 (5차 P2-12).
- * 소통방 사진처럼 다른 회원 화면에 그대로 뜨는 이미지는 외부 주소를 받지 않는다
+ * 팬챗방 사진처럼 다른 회원 화면에 그대로 뜨는 이미지는 외부 주소를 받지 않는다
  * (외부 서버가 보는 사람의 IP·접속 시각을 수집하는 추적 픽셀로 쓰일 수 있다).
  */
 export function isOwnUploadUrl(url: string): boolean {
@@ -122,3 +122,34 @@ export function isOwnUploadUrl(url: string): boolean {
   return false;
 }
 
+
+/** 팬챗 음성 · 영상 파일 확장자 (2026-11-18) */
+export const TALK_MEDIA_EXT = {
+  VOICE: ['mp3', 'm4a', 'webm', 'ogg', 'wav'],
+  VIDEO: ['mp4', 'webm', 'mov'],
+} as const;
+
+export const MEDIA_MIME: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  ogg: 'audio/ogg',
+  wav: 'audio/wav',
+  webm: 'video/webm',
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
+};
+
+/** 우리 저장소가 돌려준 팬챗 음성 · 영상 주소인가 (외부 주소 · 다른 형식 거절) */
+export function isOwnTalkMediaUrl(url: string, kind: 'VOICE' | 'VIDEO'): boolean {
+  const u = url.trim();
+  const exts = (TALK_MEDIA_EXT[kind] as readonly string[]).join('|');
+  const re = new RegExp(`^[a-f0-9]{32}\\.(${exts})$`);
+  if (u.startsWith('/api/media/')) return re.test(u.slice('/api/media/'.length));
+  if (S3_PUBLIC_BASE && u.startsWith(`${S3_PUBLIC_BASE}/${S3_PREFIX}/`)) return re.test(u.slice(`${S3_PUBLIC_BASE}/${S3_PREFIX}/`.length));
+  return false;
+}

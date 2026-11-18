@@ -60,10 +60,10 @@ export const VIDEO_CATEGORIES = [
   { slug: 'economy', label: '경제' },
   { slug: 'finance', label: '주식·코인' },
   { slug: 'realestate', label: '부동산' },
-  // 예능·소통
+  // 예능·팬챗
   { slug: 'humor', label: '유머' },
   { slug: 'entertain', label: '예능' },
-  { slug: 'talk', label: '소통·토크' },
+  { slug: 'talk', label: '팬챗·토크' },
   { slug: 'vlog', label: '일상·브이로그' },
   { slug: 'asmr', label: 'ASMR' },
   { slug: 'mystery', label: '미스터리·괴담' },

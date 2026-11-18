@@ -1,5 +1,5 @@
 /**
- * 투표 · 소통 운영 설정 (2026-11-17). 최고관리자가 바꾼다.
+ * 팬투표 · 팬챗 운영 설정 (2026-11-17). 최고관리자가 바꾼다.
  *
  * - 전역 값은 system_setting(JSON) 에, 크리에이터별 값은 creator_engagement_policy 에 저장한다.
  * - **크리에이터별로 최고관리자가 지정한 값이 항상 전역 값보다 우선한다.** (비율·가격·권한 모두)
@@ -16,9 +16,9 @@ export type SpendOrder = 'FREE_FIRST' | 'PAID_FIRST';
 export type PriceMode = 'FIXED' | 'CREATOR';
 
 export interface VoteConfig {
-  /** 투표 기능 전체 */
+  /** 팬투표 기능 전체 */
   enabled: boolean;
-  /** 1표당 소진되는 투표권 수 */
+  /** 1표당 소진되는 팬투표권 수 */
   ticketsPerVote: number;
   /** 한 번에 던질 수 있는 최대 표 */
   maxVotesPerAction: number;
@@ -26,17 +26,17 @@ export interface VoteConfig {
   dailyMaxVotesPerUser: number;
   /** 회원 1명이 크리에이터 1명에게 하루 최대 표 (0 = 제한 없음) */
   dailyMaxVotesPerCreator: number;
-  /** 휴대폰 번호를 연결한 회원만 투표 */
+  /** 휴대폰 번호를 연결한 회원만 팬투표 */
   requirePhone: boolean;
-  /** 투표권 사용 순서 */
+  /** 팬투표권 사용 순서 */
   spendOrder: SpendOrder;
-  /** 무료(오퍼월) 투표권 유효기간(일). 0 = 만료 없음 */
+  /** 무료(오퍼월) 팬투표권 유효기간(일). 0 = 만료 없음 */
   freeExpiryDays: number;
-  /** 보너스 투표권 유효기간(일). 0 = 만료 없음 */
+  /** 보너스 팬투표권 유효기간(일). 0 = 만료 없음 */
   bonusExpiryDays: number;
-  /** 유료 투표권 유효기간(일). 0 = 만료 없음 */
+  /** 유료 팬투표권 유효기간(일). 0 = 만료 없음 */
   paidExpiryDays: number;
-  /** 유료 투표권 사용분 중 크리에이터 몫 (전역 기본값). 0 = 나누지 않음 */
+  /** 유료 팬투표권 사용분 중 크리에이터 몫 (전역 기본값). 0 = 나누지 않음 */
   shareRate: number;
   /** 결제 충전 판매 */
   purchaseEnabled: boolean;
@@ -46,9 +46,43 @@ export interface VoteConfig {
   refundDays: number;
   /** 랭킹 공개 */
   rankingPublic: boolean;
-  /** 투표 창의 빠른 선택 표 수 */
+  /** 팬투표 창의 빠른 선택 표 수 */
   quickVotes: number[];
+  // ---- 팬투표 고도화 (2026-11-18) ----
+  /** 출석 체크로 무료 팬투표권 받기 */
+  attendanceEnabled: boolean;
+  /** 출석 1회 지급 수 */
+  attendanceTickets: number;
+  /** 연속 출석 보너스. days 의 배수가 되는 날 bonus 를 더 준다 (예: 7일마다 +10) */
+  attendanceStreakBonus: Array<{ days: number; bonus: number }>;
+  /** 일일 미션 */
+  missionsEnabled: boolean;
+  /** 미션별 지급 수 (0 = 그 미션 끔). 키는 MISSION_KEYS */
+  missionTickets: Record<string, number>;
+  /** 친구 초대 */
+  referralEnabled: boolean;
+  /** 초대한 회원 보상 (초대받은 친구가 첫 팬투표를 하면 지급) */
+  referralInviterTickets: number;
+  /** 초대받은 회원 보상 (코드 입력 즉시) */
+  referralInviteeTickets: number;
+  /** 가입 후 며칠 안에 초대 코드를 입력할 수 있나 */
+  referralCodeDays: number;
+  /** 한 회원이 보상받을 수 있는 최대 초대 수 (0 = 제한 없음) */
+  referralMaxPerInviter: number;
+  /** 응원 댓글 */
+  cheerEnabled: boolean;
+  cheerDailyLimit: number;
+  cheerMaxLength: number;
+  /** 서포트(팬투표권 모아 광고 열기) */
+  supportEnabled: boolean;
+  /** 서포트 1회 최소 참여 팬투표권 */
+  supportMinTickets: number;
 }
+
+/** 일일 미션 종류 (2026-11-18) */
+export const MISSION_KEYS = ['VOTE_1', 'VOTE_10', 'CHEER', 'SHARE', 'AD', 'FANCHAT'] as const;
+export type MissionKey = (typeof MISSION_KEYS)[number];
+export const DEFAULT_MISSION_TICKETS: Record<MissionKey, number> = { VOTE_1: 3, VOTE_10: 5, CHEER: 2, SHARE: 2, AD: 2, FANCHAT: 3 };
 
 export const DEFAULT_VOTE_CONFIG: VoteConfig = {
   enabled: true,
@@ -67,17 +101,35 @@ export const DEFAULT_VOTE_CONFIG: VoteConfig = {
   refundDays: 7,
   rankingPublic: true,
   quickVotes: [1, 10, 100],
+  attendanceEnabled: true,
+  attendanceTickets: 3,
+  attendanceStreakBonus: [
+    { days: 7, bonus: 10 },
+    { days: 30, bonus: 50 },
+  ],
+  missionsEnabled: true,
+  missionTickets: { ...DEFAULT_MISSION_TICKETS },
+  referralEnabled: true,
+  referralInviterTickets: 30,
+  referralInviteeTickets: 20,
+  referralCodeDays: 14,
+  referralMaxPerInviter: 50,
+  cheerEnabled: true,
+  cheerDailyLimit: 10,
+  cheerMaxLength: 100,
+  supportEnabled: true,
+  supportMinTickets: 10,
 };
 
 export type TalkRoomMode = 'GROUP' | 'BUBBLE';
 
 export interface TalkConfig {
-  /** 소통 기능 전체 */
+  /** 팬챗 기능 전체 */
   enabled: boolean;
   /**
-   * 소통방 방식.
-   *  GROUP  1:N 단체방 — 크리에이터와 구독자 여러 명이 함께 대화하고, 구독자끼리도 서로의 메시지를 본다 (기본)
-   *  BUBBLE 버블형 — 크리에이터 메시지는 모두에게, 구독자 메시지는 크리에이터에게만 보인다
+   * 팬챗방 방식.
+   *  BUBBLE 버블형 — 크리에이터 메시지는 모두에게 1:1 처럼, 구독자 메시지는 크리에이터에게만 보인다 (기본, 2026-11-18)
+   *  GROUP  1:N 단체방 — 크리에이터와 구독자 여러 명이 함께 대화하고, 구독자끼리도 서로의 메시지를 본다
    */
   roomMode: TalkRoomMode;
   subPriceMode: PriceMode;
@@ -87,7 +139,7 @@ export interface TalkConfig {
   subPriceMax: number;
   /** 구독 1회 기간(일) */
   subPeriodDays: number;
-  /** 소통 구독 플랫폼 수수료율 (전역) */
+  /** 팬챗 구독 플랫폼 수수료율 (전역) */
   subFeeRate: number;
   /** 구독 결제 후 환불 가능 기간(일, 관리자 처리) */
   subRefundDays: number;
@@ -120,11 +172,31 @@ export interface TalkConfig {
   sessionNoShowMinutes: number;
   /** 1:1 채팅은 성인 인증 회원만 */
   sessionRequireAdult: boolean;
+  // ---- 팬챗 고도화 (2026-11-18, 버블형) ----
+  /** 크리에이터 메시지 1개에 팬이 보낼 수 있는 답장 수 (0 = 제한 없음). 새 메시지가 오면 다시 채워진다 */
+  replyPerMessage: number;
+  /** 구독 일수(D+)에 따라 늘어나는 답장 글자 수. 최대는 fanReplyMaxLength */
+  replyLengthTiers: Array<{ days: number; length: number }>;
+  /** 팬레터 */
+  letterEnabled: boolean;
+  letterMaxLength: number;
+  /** 크리에이터 1명에게 7일에 보낼 수 있는 편지 수 */
+  letterPerWeek: number;
+  /** 여러 크리에이터 묶음 구독 */
+  bundleEnabled: boolean;
+  /** 묶음 할인: count 명 이상 함께 구독하면 rate 만큼 할인 (가장 큰 구간 하나만 적용) */
+  bundleDiscounts: Array<{ count: number; rate: number }>;
+  /** 음성 메시지 최대 길이(초) */
+  voiceMaxSeconds: number;
+  /** 크리에이터 메시지가 오면 구독자에게 알림 */
+  notifyOnBroadcast: boolean;
+  /** 기념일로 축하할 구독 일수 */
+  dayMilestones: number[];
 }
 
 export const DEFAULT_TALK_CONFIG: TalkConfig = {
   enabled: true,
-  roomMode: 'GROUP',
+  roomMode: 'BUBBLE',
   subPriceMode: 'FIXED',
   subPrice: 4_900,
   subPriceMin: 1_900,
@@ -148,6 +220,26 @@ export const DEFAULT_TALK_CONFIG: TalkConfig = {
   sessionLateRefundRate: 0.5,
   sessionNoShowMinutes: 10,
   sessionRequireAdult: false,
+  replyPerMessage: 3,
+  replyLengthTiers: [
+    { days: 0, length: 50 },
+    { days: 14, length: 80 },
+    { days: 50, length: 120 },
+    { days: 100, length: 200 },
+    { days: 200, length: 300 },
+  ],
+  letterEnabled: true,
+  letterMaxLength: 1500,
+  letterPerWeek: 2,
+  bundleEnabled: true,
+  bundleDiscounts: [
+    { count: 2, rate: 0.05 },
+    { count: 3, rate: 0.1 },
+    { count: 5, rate: 0.15 },
+  ],
+  voiceMaxSeconds: 180,
+  notifyOnBroadcast: true,
+  dayMilestones: [50, 100, 200, 300, 365, 500, 1000],
 };
 
 // ---------------------------------------------------------------------- 정규화
@@ -161,10 +253,34 @@ function num(v: unknown, def: number, min: number, max: number, integer = true):
 function bool(v: unknown, def: boolean): boolean {
   return typeof v === 'boolean' ? v : def;
 }
-function intList(v: unknown, def: number[], min: number, max: number): number[] {
+function tierList<K extends string, V extends string>(
+  v: unknown,
+  def: Array<Record<K | V, number>>,
+  k: K,
+  val: V,
+  kRange: [number, number],
+  vRange: [number, number],
+  integerValue = true,
+): Array<Record<K | V, number>> {
+  if (!Array.isArray(v)) return def;
+  const out: Array<Record<K | V, number>> = [];
+  for (const raw of v.slice(0, 10)) {
+    const r = (raw ?? {}) as Record<string, unknown>;
+    const a = Math.trunc(Number(r[k]));
+    const bRaw = Number(r[val]);
+    const b = integerValue ? Math.trunc(bRaw) : bRaw;
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+    if (a < kRange[0] || a > kRange[1] || b < vRange[0] || b > vRange[1]) continue;
+    if (out.some((x) => x[k] === a)) continue;
+    out.push({ [k]: a, [val]: b } as Record<K | V, number>);
+  }
+  return out.sort((x, y) => x[k] - y[k]);
+}
+
+function intList(v: unknown, def: number[], min: number, max: number, maxCount = 6): number[] {
   if (!Array.isArray(v)) return def;
   const out = v.map((x) => Math.trunc(Number(x))).filter((x) => Number.isFinite(x) && x >= min && x <= max);
-  const uniq = [...new Set(out)].sort((a, b) => a - b).slice(0, 6);
+  const uniq = [...new Set(out)].sort((a, b) => a - b).slice(0, maxCount);
   return uniq.length > 0 ? uniq : def;
 }
 
@@ -188,7 +304,29 @@ export function normalizeVoteConfig(raw: unknown): VoteConfig {
     refundDays: num(v.refundDays, d.refundDays, 0, 365),
     rankingPublic: bool(v.rankingPublic, d.rankingPublic),
     quickVotes: intList(v.quickVotes, d.quickVotes, 1, 1_000_000),
+    attendanceEnabled: bool(v.attendanceEnabled, d.attendanceEnabled),
+    attendanceTickets: num(v.attendanceTickets, d.attendanceTickets, 0, 10_000),
+    attendanceStreakBonus: tierList(v.attendanceStreakBonus, d.attendanceStreakBonus, 'days', 'bonus', [2, 365], [0, 100_000]),
+    missionsEnabled: bool(v.missionsEnabled, d.missionsEnabled),
+    missionTickets: missionMap(v.missionTickets),
+    referralEnabled: bool(v.referralEnabled, d.referralEnabled),
+    referralInviterTickets: num(v.referralInviterTickets, d.referralInviterTickets, 0, 100_000),
+    referralInviteeTickets: num(v.referralInviteeTickets, d.referralInviteeTickets, 0, 100_000),
+    referralCodeDays: num(v.referralCodeDays, d.referralCodeDays, 1, 365),
+    referralMaxPerInviter: num(v.referralMaxPerInviter, d.referralMaxPerInviter, 0, 100_000),
+    cheerEnabled: bool(v.cheerEnabled, d.cheerEnabled),
+    cheerDailyLimit: num(v.cheerDailyLimit, d.cheerDailyLimit, 1, 1000),
+    cheerMaxLength: num(v.cheerMaxLength, d.cheerMaxLength, 10, 500),
+    supportEnabled: bool(v.supportEnabled, d.supportEnabled),
+    supportMinTickets: num(v.supportMinTickets, d.supportMinTickets, 1, 1_000_000),
   };
+}
+
+function missionMap(v: unknown): Record<string, number> {
+  const raw = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+  const out: Record<string, number> = {};
+  for (const k of MISSION_KEYS) out[k] = num(raw[k], DEFAULT_MISSION_TICKETS[k], 0, 10_000);
+  return out;
 }
 
 export function normalizeTalkConfig(raw: unknown): TalkConfig {
@@ -200,7 +338,7 @@ export function normalizeTalkConfig(raw: unknown): TalkConfig {
   const sesMax = Math.max(sesMin, num(v.sessionPriceMax, d.sessionPriceMax, 0, 100_000_000));
   return {
     enabled: bool(v.enabled, d.enabled),
-    roomMode: v.roomMode === 'BUBBLE' ? 'BUBBLE' : 'GROUP',
+    roomMode: v.roomMode === 'GROUP' ? 'GROUP' : 'BUBBLE',
     subPriceMode: v.subPriceMode === 'CREATOR' ? 'CREATOR' : 'FIXED',
     subPrice: num(v.subPrice, d.subPrice, 100, 10_000_000),
     subPriceMin: subMin,
@@ -224,6 +362,16 @@ export function normalizeTalkConfig(raw: unknown): TalkConfig {
     sessionLateRefundRate: num(v.sessionLateRefundRate, d.sessionLateRefundRate, 0, 1, false),
     sessionNoShowMinutes: num(v.sessionNoShowMinutes, d.sessionNoShowMinutes, 1, 180),
     sessionRequireAdult: bool(v.sessionRequireAdult, d.sessionRequireAdult),
+    replyPerMessage: num(v.replyPerMessage, d.replyPerMessage, 0, 100),
+    replyLengthTiers: tierList(v.replyLengthTiers, d.replyLengthTiers, 'days', 'length', [0, 10_000], [10, 2000]),
+    letterEnabled: bool(v.letterEnabled, d.letterEnabled),
+    letterMaxLength: num(v.letterMaxLength, d.letterMaxLength, 100, 5000),
+    letterPerWeek: num(v.letterPerWeek, d.letterPerWeek, 1, 50),
+    bundleEnabled: bool(v.bundleEnabled, d.bundleEnabled),
+    bundleDiscounts: tierList(v.bundleDiscounts, d.bundleDiscounts, 'count', 'rate', [2, 50], [0, 0.5], false),
+    voiceMaxSeconds: num(v.voiceMaxSeconds, d.voiceMaxSeconds, 10, 600),
+    notifyOnBroadcast: bool(v.notifyOnBroadcast, d.notifyOnBroadcast),
+    dayMilestones: intList(v.dayMilestones, d.dayMilestones, 1, 10_000, 12),
   };
 }
 

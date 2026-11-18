@@ -12,7 +12,7 @@ import { PAY_METHOD_LABEL, type PayMethod } from '@/server/services/vote/purchas
 
 export const dynamic = 'force-dynamic';
 
-/** 최고관리자 > 투표 관리 > 투표권 지급·회수 · 충전 결제 */
+/** 최고관리자 > 팬투표 관리 > 팬투표권 지급·회수 · 충전 결제 */
 export default async function AdminVoteTicketsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   await requireAdminPage('/admin/vote/tickets');
   const q = ((await searchParams).q ?? '').trim();
@@ -24,7 +24,7 @@ export default async function AdminVoteTicketsPage({ searchParams }: { searchPar
   ]);
   return (
     <div>
-      <PageHeader title="투표권 지급·회수" description="이벤트 보상 · 오류 보상은 무료 또는 보너스로 지급합니다(유료는 결제로만 생깁니다). 모든 지급·회수는 회원 내역과 감사로그에 남습니다." />
+      <PageHeader title="팬투표권 지급·회수" description="이벤트 보상 · 오류 보상은 무료 또는 보너스로 지급합니다(유료는 결제로만 생깁니다). 모든 지급·회수는 회원 내역과 감사로그에 남습니다." />
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardTitle>회원 조회</CardTitle>
@@ -70,7 +70,7 @@ export default async function AdminVoteTicketsPage({ searchParams }: { searchPar
               <Td>{o.status === 'PAID' ? <Badge tone="success">결제</Badge> : <Badge>환불</Badge>}</Td>
               <Td>
                 {o.status === 'PAID' ? (
-                  <ActionForm action={refundTicketOrderAdminAction} submitLabel="환불" variant="danger" compact confirm="미사용 결제만 환불됩니다(기간 무관). 투표권이 회수되고 결제가 취소됩니다.">
+                  <ActionForm action={refundTicketOrderAdminAction} submitLabel="환불" variant="danger" compact confirm="미사용 결제만 환불됩니다(기간 무관). 팬투표권이 회수되고 결제가 취소됩니다.">
                     <input type="hidden" name="orderId" value={o.id} />
                     <AdminInput name="reason" placeholder="사유" className="w-24" />
                   </ActionForm>

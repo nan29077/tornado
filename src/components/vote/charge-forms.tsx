@@ -48,7 +48,7 @@ export function TicketShop({ packs, mock, loggedIn }: { packs: PackView[]; mock:
                 active ? 'border-ink-900 shadow-[0_10px_24px_rgba(23,22,26,0.12)]' : 'border-transparent shadow-card hover:border-brand-200',
               )}
             >
-              {p.badge ? <span className="absolute right-2.5 top-2.5 rounded-full bg-accent-500 px-2 py-0.5 text-[10px] font-black text-white">{p.badge}</span> : null}
+              {p.badge ? <span className="absolute right-2.5 top-2.5 rounded-full bg-warning-500 px-2 py-0.5 text-[10px] font-black text-white">{p.badge}</span> : null}
               <span className="text-[12px] font-bold text-ink-500">{p.name}</span>
               <span className="mt-1 text-[20px] font-black tabular-nums tracking-[-0.03em] text-ink-900">{p.tickets.toLocaleString('ko-KR')}<span className="ml-0.5 text-[13px]">개</span></span>
               {p.bonus > 0 ? <span className="mt-0.5 text-[12px] font-extrabold text-accent-600">+ 보너스 {p.bonus.toLocaleString('ko-KR')}개</span> : <span className="mt-0.5 h-[18px]" />}
@@ -81,7 +81,7 @@ export function TicketShop({ packs, mock, loggedIn }: { packs: PackView[]; mock:
       <label className="mt-4 flex items-start gap-2 rounded-xl bg-warm-100 px-3.5 py-3 text-[12.5px] leading-relaxed text-ink-600">
         <input type="checkbox" name="agree" className="mt-0.5 h-4 w-4 accent-ink-900" />
         <span>
-          투표권은 <b>투표 전용</b>이며 현금 환급·양도·상품 구매에 쓸 수 없어요. 사용하지 않은 결제분은 결제 후 정해진 기간 안에 마이페이지에서 환불할 수 있어요(일부라도 사용하면 환불 불가, 보너스는 회수).
+          팬투표권은 <b>팬투표 전용</b>이며 현금 환급·양도·상품 구매에 쓸 수 없어요. 사용하지 않은 결제분은 결제 후 정해진 기간 안에 마이페이지에서 환불할 수 있어요(일부라도 사용하면 환불 불가, 보너스는 회수).
         </span>
       </label>
 
@@ -167,7 +167,7 @@ function MissionCard({ m, loggedIn }: { m: MissionView; loggedIn: boolean }) {
           <p className="truncate text-[14px] font-extrabold text-ink-900">{m.title}</p>
           <p className="text-[11.5px] text-ink-400">{KIND_LABEL[m.kind]} · {m.advertiser}</p>
         </div>
-        <span className="shrink-0 rounded-full bg-accent-500/10 px-2.5 py-1 text-[12px] font-black text-accent-600">
+        <span className="shrink-0 rounded-full bg-warning-500/10 px-2.5 py-1 text-[12px] font-black text-accent-600">
           <Gift size={12} className="mr-0.5 inline" aria-hidden />+{m.tickets}
         </span>
       </div>
@@ -208,7 +208,7 @@ function MissionCard({ m, loggedIn }: { m: MissionView; loggedIn: boolean }) {
           {state.message && !state.ok ? <p className="mt-2 text-[12.5px] font-bold text-danger-600">{state.message}</p> : null}
           <button type="submit" disabled={pending || (Boolean(m.quiz) && answer == null)} className="mt-2.5 flex h-10 w-full items-center justify-center gap-1 rounded-xl bg-brand-400 text-[13px] font-black text-ink-900 disabled:opacity-50">
             {pending ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Gift size={16} aria-hidden />}
-            투표권 {m.tickets}개 받기
+            팬투표권 {m.tickets}개 받기
           </button>
         </form>
       )}

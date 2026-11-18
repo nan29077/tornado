@@ -1,11 +1,11 @@
 /**
- * 투표권 지갑 (2026-11-17).
+ * 팬투표권 지갑 (2026-11-17).
  *
- * - 투표권은 묶음(vote_ticket_lot) 단위로 보관한다. 잔액 = 만료되지 않은 묶음의 잔량 합계.
+ * - 팬투표권은 묶음(vote_ticket_lot) 단위로 보관한다. 잔액 = 만료되지 않은 묶음의 잔량 합계.
  * - 사용할 때는 해당 회원의 묶음 행을 FOR UPDATE 로 잠근 뒤 다시 읽는다 → 동시에 여러 번 눌러도 초과 사용이 없다.
  *   (DB 에도 remaining >= 0 CHECK 제약이 있다 — 마지막 방어선)
  * - 모든 증감은 vote_ticket_ledger 에 남긴다.
- * - 투표권은 투표 전용이다. 현금 환급·양도·상품 구매·후원에 쓰는 경로를 만들지 않는다.
+ * - 팬투표권은 팬투표 전용이다. 현금 환급·양도·상품 구매·후원에 쓰는 경로를 만들지 않는다.
  */
 import type { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/server/db';
@@ -21,13 +21,18 @@ export const LEDGER_TYPE_LABEL: Record<string, string> = {
   OFFERWALL_REVOKE: '무료 충전 취소 (광고사 회수)',
   PURCHASE: '구매',
   PURCHASE_BONUS: '구매 보너스',
-  VOTE_SPEND: '투표 사용',
+  VOTE_SPEND: '팬투표 사용',
   REFUND: '환불 회수',
   EXPIRE: '기간 만료',
   ADMIN_GRANT: '관리자 지급',
   ADMIN_REVOKE: '관리자 회수',
   PROMO: '이벤트 지급',
   WITHDRAW_FORFEIT: '회원 탈퇴로 소멸',
+  ATTENDANCE: '출석 체크',
+  MISSION: '일일 미션',
+  REFERRAL: '친구 초대',
+  SUPPORT_SPEND: '서포트 참여',
+  SUPPORT_REFUND: '서포트 반환',
 };
 
 type Tx = Prisma.TransactionClient;
@@ -71,7 +76,7 @@ export interface GrantInput {
   memo?: string;
 }
 
-/** 투표권 지급. 반드시 호출 쪽 트랜잭션(tx) 안에서 부른다. */
+/** 팬투표권 지급. 반드시 호출 쪽 트랜잭션(tx) 안에서 부른다. */
 export async function grantTickets(tx: Tx, input: GrantInput, now: Date = new Date()): Promise<string> {
   if (!Number.isInteger(input.amount) || input.amount <= 0) throw new Error('지급 수량이 올바르지 않습니다.');
   const lotId = newId();
@@ -138,7 +143,7 @@ export interface SpendResult {
 }
 
 /**
- * 투표권 사용. 반드시 트랜잭션 안에서 부른다. 잔액이 모자라면 예외.
+ * 팬투표권 사용. 반드시 트랜잭션 안에서 부른다. 잔액이 모자라면 예외.
  * 같은 회원의 묶음을 먼저 잠그므로, 이 함수를 부르기 전에 한도 확인을 하더라도 **잠근 뒤에** 다시 확인해야 한다
  * (castVote 는 lockUserTickets → 한도 확인 → spendTickets 순서로 부른다).
  */
@@ -147,21 +152,21 @@ export async function spendTickets(
   userId: string,
   count: number,
   order: SpendOrder,
-  ref: { refType: string; refId: string; memo?: string },
+  ref: { refType: string; refId: string; memo?: string; ledgerType?: string },
   now: Date = new Date(),
   preLocked?: LockedLot[],
 ): Promise<SpendResult> {
   if (!Number.isInteger(count) || count <= 0) throw new Error('사용 수량이 올바르지 않습니다.');
   const lots = sortLotsForSpend(preLocked ?? (await lockLots(tx, userId, now)), order);
   const total = lots.reduce((s, l) => s + l.remaining, 0);
-  if (total < count) throw new Error(`투표권이 부족합니다. (보유 ${total.toLocaleString('ko-KR')}개 · 필요 ${count.toLocaleString('ko-KR')}개)`);
+  if (total < count) throw new Error(`팬투표권이 부족합니다. (보유 ${total.toLocaleString('ko-KR')}개 · 필요 ${count.toLocaleString('ko-KR')}개)`);
   let left = count;
   const out: SpendResult = { free: 0, paid: 0, bonus: 0, paidValue: 0n };
   for (const l of lots) {
     if (left <= 0) break;
     const take = Math.min(l.remaining, left);
     const moved = await tx.voteTicketLot.updateMany({ where: { id: l.id, remaining: { gte: take } }, data: { remaining: { decrement: take } } });
-    if (moved.count === 0) throw new Error('투표권 처리 중 충돌이 발생했습니다. 다시 시도해 주세요.');
+    if (moved.count === 0) throw new Error('팬투표권 처리 중 충돌이 발생했습니다. 다시 시도해 주세요.');
     left -= take;
     if (l.bucket === 'FREE') out.free += take;
     else if (l.bucket === 'PAID') {
@@ -169,13 +174,13 @@ export async function spendTickets(
       if (l.amount > 0) out.paidValue += (BigInt(l.value_won) * BigInt(take)) / BigInt(l.amount);
     } else out.bonus += take;
     await tx.voteTicketLedger.create({
-      data: { id: newId(), userId, bucket: l.bucket, delta: -take, type: 'VOTE_SPEND', lotId: l.id, refType: ref.refType, refId: ref.refId, memo: ref.memo?.slice(0, 200) ?? null },
+      data: { id: newId(), userId, bucket: l.bucket, delta: -take, type: ref.ledgerType ?? 'VOTE_SPEND', lotId: l.id, refType: ref.refType, refId: ref.refId, memo: ref.memo?.slice(0, 200) ?? null },
     });
   }
   return out;
 }
 
-/** 투표 직전에 묶음을 잠근다 (한도 확인을 잠금 뒤에 하기 위해) */
+/** 팬투표 직전에 묶음을 잠근다 (한도 확인을 잠금 뒤에 하기 위해) */
 export async function lockUserTickets(tx: Tx, userId: string, now: Date = new Date()): Promise<LockedLot[]> {
   return lockLots(tx, userId, now);
 }

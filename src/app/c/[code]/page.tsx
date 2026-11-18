@@ -152,7 +152,7 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
   if (!creator) return <NotFoundView />;
 
   // 도네이도 샵 탭 (2026-11-17): 영상 / 쇼핑 / 문자 후원(기존 화면)
-  // 소통 탭 (2026-11-17) — 소통 기능이 꺼져 있으면 탭을 숨기고 영상 탭으로
+  // 팬챗 탭 (2026-11-17) — 팬챗 기능이 꺼져 있으면 탭을 숨기고 영상 탭으로
   const talkOn = (await getTalkConfig().catch(() => null))?.enabled ?? false;
   const requestedTab = resolveShopTab(sp.tab, creator.shopDefaultTab);
   const tab = requestedTab === 'talk' && !talkOn ? resolveShopTab(undefined, creator.shopDefaultTab) : requestedTab;

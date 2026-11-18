@@ -87,7 +87,7 @@ export default async function StudioSettingsProfilePage() {
           </Card>
         </section>
 
-        {/* [6차 P1-2] 활동 카테고리 — 카테고리별 투표 랭킹에 쓰인다 */}
+        {/* [6차 P1-2] 활동 카테고리 — 카테고리별 팬투표 랭킹에 쓰인다 */}
         <section>
           <SectionTitle
             title="활동 카테고리"
