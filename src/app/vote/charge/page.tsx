@@ -109,6 +109,7 @@ export default async function VoteChargePage({ searchParams }: { searchParams: P
               inviterTickets={referral.inviterTickets}
               inviteeTickets={referral.inviteeTickets}
               codeDays={referral.codeDays}
+              needPhone={referral.needPhone}
             />
           ) : null}
         </div>

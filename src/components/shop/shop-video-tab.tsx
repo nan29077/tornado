@@ -9,7 +9,7 @@ import { embedUrlFor, liveThumbnailUrl, SHOP_VIDEO_PLATFORM_LABEL } from '@/lib/
 import { donateVideoAction } from '@/app/actions/shop';
 import { ShopActionForm } from './shop-action-form';
 import { ShopLiveFeed } from './shop-live-feed';
-import { VideoProductSticker, VideoProductStrip, type VideoSticker } from './video-product-sticker';
+import { VideoProductStrip, type VideoSticker } from './video-product-sticker';
 import { LIVE_TAG_KEY } from '@/lib/video-product-time';
 
 export interface ShopVideoView {
@@ -78,22 +78,21 @@ export function ShopVideoTab({
     <div className="mt-6 space-y-5">
       <div ref={topRef} className="scroll-mt-24 space-y-3">
         {selected ? (
-          <>
-            <Player
-              key={selected.key}
-              video={selected}
-              onClose={() => setSelected(null)}
-              sticker={stickers[selected.key] ?? null}
-              shopCode={creatorCode}
-              loggedIn={loggedIn}
-              loginHref={loginHref}
-            />
+          <div data-sticker-scope className="space-y-3">
+            <Player key={selected.key} video={selected} onClose={() => setSelected(null)} />
             {stickers[selected.key] ? (
-              <VideoProductStrip sticker={stickers[selected.key]} shopCode={creatorCode} loggedIn={loggedIn} loginHref={loginHref} />
+              <VideoProductStrip
+                key={`strip-${selected.key}`}
+                sticker={stickers[selected.key]}
+                platform={selected.platform}
+                shopCode={creatorCode}
+                loggedIn={loggedIn}
+                loginHref={loginHref}
+              />
             ) : null}
-          </>
+          </div>
         ) : live ? (
-          <section className="overflow-hidden rounded-[1.5rem] border border-warm-300/70 bg-white shadow-card">
+          <section data-sticker-scope className="overflow-hidden rounded-[1.5rem] border border-warm-300/70 bg-white shadow-card">
             <div className="flex items-center gap-2 px-4 py-3">
               {liveEmbedUrl ? <LiveBadge /> : null}
               <p className="text-[14px] font-extrabold text-ink-900">{creatorName} 님이 방송 중이에요</p>
@@ -101,7 +100,6 @@ export function ShopVideoTab({
             {liveEmbedUrl ? (
               <div className="relative aspect-video bg-ink-900">
                 <iframe src={liveEmbedUrl} title="라이브 방송" className="absolute inset-0 h-full w-full" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen />
-                {liveSticker ? <VideoProductSticker sticker={liveSticker} platform="LIVE" shopCode={creatorCode} loggedIn={loggedIn} loginHref={loginHref} /> : null}
               </div>
             ) : liveUrl ? (
               <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="mx-4 mb-3 block rounded-2xl focus-visible:outline-2 focus-visible:outline-brand-500">
@@ -114,7 +112,7 @@ export function ShopVideoTab({
             ) : null}
             {liveSticker ? (
               <div className="px-4 pt-3">
-                <VideoProductStrip sticker={liveSticker} shopCode={creatorCode} loggedIn={loggedIn} loginHref={loginHref} />
+                <VideoProductStrip sticker={liveSticker} platform="LIVE" shopCode={creatorCode} loggedIn={loggedIn} loginHref={loginHref} />
               </div>
             ) : null}
             <div className="px-4 py-3">
@@ -223,21 +221,7 @@ function Thumb({ video, hasProduct = false }: { video: ShopVideoView; hasProduct
   );
 }
 
-function Player({
-  video,
-  onClose,
-  sticker,
-  shopCode,
-  loggedIn,
-  loginHref,
-}: {
-  video: ShopVideoView;
-  onClose: () => void;
-  sticker: VideoSticker | null;
-  shopCode: string;
-  loggedIn: boolean;
-  loginHref: string;
-}) {
+function Player({ video, onClose }: { video: ShopVideoView; onClose: () => void }) {
   const src = embedUrlFor(video.platform, video.externalId, video.url, true);
   const vertical = video.platform === 'TIKTOK' || (video.platform === 'INSTAGRAM' && video.externalId.startsWith('reel/'));
   return (
@@ -250,7 +234,6 @@ function Player({
             원본에서 보기
           </a>
         )}
-        {src && sticker ? <VideoProductSticker sticker={sticker} platform={video.platform} shopCode={shopCode} loggedIn={loggedIn} loginHref={loginHref} /> : null}
       </div>
       <div className="flex items-start gap-2 px-4 py-3">
         <p className="min-w-0 flex-1 text-[14.5px] font-extrabold leading-snug text-ink-900">{video.title}</p>

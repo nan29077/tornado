@@ -47,7 +47,9 @@ export function newObjectName(ext: string): string {
  * 이미지 저장. 저장에 성공하면 공개 URL 을 돌려준다.
  * S3 드라이버는 @aws-sdk/client-s3 를 지연 로딩한다(로컬 환경에 패키지가 없어도 동작).
  */
-export async function putObject(name: string, body: Buffer, contentType: string): Promise<string> {
+export async function putObject(name: string, body: Buffer, contentType: string, opts: { private?: boolean } = {}): Promise<string> {
+  // 팬챗 음성·영상처럼 구독자만 봐야 하는 파일은 공개 CDN 주소가 아니라 권한을 확인하는 /api/media 로만 서빙한다 (7차 P2-2)
+  const urlOf = (n: string) => (opts.private ? `/api/media/${n}` : mediaUrl(n));
   if (STORAGE_DRIVER === 's3') {
     if (!S3_BUCKET) throw new Error('[storage] STORAGE_DRIVER=s3 인데 S3_BUCKET 이 설정되지 않았습니다.');
     const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
@@ -58,15 +60,15 @@ export async function putObject(name: string, body: Buffer, contentType: string)
         Key: `${S3_PREFIX}/${name}`,
         Body: body,
         ContentType: contentType,
-        CacheControl: 'public, max-age=31536000, immutable',
+        CacheControl: opts.private ? 'private, max-age=3600' : 'public, max-age=31536000, immutable',
       }),
     );
-    return mediaUrl(name);
+    return urlOf(name);
   }
 
   await fs.mkdir(UPLOAD_DIR, { recursive: true });
   await fs.writeFile(path.join(UPLOAD_DIR, name), body);
-  return mediaUrl(name);
+  return urlOf(name);
 }
 
 /** 저장된 이미지 읽기 (/api/media 라우트에서 사용). */
@@ -91,6 +93,58 @@ export async function getObject(name: string): Promise<Buffer | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * 저장된 파일의 일부(바이트 구간)만 읽는다 (7차 P2-1, 2026-11-19).
+ *
+ * 음성·영상은 브라우저가 구간 요청(Range)을 여러 번 보낸다. 예전에는 요청마다 파일 전체(영상 최대 80MB)를
+ * 메모리에 읽은 뒤 일부만 잘라 보냈다. 이제 필요한 구간만 읽는다. end 를 넘기면 파일 끝으로 줄인다.
+ * 반환: { size: 전체 크기, body: 요청 구간 } — 파일이 없으면 null, 구간이 파일 밖이면 body 없이 size 만.
+ */
+export async function getObjectRange(name: string, start: number, end: number): Promise<{ size: number; body: Buffer | null } | null> {
+  if (STORAGE_DRIVER === 's3') {
+    if (!S3_BUCKET) return null;
+    try {
+      const { S3Client, GetObjectCommand, HeadObjectCommand } = await import('@aws-sdk/client-s3');
+      const client = new S3Client({ region: env.crypto.awsRegion });
+      const key = `${S3_PREFIX}/${name}`;
+      const head = await client.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+      const size = Number(head.ContentLength ?? 0);
+      if (start >= size) return { size, body: null };
+      const last = Math.min(end, size - 1);
+      const res = await client.send(new GetObjectCommand({ Bucket: S3_BUCKET, Key: key, Range: `bytes=${start}-${last}` }));
+      const chunks: Buffer[] = [];
+      for await (const chunk of res.Body as AsyncIterable<Uint8Array>) chunks.push(Buffer.from(chunk));
+      return { size, body: Buffer.concat(chunks) };
+    } catch (e) {
+      logger.warn('S3 객체 구간 읽기 실패', { name, message: (e as Error).message });
+      return null;
+    }
+  }
+
+  let handle: import('node:fs/promises').FileHandle | null = null;
+  try {
+    handle = await fs.open(path.join(UPLOAD_DIR, name), 'r');
+    const size = (await handle.stat()).size;
+    if (start >= size) return { size, body: null };
+    const last = Math.min(end, size - 1);
+    const length = last - start + 1;
+    const buf = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buf, 0, length, start);
+    return { size, body: bytesRead === length ? buf : buf.subarray(0, bytesRead) };
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+/** 같은 파일을 가리킬 수 있는 주소들 (/api/media 와 공개 CDN 주소) */
+export function mediaUrlVariants(name: string): string[] {
+  const out = [`/api/media/${name}`];
+  if (S3_PUBLIC_BASE) out.push(`${S3_PUBLIC_BASE}/${S3_PREFIX}/${name}`);
+  return out;
 }
 
 /**

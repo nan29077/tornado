@@ -2856,6 +2856,9 @@ model TalkMessage {
   @@index([creatorId, kind, createdAt])
   @@index([creatorId, fanUserId, createdAt])
   @@index([replyToId])
+  /// (7차 P2-2) /api/media 가 파일을 볼 권한을 확인할 때 첨부 주소로 메시지를 찾는다
+  @@index([mediaUrl])
+  @@index([imageUrl])
   @@map("talk_message")
 }
 
@@ -3318,6 +3321,9 @@ model YouTubeApiVideo {
   /// none | live | upcoming
   liveState    String   @default("none") @map("live_state")
   hidden       Boolean  @default(false)
+  /// (7차 P2-5) 비공개·퍼가기 금지·삭제로 수집기가 자동으로 숨긴 영상. 다시 공개되면 수집기가 되돌린다.
+  /// 관리자가 직접 숨긴 영상(hidden=true, autoHidden=false)은 수집기가 건드리지 않는다.
+  autoHidden   Boolean  @default(false) @map("auto_hidden")
   fetchedAt    DateTime @default(now()) @map("fetched_at") @db.Timestamptz(3)
 
   channel YouTubeApiChannel @relation(fields: [channelRowId], references: [id], onDelete: Cascade)

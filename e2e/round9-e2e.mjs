@@ -81,12 +81,10 @@ try {
   r.ok('일괄 지급완료 버튼', (await p.locator('button:has-text("일괄 지급완료")').count()) > 0);
   r.ok('선택 전에는 일괄 승인이 잠긴다', await p.locator('button:has-text("일괄 승인")').first().isDisabled());
 
-  const payoutLink = p.locator('a:has-text("지급대행 파일 받기")').first();
-  r.ok('지급대행 파일 링크', (await payoutLink.count()) > 0);
-  r.ok(
-    '승인 건 미선택 시 지급대행 링크가 잠긴다',
-    (await payoutLink.getAttribute('aria-disabled')) === 'true',
-  );
+  // 지급대행 파일은 미리보기 확인을 거치는 버튼으로 바뀌었다 (링크 → 버튼)
+  const payoutBtn = p.locator('button:has-text("지급대행 파일 받기")').first();
+  r.ok('지급대행 파일 버튼', (await payoutBtn.count()) > 0);
+  r.ok('승인 건 미선택 시 지급대행 버튼이 잠긴다', await payoutBtn.isDisabled());
   r.ok(
     '원천징수 지급명세서 링크',
     (await p.locator(`a[href^="${WITHHOLD}"]`).count()) > 0,

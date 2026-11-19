@@ -131,7 +131,7 @@ export default async function StudioShopPage() {
         <section>
           <SectionTitle
             title="라이브 방송 상품"
-            description="방송 중일 때 내 샵 영상 탭의 라이브 화면 위에 상품 스티커를 띄웁니다. 유튜브 등 외부 플랫폼 화면에는 표시되지 않습니다."
+            description="방송 중일 때 내 샵 영상 탭의 라이브 화면 아래에 [이 영상 속 상품]으로 보여 줍니다. 유튜브 등 외부 플랫폼 화면에는 표시되지 않습니다."
           />
           <Card>
             <VideoTagEditor platform="LIVE" externalId="LIVE" videoTitle="라이브 방송" products={tagProducts} current={tagByKey.get('LIVE:LIVE') ?? null} />
@@ -141,7 +141,7 @@ export default async function StudioShopPage() {
         <section>
           <SectionTitle
             title="영상"
-            description="자동 수집된 유튜브 영상 외에 TikTok · Instagram · Facebook · YouTube 영상 주소를 직접 붙여 넣어 올릴 수 있습니다. 영상마다 상품 스티커를 1개 띄울 수 있고, 도네이도 안에서 재생될 때만 보입니다."
+            description="자동 수집된 유튜브 영상 외에 TikTok · Instagram · Facebook · YouTube 영상 주소를 직접 붙여 넣어 올릴 수 있습니다. 영상마다 상품을 1개 연결할 수 있고, 도네이도 안에서 재생될 때 플레이어 아래에 보입니다."
           />
           <Card>
             <ActionForm action={addShopVideoAction} submitLabel="영상 추가">

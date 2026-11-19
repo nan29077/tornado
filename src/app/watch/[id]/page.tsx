@@ -17,7 +17,7 @@ import {
 import { getVideoWithRelated, isVideoHubEnabled } from '@/server/services/video-hub';
 import { getStickerForVideo } from '@/server/services/shop/video-products';
 import { getSessionUser } from '@/server/auth';
-import { VideoProductSticker, VideoProductStrip } from '@/components/shop/video-product-sticker';
+import { VideoProductStrip } from '@/components/shop/video-product-sticker';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,11 +53,11 @@ export default async function WatchPage({ params }: { params: Promise<{ id: stri
       </Link>
       <div className="mt-2 space-y-6">
         <div className="min-w-0 flex-1">
-          <VideoPlayer
-            item={item}
-            overlay={sticker ? <VideoProductSticker sticker={sticker} platform="YOUTUBE" shopCode={shopCode} loggedIn={loggedIn} loginHref={loginHref} /> : null}
-          />
-          {sticker ? <VideoProductStrip sticker={sticker} shopCode={shopCode} loggedIn={loggedIn} loginHref={loginHref} className="mt-3" /> : null}
+          {/* 상품은 플레이어 위가 아니라 아래 줄로만 보여 준다 (유튜브 임베드 정책, 7차 점검 P1-2) */}
+          <div data-sticker-scope>
+            <VideoPlayer item={item} />
+            {sticker ? <VideoProductStrip sticker={sticker} platform="YOUTUBE" shopCode={shopCode} loggedIn={loggedIn} loginHref={loginHref} className="mt-3" /> : null}
+          </div>
 
           <h1 className="mt-3 text-[18px] font-black leading-snug tracking-[-0.02em] text-ink-900 sm:text-[20px]">{item.title}</h1>
 

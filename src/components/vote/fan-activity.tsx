@@ -155,7 +155,7 @@ function MissionRow({ m, loggedIn }: { m: MissionItem; loggedIn: boolean }) {
 }
 
 /** 친구 초대 */
-export function ReferralCard({ code, invited, rewarded, canEnter, enteredCode, inviterTickets, inviteeTickets, codeDays }: {
+export function ReferralCard({ code, invited, rewarded, canEnter, enteredCode, inviterTickets, inviteeTickets, codeDays, needPhone = false }: {
   code: string;
   invited: number;
   rewarded: number;
@@ -164,6 +164,7 @@ export function ReferralCard({ code, invited, rewarded, canEnter, enteredCode, i
   inviterTickets: number;
   inviteeTickets: number;
   codeDays: number;
+  needPhone?: boolean;
 }) {
   const [state, action, pending] = React.useActionState(redeemReferralAction, initial);
   useRefreshOnOk(state);
@@ -200,7 +201,14 @@ export function ReferralCard({ code, invited, rewarded, canEnter, enteredCode, i
         </button>
       </div>
       <p className="mt-1.5 text-[11.5px] text-ink-400">초대한 친구 {invited}명 · 보상 받은 초대 {rewarded}명</p>
-      {canEnter ? (
+      {canEnter && needPhone ? (
+        <p className="mt-3 rounded-xl bg-warm-50 px-3 py-2.5 text-[12px] leading-relaxed text-ink-600">
+          친구에게 받은 초대 코드는 휴대폰 번호를 연결한 뒤 입력할 수 있어요.{' '}
+          <Link href="/my/account" className="font-bold text-brand-800 underline">
+            내 정보에서 연결하기
+          </Link>
+        </p>
+      ) : canEnter ? (
         <form action={action} className="mt-3 flex gap-2">
           <input name="code" maxLength={12} placeholder="친구에게 받은 초대 코드" className="h-10 min-w-0 flex-1 rounded-xl border border-ink-200 px-3 text-[13.5px] uppercase tracking-wider" />
           <button type="submit" disabled={pending} className="h-10 shrink-0 rounded-xl bg-brand-400 px-4 text-[13px] font-black text-ink-900 disabled:opacity-50">

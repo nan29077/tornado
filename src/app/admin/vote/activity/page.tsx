@@ -60,6 +60,7 @@ export default async function AdminVoteActivityPage() {
             <AdminField label="초대받은 회원 보상" hint="코드 입력 즉시"><AdminInput name="referralInviteeTickets" inputMode="numeric" defaultValue={cfg.referralInviteeTickets} /></AdminField>
             <AdminField label="가입 후 코드 입력 가능 기간(일)"><AdminInput name="referralCodeDays" inputMode="numeric" defaultValue={cfg.referralCodeDays} /></AdminField>
             <AdminField label="1명당 최대 초대 보상 (0=제한 없음)"><AdminInput name="referralMaxPerInviter" inputMode="numeric" defaultValue={cfg.referralMaxPerInviter} /></AdminField>
+            <SwitchField label="휴대폰 연결 회원만 초대 보상" hint="이메일만으로 여러 계정을 만들어 보상을 모으는 것을 막습니다 (초대받은 친구가 휴대폰을 연결해야 코드 입력 · 초대한 사람 보상)" name="referralRequirePhone" value={cfg.referralRequirePhone} />
           </div>
           <p className="mb-1.5 mt-4 text-[11.5px] font-extrabold text-ink-400">응원 댓글 · 서포트</p>
           <div className="grid gap-2 sm:grid-cols-3">

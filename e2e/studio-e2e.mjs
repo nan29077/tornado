@@ -14,6 +14,12 @@ await assertServerUp();
 const r = createReporter('스튜디오 — 유튜브 · 오버레이 · 스트림 · 설정');
 const b = await launch();
 
+// 접이식 섹션 안에 들어간 [세부 표시 설정]을 바깥 섹션까지 모두 펼친다
+const openDetail = (pg) => pg.evaluate(() => {
+  const s = [...document.querySelectorAll('summary')].find((x) => x.textContent?.includes('세부 표시 설정'));
+  for (let d = s?.parentElement ?? null; d; d = d.parentElement) if (d.tagName === 'DETAILS') d.setAttribute('open', '');
+});
+
 try {
   const ctx = await b.newContext(desktop);
   const p = await ctx.newPage();
@@ -54,6 +60,9 @@ try {
 
   // 연결 해제 → 재연결
   await p.locator('button:has-text("연결 해제")').click();
+  // 해제는 확인 창을 거친다
+  const confirmDlg = p.locator('[role=dialog],[role=alertdialog]');
+  if (await confirmDlg.count()) await confirmDlg.last().getByRole('button', { name: /확인|연결 해제/ }).last().click();
   await p.waitForTimeout(3000);
   yt = await bodyText(p);
   r.ok('연결을 해제할 수 있다', yt.includes('연결 해제') || yt.includes('미연결'), yt.slice(0, 160));
@@ -73,14 +82,26 @@ try {
 
   // ══════════════ 2. 오버레이 URL 발급 · 설정 저장 ══════════════
   await gotoReady(p, `${BASE}/studio/overlay`);
+  // [방송 준비 — OBS·PRISM 연결] 은 주소를 발급한 뒤에는 접혀 있다. 펼쳐서 확인한다
+  {
+    const prep = p.locator('details', { has: p.locator('summary', { hasText: '방송 준비' }) }).first();
+    if ((await prep.count()) && !(await prep.evaluate((d) => d.open))) await prep.locator('summary').first().click();
+    await p.waitForTimeout(300);
+  }
   let ov = await bodyText(p);
-  r.ok('OBS 연결 섹션', ov.includes('OBS 연결'));
+  r.ok('OBS 연결 섹션', ov.includes('OBS 연결') || ov.includes('OBS·PRISM'));
   r.ok('등록 방법 안내(접이식)', ov.includes('자세한 등록 방법'));
   r.ok('토큰 원문 미보관 안내', ov.includes('토큰은 해시로만 저장되어'));
 
-  const issueBtn = p.locator('button:has-text("URL 재발급"), button:has-text("URL 발급")').first();
+  const issueBtn = p.locator('button:has-text("연결 주소 재발급"), button:has-text("연결 주소 발급"), button:has-text("URL 재발급"), button:has-text("URL 발급")').first();
   r.ok('URL 발급/재발급 버튼', (await issueBtn.count()) > 0);
   await issueBtn.click();
+  // 재발급은 기존 주소를 무효화하므로 확인 창을 거친다
+  {
+    const dlg = p.locator('[role=dialog],[role=alertdialog]');
+    await p.waitForTimeout(400);
+    if (await dlg.count()) await dlg.last().getByRole('button', { name: /재발급|발급|확인/ }).last().click();
+  }
   await p.waitForTimeout(3500);
   ov = await bodyText(p);
   r.ok('새 브라우저 소스 URL 이 발급된다', ov.includes('새 브라우저 소스 URL을 발급했습니다'), ov.slice(0, 200));
@@ -102,21 +123,28 @@ try {
   r.ok('고급 설정(금액 구간)', ov.includes('고급 설정'));
 
   // 세부 표시 설정 펼치고 저장
-  await p.locator('summary:has-text("세부 표시 설정")').first().click();
+  await openDetail(p);
   await p.waitForTimeout(500);
   const detail = await bodyText(p);
   {
-    const miss = missingOf(detail, ['오버레이 표시', '후원금 표시', '메시지 표시', '익명 처리', '화면 위치', '표시 시간 (ms)', '최대 글자 수']);
+    const miss = missingOf(detail, ['방송 화면에 보이기', '후원금 표시', '메시지 표시', '익명 처리', '화면 위치', '표시 시간 (ms)', '최대 글자 수']);
     r.ok('세부 표시 설정 항목', miss.length === 0, miss.join(','));
   }
   await p.selectOption('select[name=position]', 'TOP_RIGHT');
   await p.fill('input[name=durationMs]', '8000');
-  await p.locator('button:has-text("설정 저장")').first().click();
-  await p.waitForTimeout(3500);
-  r.ok('오버레이 설정이 저장된다', (await bodyText(p)).includes('오버레이 설정을 저장했습니다'));
+  {
+    const form = p.locator('form', { has: p.locator('select[name=position]') }).first();
+    // 미리보기 화면이 버튼 위에 겹칠 수 있어 폼 제출을 직접 요청한다(사용자가 [설정 저장]을 누른 것과 같은 경로)
+    await form.evaluate((f) => f.requestSubmit());
+    // 저장은 확인 창([저장])을 거친다
+    const dlg = p.locator('[role=dialog],[role=alertdialog]');
+    await dlg.last().getByRole('button', { name: '저장' }).click();
+    await p.waitForTimeout(3500);
+  }
+  r.ok('오버레이 설정이 저장된다', /오버레이 설정을 저장했습니다|저장되었습니다/.test(await bodyText(p)));
 
   await gotoReady(p, `${BASE}/studio/overlay`);
-  await p.locator('summary:has-text("세부 표시 설정")').first().click();
+  await openDetail(p);
   await p.waitForTimeout(400);
   r.ok('저장한 표시 위치가 유지된다', (await p.inputValue('select[name=position]')) === 'TOP_RIGHT');
   r.ok('저장한 표시 시간이 유지된다', (await p.inputValue('input[name=durationMs]')) === '8000');
@@ -140,8 +168,9 @@ try {
   await gotoReady(p, `${BASE}/studio/settings`);
   const set = await bodyText(p);
   {
-    const miss = missingOf(set, ['후원금', '감사문자', '결제 모드', '문자번호', '후원페이지']);
-    r.ok('후원 설정 탭 5종', miss.length === 0, miss.join(','));
+    // 결제 모드 탭은 정리됐다(통합 관리자 전용). 탭은 4종
+    const miss = missingOf(set, ['후원금', '감사문자', '문자번호', '후원페이지']);
+    r.ok('후원 설정 탭 4종', miss.length === 0, miss.join(','));
   }
   r.ok('문자 1건당 후원금 입력칸', (await p.locator('input[name=donationAmount]').count()) > 0);
   await p.fill('input[name=donationAmount]', '4000');
@@ -152,7 +181,7 @@ try {
   await gotoReady(p, `${BASE}/studio/settings?tab=thanks`);
   const th = await bodyText(p);
   r.ok('감사문자 탭', th.includes('감사 문자 내용 설정'));
-  r.ok('치환자 안내', th.includes('사용할 수 있는 치환자'));
+  r.ok('치환자 안내', th.includes('눌러서 넣는 항목') || th.includes('사용할 수 있는 치환자'));
   await p.fill('textarea[name=thanksMtMessage]', '{후원자}님 고맙습니다! {금액} 잘 받았습니다.');
   await p.locator('button:has-text("감사 문자 저장")').click();
   await p.waitForTimeout(3500);
@@ -160,25 +189,25 @@ try {
 
   await gotoReady(p, `${BASE}/studio/settings?tab=payment`);
   const pay = await bodyText(p);
-  r.ok('결제 모드 탭은 읽기 전용', pay.includes('읽기 전용') && pay.includes('크리에이터가 변경할 수 없습니다'));
+  r.ok('결제 모드는 크리에이터 화면에서 바꿀 수 없다(탭 없음)', !pay.includes('결제 모드 변경') && (await p.locator('select[name=paymentMode], input[name=paymentMode]').count()) === 0);
 
   await gotoReady(p, `${BASE}/studio/settings?tab=number`);
   const num = await bodyText(p);
-  r.ok('문자번호 탭에 수신번호가 보인다', num.includes('MO 수신번호'));
-  r.ok('배정된 번호가 표시된다', num.includes(SEED.creator1Mo) || num.includes('배정된 수신번호가 없습니다'));
+  r.ok('문자번호 탭에 수신번호가 보인다', num.includes('후원자가 문자를 보내는 번호입니다'));
+  r.ok('배정된 번호가 표시된다', num.replace(/[^0-9]/g, '').includes(SEED.creator1Mo) || num.includes('배정된 수신번호가 없습니다'));
 
   await gotoReady(p, `${BASE}/studio/settings?tab=page`);
   const pg = await bodyText(p);
   r.ok('후원페이지 탭', pg.includes('후원페이지 꾸미기'));
   r.ok('배너 프리셋 선택', (await p.locator('input[name=bannerPreset]').count()) >= 5);
-  r.ok('라이브 플랫폼 선택', (await p.locator('input[name=livePlatform]').count()) >= 3);
+  r.ok('라이브(방송중) 스위치 · SNS 링크', pg.includes('방송중') && (await p.locator('button:has-text("SNS 링크 저장")').count()) > 0);
   await p.fill('textarea[name=description]', 'E2E 소개 문구입니다.');
   await p.locator('button:has-text("후원페이지 설정 저장")').click();
   await p.waitForTimeout(3500);
   {
     // textarea 값은 innerText 에 안 잡히므로 저장 안내와 입력값으로 확인한다.
     const saved = await bodyText(p);
-    r.ok('후원페이지 설정이 저장된다', saved.includes('후원샵 설정을 저장했습니다'), saved.slice(-160));
+    r.ok('후원페이지 설정이 저장된다', saved.includes('후원페이지 설정을 저장했습니다') || saved.includes('후원샵 설정을 저장했습니다'), saved.slice(-160));
     r.ok('저장한 소개 문구가 유지된다', (await p.inputValue('textarea[name=description]')) === 'E2E 소개 문구입니다.');
   }
 

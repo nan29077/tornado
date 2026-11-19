@@ -25,6 +25,13 @@ const SCRIPTS = [
   ['gap', '기기별 안내 · 모의 고지 · 공개 페이지'],
   ['studio', '유튜브 · 오버레이 · 스트림 · 설정'],
   ['admin', '관리자 전 화면 스모크 · 한도 정책'],
+  // (2026-11-19 7차 점검) 새 기능 시뮬레이션도 전체 실행에 포함한다
+  ['engage', '팬투표 · 팬챗 · 1:1 채팅'],
+  // fan 은 engage 가 열어 둔 팬챗방 · 구독을 이어서 쓴다 → 재시드하지 않는다
+  ['fan', '팬챗 버블형 · 팬투표 고도화', { keepData: true }],
+  ['video-sticker', '영상 상품 · 유튜브 API 관리'],
+  ['overlay-ladder', '금액별 후원 연출 단계'],
+  ['donor-experience', '후원자 화면 · 답글 · 반응형'],
 ];
 
 const argv = process.argv.slice(2);
@@ -45,8 +52,8 @@ const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const run = (cmd, args) => spawnSync(cmd, args, { cwd: path.join(HERE, '..'), stdio: 'inherit', shell: process.platform === 'win32' });
 
 const summary = [];
-for (const [key, title] of targets) {
-  if (reseed) {
+for (const [key, title, opts = {}] of targets) {
+  if (reseed && !opts.keepData) {
     console.log(`\n[${key}] DB 초기화·재시드`);
     const reset = run(npmCmd, ['run', 'db:reset']);
     const seed = run(npmCmd, ['run', 'db:seed']);
@@ -54,6 +61,14 @@ for (const [key, title] of targets) {
       console.error(`[${key}] 재시드 실패 — 건너뜁니다.`);
       summary.push({ key, title, status: 'SKIP' });
       continue;
+    }
+  }
+  if (reseed && !opts.keepData) {
+    // 서버는 켜진 채 DB 만 초기화했다. 더미 데이터(DEMO_DATA=true)를 다시 채우도록 메인 화면을 두 번 연다
+    // (서버는 10초에 한 번 더미가 남아 있는지 확인한다 → 확인 간격이 지난 뒤 요청이 알아채고, 그다음 요청이 다시 넣는다)
+    for (const wait of [11_000, 2_000, 0]) {
+      await fetch(`${BASE}/vote`).then((r) => r.text()).catch(() => '');
+      if (wait) await new Promise((res) => setTimeout(res, wait));
     }
   }
   console.log(`\n════════ ${key} — ${title} ════════`);

@@ -117,12 +117,12 @@ export function HomeVideoPane({
                 <X size={16} />
               </button>
             </div>
-            <VideoPlayer
-              item={playing}
-              autoplay
-              rounded="rounded-lg"
-              overlay={playing.creator ? <RemoteVideoSticker key={playing.id} creatorCode={playing.creator.code} videoId={playing.id} /> : null}
-            />
+            <div data-sticker-scope>
+              <VideoPlayer item={playing} autoplay rounded="rounded-lg" />
+              {playing.creator && playing.source === 'youtube' ? (
+                <RemoteVideoSticker key={playing.id} creatorCode={playing.creator.code} videoId={playing.id} className="mt-1.5" />
+              ) : null}
+            </div>
             <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2">
               <VideoProfile item={playing} />
               <a href={youtubeWatchUrl(playing.id)} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-9 items-center gap-1 text-xs font-bold text-brand-800">

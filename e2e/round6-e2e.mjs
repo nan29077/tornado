@@ -13,24 +13,24 @@ await assertServerUp();
 const r = createReporter('6차 — 후원샵 · PC PIN 후원 전 구간');
 const b = await launch();
 const SHOP = `${BASE}/c/${SEED.creator1Code}`;
+const SHOP_TRANSFER = `${SHOP}?tab=donate&m=transfer`;
 
 try {
   // ══════════════════════════════ PC ══════════════════════════════
   const ctx = await b.newContext(desktop);
   const pc = await ctx.newPage();
-  await gotoReady(pc, SHOP);
+  // (2026-11-17) 도네이도 샵: 기본 탭은 [영상], 웹 후원은 [후원하기 > 간편계좌이체 후원] 에서 한다
+  await gotoReady(pc, SHOP_TRANSFER);
   const pcText = await bodyText(pc);
 
   r.ok('PC: 크리에이터 이름이 보인다', pcText.includes(SEED.creator1Name));
-  r.ok('PC: 후원 패널 제목', pcText.includes(`${SEED.creator1Name} 님에게 후원하기`));
-  r.ok(
-    'PC: 기본 배너가 적용된다',
-    (await pc.locator('header img[src*="/banners/donaido-live-banner-"]').count()) > 0,
-  );
+  r.ok('PC: 후원하기 탭 · 후원 방식 3종', ['문자후원', '신용카드 후원', '간편계좌이체 후원'].every((t) => pcText.includes(t)));
+  r.ok('PC: 후원 패널 제목', pcText.includes(`간편계좌이체로 ${SEED.creator1Name} 님에게 후원하기`));
+  r.ok('PC: 기본 배너가 적용된다', (await pc.locator('img[src*="/banners/donaido-live-banner-"]').count()) > 0);
   r.ok('PC: 모의 결제 안내가 보인다', pcText.includes('현재 모의(mock) 결제 상태입니다'));
   r.ok('PC: 최근 후원 섹션', pcText.includes('최근 후원'));
   r.ok('PC: 이용 한도 안내', pcText.includes('이용 한도 안내'));
-  r.ok('PC: 신고·문의 링크', (await pc.locator('a[href="/support"]').count()) > 0);
+  r.ok('PC: 신고·문의 링크', (await pc.locator(`a[href="/c/${SEED.creator1Code}/support"], a[href="/support"]`).count()) > 0);
 
   // PC 전용 "후원 방법" 4단계 (모바일과 문구가 다르다)
   {
@@ -46,7 +46,7 @@ try {
   r.ok('PC: 모바일 전용 번호 카드가 없다', !pcText.includes('전용 후원 번호'));
 
   // ── 1단계: 금액·메시지
-  const startBtn = pc.locator('div.hidden.sm\\:block button:has-text("문자후원하기")');
+  const startBtn = pc.locator('button:visible:has-text("간편계좌이체로 후원하기")');
   r.ok('PC: 후원 시작 버튼이 1개만 보인다', (await startBtn.count()) === 1);
   await startBtn.click();
   await pc.waitForSelector('text=1. 금액·메시지', { timeout: 20_000 }).catch(() => {});
@@ -129,7 +129,7 @@ try {
 
     // 결제 완료 건이 최근 후원 목록에 올라온다
     const fresh = await ctx.newPage();
-    await gotoReady(fresh, SHOP);
+    await gotoReady(fresh, `${SHOP}?tab=donate`);
     r.ok('결제 완료 후원이 최근 후원에 노출된다', (await bodyText(fresh)).includes('E2E 자동 검증 후원입니다'));
     await fresh.close();
   }
@@ -139,7 +139,7 @@ try {
   // ══════════════════════════════ 모바일 ══════════════════════════════
   const mctx = await b.newContext(mobile);
   const m = await mctx.newPage();
-  await gotoReady(m, SHOP);
+  await gotoReady(m, `${SHOP}?tab=donate`);
   const mText = await bodyText(m);
 
   r.ok('모바일: 전용 후원 번호 카드', mText.includes(`${SEED.creator1Name} 전용 후원 번호`));
@@ -151,7 +151,7 @@ try {
   }
   r.ok('모바일: 번호 복사 버튼', (await m.locator('button:has-text("번호 복사")').count()) > 0);
   r.ok('모바일: sms 링크로 문자 앱을 연다', (await m.locator(`a[href^="sms:"]`).count()) > 0);
-  r.ok('모바일: 하단 고정 후원 바', (await m.locator('div.fixed.inset-x-0.bottom-0').count()) > 0);
+  r.ok('모바일: 하단 고정 후원 바', (await m.locator('div.fixed.inset-x-0', { hasText: '문자후원하기' }).count()) > 0);
   r.ok('모바일: 첫 문자 안내', mText.includes('처음 보내는 문자는 후원되지 않습니다'));
   {
     const miss = missingOf(mText, [
@@ -169,8 +169,8 @@ try {
   {
     const rctx = await b.newContext(desktop);
     const rp = await rctx.newPage();
-    await gotoReady(rp, SHOP);
-    await rp.locator('div.hidden.sm\\:block button:has-text("문자후원하기")').click();
+    await gotoReady(rp, SHOP_TRANSFER);
+    await rp.locator('button:visible:has-text("간편계좌이체로 후원하기")').click();
     await rp.waitForSelector('text=1. 금액·메시지', { timeout: 20_000 }).catch(() => {});
     await rp.locator('textarea[maxlength="200"]').fill('첫 후원 시도입니다');
     await rp.locator('button:has-text("후원 진행 (번호 입력)")').click();

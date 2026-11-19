@@ -520,6 +520,7 @@ export async function saveFanvoteExtrasAction(_p: AdminActionState, fd: FormData
       referralInviteeTickets: int(fd, 'referralInviteeTickets', '초대받은 회원 보상', 0, 100_000),
       referralCodeDays: int(fd, 'referralCodeDays', '초대 코드 입력 기간', 1, 365),
       referralMaxPerInviter: int(fd, 'referralMaxPerInviter', '1명당 최대 초대 보상', 0, 100_000),
+      referralRequirePhone: on(fd, 'referralRequirePhone'),
       cheerEnabled: on(fd, 'cheerEnabled'),
       cheerDailyLimit: int(fd, 'cheerDailyLimit', '하루 응원 댓글 수', 1, 1000),
       cheerMaxLength: int(fd, 'cheerMaxLength', '응원 댓글 글자 수', 10, 500),

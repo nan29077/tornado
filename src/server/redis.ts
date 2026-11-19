@@ -237,5 +237,13 @@ function build(): KvStore {
   }
 }
 
+/**
+ * 저장소는 프로세스 안에서 하나만 쓴다 (7차 점검 P1-1, 2026-11-19).
+ *
+ * 예전에는 개발 모드에서만 전역에 보관했다. 그런데 프로덕션 빌드(로컬 미리보기·운영)는 화면과 API 라우트가
+ * 서로 다른 번들 조각에서 이 모듈을 따로 불러 **저장소가 둘 이상** 생긴다. Redis 를 쓸 때는 둘 다 같은 Redis 를
+ * 보니 문제가 안 보였지만, 인메모리일 때는 화면이 저장한 값(예: 유튜브 연결 확인값)을 API 가 찾지 못해
+ * "연결 요청이 만료되었습니다"로 항상 실패했다. 운영에서도 Redis 연결이 조각마다 하나씩 생기던 것이 하나로 준다.
+ */
 export const kv: KvStore = globalForKv.kv ?? build();
-if (process.env.NODE_ENV !== 'production') globalForKv.kv = kv;
+globalForKv.kv = kv;

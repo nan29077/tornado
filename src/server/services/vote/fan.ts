@@ -26,7 +26,7 @@ export interface FanResult {
 }
 
 async function activeUser(userId: string) {
-  const u = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, status: true, createdAt: true, creatorProfile: { select: { id: true } } } });
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, status: true, createdAt: true, phoneHash: true, creatorProfile: { select: { id: true } } } });
   return u && u.status === 'ACTIVE' ? u : null;
 }
 
@@ -204,7 +204,7 @@ export async function getReferralState(userId: string, now: Date = new Date()) {
     prisma.voteReferral.count({ where: { inviterId: userId } }),
     prisma.voteReferral.count({ where: { inviterId: userId, status: 'REWARDED' } }),
   ]);
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { createdAt: true } });
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { createdAt: true, phoneHash: true } });
   const canEnter = !me && Boolean(user) && now.getTime() - (user?.createdAt.getTime() ?? 0) <= cfg.referralCodeDays * DAY_MS;
   return {
     enabled: cfg.enabled && cfg.referralEnabled,
@@ -216,6 +216,8 @@ export async function getReferralState(userId: string, now: Date = new Date()) {
     inviterTickets: cfg.referralInviterTickets,
     inviteeTickets: cfg.referralInviteeTickets,
     codeDays: cfg.referralCodeDays,
+    /** (7차 P2-4) 휴대폰을 연결해야 코드를 입력할 수 있다 */
+    needPhone: cfg.referralRequirePhone && !user?.phoneHash,
   };
 }
 
@@ -226,6 +228,8 @@ export async function redeemReferralCode(userId: string, code: string, now: Date
   const u = await activeUser(userId);
   if (!u) return { ok: false, message: '코드를 입력할 수 없는 계정입니다.' };
   if (now.getTime() - u.createdAt.getTime() > cfg.referralCodeDays * DAY_MS) return { ok: false, message: `초대 코드는 가입 후 ${cfg.referralCodeDays}일 안에만 입력할 수 있어요.` };
+  // (7차 P2-4) 다계정으로 초대 보상을 모으지 못하게 휴대폰을 연결한 회원만 (휴대폰 번호는 회원 1명에게만 연결된다)
+  if (cfg.referralRequirePhone && !u.phoneHash) return { ok: false, message: '휴대폰 번호를 연결한 회원만 초대 코드를 입력할 수 있어요. 마이페이지 > 내 정보에서 연결해 주세요.' };
   const clean = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (clean.length < 5) return { ok: false, message: '초대 코드를 확인해 주세요.' };
   const inviter = await prisma.fanProfile.findUnique({ where: { referralCode: clean } });
@@ -256,6 +260,8 @@ export async function rewardInviterOnFirstVote(inviteeId: string, now: Date = ne
   const cfg = await getVoteConfig();
   if (!cfg.enabled || !cfg.referralEnabled) return false;
   if (!(await activeUser(ref.inviterId))) return false;
+  // (7차 P2-4) 휴대폰 조건을 켠 뒤에는 휴대폰을 연결한 친구의 첫 팬투표만 보상한다 (켜기 전에 입력한 코드 포함)
+  if (cfg.referralRequirePhone && !(await activeUser(inviteeId))?.phoneHash) return false;
   if (cfg.referralMaxPerInviter > 0) {
     const done = await prisma.voteReferral.count({ where: { inviterId: ref.inviterId, status: 'REWARDED' } });
     if (done >= cfg.referralMaxPerInviter) {
@@ -397,10 +403,59 @@ export async function setFeaturedBadge(userId: string, badgeKey: string | null):
   return { ok: true, message: badgeKey ? '대표 배지를 바꿨어요.' : '대표 배지를 내렸어요.' };
 }
 
-/** 여러 회원의 레벨을 한 번에 (팬 랭킹 화면용 · 표 수 기반 근사가 아니라 경험치 그대로) */
+/**
+ * 여러 회원의 레벨을 한 번에 (팬 랭킹 화면용 · 경험치 그대로).
+ * (7차 P2-3) 예전에는 회원마다 getFanStats(조회 9번)를 불러 상위 30명이면 약 270번 조회했다.
+ * 이제 항목별로 묶어서 한 번씩(9번) 조회한다. 계산식은 getFanStats · xpOf 와 같다.
+ */
+export async function getFanStatsMany(userIds: string[]): Promise<Map<string, FanStats>> {
+  const ids = [...new Set(userIds)];
+  const out = new Map<string, FanStats>();
+  if (ids.length === 0) return out;
+  const where = { userId: { in: ids } };
+  const [votes, att, streak, missions, cheers, support, supportRows, invited, subs] = await Promise.all([
+    prisma.voteCast.groupBy({ by: ['userId'], where: { ...where, voidedAt: null }, _sum: { votes: true } }),
+    prisma.voteAttendance.groupBy({ by: ['userId'], where, _count: { _all: true } }),
+    prisma.voteAttendance.groupBy({ by: ['userId'], where, _max: { streak: true } }),
+    prisma.voteMissionClaim.groupBy({ by: ['userId'], where, _count: { _all: true } }),
+    prisma.voteCheer.groupBy({ by: ['userId'], where: { ...where, deletedAt: null }, _count: { _all: true } }),
+    prisma.voteSupportContribution.groupBy({ by: ['userId'], where: { ...where, refundedAt: null }, _sum: { tickets: true } }),
+    prisma.voteSupportContribution.findMany({ where: { ...where, refundedAt: null }, distinct: ['userId', 'supportId'], select: { userId: true, supportId: true } }),
+    prisma.voteReferral.groupBy({ by: ['inviterId'], where: { inviterId: { in: ids }, status: 'REWARDED' }, _count: { _all: true } }),
+    prisma.talkSubscription.findMany({ where: { ...where, status: 'ACTIVE' }, select: { userId: true, creatorId: true, startsAt: true, endsAt: true } }),
+  ]);
+  const now = Date.now();
+  const fanchat = new Map<string, Map<string, number>>();
+  for (const s of subs) {
+    const end = Math.min(s.endsAt.getTime(), now);
+    if (end <= s.startsAt.getTime()) continue;
+    const m = fanchat.get(s.userId) ?? new Map<string, number>();
+    m.set(s.creatorId, (m.get(s.creatorId) ?? 0) + (end - s.startsAt.getTime()));
+    fanchat.set(s.userId, m);
+  }
+  const supportCount = new Map<string, number>();
+  for (const r of supportRows) supportCount.set(r.userId, (supportCount.get(r.userId) ?? 0) + 1);
+  for (const id of ids) {
+    const fc = fanchat.get(id);
+    out.set(id, {
+      votes: votes.find((x) => x.userId === id)?._sum.votes ?? 0,
+      attendanceDays: att.find((x) => x.userId === id)?._count._all ?? 0,
+      maxStreak: streak.find((x) => x.userId === id)?._max.streak ?? 0,
+      missions: missions.find((x) => x.userId === id)?._count._all ?? 0,
+      cheers: cheers.find((x) => x.userId === id)?._count._all ?? 0,
+      supportTickets: support.find((x) => x.userId === id)?._sum.tickets ?? 0,
+      supportCount: supportCount.get(id) ?? 0,
+      invited: invited.find((x) => x.inviterId === id)?._count._all ?? 0,
+      fanchatMaxDays: fc && fc.size ? Math.floor(Math.max(...fc.values()) / DAY_MS) + 1 : 0,
+    });
+  }
+  return out;
+}
+
 async function levelsOf(userIds: string[]): Promise<Map<string, number>> {
+  const stats = await getFanStatsMany(userIds);
   const out = new Map<string, number>();
-  for (const id of userIds) out.set(id, levelOf(xpOf(await getFanStats(id))).level);
+  for (const [id, s] of stats) out.set(id, levelOf(xpOf(s)).level);
   return out;
 }
 

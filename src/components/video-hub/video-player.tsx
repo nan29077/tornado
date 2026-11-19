@@ -12,15 +12,12 @@ export function VideoPlayer({
   autoplay = false,
   className,
   rounded = 'rounded-2xl',
-  overlay,
 }: {
   item: VideoItem;
   autoplay?: boolean;
   className?: string;
   /** 모서리 클래스. 모바일 시청 화면처럼 가장자리까지 붙일 때 바꾼다 */
   rounded?: string;
-  /** 플레이어 위에 겹쳐 띄울 요소 (영상 상품 스티커). 유튜브 재생 중일 때만 그린다 */
-  overlay?: React.ReactNode;
 }) {
   return (
     <div className={cx('relative aspect-video w-full overflow-hidden bg-ink-900', rounded, className)}>
@@ -45,7 +42,6 @@ export function VideoPlayer({
           </div>
         </div>
       )}
-      {item.source === 'youtube' ? overlay : null}
     </div>
   );
 }

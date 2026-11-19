@@ -27,7 +27,7 @@ export interface VideoSticker {
 const YT_ORIGINS = new Set(['https://www.youtube-nocookie.com', 'https://www.youtube.com']);
 
 /**
- * 같은 플레이어 상자 안의 유튜브 iframe 재생 위치(초).
+ * 같은 영역(data-sticker-scope) 안의 유튜브 iframe 재생 위치(초).
  * 유튜브 IFrame API 스크립트를 따로 싣지 않고, 임베드 주소의 enablejsapi=1 로 플레이어가 보내는
  * infoDelivery 메시지(currentTime)만 읽는다. 위치를 아직 모르면 null.
  */
@@ -35,7 +35,8 @@ function useYouTubeCurrentTime(anchor: React.RefObject<HTMLElement | null>, enab
   const [sec, setSec] = React.useState<number | null>(null);
   React.useEffect(() => {
     if (!enabled) return;
-    const frame = anchor.current?.parentElement?.querySelector('iframe') ?? null;
+    const scope = anchor.current?.closest('[data-sticker-scope]') ?? anchor.current?.parentElement ?? null;
+    const frame = scope?.querySelector('iframe') ?? null;
     if (!frame) return;
     const listen = () => {
       try {
@@ -79,122 +80,72 @@ function won(n: number) {
 }
 
 /**
- * 영상 위 상품 스티커 (유튜브 쇼핑 스티커와 같은 역할).
- * 플레이어 상자(position: relative) 안, iframe 바로 옆에 둔다.
- * 유튜브 정책상 플레이어 조작 버튼·화면을 가리지 않도록 모서리에 작게 띄우고, 닫을 수 있다.
+ * 플레이어 아래 "이 영상 속 상품" 줄 (2026-11-19 7차 점검 P1-2).
+ *
+ * 예전에는 유튜브·틱톡 플레이어 **위에** 스티커를 겹쳐 띄웠다. 유튜브 API 서비스 정책은 임베드 플레이어를
+ * 다른 요소로 가리는 것을 제한하고, 위반 시 영상 수집·후원 채팅 송출에 쓰는 API 키까지 정지될 수 있다.
+ * 그래서 외부 플레이어 위에는 아무것도 겹치지 않고, 플레이어 바로 아래 이 줄만 둔다.
+ *
+ * 유튜브 영상에 표시 시간대를 정했다면, 재생 위치가 그 구간에 들어올 때 이 줄이 "지금 영상에 나와요" 로 강조된다
+ * (같은 data-sticker-scope 영역 안의 iframe 재생 위치를 읽는다). 구간 밖이어도 줄은 남아 언제든 살 수 있다.
  */
-export function VideoProductSticker({
+export function VideoProductStrip({
   sticker,
   platform,
   shopCode,
   loggedIn,
   loginHref,
-}: {
-  sticker: VideoSticker;
-  platform: string;
-  shopCode: string;
-  loggedIn: boolean;
-  loginHref: string;
-}) {
-  const anchor = React.useRef<HTMLSpanElement>(null);
-  const timed = platform === 'YOUTUBE' && (sticker.startSec != null || sticker.endSec != null);
-  const current = useYouTubeCurrentTime(anchor, timed);
-  const [dismissed, setDismissed] = React.useState(false);
-  const [open, setOpen] = React.useState(false);
-  const visible = !dismissed && isTagVisibleAt(sticker, timed ? current : null);
-
-  const openSheet = () => {
-    void trackStickerClickAction(sticker.tagId).catch(() => undefined);
-    setOpen(true);
-  };
-
-  return (
-    <>
-      <span ref={anchor} hidden />
-      {visible ? (
-        <div
-          className={cx(
-            'pointer-events-none absolute left-2 z-10 max-w-[min(15rem,70%)] sm:left-3',
-            // 유튜브는 아래 조작 막대를 피해서, 나머지(세로 영상 등)는 위쪽에 둔다
-            platform === 'YOUTUBE' || platform === 'LIVE' ? 'bottom-14' : 'top-2 sm:top-3',
-          )}
-        >
-          <div className="pointer-events-auto flex items-center gap-2 rounded-xl bg-white/95 p-1.5 pr-1 shadow-[0_6px_18px_rgba(0,0,0,0.28)] backdrop-blur">
-            <button
-              type="button"
-              onClick={openSheet}
-              className="flex min-w-0 items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-brand-500"
-              aria-label={`영상 속 상품 ${sticker.name} 보기`}
-            >
-              <StickerThumb sticker={sticker} size="h-10 w-10" />
-              <span className="min-w-0">
-                <span className="flex items-center gap-1 text-[10.5px] font-extrabold text-brand-800">
-                  <ShoppingBag size={11} strokeWidth={2} aria-hidden />
-                  영상 속 상품
-                </span>
-                <span className="block truncate text-[12px] font-bold text-ink-900">{sticker.name}</span>
-                <span className="block text-[12px] font-black text-ink-900">{sticker.soldOut ? '품절' : won(sticker.price)}</span>
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setDismissed(true)}
-              aria-label="상품 스티커 닫기"
-              className="grid h-7 w-7 shrink-0 place-items-center self-start rounded-full text-ink-400 hover:bg-ink-100"
-            >
-              <X size={13} strokeWidth={2} />
-            </button>
-          </div>
-        </div>
-      ) : null}
-      {open ? <ProductSheet sticker={sticker} shopCode={shopCode} loggedIn={loggedIn} loginHref={loginHref} onClose={() => setOpen(false)} /> : null}
-    </>
-  );
-}
-
-/** 플레이어 아래 "이 영상 속 상품" 줄 (스티커를 닫았거나 시간대 밖이어도 항상 살 수 있게) */
-export function VideoProductStrip({
-  sticker,
-  shopCode,
-  loggedIn,
-  loginHref,
   className,
+  compact = false,
 }: {
   sticker: VideoSticker;
+  /** 시간대 강조는 유튜브만 (재생 위치를 읽을 수 있는 플랫폼) */
+  platform?: string;
   shopCode: string;
   loggedIn: boolean;
   loginHref: string;
   className?: string;
+  /** 좁은 미리보기 플레이어용 작은 줄 */
+  compact?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
+  const anchor = React.useRef<HTMLSpanElement>(null);
+  const timed = platform === 'YOUTUBE' && (sticker.startSec != null || sticker.endSec != null);
+  const current = useYouTubeCurrentTime(anchor, timed);
+  const nowShowing = timed && current != null && isTagVisibleAt(sticker, current);
   return (
     <>
+      <span ref={anchor} hidden />
       <button
         type="button"
+        data-now-showing={nowShowing ? 'on' : 'off'}
         onClick={() => {
           void trackStickerClickAction(sticker.tagId).catch(() => undefined);
           setOpen(true);
         }}
         className={cx(
-          'flex w-full items-center gap-3 rounded-2xl border border-warm-300/70 bg-white p-2.5 text-left shadow-card hover:border-brand-300',
+          'flex w-full items-center gap-3 rounded-2xl border bg-white text-left shadow-card transition-[border-color,box-shadow] hover:border-brand-300',
+          compact ? 'p-2' : 'p-2.5',
+          nowShowing ? 'border-brand-400 ring-2 ring-brand-200' : 'border-warm-300/70',
           className,
         )}
       >
-        <StickerThumb sticker={sticker} size="h-14 w-14" />
+        <StickerThumb sticker={sticker} size={compact ? 'h-11 w-11' : 'h-14 w-14'} />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1 text-[11.5px] font-extrabold text-brand-800">
             <ShoppingBag size={13} strokeWidth={2} aria-hidden />
             이 영상 속 상품
+            {nowShowing ? <span className="ml-1 rounded-full bg-brand-400 px-1.5 py-px text-[10px] font-black text-ink-900">지금 영상에 나와요</span> : null}
           </span>
-          <span className="mt-0.5 block truncate text-[14px] font-bold text-ink-900">{sticker.name}</span>
+          <span className={cx('mt-0.5 block truncate font-bold text-ink-900', compact ? 'text-[13px]' : 'text-[14px]')}>{sticker.name}</span>
           <span className="flex items-baseline gap-1.5">
             {sticker.listPrice && sticker.listPrice > sticker.price ? (
               <span className="text-[12px] text-ink-400 line-through">{won(sticker.listPrice)}</span>
             ) : null}
-            <span className="text-[14px] font-black text-ink-900">{sticker.soldOut ? '품절' : won(sticker.price)}</span>
+            <span className={cx('font-black text-ink-900', compact ? 'text-[13px]' : 'text-[14px]')}>{sticker.soldOut ? '품절' : won(sticker.price)}</span>
           </span>
         </span>
-        <span className="shrink-0 rounded-xl bg-brand-400 px-3 py-2 text-[12.5px] font-extrabold text-ink-900">구매하기</span>
+        <span className={cx('shrink-0 rounded-xl bg-brand-400 font-extrabold text-ink-900', compact ? 'px-2.5 py-1.5 text-[12px]' : 'px-3 py-2 text-[12.5px]')}>구매하기</span>
       </button>
       {open ? <ProductSheet sticker={sticker} shopCode={shopCode} loggedIn={loggedIn} loginHref={loginHref} onClose={() => setOpen(false)} /> : null}
     </>
@@ -295,10 +246,11 @@ function ProductSheet({
 }
 
 /**
- * 브라우저에서 영상을 고르는 플레이어(방송국 미리보기 등)용: 크리에이터 코드·영상 ID 로 스티커를 받아 띄운다.
- * 도네이도 가입 크리에이터의 유튜브 영상에만 쓴다.
+ * 브라우저에서 영상을 고르는 플레이어(메인 영상 미리보기 등)용: 크리에이터 코드·영상 ID 로 상품을 받아
+ * 플레이어 아래에 [이 영상 속 상품] 줄을 띄운다. 도네이도 가입 크리에이터의 유튜브 영상에만 쓴다.
+ * 플레이어와 같은 data-sticker-scope 영역 안에 두어야 시간대 강조가 동작한다.
  */
-export function RemoteVideoSticker({ creatorCode, videoId }: { creatorCode: string; videoId: string }) {
+export function RemoteVideoSticker({ creatorCode, videoId, className }: { creatorCode: string; videoId: string; className?: string }) {
   const [data, setData] = React.useState<{ sticker: VideoSticker | null; loggedIn: boolean } | null>(null);
   React.useEffect(() => {
     let alive = true;
@@ -314,12 +266,14 @@ export function RemoteVideoSticker({ creatorCode, videoId }: { creatorCode: stri
   if (!data?.sticker) return null;
   const next = typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/';
   return (
-    <VideoProductSticker
+    <VideoProductStrip
       sticker={data.sticker}
       platform="YOUTUBE"
       shopCode={creatorCode}
       loggedIn={data.loggedIn}
       loginHref={`/c/${encodeURIComponent(creatorCode)}/login?next=${encodeURIComponent(next)}`}
+      className={className}
+      compact
     />
   );
 }

@@ -10,6 +10,7 @@
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/server/db';
+import { demoProductId } from './catalog';
 import { cleanDemoData, seedDemoData } from './seed';
 
 export type DemoDataMode = 'on' | 'clean' | 'off';
@@ -28,6 +29,10 @@ export function isDemoDataEnabled(): boolean {
 let job: Promise<void> | null = null;
 /** 마지막으로 더미를 넣은 날(KST). 날이 바뀌면 오늘 · 이번 주 팬투표 집계를 새로 채우려고 다시 넣는다. */
 let jobDay = '';
+/** (7차 점검) 더미가 아직 DB 에 있는지 마지막으로 확인한 시각 */
+let verifiedAt = 0;
+let verifying: Promise<void> | null = null;
+const VERIFY_INTERVAL_MS = 10_000;
 
 function kstDay(): string {
   return new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
@@ -39,6 +44,25 @@ export function ensureDemoData(): Promise<void> {
   if (mode === 'off') return Promise.resolve();
   const today = kstDay();
   if (job && mode === 'on' && jobDay !== today) job = null;
+  /**
+   * (7차 점검, 2026-11-19) 서버가 켜진 채 DB 를 초기화하면(도구_DB초기화 · 시뮬레이션 재시드) 더미가 지워져도
+   * "오늘 이미 넣었다" 로 기억해 다시 넣지 않았다. 10초에 한 번만 더미 상품 1건이 남아 있는지 확인하고, 없으면 다시 넣는다.
+   */
+  if (job && mode === 'on' && !verifying && Date.now() - verifiedAt > VERIFY_INTERVAL_MS) {
+    verifiedAt = Date.now();
+    const current = job;
+    verifying = (async () => {
+      try {
+        await current;
+        const exists = await prisma.product.findUnique({ where: { id: demoProductId(1) }, select: { id: true } });
+        if (!exists && job === current) job = null;
+      } catch {
+        // 확인이 실패하면 다음 확인 때 다시 본다
+      } finally {
+        verifying = null;
+      }
+    })();
+  }
   if (!job) {
     jobDay = today;
     job = (async () => {

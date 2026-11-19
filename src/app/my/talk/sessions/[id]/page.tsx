@@ -1,11 +1,11 @@
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { ChevronLeft } from '@/components/brand/icons';
 import { Badge, Card } from '@/components/ui';
 import { MiniAction } from '@/components/engage/mini-action';
 import { SessionChat } from '@/components/talk/session-chat';
 import { cancelSessionAction, reportNoShowAction } from '@/app/actions/talk';
-import { requireUser } from '@/server/auth';
+import { getSessionUser } from '@/server/auth';
 import { getTalkConfig } from '@/server/services/engagement/config';
 import {
   SESSION_STATUS_LABEL, fanCancelRefund, formatKstShort, getSessionForViewer, listSessionMessages, sessionPhase, sweepSessions,
@@ -16,7 +16,9 @@ export const dynamic = 'force-dynamic';
 /** 마이페이지 > 1:1 채팅 예약 상세 · 대화방 */
 export default async function MySessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const user = await requireUser();
+  // 비로그인은 로그인 화면으로 (예전에는 requireUser 가 예외를 던져 서버 로그에 오류가 남았다, 7차 P2-7)
+  const user = await getSessionUser();
+  if (!user) redirect(`/login?next=${encodeURIComponent(`/my/talk/sessions/${id}`)}`);
   const talk = await getTalkConfig();
   await sweepSessions(new Date(), { userId: user.id }).catch(() => undefined);
   const found = await getSessionForViewer(id, { userId: user.id });

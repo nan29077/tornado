@@ -159,7 +159,8 @@ export async function youTubeApiVideoOpAction(_p: AdminActionState, fd: FormData
     assertOperationAdmin(admin, '수집 영상 관리');
     const videoId = text(fd, 'videoId');
     const hide = text(fd, 'op') === 'hide';
-    const res = await prisma.youTubeApiVideo.updateMany({ where: { videoId }, data: { hidden: hide } });
+    // 관리자가 정한 숨김·보이기는 수집기가 되돌리지 않도록 자동 숨김 표시를 지운다 (7차 P2-5)
+    const res = await prisma.youTubeApiVideo.updateMany({ where: { videoId }, data: { hidden: hide, autoHidden: false } });
     if (res.count === 0) throw new Error('영상을 찾을 수 없습니다.');
     await writeAudit({ adminUserId: admin.id, action: hide ? 'YOUTUBE_API_VIDEO_HIDE' : 'YOUTUBE_API_VIDEO_SHOW', targetType: 'YouTubeApiVideo', targetId: videoId });
     refresh();

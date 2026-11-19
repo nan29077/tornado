@@ -311,6 +311,9 @@ describe('팬투표 활동', () => {
     const invitee = await member('친구');
     const code = (await getOrCreateFanProfile(inviter.id)).referralCode;
     expect((await redeemReferralCode(inviter.id, code)).ok).toBe(false);
+    // (7차 P2-4) 휴대폰을 연결하지 않은 회원은 코드를 입력할 수 없다 (기본 켬)
+    expect((await redeemReferralCode(invitee.id, code)).ok).toBe(false);
+    await prisma.user.update({ where: { id: invitee.id }, data: { phoneHash: `ph-${newId()}` } });
     const r = await redeemReferralCode(invitee.id, code.toLowerCase());
     expect(r.ok).toBe(true);
     expect((await getBalance(invitee.id)).free).toBe(20);
@@ -326,6 +329,7 @@ describe('팬투표 활동', () => {
     expect((await getBalance(inviter.id)).free).toBe(30);
     // 가입한 지 오래된 회원은 입력 불가
     const old = await member('오래된', new Date(Date.now() - 60 * DAY));
+    await prisma.user.update({ where: { id: old.id }, data: { phoneHash: `ph-${newId()}` } });
     expect((await redeemReferralCode(old.id, code)).ok).toBe(false);
   });
 

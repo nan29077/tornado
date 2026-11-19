@@ -29,8 +29,9 @@ try {
   }
   r.ok('현재 탭 표시(aria-current)', (await p.locator('nav[aria-label="정산 관리 메뉴"] a[aria-current="page"]').count()) === 1);
   {
-    const miss = missingOf(overview, ['정산 가능금', '정산 보류금', '정산 완료금']);
-    r.ok('요약 타일 3종', miss.length === 0, miss.join(','));
+    // (2026-11) 영업일 5일 정산 도입으로 타일 이름이 바뀌었다: 확정 잔액(요청 가능) · 정산 예정 · 보류 · 완료
+    const miss = missingOf(overview, ['확정 잔액', '정산 예정', '정산 보류금', '정산 완료금']);
+    r.ok('요약 타일 4종', miss.length === 0, miss.join(','));
   }
 
   // ══════════════ 2. 정산 요청 탭 — 원천징수 미리보기 ══════════════
@@ -38,26 +39,24 @@ try {
   const req = await bodyText(p);
   r.ok('정산 요청 탭이 열린다', req.includes('정산 요청'));
   {
-    const miss = missingOf(req, [
-      '정산 가능금',
-      '소득세 (3%)',
-      '지방소득세 (소득세의 10%)',
-      '원천징수 합계',
-      '실지급 예상',
-    ]);
-    r.ok('원천징수 항목별 미리보기 5줄', miss.length === 0, miss.join(','));
+    const miss = missingOf(req, ['확정 잔액 (요청 가능)', '정산 예정 (요청 불가)', '전액 요청 시 원천징수', '전액 요청 시 실지급']);
+    r.ok('원천징수 미리보기 항목', miss.length === 0, miss.join(','));
   }
   r.ok('원천징수 계산 방식 안내', req.includes('원천징수 계산 방식'));
-  r.ok('소액부징수 기준이 안내된다', req.includes('소액부징수'));
+  r.ok('소득세 3% · 지방소득세 10% 계산식이 안내된다', req.includes('소득세 3%') && req.includes('지방소득세(소득세의 10%'));
   r.ok('10원 미만 절사 규칙이 안내된다', req.includes('10원 미만 절사'));
 
-  // 시드 잔액(11,648원)은 소득세 340원 → 1,000원 미만이라 소액부징수 0원이어야 한다.
-  r.ok('소액 구간은 원천징수 0원(소액부징수)으로 표시된다', req.includes('0원 (소액부징수)'));
+  // (2026-10 운영 결정) 모든 출금 건에 원천징수 — 소액부징수는 적용하지 않는다
+  r.ok('모든 지급 건에 원천징수한다고 안내한다', req.includes('모든 지급 건에서 원천징수'));
+  r.ok('소액부징수 0원 표시가 없다', !req.includes('0원 (소액부징수)'));
   r.ok('옛 3.3% 일괄 계산 흔적이 없다', !req.includes('3.3%'));
 
-  // 요청 폼 · 주민등록번호
+  // 요청 폼 · 주민등록번호 (시드 후원은 오늘 결제라 영업일 5일 전에는 요청 가능 금액이 없다)
   const hasForm = (await p.locator('input[name=amount]').count()) > 0;
-  r.ok('정산 요청 폼 또는 계좌 인증 안내가 나온다', hasForm || req.includes('정산 계좌 인증이 필요합니다'));
+  r.ok(
+    '정산 요청 폼 또는 요청 불가 안내가 나온다',
+    hasForm || req.includes('정산 계좌 인증이 필요합니다') || req.includes('현재 요청 가능한 확정 잔액이 없습니다'),
+  );
   if (hasForm) {
     r.ok('요청 금액 입력칸', true);
     r.ok('주민등록번호 안내', req.includes('주민등록번호 (원천징수 신고용)'));
@@ -123,6 +122,8 @@ try {
     r.ok('금칙어를 사용 중지할 수 있다', (await bodyText(p)).includes('다시 사용'));
 
     await p.locator('tr', { hasText: WORD }).first().locator('button:has-text("삭제")').first().click();
+    // 삭제는 확인 창을 거친다
+    await p.locator('[role=dialog],[role=alertdialog]').last().getByRole('button', { name: '확인' }).click();
     await p.waitForTimeout(4000);
     // 등록 성공 안내 문구에 단어가 남으므로 목록 행 수로 확인한다.
     r.ok('금칙어를 삭제할 수 있다', (await p.locator('tr', { hasText: WORD }).count()) === 0);

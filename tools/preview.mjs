@@ -319,6 +319,43 @@ async function main() {
      */
     APP_ENV: (process.env.APP_ENV ?? '').trim() || 'local',
   };
+
+  /**
+   * Redis 가 실제로 떠 있는지 확인한다 (7차 점검 P1-1, 2026-11-19).
+   *
+   * .env 에 REDIS_URL 이 들어 있는데 Redis 가 꺼져 있으면 앱은 "Redis 장애" 로 판단해
+   * 속도 제한을 보수적으로 차단한다. 그러면 미리보기에서 **모든 후원이 "일시적으로 지연"으로 거절**된다.
+   * 미리보기는 내 컴퓨터 한 대에서 도는 실행이라 인메모리로 충분하므로, 연결되지 않으면 주소를 비워서 띄운다.
+   */
+  const redisUrl = (process.env.REDIS_URL ?? '').trim();
+  if (redisUrl) {
+    let host = '127.0.0.1';
+    let port = 6379;
+    try {
+      const u = new URL(redisUrl);
+      host = u.hostname || host;
+      port = Number(u.port) || port;
+    } catch {
+      // 형식이 이상하면 기본 주소로 확인한다
+    }
+    const up = await new Promise((resolve) => {
+      const socket = net.connect({ port, host });
+      socket.setTimeout(800);
+      socket.on('connect', () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.on('timeout', () => {
+        socket.destroy();
+        resolve(false);
+      });
+      socket.on('error', () => resolve(false));
+    });
+    if (!up) {
+      log(`      Redis(${host}:${port}) 가 꺼져 있어 이번 미리보기는 내장 메모리 저장소로 실행합니다.`);
+      previewEnv.REDIS_URL = '';
+    }
+  }
   Object.assign(process.env, previewEnv);
 
   log('[2/3] 스키마 및 시드 데이터 확인');

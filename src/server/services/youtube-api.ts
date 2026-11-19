@@ -259,8 +259,9 @@ export async function collectApiChannel(rowId: string, opts: { key?: string; per
       const now = new Date();
       for (const v of videos) {
         if (!v.usable) {
-          // 비공개·퍼가기 금지로 바뀐 영상은 내린다
-          await prisma.youTubeApiVideo.updateMany({ where: { videoId: v.videoId }, data: { hidden: true, fetchedAt: now } });
+          // 비공개·퍼가기 금지로 바뀐 영상은 내린다. (7차 P2-5) 관리자가 이미 숨긴 영상은 관리자 숨김 그대로 둔다
+          await prisma.youTubeApiVideo.updateMany({ where: { videoId: v.videoId, hidden: false }, data: { hidden: true, autoHidden: true, fetchedAt: now } });
+          await prisma.youTubeApiVideo.updateMany({ where: { videoId: v.videoId, hidden: true }, data: { fetchedAt: now } });
           continue;
         }
         const data = {
@@ -278,11 +279,13 @@ export async function collectApiChannel(rowId: string, opts: { key?: string; per
           create: { id: newId(), videoId: v.videoId, channelRowId: row.id, channelId: row.channelId, ...data },
           update: data,
         });
+        // (7차 P2-5) 수집기가 자동으로 숨겼던 영상이 다시 공개되면 되돌린다 (관리자 숨김은 그대로)
+        await prisma.youTubeApiVideo.updateMany({ where: { videoId: v.videoId, autoHidden: true }, data: { hidden: false, autoHidden: false } });
         saved++;
       }
-      // 재생목록에 있는데 상세에서 사라진 영상(삭제·비공개)도 내린다
+      // 재생목록에 있는데 상세에서 사라진 영상(삭제·비공개)도 내린다 (자동 숨김으로 표시)
       const gone = ids.filter((id) => !videos.some((v) => v.videoId === id));
-      if (gone.length) await prisma.youTubeApiVideo.updateMany({ where: { videoId: { in: gone } }, data: { hidden: true } });
+      if (gone.length) await prisma.youTubeApiVideo.updateMany({ where: { videoId: { in: gone }, hidden: false }, data: { hidden: true, autoHidden: true } });
     }
     await prisma.youTubeApiChannel.update({ where: { id: row.id }, data: { lastFetchedAt: new Date(), lastError: null } });
     return { channelId: row.channelId, title: row.title, ok: true, saved, message: `${saved}개 영상 저장` };

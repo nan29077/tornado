@@ -62,7 +62,7 @@ export function VideoTagEditor({
             </span>
           </>
         ) : (
-          <span>{isLive ? '라이브 방송에 상품 띄우기' : '이 영상에 상품 스티커 띄우기'}</span>
+          <span>{isLive ? '라이브 방송에 상품 연결하기' : '이 영상에 상품 연결하기'}</span>
         )}
         <span className="ml-auto text-[11.5px] font-semibold text-brand-700 group-open:hidden">{current ? '변경' : '설정'}</span>
       </summary>
@@ -140,7 +140,7 @@ export function VideoTagEditor({
                       />
                     </label>
                     <p className="col-span-2 text-[11.5px] leading-relaxed text-ink-400">
-                      분:초(1:20) 또는 초(80)로 입력합니다. 지정한 시간대에만 영상 위에 스티커가 뜨고, 영상 아래 [이 영상 속 상품]은 항상 보입니다.
+                      분:초(1:20) 또는 초(80)로 입력합니다. 영상 아래 [이 영상 속 상품]은 항상 보이고, 지정한 시간대에는 [지금 영상에 나와요]로 강조됩니다. (유튜브 정책상 영상 화면 위에는 겹쳐 띄우지 않습니다)
                     </p>
                   </div>
                 ) : null}
@@ -150,8 +150,8 @@ export function VideoTagEditor({
                 <input type="hidden" name="timing" value="all" />
                 <p className="mt-2 text-[11.5px] leading-relaxed text-ink-400">
                   {isLive
-                    ? '방송 중 샵 영상 탭의 라이브 화면 위에 상품 스티커가 뜹니다.'
-                    : '틱톡·인스타그램·페이스북 영상은 재생 위치를 알 수 없어 영상 내내 표시됩니다.'}
+                    ? '방송 중 샵 영상 탭의 라이브 화면 아래에 [이 영상 속 상품]으로 보입니다.'
+                    : '틱톡·인스타그램·페이스북 영상은 재생 위치를 알 수 없어 영상 아래에 늘 표시됩니다.'}
                 </p>
               </>
             )}
@@ -159,7 +159,7 @@ export function VideoTagEditor({
         )}
         {current ? (
           <div className="mt-2 flex justify-end">
-            <ActionForm action={removeVideoTagAction} submitLabel="연결 해제" variant="ghost" size="sm" confirmMessage="이 영상의 상품 스티커를 내릴까요?">
+            <ActionForm action={removeVideoTagAction} submitLabel="연결 해제" variant="ghost" size="sm" confirmMessage="이 영상의 상품 연결을 해제할까요?">
               <input type="hidden" name="platform" value={platform} />
               <input type="hidden" name="externalId" value={externalId} />
             </ActionForm>

@@ -41,7 +41,7 @@ export default async function AdminYouTubeVideosPage({ searchParams }: { searchP
     where: selected ? { channelRowId: selected.id } : {},
     orderBy: { publishedAt: 'desc' },
     take: 60,
-    select: { videoId: true, title: true, thumbnail: true, publishedAt: true, views: true, isShort: true, liveState: true, hidden: true, channel: { select: { title: true } } },
+    select: { videoId: true, title: true, thumbnail: true, publishedAt: true, views: true, isShort: true, liveState: true, hidden: true, autoHidden: true, channel: { select: { title: true } } },
   });
   const noKey = key.source === 'none';
 
@@ -214,7 +214,7 @@ export default async function AdminYouTubeVideosPage({ searchParams }: { searchP
                   {formatViews(v.views) ? <span>· {formatViews(v.views)}</span> : null}
                   {v.isShort ? <Badge>쇼츠</Badge> : null}
                   {v.liveState === 'live' ? <Badge tone="danger">라이브</Badge> : v.liveState === 'upcoming' ? <Badge>예정</Badge> : null}
-                  {v.hidden ? <Badge tone="warning">숨김</Badge> : null}
+                  {v.hidden ? <Badge tone="warning">{v.autoHidden ? '자동 숨김 (비공개·삭제·퍼가기 금지)' : '관리자 숨김'}</Badge> : null}
                 </div>
                 <div className="mt-1.5 px-1">
                   <ActionForm action={youTubeApiVideoOpAction} submitLabel={v.hidden ? '다시 보이기' : '방송국에서 숨기기'} variant="secondary" compact>

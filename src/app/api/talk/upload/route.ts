@@ -42,6 +42,7 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const url = await putObject(newObjectName(ext), buf, MEDIA_MIME[ext] ?? 'application/octet-stream');
+  // 구독자 전용 파일이라 공개 CDN 주소가 아니라 권한을 확인하는 /api/media 로만 서빙한다 (7차 P2-2)
+  const url = await putObject(newObjectName(ext), buf, MEDIA_MIME[ext] ?? 'application/octet-stream', { private: true });
   return Response.json({ ok: true, url, kind });
 }

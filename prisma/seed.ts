@@ -484,7 +484,12 @@ async function main() {
   });
 
   console.log('시드 완료');
-  console.log('  관리자     : admin@tornado.kr / tornado1234!');
+  // (7차 P2-8) 관리자 비밀번호는 고정값이 아니다. 실제 적용된 값만 안내하고 비밀번호 원문은 다시 찍지 않는다
+  console.log(
+    `  관리자     : ${ADMIN_EMAIL} / ${
+      envAdminPassword ? '.env 의 SEED_ADMIN_PASSWORD 값' : generatedAdminPassword ? '위에 한 번 표시한 무작위 비밀번호' : '기존 비밀번호 그대로 (바꾸려면 SEED_ADMIN_PASSWORD 를 넣고 다시 시드)'
+    } · 로컬 [테스트 로그인]은 비밀번호 없이 가능`,
+  );
   const fmtMo = (sub: string) => `${MO_BASE.slice(0, 4)}-${MO_BASE.slice(4)}-${sub}`;
   console.log(`  크리에이터 : creator1@tornado.kr / tornado1234! (코드 TOR-8K2M, MO ${fmtMo('1001')})`);
   console.log(`  크리에이터 : creator2@tornado.kr / tornado1234! (코드 TOR-3QP7, MO ${fmtMo('2002')})`);

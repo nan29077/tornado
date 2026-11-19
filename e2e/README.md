@@ -49,6 +49,14 @@ E2E_CHROMIUM=/opt/pw-browsers/chromium npm run test:e2e
 | `gap-e2e.mjs` | 기기별 안내 문구가 서로 새지 않는지, 모의(mock) 고지, 공개 페이지 스모크 |
 | `studio-e2e.mjs` | 유튜브 mock OAuth 연결·해제·재연결·거부, 오버레이 URL 발급·설정 저장, 스트림 키, 후원 설정·프로필 저장 |
 | `admin-e2e.mjs` | 관리자 28개 화면 전수 스모크, 한도 정책 15개 필드와 정책 등록 |
+| `engage-e2e.mjs` | 팬투표 랭킹·충전, 팬챗 구독·메시지, 1:1 예약 채팅 |
+| `fan-e2e.mjs` | 팬챗 버블형(실시간·음성·예약·팬레터·묶음 구독), 팬투표 고도화(출석·미션·초대·서포트·이벤트). **engage 다음에 재시드 없이** 실행된다 |
+| `video-sticker-e2e.mjs` | 영상 상품 연결(플레이어 아래 [이 영상 속 상품] · 외부 플레이어 겹침 없음), 유튜브 API 키·영상 수집 |
+| `overlay-ladder-e2e.mjs` | 금액별 후원 연출 5단계 |
+| `donor-experience-e2e.mjs` | 후원자 화면 반응형·로그인·크리에이터 답글 반영 |
+| `menu-crawl.mjs` | 관리자·스튜디오·마이·공개 메뉴 전 화면 순회 (전체 실행에는 포함하지 않음) |
+
+관리자 계정 비밀번호는 고정값이 아니다. `.env` 에 `SEED_ADMIN_PASSWORD` 를 넣고 시드한 DB 에서 같은 값으로 실행한다.
 
 `_helpers.mjs` 는 공통 로그인·리포터·모의 발송함 조회를 담습니다.
 

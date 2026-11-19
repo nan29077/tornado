@@ -5,7 +5,8 @@ import { MiniAction } from '@/components/engage/mini-action';
 import { ProfileAvatar } from '@/components/profile/generated-avatar';
 import { refundTicketOrderAction } from '@/app/actions/vote';
 import { formatKst } from '@/lib/datetime';
-import { requireUser } from '@/server/auth';
+import { redirect } from 'next/navigation';
+import { getSessionUser } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { getVoteConfig } from '@/server/services/engagement/config';
 import { BUCKET_LABEL, LEDGER_TYPE_LABEL, getBalance, type TicketBucket } from '@/server/services/vote/wallet';
@@ -18,7 +19,9 @@ export const dynamic = 'force-dynamic';
 /** 마이페이지 > 팬투표 (남은 팬투표권 · 충전 · 획득 · 사용 내역 · 환불) */
 export default async function MyVotesPage({ searchParams }: { searchParams: Promise<{ v?: string }> }) {
   const sp = await searchParams;
-  const user = await requireUser();
+  // 비로그인은 로그인 화면으로 (예전에는 requireUser 가 예외를 던져 서버 로그에 오류가 남았다, 7차 P2-7)
+  const user = await getSessionUser();
+  if (!user) redirect('/login?next=/my/votes');
   const view = sp.v === 'orders' || sp.v === 'casts' ? sp.v : 'history';
   const [cfg, balance, ledger, orders, casts, topCreators] = await Promise.all([
     getVoteConfig(),

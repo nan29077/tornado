@@ -18,7 +18,10 @@ const shots = process.env.E2E_SHOTS ?? '';
 function watch(page, tag) {
   page.on('pageerror', (e) => errors.push(`${tag}: ${e.message}`));
   page.on('console', (m) => {
-    if (m.type() === 'error' && !/favicon|Failed to load resource|youtube|tiktok|ytimg|googlevideo/i.test(m.text())) errors.push(`${tag} console: ${m.text().slice(0, 200)}`);
+    // 유튜브 · 틱톡 플레이어(외부 iframe)가 남기는 콘솔 오류는 우리 화면 오류가 아니다
+    const from = m.location()?.url ?? '';
+    if (from && !from.startsWith(BASE)) return;
+    if (m.type() === 'error' && !/favicon|Failed to load resource|youtube|tiktok|ytimg|googlevideo|Permissions policy violation/i.test(m.text())) errors.push(`${tag} console: ${m.text().slice(0, 200)}`);
   });
 }
 
@@ -60,10 +63,10 @@ for (const url of [TIKTOK, YT]) {
   });
 }
 
-await step('스튜디오: 라이브 방송 상품 섹션과 영상별 상품 스티커 설정이 보인다', async () => {
+await step('스튜디오: 라이브 방송 상품 섹션과 영상별 상품 연결 설정이 보인다', async () => {
   await gotoReady(cpage, `${BASE}/studio/shop`);
   const t = await bodyText(cpage);
-  return t.includes('라이브 방송 상품') && (t.includes('이 영상에 상품 스티커 띄우기') || t.includes('클릭 '));
+  return t.includes('라이브 방송 상품') && (t.includes('이 영상에 상품 연결하기') || t.includes('클릭 '));
 });
 
 async function attach(summaryIndexMatcher, opts = {}) {
@@ -122,16 +125,27 @@ for (const [label, ctxOpt] of [['PC', desktop], ['모바일', mobile]]) {
     await gotoReady(dpage, `${BASE}/c/${SEED.creator1Code}?tab=video`);
     return (await dpage.locator('button[aria-pressed] >> text=상품').count()) >= 2;
   });
-  await step(`[${label}] 틱톡 영상 재생: 영상 위 스티커 + 아래 [이 영상 속 상품]`, async () => {
+  await step(`[${label}] 틱톡 영상 재생: 플레이어 아래 [이 영상 속 상품] 1개`, async () => {
     await dpage.locator('button[aria-pressed]').filter({ hasText: 'TikTok' }).first().click();
     await dpage.waitForTimeout(500);
-    const sticker = dpage.getByRole('button', { name: /영상 속 상품 .* 보기/ });
     const strip = dpage.getByRole('button', { name: /이 영상 속 상품/ });
-    return (await sticker.count()) === 1 && (await strip.count()) === 1;
+    return (await strip.count()) === 1;
   });
-  await step(`[${label}] 스티커 닫기 → 스티커만 사라지고 아래 줄은 남는다`, async () => {
-    await dpage.getByRole('button', { name: '상품 스티커 닫기' }).click();
-    return (await dpage.getByRole('button', { name: /영상 속 상품 .* 보기/ }).count()) === 0 && (await dpage.getByRole('button', { name: /이 영상 속 상품/ }).count()) === 1;
+  await step(`[${label}] 외부 플레이어 위에는 아무것도 겹치지 않는다 (유튜브 임베드 정책, 7차 P1-2)`, async () => {
+    const overlapped = await dpage.evaluate(() => {
+      const frame = document.querySelector('iframe[src*="tiktok.com/embed"]');
+      if (!frame) return 'no-frame';
+      const box = frame.parentElement;
+      // 플레이어 상자 안에는 iframe 말고 다른 요소가 없어야 한다
+      const extra = box ? [...box.children].filter((el) => el !== frame) : [];
+      const r = frame.getBoundingClientRect();
+      const strip = [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('이 영상 속 상품'));
+      const sr = strip?.getBoundingClientRect();
+      const stripOverlaps = sr ? sr.top < r.bottom - 1 && sr.bottom > r.top + 1 && sr.left < r.right && sr.right > r.left : true;
+      return extra.length === 0 && !stripOverlaps ? 'ok' : `extra=${extra.length} overlap=${stripOverlaps}`;
+    });
+    if (overlapped !== 'ok') throw new Error(overlapped);
+    return true;
   });
   await step(`[${label}] 시트에서 장바구니 담기 (영상은 그대로)`, async () => {
     await dpage.getByRole('button', { name: /이 영상 속 상품/ }).click();
@@ -144,12 +158,13 @@ for (const [label, ctxOpt] of [['PC', desktop], ['모바일', mobile]]) {
     await sheet.getByRole('button', { name: '닫기' }).last().click();
     return iframeStill;
   });
-  await step(`[${label}] 유튜브 영상: 시간 지정 스티커는 재생 위치 전에는 숨고 아래 줄은 보인다`, async () => {
+  await step(`[${label}] 유튜브 영상: 시간 지정 상품은 재생 위치를 모를 때 강조하지 않고 아래 줄은 보인다`, async () => {
     await dpage.locator('button[aria-pressed]').filter({ hasText: 'YouTube' }).first().click();
     await dpage.waitForTimeout(800);
     const src = await dpage.locator('iframe[src*="youtube-nocookie.com/embed/dQw4w9WgXcQ"]').getAttribute('src');
-    const hiddenBeforeStart = (await dpage.getByRole('button', { name: /영상 속 상품 .* 보기/ }).count()) === 0;
-    return Boolean(src?.includes('enablejsapi=1')) && hiddenBeforeStart && (await dpage.getByRole('button', { name: /이 영상 속 상품/ }).count()) === 1;
+    const strip = dpage.getByRole('button', { name: /이 영상 속 상품/ });
+    const notHighlighted = (await strip.getAttribute('data-now-showing')) === 'off';
+    return Boolean(src?.includes('enablejsapi=1')) && notHighlighted && (await strip.count()) === 1;
   });
   await step(`[${label}] 장바구니에 담긴 상품 확인`, async () => {
     await gotoReady(dpage, `${BASE}/c/${SEED.creator1Code}/cart`);

@@ -69,6 +69,11 @@ export interface VoteConfig {
   referralCodeDays: number;
   /** 한 회원이 보상받을 수 있는 최대 초대 수 (0 = 제한 없음) */
   referralMaxPerInviter: number;
+  /**
+   * (7차 P2-4) 휴대폰 번호를 연결한 회원만 초대 코드를 입력·보상받는다 (기본 켬).
+   * 이메일만으로 계정을 여러 개 만들어 초대 보상을 모으는 것을 막는다. 휴대폰 번호는 회원 1명에게만 연결된다.
+   */
+  referralRequirePhone: boolean;
   /** 응원 댓글 */
   cheerEnabled: boolean;
   cheerDailyLimit: number;
@@ -114,6 +119,7 @@ export const DEFAULT_VOTE_CONFIG: VoteConfig = {
   referralInviteeTickets: 20,
   referralCodeDays: 14,
   referralMaxPerInviter: 50,
+  referralRequirePhone: true,
   cheerEnabled: true,
   cheerDailyLimit: 10,
   cheerMaxLength: 100,
@@ -314,6 +320,7 @@ export function normalizeVoteConfig(raw: unknown): VoteConfig {
     referralInviteeTickets: num(v.referralInviteeTickets, d.referralInviteeTickets, 0, 100_000),
     referralCodeDays: num(v.referralCodeDays, d.referralCodeDays, 1, 365),
     referralMaxPerInviter: num(v.referralMaxPerInviter, d.referralMaxPerInviter, 0, 100_000),
+    referralRequirePhone: bool(v.referralRequirePhone, d.referralRequirePhone),
     cheerEnabled: bool(v.cheerEnabled, d.cheerEnabled),
     cheerDailyLimit: num(v.cheerDailyLimit, d.cheerDailyLimit, 1, 1000),
     cheerMaxLength: num(v.cheerMaxLength, d.cheerMaxLength, 10, 500),

@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { chromium } from 'playwright';
+import { launch } from './_helpers.mjs';
 
 // Local preview only. Never performs a payment, sends an MT, or changes a real donation.
 const base = process.env.E2E_BASE ?? 'http://localhost:3025';
 if (!/^http:\/\/(localhost|127\.0\.0\.1):3025$/.test(base)) throw new Error('Local Donaido preview only.');
 const output = path.resolve('tmp/donor-experience-qa');
 await fs.mkdir(output, { recursive: true });
-const browser = await chromium.launch({ channel: 'msedge', headless: true });
+// 브라우저는 공통 도우미로 띄운다 (예전에는 Edge 고정이라 Edge 가 없는 환경에서 실행조차 안 됐다)
+const browser = await launch({ headless: true });
 const errors = [];
 const checks = [];
 function check(name, valid) { assert.ok(valid, name); checks.push(name); console.log('PASS', name); }
@@ -28,7 +29,7 @@ try {
     const rail = page.locator('aside');
     check(width + 'px PC 메뉴 표시', await rail.isVisible() === (width >= 1024));
     if (width < 1024) {
-      const items = await page.getByRole('navigation', { name: '후원자 모바일 메뉴' }).locator('a').evaluateAll((links) => links.map((link) => { const r = link.getBoundingClientRect(); return { x: r.x, right: r.right }; }));
+      const items = await page.getByRole('navigation', { name: '후원 페이지 메뉴' }).locator('a').evaluateAll((links) => links.map((link) => { const r = link.getBoundingClientRect(); return { x: r.x, right: r.right }; }));
       check(width + 'px 모바일 메뉴 4개 모두 화면 안', items.length === 4 && items.every((r) => r.x >= 0 && r.right <= width));
     }
     if (width >= 1024) {

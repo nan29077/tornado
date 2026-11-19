@@ -101,16 +101,16 @@ try {
     await p.waitForTimeout(300);
     r.ok('10자 초과는 화면에서 막힌다', (await bodyText(p)).includes('10자 이내'));
 
-    // 후원샵 안내 배너
-    await gotoReady(p, `${BASE}/c/${SEED.creator1Code}`);
+    // 후원샵 안내 배너 (도네이도 샵 [후원하기] 탭)
+    await gotoReady(p, `${BASE}/c/${SEED.creator1Code}?tab=donate`);
     const shop = await bodyText(p);
     r.ok('후원샵에 닉네임 안내가 뜬다', shop.includes(`방송에 ${NICK} 님으로 표시됩니다`), shop.slice(0, 200));
-    r.ok('닉네임 변경 링크', (await p.locator('a[href="/my/account#nickname"]').count()) > 0);
+    r.ok('닉네임 변경 링크', (await p.locator(`a[href="/c/${SEED.creator1Code}/account"], a[href="/my/account#nickname"]`).count()) > 0);
 
     // 비로그인 방문자에게는 안내하지 않는다
     const anon = await b.newContext(desktop);
     const ap = await anon.newPage();
-    await gotoReady(ap, `${BASE}/c/${SEED.creator1Code}`);
+    await gotoReady(ap, `${BASE}/c/${SEED.creator1Code}?tab=donate`);
     const anonText = await bodyText(ap);
     r.ok('비로그인 방문자에게는 닉네임 안내가 없다', !anonText.includes('닉네임 설정하기') && !anonText.includes('님으로 표시됩니다'));
     await anon.close();
@@ -155,6 +155,26 @@ try {
   r.ok('정산 예정일이 날짜 아래 표시된다', ov.includes('→') && ov.includes('정산'));
 
   // ══════════════ 3. 정산 요청 → 최고관리자 알림 ══════════════
+  // 시드 후원은 오늘 결제라 영업일 5일이 지나기 전에는 요청 가능 금액이 없고, 최소 요청 금액(1만원)보다도 적다.
+  // 최고관리자 [조정 분개 추가]로 요청 가능 금액을 만든다(조정분은 후원이 아니라 바로 확정 잔액이 된다).
+  {
+    const pre = await b.newContext(desktop);
+    const ap0 = await pre.newPage();
+    ap0.on('dialog', (d) => d.accept());
+    await loginAdmin(ap0);
+    await gotoReady(ap0, `${BASE}/admin/settlements`);
+    const creatorValue = await ap0.locator('select[name=creatorId]').first().locator('option', { hasText: SEED.creator1Code }).first().getAttribute('value');
+    await ap0.locator('select[name=creatorId]').first().selectOption(creatorValue ?? '');
+    await ap0.locator('select[name=direction]').first().selectOption('ADD');
+    await ap0.locator('input[name=amount]').first().fill('20000');
+    await ap0.locator('input[name=memo]').first().fill('E2E 정산 요청 테스트용 조정');
+    await ap0.locator('button:has-text("조정 분개 추가")').last().click();
+    const dlg = ap0.locator('[role=dialog],[role=alertdialog]');
+    if (await dlg.count().catch(() => 0)) await dlg.last().getByRole('button', { name: /확인|추가/ }).last().click().catch(() => {});
+    await ap0.waitForTimeout(2500);
+    r.ok('준비: 조정 분개로 요청 가능 금액을 만든다', (await bodyText(ap0)).includes('E2E 정산 요청 테스트용 조정'));
+    await pre.close();
+  }
   await gotoReady(c, `${BASE}/studio/settlement?tab=request`);
   const hasForm = (await c.locator('input[name=amount]').count()) > 0;
   r.ok('정산 요청 폼이 열린다', hasForm);
@@ -166,6 +186,8 @@ try {
     await c.fill('textarea[name=memo]', 'E2E 정산 요청');
     const amount = await c.inputValue('input[name=amount]');
     await c.locator('button:has-text("정산 요청")').click();
+    // 요청 전 금액·원천징수·계좌를 보여 주는 확인 창을 거친다
+    await c.locator('[role=dialog],[role=alertdialog]').last().getByRole('button', { name: '정산 요청' }).click();
     await c.waitForTimeout(4000);
     const res = await bodyText(c);
     // 접수 직후 화면이 갱신되므로 토스트가 아니라 요청 내역 행으로 확인한다.
@@ -173,7 +195,7 @@ try {
     r.ok('정산 요청이 접수된다', requested, res.slice(-300));
     r.ok('요청 내역 표에 요청 건이 생긴다', !res.includes('정산 요청 내역이 없습니다'));
     r.ok('요청 금액이 그대로 기록된다', res.includes(Number(amount).toLocaleString('ko-KR')), amount);
-    r.ok('요청 즉시 정산 가능금이 0원으로 잠긴다', res.includes('현재 정산 가능한 금액이 없습니다'));
+    r.ok('요청 즉시 요청 가능 금액이 잠긴다', res.includes('현재 요청 가능한 확정 잔액이 없습니다') || res.includes('현재 정산 가능한 금액이 없습니다'));
     // 소액부징수(원천징수 0원)일 때 "-0원" 으로 찍히면 안 된다.
     r.ok('원천징수 0원이 "-0원" 으로 표시되지 않는다', !res.includes('-0원'), res.slice(-200));
   }
@@ -252,11 +274,11 @@ try {
   await gotoReady(o, `${BASE}/studio/overlay`);
   const ot = await bodyText(o);
 
-  r.ok('방송·오버레이 화면', ot.includes('방송·오버레이'));
-  r.ok('OBS·PRISM 브라우저 소스 안내', ot.includes('OBS 또는 PRISM') && ot.includes('브라우저'));
+  r.ok('방송·오버레이 화면', ot.includes('후원·게임 오버레이'));
+  r.ok('OBS·PRISM 브라우저 소스 안내', ot.includes('OBS·PRISM') && ot.includes('브라우저 소스'));
   r.ok('권장 크기 안내(1920x1080)', ot.includes('1920x1080'));
-  r.ok('발급 상태 표시', ot.includes('발급 상태'));
-  r.ok('현재 연결 수 표시', ot.includes('현재 연결'));
+  r.ok('발급 상태 표시', ot.includes('연결 주소 발급됨') || ot.includes('발급 상태'));
+  r.ok('현재 연결 수 표시', ot.includes('지금 방송에 붙어 있는 소스') || ot.includes('현재 연결'));
   r.ok('브라우저 소스 URL 표시칸', (await o.locator('input[readonly]').count()) > 0);
   r.ok('테스트 후원 버튼', (await o.locator('button:has-text("테스트 후원 보내기")').count()) > 0);
 
@@ -280,7 +302,8 @@ try {
     r.ok('금액이 표시된다', shown.includes('3,000원'));
     r.ok('테스트 배지가 붙는다', shown.includes('테스트'));
     r.ok('메시지가 표시된다', shown.includes('오늘 방송 재미있어요'));
-    r.ok('오버레이 브랜드 표기', shown.includes('DONAIDO'));
+    // (2026-09-07 결정) 기본 테마는 배경 상자 없이 큰 글씨만 — 카드형 테마에만 DONAIDO 표기가 붙는다
+    r.ok('기본 테마는 배경 상자·브랜드 표기 없이 글자만 표시한다', !shown.includes('DONAIDO'));
 
     r.ok('스튜디오에 테스트 후원 안내가 뜬다', (await bodyText(o)).includes('실제 결제와 정산에는 반영되지 않습니다'));
 
