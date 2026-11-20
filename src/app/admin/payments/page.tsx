@@ -10,7 +10,7 @@ import { listPendingShopCancels } from '@/server/services/shop/payment-cancel';
 import { prisma } from '@/server/db';
 import { formatWon, formatNumber } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
-import { paymentTxStatusLabel, donationStatusLabel } from '@/lib/labels';
+import { paymentTxStatusLabel, donationStatusLabel, donationSourceLabel, donationSourceOf } from '@/lib/labels';
 import type { Prisma } from '@/generated/prisma/client';
 import type { PaymentTxStatus } from '@/generated/prisma/enums';
 import { requireAdminPage } from '@/server/admin-guard';
@@ -78,7 +78,7 @@ function TxRows({ rows, reconcilable = false }: { rows: TxRow[]; reconcilable?: 
               {donationStatusLabel[t.donation.status].text}
             </span>
             <span className="mt-0.5 block text-[11px] font-semibold text-ink-300">
-              {t.donation.channel === 'WEB' ? '웹(PC) 후원' : '문자(MO) 후원'}
+              {donationSourceLabel[donationSourceOf(t.donation.channel)].long}
             </span>
           </Td>
           <Td className="max-w-[200px] break-words">

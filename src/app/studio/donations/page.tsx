@@ -8,7 +8,8 @@ import { requireCreator } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { formatNumber, formatWon } from '@/lib/money';
 import { formatKst, kstStartOfDay } from '@/lib/datetime';
-import { deliveryStatusLabel, donationStatusLabel, refundStatusLabel } from '@/lib/labels';
+import { deliveryStatusLabel, donationSourceLabel, donationStatusLabel, refundStatusLabel } from '@/lib/labels';
+import { donationSources } from '@/server/services/donation-source';
 import type { DonationStatus, Prisma } from '@/generated/prisma/client';
 
 export const dynamic = 'force-dynamic';
@@ -111,6 +112,7 @@ export default async function StudioDonationsPage({
     }),
   ]);
 
+  const sources = await donationSources(rows);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   // 보기 방식은 페이지를 넘겨도 유지된다.
   const base = { period, status, q, view };
@@ -200,6 +202,7 @@ export default async function StudioDonationsPage({
               amount: d.amount,
               status: d.status,
               channel: d.channel,
+              source: sources.get(d.id),
               // 마스킹된 값만 내려온다. 원문 전화번호는 크리에이터에게 제공하지 않는다.
               phoneMasked: d.donor?.phoneMasked ?? null,
               delivery: { youtube: d.youtubeStatus, overlay: d.overlayStatus, mt: d.mtStatus },
@@ -245,8 +248,8 @@ export default async function StudioDonationsPage({
                     <Td className="whitespace-nowrap tabular-nums">{d.donor?.phoneMasked ?? '-'}</Td>
                     <Td className="whitespace-nowrap">{d.anonymous ? '익명의 후원자' : d.displayName}</Td>
                     <Td>
-                      <Badge tone={d.channel === 'WEB' ? 'brand' : 'neutral'}>
-                        {d.channel === 'WEB' ? '웹(PC)' : '문자(MO)'}
+                      <Badge tone={sources.get(d.id) === 'MO' ? 'neutral' : 'brand'}>
+                        {donationSourceLabel[sources.get(d.id) ?? 'MO'].short}
                       </Badge>
                     </Td>
                     <Td className="max-w-[280px]">

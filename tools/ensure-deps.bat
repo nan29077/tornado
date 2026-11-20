@@ -106,4 +106,9 @@ if not exist "node_modules\@electric-sql\pglite-socket" (
   set NEEDS=1
   set WHY=내장 DB 패키지 없음
 )
+rem (2026-11-20) 메일 발송 어댑터용 패키지가 새로 추가됐다. 없으면 자동으로 설치한다
+if not exist "node_modules\@aws-sdk\client-sesv2" (
+  set NEEDS=1
+  set WHY=새로 추가된 패키지 설치 필요
+)
 exit /b 0

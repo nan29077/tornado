@@ -19,6 +19,7 @@ import { getSettlementSummary } from '@/server/services/settlement';
 import { formatNumber, formatWon } from '@/lib/money';
 import { kstMonthKey, kstStartOfDay } from '@/lib/datetime';
 import { moNumberStatusLabel } from '@/lib/labels';
+import { donationSources } from '@/server/services/donation-source';
 import { env } from '@/lib/env';
 
 export const dynamic = 'force-dynamic';
@@ -143,6 +144,7 @@ export default async function StudioDashboardPage() {
     }),
   ]);
 
+  const recentSources = await donationSources(recent);
   const ytConnected = youtube?.status === 'CONNECTED';
   const moAssigned = moNumber?.status === 'ASSIGNED';
 
@@ -384,6 +386,7 @@ export default async function StudioDashboardPage() {
                 amount: d.amount,
                 status: d.status,
                 channel: d.channel,
+                source: recentSources.get(d.id),
                 phoneMasked: d.donor?.phoneMasked ?? null,
               }))}
             />

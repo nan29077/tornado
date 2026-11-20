@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { requireCreator } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
-import { donationReplySchema, saveDonationReply } from '@/server/services/donation-replies';
+import { donationReplySchema, replyNotifyTarget, saveDonationReply } from '@/server/services/donation-replies';
+import { notifyUser } from '@/server/services/notifications';
 import type { StudioActionState } from './studio';
 
 export async function replyToDonationAction(_prev: StudioActionState, data: FormData): Promise<StudioActionState> {
@@ -25,10 +26,20 @@ export async function replyToDonationAction(_prev: StudioActionState, data: Form
   if (!(await consumeRateLimit('donation-reply', user.id, 20, 60, { failClosed: true })).ok) return { ok: false, message: '잠시 후 다시 작성해 주세요.' };
   try {
     const code = await saveDonationReply(user.id, id, parsed.data);
+    // 후원자에게 앱 알림 (처음 단 답글만, 실패해도 답글 저장은 그대로)
+    const target = await replyNotifyTarget(id).catch(() => null);
+    if (target) {
+      await notifyUser({
+        userId: target.userId,
+        title: `${target.creatorName}님이 내 후원에 답글을 남겼어요`,
+        body: parsed.data.slice(0, 120),
+        linkUrl: `/c/${target.creatorCode}/messages`,
+      }).catch(() => undefined);
+    }
     revalidatePath(`/studio/donations/${id}`);
     revalidatePath(`/c/${code}/messages`);
     revalidatePath('/my');
-    return { ok: true, message: '답글을 저장했습니다. 후원자의 내 문자후원 내역에 표시됩니다.' };
+    return { ok: true, message: '답글을 저장했습니다. 후원자의 내 후원 내역에 표시되고 알림이 갑니다.' };
   } catch {
     return { ok: false, message: '답글을 저장하지 못했습니다. 후원 내역과 작성 권한을 확인해 주세요.' };
   }

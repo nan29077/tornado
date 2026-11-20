@@ -24,7 +24,8 @@ export function CompleteRedirect({
 }) {
   const router = useRouter();
   const [left, setLeft] = React.useState(seconds);
-  const href = `/c/${creatorCode}`;
+  // 도네이도 샵 개편(2026-11-17) 뒤 /c/코드 의 기본 탭이 [영상] 이 됐다. 안내 문구대로 문자후원 화면으로 보낸다 (8차 점검)
+  const href = `/c/${creatorCode}?tab=donate`;
 
   React.useEffect(() => {
     const tick = setInterval(() => setLeft((v) => (v > 0 ? v - 1 : 0)), 1000);

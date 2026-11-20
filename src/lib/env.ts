@@ -433,12 +433,14 @@ export const isLocal = env.appEnv === 'local';
 /**
  * [SEC-D] 이메일 발송 어댑터 연동 여부.
  *
- * 아직 메일 발송 어댑터(SES 등)가 없다. 비밀번호 재설정·관리자 초대 메일은 **실제로 나가지 않는다.**
- * 화면은 이 값을 보고 "발송되지 않습니다"를 명시해야 한다(CLAUDE.md 규칙 2 — 미연동을 성공으로 위장 금지).
- * 메일 어댑터를 붙이는 날 이 값을 어댑터 설정 여부로 바꾼다.
+ * (8차 점검, 2026-11-20) 메일 어댑터(server/adapters/mail)를 붙였다. MAIL_PROVIDER=ses 이고 MAIL_FROM(SES 에서
+ * 인증한 보내는 주소)이 있을 때만 true. 그 전에는 비밀번호 재설정 메일이 **실제로 나가지 않으며**, 화면은 이 값을 보고
+ * "발송되지 않습니다"를 명시한다(CLAUDE.md 규칙 2 — 미연동을 성공으로 위장 금지). 관리자 초대는 지금처럼 화면의 링크를 전달한다.
+ * (호출 시점에 읽는다 — 테스트와 운영 전환에서 재기동 없이 값이 반영되게)
  */
 export function isMailDeliveryIntegrated(): boolean {
-  return false;
+  const provider = (process.env.MAIL_PROVIDER ?? 'mock').trim().toLowerCase();
+  return provider === 'ses' && Boolean((process.env.MAIL_FROM ?? '').trim());
 }
 
 /**
@@ -776,8 +778,10 @@ export function bootWarnings(): string[] {
   // [SEC-D] 메일 미연동. 로컬은 화면에 개발용 링크가 나오므로 운영·스테이징에서만 경고한다.
   if (!isLocal && !isMailDeliveryIntegrated()) {
     warnings.push(
-      '이메일 발송이 연동되지 않았습니다. 비밀번호 재설정 메일과 관리자 초대 메일이 발송되지 않습니다 ' +
-        '(재설정은 고객센터 임시 비밀번호 발급으로, 관리자 초대는 화면의 링크를 직접 전달해 처리).',
+      (process.env.MAIL_PROVIDER ?? '').trim().toLowerCase() === 'ses'
+        ? 'MAIL_PROVIDER=ses 이지만 MAIL_FROM(SES 에서 인증한 보내는 주소)이 없어 비밀번호 재설정 메일이 발송되지 않습니다.'
+        : '이메일 발송이 연동되지 않았습니다. 비밀번호 재설정 메일이 발송되지 않습니다 ' +
+            '(재설정은 고객센터 임시 비밀번호 발급으로 처리). 연동하려면 MAIL_PROVIDER=ses · MAIL_FROM 을 설정하세요. 관리자 초대는 화면의 링크를 직접 전달합니다.',
     );
   }
   return warnings;

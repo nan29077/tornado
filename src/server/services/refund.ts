@@ -1,6 +1,6 @@
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
-import { getPaymentAdapter, type PaymentAdapter } from '@/server/adapters/payment';
+import { getPaymentAdapter, primeMockApproval, type PaymentAdapter } from '@/server/adapters/payment';
 import { getShopPaymentAdapter } from '@/server/adapters/shop-payment';
 import { calculateFees, postRefundSettlement } from './settlement';
 import { rollbackCounters } from './limits';
@@ -104,6 +104,7 @@ export async function approveRefund(refundId: string, adminUserId?: string) {
 
   // 취소는 그 거래를 승인한 결제사로 보낸다(현재 설정 결제사가 아니라, P2-7).
   const adapter = getPaymentAdapter(txn.provider);
+  primeMockApproval(txn); // 모의 결제: 서버 재시작 · 다른 프로세스 승인 건도 취소되게 (8차 점검)
   const res = await callCancel(adapter, refund, txn, refundId);
   await finishRefundCancel(refund, txn, res, adminUserId);
   return prisma.refund.findUnique({ where: { id: refundId } });
@@ -238,6 +239,7 @@ async function callCancel(
 async function confirmAlreadyCanceled(txn: RefundTxn): Promise<boolean> {
   try {
     const adapter = getPaymentAdapter(txn.provider);
+    primeMockApproval(txn); // 모의 결제: 서버 재시작 · 다른 프로세스 승인 건도 취소되게 (8차 점검)
     const inq = await adapter.inquire(txn.orderNo, { providerTid: txn.providerTid, donationId: txn.donationId });
     return Boolean(inq.ok && inq.data?.status === 'CANCELED');
   } catch {
@@ -407,6 +409,7 @@ export async function retryRefundRecovery(refundId: string, adminUserId?: string
   }
 
   const adapter = getPaymentAdapter(txn.provider);
+  primeMockApproval(txn); // 모의 결제: 서버 재시작 · 다른 프로세스 승인 건도 취소되게 (8차 점검)
 
   let confirmedCanceled = false;
   try {

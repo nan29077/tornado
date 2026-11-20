@@ -314,6 +314,34 @@ export const mockPaymentAdapter: PaymentAdapter = {
  *   예전 결제사 거래를 새 결제사로 조회·취소하면 "거래 없음"으로 잘못 확정된다.
  *   예전 기본값('HECTO')처럼 대문자로 저장된 값도 소문자로 맞춰 받는다.
  */
+/**
+ * 모의 결제 승인 기록 되살리기 (8차 점검, 2026-11-20).
+ *
+ * 모의 결제사의 승인 기록은 서버 메모리에만 있어, 서버를 다시 켜거나 다른 프로세스(시드 스크립트)가 승인한 거래는
+ * 환불(취소)할 때 "M0404 취소할 거래를 찾을 수 없습니다" 로 실패했다. 어댑터는 DB 를 직접 만지지 않으므로,
+ * 환불 서비스가 우리 DB 의 거래 기록을 넘겨 주면 그것으로 메모리 기록을 채운다.
+ * 모의 결제사가 발급한 거래번호(MOCKTID-)로 승인 · 취소된 거래만 받는다. 실제 결제사 어댑터와는 무관하다.
+ */
+export function primeMockApproval(tx: {
+  orderNo: string;
+  provider: string;
+  providerTid: string | null;
+  amount: bigint;
+  status: string;
+  approvedAt?: Date | null;
+  requestedAt?: Date | null;
+}): void {
+  if (tx.provider.toLowerCase() !== 'mock' || !tx.providerTid?.startsWith('MOCKTID-')) return;
+  if (tx.status !== 'APPROVED' && tx.status !== 'CANCELED') return;
+  if (approvedOrders.has(tx.orderNo)) return;
+  approvedOrders.set(tx.orderNo, {
+    tid: tx.providerTid,
+    amount: tx.amount,
+    at: tx.approvedAt ?? tx.requestedAt ?? new Date(),
+    canceled: tx.status === 'CANCELED',
+  });
+}
+
 export function getPaymentAdapter(provider?: string | null): PaymentAdapter {
   const name = (provider ?? '').trim().toLowerCase() || env.payment.provider;
   if (env.safety.safeMode && name !== 'mock') {

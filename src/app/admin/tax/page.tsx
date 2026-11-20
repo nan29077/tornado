@@ -15,6 +15,7 @@ import {
   getCreatorFeeRows,
   getCreatorPayoutRows,
   getLedgerTotals,
+  getOtherRevenueTotals,
   getPayoutTotals,
   getTaxDeadlines,
   isFeeVatIncluded,
@@ -90,7 +91,7 @@ export default async function AdminTaxPage({
     <>
       <PageHeader
         title="세무 관리"
-        description="도네이도의 매출은 플랫폼 수수료뿐이며, 후원 총액은 크리에이터에게 줄 정산채무입니다. 비사업자 크리에이터에게 지급할 때는 사업소득 3.3%를 원천징수합니다."
+        description="도네이도의 매출은 후원 플랫폼 수수료와 샵·팬챗·팬투표 매출이며, 후원 총액은 크리에이터에게 줄 정산채무입니다. 비사업자 크리에이터에게 지급할 때는 사업소득 3.3%를 원천징수합니다."
       />
 
       {/* 탭 */}
@@ -146,8 +147,9 @@ export default async function AdminTaxPage({
 // ─────────────────────────────────────────────────────────────── 1. 세무 요약
 
 async function OverviewTab({ month, vatIncluded }: { month: string; vatIncluded: boolean }) {
-  const [ledger, payout, deadlines, typeCounts] = await Promise.all([
+  const [ledger, other, payout, deadlines, typeCounts] = await Promise.all([
     getLedgerTotals(month, vatIncluded),
+    getOtherRevenueTotals(month),
     getPayoutTotals(month),
     Promise.resolve(getTaxDeadlines()),
     prisma.creatorProfile.groupBy({
@@ -159,14 +161,25 @@ async function OverviewTab({ month, vatIncluded }: { month: string; vatIncluded:
 
   const countOf = (t: TaxType) => typeCounts.find((c) => normalizeTaxType(c.taxType) === t)?._count._all ?? 0;
   const unregistered = countOf('INDIVIDUAL');
+  const revenueTotal = ledger.platformFee + other.total;
+  const revenueSupply = ledger.platformFeeSupply + other.supply;
+  const revenueVat = ledger.platformFeeVat + other.vat;
+  const revenueRows: { label: string; amount: bigint; basis: string }[] = [
+    { label: '후원 플랫폼 수수료', amount: ledger.platformFee, basis: '후원 발생 시각 · 환불 환입 차감' },
+    { label: '직접상품 중개 수수료', amount: other.brokerFee, basis: '크리에이터 판매 주문 구매확정 시각' },
+    { label: '도네이도 상품 판매', amount: other.shopSales, basis: '도네이도 판매 주문 구매확정 시각 · 결제액 - 환불액 (배송비 포함)' },
+    { label: '팬챗 구독 수수료', amount: other.talkSubscriptionFee, basis: '결제 시각 +, 환불 시각 -' },
+    { label: '1:1 채팅 수수료', amount: other.talkSessionFee, basis: '완료·늦은 취소 정산 시각 +, 완료 후 환불 시각 -' },
+    { label: '팬투표권 판매', amount: other.voteTicketSales, basis: '결제 시각 +, 환불 시각 -' },
+  ];
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
         <StatTile
-          label="도네이도 매출 (플랫폼 수수료)"
-          value={formatWon(ledger.platformFee)}
-          sub={`공급가액 ${formatWon(ledger.platformFeeSupply)} · 부가세 ${formatWon(ledger.platformFeeVat)} (환불 환입 차감 후)`}
+          label="도네이도 매출 합계"
+          value={formatWon(revenueTotal)}
+          sub={`공급가액 ${formatWon(revenueSupply)} · 부가세 ${formatWon(revenueVat)} (환불 차감 후)`}
           tone="brand"
         />
         <StatTile
@@ -186,6 +199,40 @@ async function OverviewTab({ month, vatIncluded }: { month: string; vatIncluded:
           sub="도네이도 매출이 아닙니다 (정산채무)"
         />
       </div>
+
+      <section>
+        <SectionTitle
+          title="매출 구성"
+          description="후원 수수료와 샵·팬챗·팬투표 매출을 나눠 봅니다. 금액은 부가세 포함 기준이며, 각 줄의 기준 시각으로 이 달에 잘랐습니다."
+        />
+        <Table className="min-w-[640px]">
+          <thead>
+            <tr>
+              <Th>구분</Th>
+              <Th className="text-right">매출 (부가세 포함)</Th>
+              <Th>기준</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {revenueRows.map((r) => (
+              <tr key={r.label}>
+                <Td className="font-semibold">{r.label}</Td>
+                <Td className="text-right tabular-nums">{formatWon(r.amount)}</Td>
+                <Td className="text-[12px] text-ink-500">{r.basis}</Td>
+              </tr>
+            ))}
+            <tr>
+              <Td className="font-black">합계</Td>
+              <Td className="text-right font-black tabular-nums text-brand-700">{formatWon(revenueTotal)}</Td>
+              <Td className="text-[12px] text-ink-500">공급가액 {formatWon(revenueSupply)} · 부가세 {formatWon(revenueVat)}</Td>
+            </tr>
+          </tbody>
+        </Table>
+        <p className="mt-2 text-[11.5px] leading-relaxed text-ink-400">
+          비용(참고): 도네이도 상품 레퍼럴 수익 지급 {formatWon(other.referralCost)} · 팬투표 수익 배분 {formatWon(other.voteShareCost)}.
+          면세 상품이 섞여 있다면 신고 전에 세무 대리인과 과세 구분을 확인해 주세요.
+        </p>
+      </section>
 
       {payout.missingResident > 0 ? (
         <Notice tone="danger" title={`주민등록번호가 없는 원천징수 건이 ${payout.missingResident}건 있습니다`}>
@@ -239,8 +286,8 @@ async function OverviewTab({ month, vatIncluded }: { month: string; vatIncluded:
       </section>
 
       <Notice tone="neutral" title="이 화면의 숫자가 어디서 오는가">
-        모든 금액은 <strong>정산 원장(settlement_ledger)</strong> 과 <strong>정산 요청(settlement_request)</strong> 을 다시
-        센 값입니다. 이 화면은 금액을 만들거나 고치지 않습니다. 금액이 틀렸다면 정산 화면의
+        모든 금액은 <strong>정산 원장(settlement_ledger)</strong>·<strong>정산 요청(settlement_request)</strong> 과
+        샵 주문·팬챗·팬투표권 결제 기록을 다시 센 값입니다. 이 화면은 금액을 만들거나 고치지 않습니다. 금액이 틀렸다면 정산 화면의
         <strong> 조정 분개</strong>로 바로잡아야 하며, 여기서 고칠 수 있는 것은 세무유형과 신고 완료 표시뿐입니다.
       </Notice>
     </div>
@@ -629,30 +676,41 @@ async function VatTab({ month, vatIncluded }: { month: string; vatIncluded: bool
   const months = [0, 1, 2].map((i) => `${y}-${String(quarterStartMonth + i).padStart(2, '0')}`);
   const half = m <= 6 ? '1기' : '2기';
 
-  const totals = await Promise.all(months.map((k) => getLedgerTotals(k, vatIncluded)));
+  const [ledgerTotals, otherTotals] = await Promise.all([
+    Promise.all(months.map((k) => getLedgerTotals(k, vatIncluded))),
+    Promise.all(months.map((k) => getOtherRevenueTotals(k))),
+  ]);
+  const totals = ledgerTotals.map((t, i) => ({
+    ...t,
+    otherRevenue: otherTotals[i].total,
+    taxBase: t.platformFeeSupply + otherTotals[i].supply,
+    outputVat: t.platformFeeVat + otherTotals[i].vat,
+  }));
   const sum = (pick: (t: (typeof totals)[number]) => bigint) => totals.reduce((a, t) => a + pick(t), 0n);
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
         <StatTile label={`${y}년 ${half} · ${months[0]}~${months[2]}`} value="분기 합계" />
-        <StatTile label="과세표준 (공급가액)" value={formatWon(sum((t) => t.platformFeeSupply))} tone="brand" />
-        <StatTile label="매출세액" value={formatWon(sum((t) => t.platformFeeVat))} />
+        <StatTile label="과세표준 (공급가액)" value={formatWon(sum((t) => t.taxBase))} tone="brand" />
+        <StatTile label="매출세액" value={formatWon(sum((t) => t.outputVat))} />
         <StatTile label="PG 수수료 (매입)" value={formatWon(sum((t) => t.pgFee))} sub="매입세액 공제 대상 여부는 계약서 확인" />
       </div>
 
-      <Notice tone="warning" title="과세표준은 후원 총액이 아니라 플랫폼 수수료입니다">
+      <Notice tone="warning" title="과세표준은 후원 총액이 아니라 도네이도가 실제로 번 매출입니다">
         도네이도는 후원금을 대신 받아 크리에이터에게 전달하는 위치이므로, 후원 총액은 부가세 과세표준이 아닙니다.
-        과세표준은 도네이도가 실제로 벌어들인 <strong>플랫폼 수수료</strong>뿐입니다. 후원 총액을 매출로 잡으면
-        과세표준이 수십 배로 부풀려집니다. 최종 신고 전 세무 대리인 확인을 권합니다.
+        과세표준은 <strong>후원 플랫폼 수수료</strong>와 <strong>샵·팬챗·팬투표 매출</strong>(중개 수수료, 도네이도 상품 판매,
+        팬챗 구독·1:1 채팅 수수료, 팬투표권 판매)의 공급가액을 더한 값입니다. 구성은 [세무 요약] 탭에서 볼 수 있습니다.
+        최종 신고 전 세무 대리인 확인을 권합니다.
       </Notice>
 
-      <Table className="min-w-[860px]">
+      <Table className="min-w-[960px]">
         <thead>
           <tr>
             <Th>월</Th>
             <Th className="text-right">후원 총액 (참고)</Th>
             <Th className="text-right">플랫폼 수수료</Th>
+            <Th className="text-right">샵·팬챗·팬투표 매출</Th>
             <Th className="text-right">과세표준(공급가액)</Th>
             <Th className="text-right">매출세액</Th>
             <Th className="text-right">PG 수수료</Th>
@@ -665,8 +723,9 @@ async function VatTab({ month, vatIncluded }: { month: string; vatIncluded: bool
               <Td className="font-mono text-[13px] font-semibold">{k}</Td>
               <Td className="text-right tabular-nums text-ink-400">{formatWon(totals[i].donationGross)}</Td>
               <Td className="text-right tabular-nums">{formatWon(totals[i].platformFee)}</Td>
-              <Td className="text-right font-semibold tabular-nums">{formatWon(totals[i].platformFeeSupply)}</Td>
-              <Td className="text-right tabular-nums">{formatWon(totals[i].platformFeeVat)}</Td>
+              <Td className="text-right tabular-nums">{formatWon(totals[i].otherRevenue)}</Td>
+              <Td className="text-right font-semibold tabular-nums">{formatWon(totals[i].taxBase)}</Td>
+              <Td className="text-right tabular-nums">{formatWon(totals[i].outputVat)}</Td>
               <Td className="text-right tabular-nums">{formatWon(totals[i].pgFee)}</Td>
               <Td className="text-right tabular-nums">{formatWon(totals[i].refund)}</Td>
             </tr>
@@ -675,8 +734,9 @@ async function VatTab({ month, vatIncluded }: { month: string; vatIncluded: bool
             <Td className="font-black">분기 합계</Td>
             <Td className="text-right tabular-nums text-ink-400">{formatWon(sum((t) => t.donationGross))}</Td>
             <Td className="text-right font-black tabular-nums">{formatWon(sum((t) => t.platformFee))}</Td>
-            <Td className="text-right font-black tabular-nums text-brand-700">{formatWon(sum((t) => t.platformFeeSupply))}</Td>
-            <Td className="text-right font-black tabular-nums">{formatWon(sum((t) => t.platformFeeVat))}</Td>
+            <Td className="text-right font-black tabular-nums">{formatWon(sum((t) => t.otherRevenue))}</Td>
+            <Td className="text-right font-black tabular-nums text-brand-700">{formatWon(sum((t) => t.taxBase))}</Td>
+            <Td className="text-right font-black tabular-nums">{formatWon(sum((t) => t.outputVat))}</Td>
             <Td className="text-right font-black tabular-nums">{formatWon(sum((t) => t.pgFee))}</Td>
             <Td className="text-right font-black tabular-nums">{formatWon(sum((t) => t.refund))}</Td>
           </tr>

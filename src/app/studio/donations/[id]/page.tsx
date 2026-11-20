@@ -6,12 +6,15 @@ import { blockDonorAction, replayOverlayTestAction } from '@/app/actions/studio'
 import { requireCreator } from '@/server/auth';
 import { replyToDonationAction } from '@/app/actions/donation-replies';
 import { prisma } from '@/server/db';
+import { donationSources } from '@/server/services/donation-source';
 import { formatWon } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
 import {
   deliveryStatusLabel,
   donationStatusLabel,
   paymentModeLabel,
+  donationSourceLabel,
+  isShopDonationChannel,
   paymentTxStatusLabel,
   refundStatusLabel,
 } from '@/lib/labels';
@@ -71,6 +74,7 @@ export default async function StudioDonationDetailPage({ params }: { params: Pro
   });
 
   if (!donation) notFound();
+  const source = (await donationSources([donation])).get(donation.id) ?? 'MO';
 
   const st = donationStatusLabel[donation.status];
   /** 결제가 확정된 건만 오버레이에 다시 재생할 수 있다 (서버 액션도 같은 조건). */
@@ -102,7 +106,9 @@ export default async function StudioDonationDetailPage({ params }: { params: Pro
               <DataRow label="거래번호" value={<span className="font-mono text-[12px]">{donation.transactionNo}</span>} />
               <DataRow label="후원 상태" value={<Badge tone={st.tone}>{st.text}</Badge>} />
               <DataRow label="후원금" value={formatWon(donation.amount)} />
-              <DataRow label="결제 모드" value={paymentModeLabel[donation.paymentMode]} />
+              <DataRow label="후원 경로" value={donationSourceLabel[source].long} />
+              {/* 샵 결제 후원은 문자 결제 모드가 적용되지 않는다 (8차 점검) */}
+              {isShopDonationChannel(donation.channel) ? null : <DataRow label="결제 모드" value={paymentModeLabel[donation.paymentMode]} />}
               <DataRow label="수신시각" value={formatKst(donation.receivedAt)} />
               <DataRow label="결제시각" value={formatKst(donation.paidAt)} />
               <DataRow label="송출시각" value={formatKst(donation.broadcastedAt)} />
@@ -140,7 +146,16 @@ export default async function StudioDonationDetailPage({ params }: { params: Pro
             <div className="mt-2">
               <DataRow label="유튜브 전송" value={<Badge tone={deliveryStatusLabel[donation.youtubeStatus].tone}>{deliveryStatusLabel[donation.youtubeStatus].text}</Badge>} />
               <DataRow label="오버레이" value={<Badge tone={deliveryStatusLabel[donation.overlayStatus].tone}>{deliveryStatusLabel[donation.overlayStatus].text}</Badge>} />
-              <DataRow label="감사문자" value={<Badge tone={deliveryStatusLabel[donation.mtStatus].tone}>{deliveryStatusLabel[donation.mtStatus].text}</Badge>} />
+              <DataRow
+                label="감사문자"
+                value={
+                  isShopDonationChannel(donation.channel) ? (
+                    <span className="text-[12px] text-ink-400">해당 없음 (문자 후원만)</span>
+                  ) : (
+                    <Badge tone={deliveryStatusLabel[donation.mtStatus].tone}>{deliveryStatusLabel[donation.mtStatus].text}</Badge>
+                  )
+                }
+              />
             </div>
           </Card>
         </div>
@@ -152,7 +167,7 @@ export default async function StudioDonationDetailPage({ params }: { params: Pro
               <input type="hidden" name="donationId" value={donation.id} />
               <label htmlFor="donation-reply" className="mb-2 block text-sm font-bold">크리에이터 답글</label>
               <textarea id="donation-reply" name="body" defaultValue={donation.reply?.body ?? ''} required maxLength={1000} rows={4} placeholder="응원해 주신 후원자에게 마음을 전해 보세요." className="mb-3 w-full resize-y rounded-xl border border-ink-200 bg-white p-3 text-sm leading-relaxed text-ink-900 focus:border-brand-500 focus:outline-none" />
-              <p className="mb-3 text-xs text-ink-500">최대 1,000자 · 후원자는 내 문자후원 내역과 마이페이지에서 확인할 수 있습니다.</p>
+              <p className="mb-3 text-xs text-ink-500">최대 1,000자 · 후원자는 내 후원 내역과 마이페이지에서 확인할 수 있습니다.</p>
             </ActionForm>
           </Card> : <Notice tone="neutral">연결된 후원자 정보가 없어 답글을 보낼 수 없습니다.</Notice>}
           <SectionTitle title="조치" description="아래 동작은 후원 상태를 변경하지 않습니다." />

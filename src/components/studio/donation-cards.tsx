@@ -1,9 +1,9 @@
 import Link from 'next/link';
-import { Clock, MessageSquareText, Monitor, Smartphone, Undo2 } from '@/components/brand/icons';
+import { Clock, CreditCard, MessageSquareText, Monitor, Smartphone, Undo2, Video } from '@/components/brand/icons';
 import { Badge, cx } from '@/components/ui';
 import { formatWon } from '@/lib/money';
 import { formatKst } from '@/lib/datetime';
-import { deliveryStatusLabel, donationStatusLabel, refundStatusLabel } from '@/lib/labels';
+import { deliveryStatusLabel, donationSourceLabel, donationSourceOf, donationStatusLabel, refundStatusLabel, type DonationSource } from '@/lib/labels';
 import type { DeliveryStatus, DonationStatus, RefundStatus } from '@/generated/prisma/enums';
 
 /**
@@ -31,8 +31,10 @@ export interface DonationCardItem {
   message: string;
   amount: bigint;
   status: DonationStatus;
-  /** MO(문자) | WEB(PC 웹 후원) */
+  /** MO(문자) | WEB(간편계좌이체 웹 후원) | SHOP(샵 신용카드·영상 후원) */
   channel: string;
+  /** 후원 경로 (샵 후원의 신용카드 / 영상 구분, 8차 점검). 없으면 channel 로만 판단 */
+  source?: DonationSource;
   /** 마스킹된 후원자 전화번호. 웹 후원 등으로 후원자 정보가 없으면 null */
   phoneMasked: string | null;
   /** 전달 상태를 함께 보여줄 때만 넘긴다 (대시보드에서는 생략) */
@@ -42,7 +44,8 @@ export interface DonationCardItem {
 
 export function DonationCard({ item }: { item: DonationCardItem }) {
   const status = donationStatusLabel[item.status];
-  const isWeb = item.channel === 'WEB';
+  const source = item.source ?? donationSourceOf(item.channel);
+  const SourceIcon = source === 'MO' ? Smartphone : source === 'CARD' ? CreditCard : source === 'VIDEO' ? Video : Monitor;
   const refund = item.refundStatus ? refundStatusLabel[item.refundStatus] : null;
 
   return (
@@ -58,11 +61,7 @@ export function DonationCard({ item }: { item: DonationCardItem }) {
       {/* 후원자 전화번호 + 결제 상태 */}
       <div className="flex items-start justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1.5">
-          {isWeb ? (
-            <Monitor size={15} strokeWidth={1.7} className="shrink-0 text-ink-300" />
-          ) : (
-            <Smartphone size={15} strokeWidth={1.7} className="shrink-0 text-brand-700" />
-          )}
+          <SourceIcon size={15} strokeWidth={1.7} className={cx('shrink-0', source === 'MO' ? 'text-brand-700' : 'text-ink-300')} />
           <span className="truncate font-mono text-[13.5px] font-bold tabular-nums text-ink-900">
             {item.phoneMasked ?? '번호 없음'}
           </span>
@@ -76,7 +75,7 @@ export function DonationCard({ item }: { item: DonationCardItem }) {
           {item.anonymous ? '익명의 후원자' : item.displayName}
         </span>
         <span aria-hidden>·</span>
-        <span>{isWeb ? '웹(PC) 후원' : '문자(MO) 후원'}</span>
+        <span>{donationSourceLabel[source].long}</span>
       </p>
 
       {/* 문자 내용 */}

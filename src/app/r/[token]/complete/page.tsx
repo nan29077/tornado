@@ -252,7 +252,7 @@ export default async function RegistrationCompletePage({
         ) : null}
 
         {creator ? (
-          <LinkButton href={`/c/${creator.code}`} size="lg" variant="secondary">
+          <LinkButton href={`/c/${creator.code}?tab=donate`} size="lg" variant="secondary">
             <MessageSquare size={17} strokeWidth={1.7} />
             {creator.displayName} 후원페이지 보기
           </LinkButton>

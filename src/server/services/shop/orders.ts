@@ -12,6 +12,7 @@
 import { prisma } from '@/server/db';
 import { newId } from '@/lib/id';
 import { logger } from '@/lib/logger';
+import { formatWon } from '@/lib/money';
 import { getShopPaymentAdapter, shopPaymentClosedMessage } from '@/server/adapters/shop-payment';
 import { appendLedger } from '@/server/services/settlement';
 import { notifySuperAdmins, notifyUser } from '@/server/services/notifications';
@@ -522,7 +523,7 @@ export async function processClaim(claimId: string, actor: Actor | { type: 'SYST
     await notifySuperAdmins({ title: '취소·반품 반영 실패 (재처리 필요)', body: `${order.orderNo} · 결제 취소는 완료됨. 취소·반품 관리에서 [재처리]를 눌러 주세요.`, linkUrl: '/admin/shop/claims' }).catch(() => undefined);
     throw new Error('결제는 취소되었지만 주문 반영 중 오류가 났습니다. 관리자 화면에서 [재처리]로 마무리됩니다.');
   }
-  await notifyUser({ userId: order.userId, title: `${CLAIM_TYPE_LABEL[claim.type]}가 완료되었습니다`, body: `${order.orderNo} · ${refund.toString()}원 환불`, linkUrl: `/my/orders/${order.id}` }).catch(() => undefined);
+  await notifyUser({ userId: order.userId, title: `${CLAIM_TYPE_LABEL[claim.type]} 처리가 완료되었습니다`, body: `${order.orderNo} · ${formatWon(refund)} 환불`, linkUrl: `/my/orders/${order.id}` }).catch(() => undefined);
 }
 
 /**

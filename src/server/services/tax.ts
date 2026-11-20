@@ -1,6 +1,7 @@
 import { prisma } from '@/server/db';
 import { kstMonthRange } from '@/lib/datetime';
 import { normalizeTaxType, taxTypeLabel, type TaxType } from '@/lib/labels';
+import { splitFee } from '@/server/services/engagement/config';
 
 /**
  * 세무관리 집계 (최고관리자 `/admin/tax` 전용).
@@ -8,7 +9,10 @@ import { normalizeTaxType, taxTypeLabel, type TaxType } from '@/lib/labels';
  * ── 도네이도의 세무상 위치 ────────────────────────────────────────────────
  * 도네이도는 후원금을 **대신 받아 크리에이터에게 전달**한다. 따라서
  *   - 후원 총액(donation_gross) 은 도네이도의 매출이 **아니다**. 크리에이터에게 줄 채무다.
- *   - 도네이도의 매출은 **플랫폼 수수료** 뿐이다. 부가세 신고 과세표준도 이것이다.
+ *   - 후원에서 생기는 도네이도 매출은 **플랫폼 수수료** 다.
+ *   - (2026-11-20) 후원 밖에서 생기는 매출도 있다. `getOtherRevenueTotals` 가 따로 센다.
+ *       직접상품 중개 수수료 · 도네이도 상품 판매 · 팬챗 구독/1:1 채팅 수수료 · 팬투표권 판매
+ *     부가세 과세표준 = 플랫폼 수수료 + 위 매출의 공급가액.
  *   - 크리에이터에게 지급할 때, 크리에이터가 **비사업자(개인)** 이면 도네이도가
  *     사업소득 3.3% 를 원천징수하고 다음 달 10일까지 신고·납부한다.
  *     사업자(일반·간이·면세)면 원천징수하지 않고 크리에이터가 계산서를 발행한다.
@@ -134,6 +138,99 @@ export async function getLedgerTotals(ym: string, vatIncluded: boolean): Promise
     // 후원자에게 돌려준 금액(참고). 수수료 환입분은 위 수수료 매출에서 이미 차감했다.
     refund: abs(sumOf('REFUND')),
     adjustment: sumOf('ADJUSTMENT'),
+  };
+}
+
+export interface OtherRevenueTotals {
+  /** 크리에이터 직접상품 중개 수수료 (구매확정 시각 기준, BROKER_FEE) */
+  brokerFee: bigint;
+  /** 도네이도 상품 판매 대금 (구매확정 시각 기준, 결제액 - 환불액, 배송비 포함) */
+  shopSales: bigint;
+  /** 도네이도 상품 판매에 붙은 크리에이터 레퍼럴 수익 (비용, 참고) */
+  referralCost: bigint;
+  /** 팬챗 구독 수수료 (결제 시각 +, 환불 시각 -) */
+  talkSubscriptionFee: bigint;
+  /** 1:1 채팅 수수료 (완료·늦은 취소 정산 시각 +, 완료 후 환불 시각 -) */
+  talkSessionFee: bigint;
+  /** 팬투표권 판매 대금 (결제 시각 +, 환불 시각 -) */
+  voteTicketSales: bigint;
+  /** 팬투표 수익 배분 (비용, 참고, VOTE_REVENUE_SHARE) */
+  voteShareCost: bigint;
+  /** 매출 합계 (부가세 포함 금액으로 본다) */
+  total: bigint;
+  supply: bigint;
+  vat: bigint;
+}
+
+/**
+ * 후원 밖 매출 집계 (2026-11-20, 8차 점검 P1).
+ *
+ * 예전에는 플랫폼 수수료만 매출로 세서, 샵·팬챗·팬투표권 매출이 세무 화면과 부가세 자료에서 빠졌다.
+ * 이 함수도 **읽기 전용**이다. 원장과 결제 기록에 이미 남은 금액을 기준 시각으로 잘라 다시 센다.
+ *  - 중개 수수료: 원장 BROKER_FEE (음수) 의 부호를 바꾼 값
+ *  - 도네이도 상품: 구매확정(confirmedAt)된 도네이도 판매 주문의 (결제액 - 환불액)
+ *  - 팬챗 구독: 구독 행의 feeAmount. 결제 시각에 더하고, 환불된 구독은 환불 시각에 뺀다
+ *  - 1:1 채팅: 완료 시각에 feeAmount, 늦은 취소는 정산 시각에 (남긴 금액 - 크리에이터 몫),
+ *    완료 후 환불은 환불 시각에 뺀다
+ *  - 팬투표권: 결제 시각에 price, 환불된 주문은 환불 시각에 뺀다
+ */
+export async function getOtherRevenueTotals(ym: string): Promise<OtherRevenueTotals> {
+  const { start, end } = kstMonthRange(ym);
+  const inMonth = { gte: start, lt: end };
+
+  const [ledgerRows, shopOrders, subsPaid, subsRefunded, sessDone, sessRefunded, sessLate, votePaid, voteRefunded] =
+    await Promise.all([
+      prisma.settlementLedger.groupBy({
+        by: ['entryType'],
+        where: { occurredAt: inMonth, entryType: { in: ['BROKER_FEE', 'REFERRAL_COMMISSION', 'VOTE_REVENUE_SHARE'] } },
+        _sum: { amount: true },
+      }),
+      prisma.shopOrder.aggregate({
+        where: { sellerType: 'DONAIDO', status: 'CONFIRMED', confirmedAt: inMonth },
+        _sum: { totalAmount: true, refundedAmount: true },
+      }),
+      prisma.talkSubscription.aggregate({ where: { createdAt: inMonth }, _sum: { feeAmount: true } }),
+      prisma.talkSubscription.aggregate({ where: { status: 'REFUNDED', refundedAt: inMonth }, _sum: { feeAmount: true } }),
+      prisma.talkSession.aggregate({ where: { status: 'COMPLETED', completedAt: inMonth }, _sum: { feeAmount: true } }),
+      prisma.talkSession.aggregate({
+        where: { status: 'COMPLETED', refundAmount: { gt: 0n }, refundedAt: inMonth },
+        _sum: { feeAmount: true },
+      }),
+      prisma.talkSession.findMany({
+        where: { status: 'CANCELLED', settledAt: inMonth },
+        select: { price: true, refundAmount: true, feeRate: true },
+      }),
+      prisma.voteTicketOrder.aggregate({ where: { paidAt: inMonth, status: { in: ['PAID', 'REFUNDED'] } }, _sum: { price: true } }),
+      prisma.voteTicketOrder.aggregate({ where: { status: 'REFUNDED', refundedAt: inMonth }, _sum: { price: true } }),
+    ]);
+
+  const ledgerSum = (t: string) => ledgerRows.find((r) => r.entryType === t)?._sum.amount ?? 0n;
+  const lateFee = sessLate.reduce((acc, s) => {
+    const kept = s.price - s.refundAmount;
+    return kept > 0n ? acc + splitFee(kept, Number(s.feeRate)).fee : acc;
+  }, 0n);
+
+  const brokerFee = -ledgerSum('BROKER_FEE');
+  const shopSales = (shopOrders._sum.totalAmount ?? 0n) - (shopOrders._sum.refundedAmount ?? 0n);
+  const talkSubscriptionFee = (subsPaid._sum.feeAmount ?? 0n) - (subsRefunded._sum.feeAmount ?? 0n);
+  const talkSessionFee = (sessDone._sum.feeAmount ?? 0n) + lateFee - (sessRefunded._sum.feeAmount ?? 0n);
+  const voteTicketSales = (votePaid._sum.price ?? 0n) - (voteRefunded._sum.price ?? 0n);
+
+  const total = brokerFee + shopSales + talkSubscriptionFee + talkSessionFee + voteTicketSales;
+  // 환불이 다음 달로 넘어가면 그 달은 음수가 될 수 있다. 신고 자료는 음수(감액)도 그대로 보여 준다.
+  const split = total >= 0n ? splitVat(total) : (() => { const p = splitVat(-total); return { supply: -p.supply, vat: -p.vat }; })();
+
+  return {
+    brokerFee,
+    shopSales,
+    referralCost: ledgerSum('REFERRAL_COMMISSION'),
+    talkSubscriptionFee,
+    talkSessionFee,
+    voteTicketSales,
+    voteShareCost: ledgerSum('VOTE_REVENUE_SHARE'),
+    total,
+    supply: split.supply,
+    vat: split.vat,
   };
 }
 

@@ -4,6 +4,7 @@ import { env, isLocal, isMailDeliveryIntegrated } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { generateToken, randomCodeString, tokenHash } from '@/lib/crypto';
 import { hashPassword } from '@/server/auth';
+import { getMailAdapter } from '@/server/adapters/mail';
 
 /**
  * 비밀번호 재설정.
@@ -14,7 +15,8 @@ import { hashPassword } from '@/server/auth';
  *     계정이 탈취됐을 가능성을 전제하므로, 공격자의 로그인 상태가 남아 있으면 안 된다.
  *  3) 요청 화면은 가입 여부를 알려 주지 않는다(계정 열거 방지). 존재하지 않는 이메일도
  *     같은 문구로 응답한다.
- *  4) 이메일 발송은 아직 연동 전이다. mock 임을 화면에 명시하고, 로컬에서만 링크를 노출한다.
+ *  4) 이메일은 메일 어댑터(MAIL_PROVIDER=ses)가 설정됐을 때만 발송한다. 그 전에는 mock 임을 화면에 명시하고,
+ *     로컬에서만 링크를 노출한다. 링크는 어떤 경우에도 로그에 남기지 않는다.
  */
 
 /** 재설정 링크 유효시간 */
@@ -96,7 +98,21 @@ export async function requestPasswordReset(
   //
   // 로컬 확인용 출력은 logger 대신 console 을 쓴다.
   // logger 는 이제 메시지에 담긴 URL 도 가리므로 링크가 보이지 않기 때문이다.
-  if (isLocal) {
+  if (isMailDeliveryIntegrated()) {
+    // (8차 점검) 메일 어댑터가 설정되면 실제로 보낸다. 실패해도 응답은 같게(계정 열거 방지) 하고 로그에만 남긴다.
+    const to = await prisma.user.findUnique({ where: { id: user.id }, select: { email: true } });
+    if (to?.email) {
+      const res = await getMailAdapter().send({
+        to: to.email,
+        subject: '[도네이도] 비밀번호 재설정 안내',
+        text:
+          '도네이도 비밀번호 재설정을 요청하셨습니다.\n\n' +
+          `아래 링크에서 새 비밀번호를 설정해 주세요. 링크는 1시간 동안 한 번만 사용할 수 있습니다.\n${link}\n\n` +
+          '본인이 요청하지 않았다면 이 메일을 무시해 주세요. 비밀번호는 바뀌지 않습니다.',
+      });
+      if (!res.ok) logger.warn('비밀번호 재설정 메일 발송 실패', { userId: user.id, reason: res.reason });
+    }
+  } else if (isLocal) {
     console.log(`[MOCK 메일] 비밀번호 재설정 링크: ${link}`);
   } else {
     logger.warn('비밀번호 재설정 링크를 발급했지만 메일 발송이 연동되지 않아 전달되지 않았습니다.', {

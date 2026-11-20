@@ -184,6 +184,32 @@ export const holidayKindLabel: Record<HolidayKind, { text: string; tone: Tone }>
   BANK_ONLY: { text: '은행 휴무일', tone: 'neutral' },
 };
 
+/**
+ * 후원이 들어온 경로 (8차 점검, 2026-11-20).
+ * 예전에는 화면마다 `channel === 'WEB' ? 웹 : 문자` 로만 나눠, 도네이도 샵의 신용카드·영상 후원(channel SHOP)이
+ * 전부 "문자(MO) 후원" 으로 보였다. 샵 후원은 결제 종류(shop_payment.kind)로 신용카드 / 영상을 구분한다.
+ */
+export type DonationSource = 'MO' | 'WEB' | 'CARD' | 'VIDEO' | 'SHOP';
+
+export function donationSourceOf(channel: string, shopKind?: string | null): DonationSource {
+  if (channel === 'WEB') return 'WEB';
+  if (channel === 'SHOP') return shopKind === 'CARD_DONATION' ? 'CARD' : shopKind === 'VIDEO_DONATION' ? 'VIDEO' : 'SHOP';
+  return 'MO';
+}
+
+export const donationSourceLabel: Record<DonationSource, { short: string; long: string }> = {
+  MO: { short: '문자(MO)', long: '문자(MO) 후원' },
+  WEB: { short: '간편계좌이체', long: '간편계좌이체(웹) 후원' },
+  CARD: { short: '신용카드', long: '신용카드 후원 (샵)' },
+  VIDEO: { short: '영상 후원', long: '영상 후원 (샵)' },
+  SHOP: { short: '샵 결제', long: '샵 결제 후원' },
+};
+
+/** 문자로 들어오지 않은 후원(샵 결제)은 결제 모드 · 감사문자가 적용되지 않는다 */
+export function isShopDonationChannel(channel: string): boolean {
+  return channel === 'SHOP';
+}
+
 export const paymentModeLabel = {
   CONFIRM_LINK: '확인형 (MT 링크 확인 후 결제)',
   DIRECT_TRIGGER: '즉시형 (MO 수신 즉시 결제)',

@@ -125,6 +125,8 @@ export async function donateToVideo(
         messageRawEnc: rawMessage ? encrypt(rawMessage) : null,
         status: 'SETTLEMENT_PENDING',
         channel: 'SHOP',
+        // 샵 결제 후원은 문자로 들어오지 않아 감사문자 대상이 아니다 (예전에는 '대기' 로 영원히 남았다, 8차 점검)
+        mtStatus: 'SKIPPED',
         anonymous: Boolean(input.anonymous),
         paidAt: now,
         pgFee: fees.pgFee,

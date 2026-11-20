@@ -4,7 +4,7 @@ import { prisma } from '@/server/db';
 import { csvCell, csvRow, type CsvColumnKind } from '@/lib/csv';
 import { kstMonthRange, kstMonthKey, formatKst, isStrictMonthKey, MIN_MONTH_YEAR } from '@/lib/datetime';
 import { ledgerEntryLabel } from '@/lib/labels';
-import { getLedgerTotals, isFeeVatIncluded } from '@/server/services/tax';
+import { getLedgerTotals, getOtherRevenueTotals, isFeeVatIncluded } from '@/server/services/tax';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -71,7 +71,17 @@ export async function GET(req: Request) {
       const maxYear = Number(kstMonthKey().slice(0, 4)) + 1;
       return new Response(`year 는 ${MIN_MONTH_YEAR}~${maxYear} 사이로 지정해 주세요. (요청: ${year})`, { status: 400 });
     }
-    const totals = await Promise.all(months.map((k) => getLedgerTotals(k, vatIncluded)));
+    const [ledgerTotals, otherTotals] = await Promise.all([
+      Promise.all(months.map((k) => getLedgerTotals(k, vatIncluded))),
+      Promise.all(months.map((k) => getOtherRevenueTotals(k))),
+    ]);
+    // 8차 점검 P1 (2026-11-20): 샵·팬챗·팬투표 매출도 과세표준에 합친다.
+    const totals = ledgerTotals.map((t, i) => ({
+      ...t,
+      otherRevenue: otherTotals[i].total,
+      taxBase: t.platformFeeSupply + otherTotals[i].supply,
+      outputVat: t.platformFeeVat + otherTotals[i].vat,
+    }));
 
     await writeAudit({
       adminUserId: admin.id,
@@ -82,7 +92,7 @@ export async function GET(req: Request) {
     });
 
     const lines = [
-      ['월', '후원총액(참고,과세표준아님)', '플랫폼수수료', '과세표준(공급가액)', '매출세액', 'PG수수료(매입)', '환불'].join(','),
+      ['월', '후원총액(참고,과세표준아님)', '플랫폼수수료', '샵·팬챗·팬투표매출', '과세표준(공급가액)', '매출세액', 'PG수수료(매입)', '환불'].join(','),
     ];
     for (let i = 0; i < months.length; i += 1) {
       const t = totals[i];
@@ -91,8 +101,9 @@ export async function GET(req: Request) {
           months[i],
           t.donationGross.toString(),
           t.platformFee.toString(),
-          t.platformFeeSupply.toString(),
-          t.platformFeeVat.toString(),
+          t.otherRevenue.toString(),
+          t.taxBase.toString(),
+          t.outputVat.toString(),
           t.pgFee.toString(),
           t.refund.toString(),
         ]
@@ -106,8 +117,9 @@ export async function GET(req: Request) {
         '분기합계',
         sum((t) => t.donationGross).toString(),
         sum((t) => t.platformFee).toString(),
-        sum((t) => t.platformFeeSupply).toString(),
-        sum((t) => t.platformFeeVat).toString(),
+        sum((t) => t.otherRevenue).toString(),
+        sum((t) => t.taxBase).toString(),
+        sum((t) => t.outputVat).toString(),
         sum((t) => t.pgFee).toString(),
         sum((t) => t.refund).toString(),
       ]
@@ -118,7 +130,7 @@ export async function GET(req: Request) {
     lines.push(
       csvCell(
         '주의: 도네이도는 후원금을 대신 받아 전달하는 위치이므로 후원 총액은 부가세 과세표준이 아닙니다. ' +
-          '과세표준은 플랫폼 수수료뿐입니다.',
+          '과세표준은 후원 플랫폼 수수료와 샵·팬챗·팬투표 매출(중개 수수료, 도네이도 상품 판매, 팬챗 구독·1:1 채팅 수수료, 팬투표권 판매)의 공급가액 합계입니다.',
       ),
     );
 
