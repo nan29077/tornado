@@ -42,10 +42,13 @@ describe('비공개 후원 답글', () => {
     await expect(saveDonationReply(f.creator.creatorUserId, f.donation.id, '위조')).rejects.toThrow();
     expect(await prisma.donationReply.count()).toBe(0);
   });
-  it('WEB 후원은 문자내역에 혼입하지 않고 페이지를 제한한다', async () => {
+  // (8차 점검, 2026-11-20) 내 후원 내역은 문자뿐 아니라 간편계좌이체 · 샵 후원도 함께 보여 준다. 페이지 범위 제한은 그대로.
+  it('WEB 후원도 내 후원 내역에 보이고 페이지를 제한한다', async () => {
     const f = await fixture();
     await prisma.donation.update({ where: { id: f.donation.id }, data: { channel: 'WEB' } });
-    expect((await listMyCreatorMessages(f.user.id, f.creator.creatorId, Infinity)).rows).toHaveLength(0);
+    const list = await listMyCreatorMessages(f.user.id, f.creator.creatorId, Infinity);
+    expect(list.page).toBe(1);
+    expect(list.rows.map((r) => r.channel)).toEqual(['WEB']);
     expect((await listMyCreatorMessages(f.user.id, f.creator.creatorId, -5)).page).toBe(1);
   });
   it('빈 답글과 1000자 초과를 거절한다', () => {
