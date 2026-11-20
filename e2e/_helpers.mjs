@@ -81,12 +81,29 @@ export function createReporter(title) {
   return { ok, step, finish, results };
 }
 
+/**
+ * 시드 최고관리자 비밀번호 (2026-11-20).
+ * 시드 스크립트는 .env 를 읽어 SEED_ADMIN_PASSWORD 로 계정을 만들지만, E2E 프로세스 환경에는 그 값이 없을 수 있다.
+ * 그러면 관리자 로그인이 전부 실패하므로, 환경변수가 없으면 저장소 루트의 .env 에서 같은 값을 읽는다.
+ */
+function seedAdminPassword() {
+  if (process.env.SEED_ADMIN_PASSWORD) return process.env.SEED_ADMIN_PASSWORD;
+  try {
+    const text = fs.readFileSync(new URL('../.env', import.meta.url), 'utf8');
+    const m = text.match(/^\s*SEED_ADMIN_PASSWORD\s*=\s*(.*)$/m);
+    return m ? m[1].trim().replace(/^(['"])(.*)\1$/, '$2') : '';
+  } catch {
+    return '';
+  }
+}
+
 /** 로그인. 성공하면 목적지 URL 로 이동한 상태가 된다. */
 export async function login(page, email, { expectUrl = /\/(studio|admin|my|)$/ } = {}) {
   await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' });
   await page.fill('input[name=email]', email);
   // 최고관리자 시드 비밀번호는 더 이상 고정값이 아니다(P2-14). SEED_ADMIN_PASSWORD 로 시드한 DB 를 쓴다.
-  const pw = email === 'admin@tornado.kr' && process.env.SEED_ADMIN_PASSWORD ? process.env.SEED_ADMIN_PASSWORD : PASSWORD;
+  const adminPw = email === 'admin@tornado.kr' ? seedAdminPassword() : '';
+  const pw = adminPw || PASSWORD;
   await page.fill('input[name=password]', pw);
   await Promise.all([
     page.waitForURL(expectUrl, { timeout: 20_000 }),

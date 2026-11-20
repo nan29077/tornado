@@ -12,6 +12,7 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { PGlite } from '@electric-sql/pglite';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
+import { patchPgliteQueryQueue } from './pglite-queue-fix.mjs';
 
 const require = createRequire(import.meta.url);
 
@@ -53,6 +54,7 @@ try {
   const port = await freePort();
   database = await PGlite.create();
   socketServer = new PGLiteSocketServer({ database: undefined, db: database, port, host: '127.0.0.1', maxConnections: 30 });
+  patchPgliteQueryQueue(socketServer, database);
   await socketServer.start();
 
   const databaseUrl = `postgresql://postgres:postgres@127.0.0.1:${port}/postgres`;

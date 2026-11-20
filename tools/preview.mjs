@@ -22,6 +22,7 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { PGlite } from '@electric-sql/pglite';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
+import { patchPgliteQueryQueue } from './pglite-queue-fix.mjs';
 import { acquireLock, freePort, guardOrphan, killTree, releaseLock } from './process-guard.mjs';
 
 const DB_PORT = Number(process.env.PGLITE_PORT ?? 5433);
@@ -294,6 +295,8 @@ async function main() {
     // 실제 앱의 연결 풀은 아래 previewEnv에서 2개로 제한한다.
     maxConnections: 100,
   });
+  // 여러 연결의 확장 질의 메시지가 섞여 DB 오류가 나던 문제 보정 (8차 점검)
+  patchPgliteQueryQueue(socketServer, db);
   await socketServer.start();
   log(`      준비 완료 (127.0.0.1:${DB_PORT})`);
 

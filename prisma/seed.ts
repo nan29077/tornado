@@ -1,4 +1,6 @@
 import 'dotenv/config';
+// Redis 가 꺼져 있으면 REDIS_URL 을 비운다. 앱 설정을 불러오기 전에 실행돼야 하므로 반드시 dotenv 바로 다음에 둔다.
+import './seed-redis-check';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -341,9 +343,23 @@ async function main() {
         { to: moA, content: '이번 주도 수고 많으셨어요', pay: false }, // 결제 전 단계(확인 대기/한도 차단)로 남긴다
       ];
 
+      const { kv } = await import('../src/server/redis');
+
       let refundTarget: string | null = null;
       for (let i = 0; i < samples.length; i += 1) {
         const s = samples[i];
+        /**
+         * (8차 점검, 2026-11-20) 샘플은 지난 며칠에 걸쳐 들어온 것처럼 만들지만 속도 제한(기본 1분 3건)은 지금 시각으로
+         * 센다. 그래서 4번째 샘플(별하늘)이 늘 "한도차단" 으로 들어가 별하늘은 결제 완료 후원이 0건이었다.
+         * 샘플마다 이 후원자의 속도 제한 · 연속 후원 대기 카운터를 비운다(시드 전용, 실제 흐름은 그대로).
+         */
+        const bucket = Math.floor(Date.now() / 60_000);
+        await Promise.all([
+          kv.del(`velocity:${donor.id}:${bucket}`),
+          kv.del(`velocity:${donor.id}:${bucket - 1}`),
+          kv.del(`streak:${donor.id}`),
+          kv.del(`cooldown:${donor.id}`),
+        ]).catch(() => undefined);
         const result = await handleMoInbound({
           providerMessageId: `SEED-MO-${String(i + 1).padStart(3, '0')}`,
           providerCode: 'mock',
