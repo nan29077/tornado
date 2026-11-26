@@ -124,14 +124,28 @@ export async function saveSellerInfoAction(_p: StudioActionState, fd: FormData):
     if (bizNo && bizNo.length !== 10) throw new Error('사업자등록번호는 숫자 10자리입니다.');
     const phone = text(fd, 'sellerCsPhone').replace(/[^\d-]/g, '');
     if (phone && !/^\d[\d-]{7,14}$/.test(phone)) throw new Error('고객센터 연락처를 확인해 주세요.');
+    const next = {
+      sellerBizName: text(fd, 'sellerBizName').slice(0, 60) || null,
+      sellerBizNo: bizNo ? `${bizNo.slice(0, 3)}-${bizNo.slice(3, 5)}-${bizNo.slice(5)}` : null,
+      sellerCsPhone: phone || null,
+      sellerReturnAddress: text(fd, 'sellerReturnAddress').slice(0, 200) || null,
+    };
+    /**
+     * [9차 P2-5] 판매 중인 직접 상품이 있으면 필수 항목(통신판매중개 고지 항목)을 비울 수 없다.
+     * 예전에는 상품 등록 때만 확인해서, 등록 뒤 비워 두면 상품 상세의 판매자 정보가 '-' 로 나온 채 판매됐다.
+     */
+    const selling = await prisma.product.count({
+      where: { ownerType: 'CREATOR', creatorId, deletedAt: null, reviewStatus: { in: ['PENDING', 'APPROVED'] }, status: { in: ['ON_SALE', 'SOLD_OUT'] } },
+    });
+    const missing = sellerInfoMissing(next);
+    if (selling > 0 && missing.length > 0) {
+      throw new Error(`판매 중인 직접 상품이 ${selling}개 있어 비워 둘 수 없습니다: ${missing.join(', ')}. 먼저 상품을 숨기거나 삭제해 주세요.`);
+    }
     await prisma.creatorProfile.update({
       where: { id: creatorId },
       data: {
-        sellerBizName: text(fd, 'sellerBizName').slice(0, 60) || null,
-        sellerBizNo: bizNo ? `${bizNo.slice(0, 3)}-${bizNo.slice(3, 5)}-${bizNo.slice(5)}` : null,
+        ...next,
         sellerMailOrderNo: text(fd, 'sellerMailOrderNo').slice(0, 40) || null,
-        sellerCsPhone: phone || null,
-        sellerReturnAddress: text(fd, 'sellerReturnAddress').slice(0, 200) || null,
       },
     });
     refreshShop(code);

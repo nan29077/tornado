@@ -8,7 +8,7 @@ import { BellRing, Heart, HeartHandshake, MessagesSquare, Package, ReceiptText, 
 /**
  * 마이페이지 탭 (2026-11-17 도네이도 샵: 구독·주문·찜 추가).
  * 한도·차단·동의·배송지·크리에이터 전환 같은 설정은 "내 정보" 안에서 이동한다.
- * 모바일에서는 가로로 밀어서 본다.
+ * 모바일에서는 가로로 밀어서 본다. PC(sm 이상)는 4칸 × 2줄로 모두 보인다 (9차 P3-10: '내 정보' 탭이 잘리던 문제).
  */
 const TABS = [
   { href: '/my', label: '후원', icon: HeartHandshake, match: ['/my'] },
@@ -30,7 +30,7 @@ export function MyNav() {
   const pathname = usePathname();
   return (
     <nav className="mb-4">
-      <div className="flex gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden rounded-2xl bg-ink-100 p-1">
+      <div className="flex gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden rounded-2xl bg-ink-100 p-1 sm:grid sm:grid-cols-4 sm:overflow-visible">
         {TABS.map((t) => {
           const active = isActive(pathname, t.match);
           const Icon = t.icon;
@@ -40,7 +40,7 @@ export function MyNav() {
               href={t.href}
               aria-current={active ? 'page' : undefined}
               className={cx(
-                'flex min-w-[4.5rem] flex-1 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 py-2 text-center text-[12.5px] font-bold transition-colors',
+                'flex min-w-[4.5rem] flex-1 shrink-0 sm:min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 py-2 text-center text-[12.5px] font-bold transition-colors',
                 active ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500 hover:text-ink-900',
               )}
             >

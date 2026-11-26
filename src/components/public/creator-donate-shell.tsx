@@ -169,7 +169,7 @@ export async function CreatorDonateShell({
   /** 메뉴는 전부 후원 페이지 안쪽 경로다. 밖으로 나가는 항목을 여기에 넣지 않는다. */
   const nav: { key: CreatorShellMenu; href: string; label: string; icon: typeof Heart }[] = [
     { key: 'donate', href: base, label: '후원하기', icon: Heart },
-    { key: 'messages', href: `${base}/messages`, label: '내 문자후원', icon: SmsDonation },
+    { key: 'messages', href: `${base}/messages`, label: '후원 내역', icon: SmsDonation },
     { key: 'notifications', href: `${base}/notifications`, label: '알림', icon: Bell },
     { key: 'support', href: `${base}/support`, label: '문의하기', icon: LifeBuoy },
   ];

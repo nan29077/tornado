@@ -35,6 +35,13 @@ export const LEDGER_TYPE_LABEL: Record<string, string> = {
   SUPPORT_REFUND: '서포트 반환',
 };
 
+/**
+ * 팬투표권을 "사용"한 이력 종류 (9차 P1-1).
+ * 환불 가능 여부는 이 종류로 판단한다. 만료 · 환불 회수 · 관리자 회수 · 탈퇴 소멸은 사용이 아니다.
+ * 새로 쓰는 곳이 생기면(예: 다른 참여 기능) 여기에 함께 넣는다.
+ */
+export const TICKET_SPEND_TYPES = ['VOTE_SPEND', 'SUPPORT_SPEND'] as const;
+
 type Tx = Prisma.TransactionClient;
 
 export interface Balance {

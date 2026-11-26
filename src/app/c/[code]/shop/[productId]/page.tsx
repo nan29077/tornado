@@ -29,6 +29,9 @@ export default async function ShopProductPage({ params }: { params: Promise<{ co
   const images = product.images.length > 0 ? product.images.map((i) => i.url) : product.thumbnailUrl ? [product.thumbnailUrl] : [];
   const discount = product.listPrice && product.listPrice > product.price ? Math.round((Number(product.listPrice - product.price) / Number(product.listPrice)) * 100) : 0;
   const isDirect = product.ownerType === 'CREATOR';
+  // [9차 P2-4] 크리에이터 본인의 직접 판매 상품은 구매 버튼 대신 안내를 보여 준다 (서버에서도 막는다)
+  const myCreatorId = viewer ? (await prisma.creatorProfile.findUnique({ where: { userId: viewer.id }, select: { id: true } }))?.id ?? null : null;
+  const ownDirect = isDirect && myCreatorId != null && product.creatorId === myCreatorId;
   const here = `/c/${creator.code}/shop/${product.id}`;
 
   return (
@@ -49,7 +52,8 @@ export default async function ShopProductPage({ params }: { params: Promise<{ co
             ))}
           </div>
         ) : (
-          <div className="grid aspect-square place-items-center bg-ink-50 text-[13px] text-ink-300">이미지 준비 중</div>
+          // [9차 P3-10] 이미지가 없을 때 PC 에서 정사각 빈 영역이 화면을 거의 다 차지해 가격 · 구매 버튼이 아래로 밀렸다
+          <div className="grid aspect-[4/3] place-items-center bg-ink-50 text-[13px] text-ink-300 sm:aspect-[16/7]">이미지 준비 중</div>
         )}
         <div className="p-5">
           <p className="text-[12px] font-bold text-ink-400">{isDirect ? `${creator.displayName} 직접 판매` : `${creator.displayName} 추천 · 도네이도 판매`}</p>
@@ -66,6 +70,11 @@ export default async function ShopProductPage({ params }: { params: Promise<{ co
             {product.freeShippingOver ? ` · ${formatWon(product.freeShippingOver)} 이상 구매 시 무료` : ''}
           </p>
           <div className="mt-4">
+            {ownDirect ? (
+              <p className="rounded-2xl border border-warm-300/70 bg-warm-50 px-4 py-3 text-[13px] font-bold text-ink-600">
+                내 샵에서 직접 판매하는 상품이에요. 본인은 구매할 수 없어요.
+              </p>
+            ) : (
             <AddToCartForm
               shopCode={creator.code}
               productId={product.id}
@@ -75,6 +84,7 @@ export default async function ShopProductPage({ params }: { params: Promise<{ co
               loggedIn={Boolean(viewer)}
               loginHref={`/c/${creator.code}/login?next=${encodeURIComponent(here)}`}
             />
+            )}
           </div>
           {viewer ? (
             <div className="mt-2">

@@ -111,4 +111,12 @@ if not exist "node_modules\@aws-sdk\client-sesv2" (
   set NEEDS=1
   set WHY=새로 추가된 패키지 설치 필요
 )
+rem (2026-11-26) Next.js 보안 업데이트처럼 버전만 바뀐 경우에도 다시 설치한다 (설치된 next 버전 = package.json 버전)
+if exist "node_modules\next\package.json" (
+  call node -e "process.exit(require('./node_modules/next/package.json').version===require('./package.json').dependencies.next?0:1)" >nul 2>&1
+  if errorlevel 1 (
+    set NEEDS=1
+    set WHY=Next.js 버전 업데이트 필요
+  )
+)
 exit /b 0

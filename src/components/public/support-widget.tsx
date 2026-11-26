@@ -50,6 +50,30 @@ export function SupportWidget({
   const [openFaq, setOpenFaq] = React.useState<string | null>(null);
   /** 아직 확인하지 않은 관리자 답변 수. 문의 창을 열지 않아도 배지로 알 수 있게 한다. */
   const [unread, setUnread] = React.useState(0);
+  /**
+   * [9차 P3-10] 모바일에서 아래로 스크롤하는 동안에는 문의 버튼을 아래로 숨긴다.
+   * 버튼이 본문 오른쪽(결제 정보 · 안내 문구 등)을 계속 가리던 문제. 위로 스크롤하거나 스크롤을 멈추면 다시 나온다.
+   * PC(lg 이상)는 본문 바깥에 있어 그대로 둔다.
+   */
+  const [tucked, setTucked] = React.useState(false);
+  React.useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)');
+    let lastY = window.scrollY;
+    let idle: ReturnType<typeof setTimeout> | null = null;
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (mq.matches && y > lastY + 6 && y > 120) setTucked(true);
+      else if (y < lastY - 6) setTucked(false);
+      lastY = y;
+      if (idle) clearTimeout(idle);
+      idle = setTimeout(() => setTucked(false), 700);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (idle) clearTimeout(idle);
+    };
+  }, []);
   const listRef = React.useRef<HTMLDivElement>(null);
 
   const [state, formAction, pending] = React.useActionState(sendInquiryMessage, initialState);
@@ -124,8 +148,9 @@ export function SupportWidget({
           - lg 이상(PC): 본문 레이아웃 오른쪽 끝에 정렬 */}
       <div
         className={cx(
-          'pointer-events-none fixed inset-x-0 z-50',
+          'pointer-events-none fixed inset-x-0 z-50 transition-transform duration-200',
           'bottom-[calc(76px+env(safe-area-inset-bottom))] lg:bottom-6',
+          tucked && !open ? 'translate-y-[160px] lg:translate-y-0' : 'translate-y-0',
         )}
       >
         <div className="mx-auto flex w-full max-w-[var(--public-layout-width,744px)] flex-col items-end gap-2 px-4 lg:px-0 lg:pr-[18px]">

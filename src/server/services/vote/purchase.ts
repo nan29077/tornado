@@ -11,7 +11,7 @@ import { newId } from '@/lib/id';
 import { getShopPaymentAdapter, shopPaymentClosedMessage } from '@/server/adapters/shop-payment';
 import { getVoteConfig } from '@/server/services/engagement/config';
 import { cancelShopPayment } from '@/server/services/shop/payment-cancel';
-import { grantTickets, revokeLot } from './wallet';
+import { grantTickets, revokeLot, TICKET_SPEND_TYPES } from './wallet';
 
 export type PayMethod = 'CARD' | 'TRANSFER';
 
@@ -128,10 +128,11 @@ export async function checkTicketRefund(orderId: string, now: Date = new Date(),
   if (!lot || lot.remaining !== lot.amount) return { refundable: false, reason: '이미 사용한 팬투표권이 있어 환불할 수 없습니다. (사용하지 않은 결제만 환불)' };
   // [5차 PAY-B] 보너스도 하나도 쓰지 않았어야 한다. (보너스만 쓰고 전액 환불 → 재구매로 표를 무한히 만드는 경로 차단)
   if (order.bonusLotId) {
-    // 만료로 0 이 된 것은 사용이 아니다 → 실제 팬투표 사용 이력으로 판단한다
-    const spent = await prisma.voteTicketLedger.count({ where: { lotId: order.bonusLotId, type: 'VOTE_SPEND' } });
+    // 만료로 0 이 된 것은 사용이 아니다 → 실제 사용 이력(팬투표 · 서포트)으로 판단한다
+    // [9차 P1-1] 예전에는 팬투표만 봐서, 보너스를 서포트에 넣고 결제를 전액 환불받을 수 있었다
+    const spent = await prisma.voteTicketLedger.count({ where: { lotId: order.bonusLotId, type: { in: [...TICKET_SPEND_TYPES] } } });
     if (spent > 0) {
-      return { refundable: false, reason: '함께 받은 보너스 팬투표권을 사용해 환불할 수 없습니다. (보너스까지 사용하지 않은 결제만 환불)' };
+      return { refundable: false, reason: '함께 받은 보너스 팬투표권을 팬투표 · 서포트에 사용해 환불할 수 없습니다. (보너스까지 사용하지 않은 결제만 환불)' };
     }
   }
   return { refundable: true };
@@ -154,7 +155,7 @@ export async function refundTicketOrder(orderId: string, by: { type: 'USER'; use
     if (order.bonusLotId) {
       // 보너스 묶음도 잠근 뒤 사용 이력을 본다 (동시에 팬투표가 들어와도 잠금 순서로 직렬화된다)
       await tx.$queryRaw`SELECT id FROM vote_ticket_lot WHERE id = ${order.bonusLotId} FOR UPDATE`;
-      const spent = await tx.voteTicketLedger.count({ where: { lotId: order.bonusLotId, type: 'VOTE_SPEND' } });
+      const spent = await tx.voteTicketLedger.count({ where: { lotId: order.bonusLotId, type: { in: [...TICKET_SPEND_TYPES] } } });
       if (spent > 0) return false;
     }
     const moved = await tx.voteTicketOrder.updateMany({ where: { id: orderId, status: 'PAID' }, data: { status: 'REFUNDED', refundedAt: now, refundReason: reason.slice(0, 200) } });

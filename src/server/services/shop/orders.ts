@@ -9,7 +9,8 @@
  *  - 정산 원장 적립은 **구매 확정 시점**에만 한다 (확정 전 취소·반품은 원장에 흔적이 없다)
  *  - 결제 상태 전이는 updateMany(where 이전 상태) 로 원자적으로 — 승인 콜백이 두 번 와도 한 번만 처리
  */
-import { prisma } from '@/server/db';
+import type { Prisma } from '@/generated/prisma/client';
+import { prisma, withAdvisoryLock } from '@/server/db';
 import { newId } from '@/lib/id';
 import { logger } from '@/lib/logger';
 import { formatWon } from '@/lib/money';
@@ -42,6 +43,47 @@ function stamp(prefix: string): string {
   return `${prefix}${kst}${newId().slice(-5)}`;
 }
 
+type Tx = Prisma.TransactionClient;
+
+/** 회원의 크리에이터 프로필 ID (크리에이터가 아니면 null) */
+async function buyerCreatorId(userId: string): Promise<string | null> {
+  const c = await prisma.creatorProfile.findUnique({ where: { userId }, select: { id: true } });
+  return c?.id ?? null;
+}
+
+/** [9차 P2-4] 크리에이터가 자기 샵의 직접 판매 상품을 사면 판매 대금이 본인 정산으로 들어간다 → 막는다 */
+export const OWN_PRODUCT_MESSAGE = '내 샵에서 직접 판매하는 상품은 구매할 수 없어요.';
+function isOwnDirectProduct(product: { ownerType: string; creatorId: string | null }, myCreatorId: string | null): boolean {
+  return Boolean(myCreatorId) && product.ownerType === 'CREATOR' && product.creatorId === myCreatorId;
+}
+
+/**
+ * 재고 되돌리기 (결제 실패 · 취소 · 반품 승인) — 9차 P2-3 · P3-8.
+ *  - 옵션 재고를 되돌린다
+ *  - unsell: 결제 완료 때 올린 판매 수량도 되돌린다 (0 아래로는 내려가지 않는다)
+ *  - 재고가 0 이라 자동으로 품절이 됐던 상품은 재고가 생기면 다시 판매중으로 돌린다.
+ *    재고가 남아 있는데 품절인 상품(관리자 · 크리에이터가 직접 품절로 둔 것)은 건드리지 않는다.
+ */
+async function restoreStock(tx: Tx, items: Array<{ productId: string; variantId: string; quantity: number }>, opts: { unsell: boolean }) {
+  const productIds = [...new Set(items.map((i) => i.productId))];
+  const before = new Map<string, number>();
+  for (const pid of productIds) {
+    const r = await tx.productVariant.aggregate({ where: { productId: pid, active: true }, _sum: { stock: true } });
+    before.set(pid, r._sum.stock ?? 0);
+  }
+  for (const it of items) {
+    await tx.productVariant.update({ where: { id: it.variantId }, data: { stock: { increment: it.quantity } } });
+    if (opts.unsell) {
+      await tx.$executeRaw`UPDATE product SET sold_count = GREATEST(0, sold_count - ${it.quantity}) WHERE id = ${it.productId}`;
+    }
+  }
+  for (const pid of productIds) {
+    if ((before.get(pid) ?? 0) > 0) continue;
+    const after = await tx.productVariant.aggregate({ where: { productId: pid, active: true }, _sum: { stock: true } });
+    if ((after._sum.stock ?? 0) > 0) await tx.product.updateMany({ where: { id: pid, status: 'SOLD_OUT' }, data: { status: 'ON_SALE' } });
+  }
+}
+
 // =========================================================================== 장바구니
 
 export async function addToCart(
@@ -56,6 +98,7 @@ export async function addToCart(
   const product = await getShopProduct(shopCreatorId, productId);
   if (!product) throw new Error('이 샵에서 판매하지 않는 상품입니다.');
   if (product.status !== 'ON_SALE') throw new Error('품절된 상품입니다.');
+  if (isOwnDirectProduct(product, await buyerCreatorId(userId))) throw new Error(OWN_PRODUCT_MESSAGE);
   const variant = product.variants.find((v) => v.id === variantId);
   if (!variant) throw new Error('옵션을 선택해 주세요.');
   const existing = await prisma.cartItem.findUnique({ where: { userId_shopCreatorId_variantId: { userId, shopCreatorId, variantId } } });
@@ -159,15 +202,19 @@ export async function placeOrder(
   if (cart.length !== input.cartItemIds.length) return { ok: false, message: '장바구니가 바뀌었습니다. 새로고침 후 다시 주문해 주세요.' };
 
   const cfg = await getShopConfig();
+  const myCreatorId = await buyerCreatorId(user.id);
   const lines: Line[] = [];
   for (const c of cart) {
     const product = await getShopProduct(c.shopCreatorId, c.productId);
     if (!product || product.status !== 'ON_SALE') return { ok: false, message: '판매가 중지되었거나 품절된 상품이 있습니다. 장바구니를 확인해 주세요.' };
+    if (isOwnDirectProduct(product, myCreatorId)) return { ok: false, message: `${product.name}: ${OWN_PRODUCT_MESSAGE}` };
     const variant = product.variants.find((v) => v.id === c.variantId);
     if (!variant) return { ok: false, message: `${product.name}: 선택한 옵션이 판매 중지되었습니다.` };
     if (variant.stock < c.quantity) return { ok: false, message: `${product.name} (${variant.name}) 재고가 부족합니다. 남은 수량 ${variant.stock}개` };
     const unit = product.price + variant.extraPrice;
-    const rate = product.ownerType === 'ADMIN' ? (await resolveReferralRate(c.shopCreatorId, product)).rate : '0';
+    // [9차 P2-4] 자기 샵에서 도네이도 상품을 사는 것은 허용하되, 레퍼럴 수익은 주지 않는다 (본인 할인이 되지 않게)
+    const ownShop = myCreatorId != null && c.shopCreatorId === myCreatorId;
+    const rate = product.ownerType === 'ADMIN' && !ownShop ? (await resolveReferralRate(c.shopCreatorId, product)).rate : '0';
     lines.push({
       cartItemId: c.id,
       shopCreatorId: c.shopCreatorId,
@@ -304,9 +351,10 @@ export async function finalizeOrderPayment(paymentId: string, result: { ok: true
           }
         }
       }
-      // 결제된 상품은 장바구니에서 뺀다
-      const variantIds = orders.flatMap((o) => o.items.map((i) => i.variantId));
-      await tx.cartItem.deleteMany({ where: { userId: payment.userId, variantId: { in: variantIds } } });
+      // 결제된 상품은 장바구니에서 뺀다 — (샵, 옵션) 단위로. [9차 P3-6] 예전에는 옵션만 봐서
+      // 같은 상품을 다른 샵 장바구니에 담아 둔 것까지 함께 지워졌다
+      const paidLines = orders.flatMap((o) => o.items.map((i) => ({ shopCreatorId: i.shopCreatorId, variantId: i.variantId })));
+      if (paidLines.length > 0) await tx.cartItem.deleteMany({ where: { userId: payment.userId, OR: paidLines } });
       // 재고가 0 이 된 판매중 상품은 품절로
       const productIds = [...new Set(orders.flatMap((o) => o.items.map((i) => i.productId)))];
       for (const pid of productIds) {
@@ -338,7 +386,8 @@ export async function finalizeOrderPayment(paymentId: string, result: { ok: true
     if (moved.count === 0) return;
     const orders = await tx.shopOrder.findMany({ where: { paymentId }, include: { items: true } });
     await tx.shopOrder.updateMany({ where: { paymentId, status: 'PENDING_PAYMENT' }, data: { status: 'CANCELLED', cancelledAt: now } });
-    for (const o of orders) for (const it of o.items) await tx.productVariant.update({ where: { id: it.variantId }, data: { stock: { increment: it.quantity } } });
+    // 결제 전이라 판매 수량은 오르지 않았다. 그 사이 다른 주문 때문에 자동 품절이 됐다면 다시 판매중으로 돌린다
+    await restoreStock(tx, orders.flatMap((o) => o.items), { unsell: false });
   });
 }
 
@@ -445,13 +494,26 @@ export async function autoConfirmOrders(now = new Date()): Promise<number> {
 export async function requestClaim(userId: string, orderId: string, type: 'CANCEL' | 'RETURN', reason: string) {
   const r = reason.trim();
   if (r.length < 2 || r.length > 300) throw new Error('사유를 2~300자로 입력해 주세요.');
-  const order = await prisma.shopOrder.findFirst({ where: { id: orderId, userId }, include: { claims: true } });
+  const order = await prisma.shopOrder.findFirst({ where: { id: orderId, userId } });
   if (!order) throw new Error('주문을 찾을 수 없습니다.');
-  if (order.claims.some((c) => c.status === 'REQUESTED')) throw new Error('이미 처리 중인 요청이 있습니다.');
-  if (type === 'CANCEL' && !['PAID', 'PREPARING'].includes(order.status)) throw new Error('발송 전 주문만 취소할 수 있습니다. 발송 후에는 반품을 신청해 주세요.');
-  if (type === 'RETURN' && !['SHIPPED', 'DELIVERED'].includes(order.status)) throw new Error('배송이 시작된 주문만 반품을 신청할 수 있습니다.');
   const claimId = newId();
-  await prisma.orderClaim.create({ data: { id: claimId, orderId, type, reason: r, requestedBy: userId } });
+  /**
+   * [9차 P3-7] 확인과 접수를 주문 단위 잠금 안에서 한다.
+   * 예전에는 [취소]를 두 번 빠르게 누르면 요청이 2건 접수되고, 하나를 승인하면 나머지가 '접수'로 남아
+   * 관리자가 직접 거절해야 했다(그동안 회원 탈퇴도 막혔다).
+   */
+  await prisma.$transaction((tx) =>
+    withAdvisoryLock(tx, `shop-claim:order:${orderId}`, async () => {
+      const [current, open] = await Promise.all([
+        tx.shopOrder.findUniqueOrThrow({ where: { id: orderId }, select: { status: true } }),
+        tx.orderClaim.count({ where: { orderId, status: { in: ['REQUESTED', 'APPROVED'] } } }),
+      ]);
+      if (open > 0) throw new Error('이미 처리 중인 요청이 있습니다.');
+      if (type === 'CANCEL' && !['PAID', 'PREPARING'].includes(current.status)) throw new Error('발송 전 주문만 취소할 수 있습니다. 발송 후에는 반품을 신청해 주세요.');
+      if (type === 'RETURN' && !['SHIPPED', 'DELIVERED'].includes(current.status)) throw new Error('배송이 시작된 주문만 반품을 신청할 수 있습니다.');
+      await tx.orderClaim.create({ data: { id: claimId, orderId, type, reason: r, requestedBy: userId } });
+    }),
+  );
   // 발주·준비 전(결제 완료 상태)의 취소는 판매자 확인 없이 바로 처리한다
   if (type === 'CANCEL' && order.status === 'PAID') {
     try {
@@ -539,8 +601,9 @@ export async function completeApprovedClaim(claimId: string): Promise<boolean> {
     const order = claim.order;
     const refund = claim.refundAmount;
     await tx.shopOrder.update({ where: { id: order.id }, data: { refundedAmount: order.refundedAmount + refund } });
+    // 재고 · 판매 수량 되돌리기 + 자동 품절 해제 (9차 P2-3 · P3-8)
+    await restoreStock(tx, order.items, { unsell: true });
     for (const it of order.items) {
-      await tx.productVariant.update({ where: { id: it.variantId }, data: { stock: { increment: it.quantity } } });
       await tx.referralCommission.updateMany({ where: { orderItemId: it.id, status: 'PENDING' }, data: { status: 'CANCELLED' } });
     }
     const pay = await tx.shopPayment.update({ where: { id: order.paymentId }, data: { cancelledAmount: { increment: refund } } });

@@ -777,7 +777,7 @@ export default async function CreatorDonationPage({ params, searchParams }: Para
       {/* ── 최근 후원 ───────────────────────────────────────────────── */}
       <section id="recent" className="mt-8 scroll-mt-20">
         <Link href={`/c/${creator.code}/messages`} className="mb-5 flex min-h-14 items-center justify-between gap-3 rounded-2xl border border-brand-200 bg-brand-50 px-5 py-4 text-sm font-bold text-brand-900">
-          <span>내 문자후원 · 크리에이터 답글 확인</span>
+          <span>내 후원 내역 · 크리에이터 답글 확인</span>
           <ChevronRight size={17} strokeWidth={1.65} className="shrink-0" />
         </Link>
         <div className="flex items-end justify-between px-1">
